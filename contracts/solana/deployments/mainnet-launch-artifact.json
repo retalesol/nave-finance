@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-07-10T21:30:42.792Z",
+  "gitCommit": "34a6624d0271fb55964be15815cfb89bfd3847f1",
+  "network": "mainnet-beta",
+  "scope": "bridge-stake",
+  "rpcUrl": "${SOLANA_RPC_URL}",
+  "programs": {
+    "nave_bridge": "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6",
+    "nave_staking": "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf"
+  },
+  "authorities": {
+    "expectedMultisig": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+    "verified": {
+      "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+      "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave"
+    }
+  },
+  "supabase": {
+    "projectRef": "your-project-ref",
+    "url": "https://your-project-ref.supabase.co"
+  },
+  "webhook": {
+    "id": "",
+    "network": "mainnet"
+  },
+  "checks": {
+    "scope": "bridge-stake",
+    "contractsPreflight": false,
+    "contractsBuild": false,
+    "contractsDeploy": true,
+    "naveStakePinned": false,
+    "authorityHandoff": false,
+    "contractsVerify": false
+  },
+  "verifyHashes": {}
+}

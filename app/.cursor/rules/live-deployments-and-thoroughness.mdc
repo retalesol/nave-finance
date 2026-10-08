@@ -1,0 +1,23 @@
+---
+description: Push often, verify Railway/Vercel/Supabase, and avoid regressions when touching shared code.
+alwaysApply: true
+---
+
+# Live deployments and thorough change discipline
+
+The app is under continuous live testing by developers who report bugs quickly. Negligent back-and-forth (fix one thing, break another) wastes time and trust.
+
+## After meaningful progress (especially large developments)
+
+- Push work to GitHub on a sensible cadence so others are not blocked on stale branches.
+- Verify deployments and backends: **Railway**, **Vercel**, and **Supabase** (migrations, env vars, edge functions, RLS) so what ships actually runs in prod-like environments.
+- When a feature is **thoroughly** completed and fixed, treat release hygiene as part of the task: push, then **monitor** deploy pipelines and smoke-check critical paths.
+
+## Code change discipline
+
+- Read surrounding code and callers before editing. If a change touches shared types, hooks, API clients, or cross-cutting utilities, **explicitly check** related screens, hooks, and server paths for breakage (build, types, runtime assumptions).
+- Prefer small, correct diffs over rushed patches; if you are unsure whether something else depends on the behavior you changed, trace usages (search references, follow imports) before finishing.
+
+## Expectation
+
+Shipping and verifying deploys is not optional polish at the end of a long day; it is part of delivering a feature safely while the product is live-tested all day.

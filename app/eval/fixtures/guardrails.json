@@ -1,0 +1,1547 @@
+[
+  {
+    "name": "safe_approval",
+    "description": "Executive approval, full context, all invariants satisfied.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 88,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "low_confidence",
+    "description": "Model confidence below the configured threshold.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 40,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["confidence_threshold"] }
+  },
+  {
+    "name": "stale_snapshot",
+    "description": "Treasury snapshot older than the max allowed age.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2025-12-31T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["snapshot_freshness"] }
+  },
+  {
+    "name": "insufficient_data",
+    "description": "No treasury snapshot at all; fail-closed blocks signing.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": null,
+        "solBalance": null,
+        "usdcBalance": null,
+        "snapshotAt": null,
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 95,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["snapshot_freshness"] }
+  },
+  {
+    "name": "cap_violation",
+    "description": "Deployed + amount exceeds the single-allocation cap.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 60000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 10000 }]
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["allocation_cap"] }
+  },
+  {
+    "name": "payload_mismatch",
+    "description": "Model payload hash does not equal the on-chain bound hash.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "deadbeef",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["payload_hash_equality"] }
+  },
+  {
+    "name": "protocol_not_allowed",
+    "description": "Target protocol is not in the constitution allowlist.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "marginfi",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["protocol_allowlist"] }
+  },
+  {
+    "name": "malicious_prompt_severe_flag",
+    "description": "Model raised a severe/constitution-violation risk flag (e.g. prompt injection in proposal text).",
+    "role": "oversight",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "oversight",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 95,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": ["constitution_violation"]
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["risk_severity"] }
+  },
+  {
+    "name": "decision_contradiction",
+    "description": "Model says approve but should_sign is false.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": false,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["decision_consistency"] }
+  },
+  {
+    "name": "operational_halt_contradiction",
+    "description": "Operational agent set both should_halt and should_clear_halt.",
+    "role": "operational",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "operational",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "operational_monitor",
+        "protocolId": null,
+        "expectedPayloadHash": null,
+        "amount": null
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "halt",
+      "confidence": 90,
+      "should_halt": true,
+      "should_clear_halt": true,
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["decision_consistency"] }
+  },
+  {
+    "name": "global_deployment_cap_breach",
+    "description": "deployed + amount exceeds the constitution global max-deployed cap.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 20000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 40000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 8000, "maxTotalDeployedBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["global_deployment_cap"] }
+  },
+  {
+    "name": "liquidity_floor_breach",
+    "description": "Post-deployment liquid balance falls below the constitution liquidity floor.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 40000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 40000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 9000, "minLiquidityBps": 3000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["liquidity_floor"] }
+  },
+  {
+    "name": "reserve_floor_unmeasurable_blocks_deploy",
+    "description": "Reserve floor set, the treasury DOES hold stablecoins (usdcBalance 50000) but their precise base-unit composition is UNMEASURABLE on an executable strategy deploy: an unprovable floor over a real stablecoin reserve is treated as a violated floor (fail-closed) and the deploy is HARD-BLOCKED. Contrast with reserve_floor_sol_only_not_binding where the treasury holds no stablecoins at all.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": null
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["reserve_floor"] }
+  },
+  {
+    "name": "reserve_floor_satisfied_signs",
+    "description": "Reserve floor set and measurable stablecoin balance is ABOVE the floor on a strategy deploy: reserve_floor passes and signing proceeds.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": 50000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "reserve_floor_sol_only_not_binding",
+    "description": "Reserve floor set but the treasury is seeded entirely with SOL-like assets and holds NO stablecoins yet (usdcBalance 0, stablecoinBaseUnits null) on an executable strategy deploy: the floor is not yet binding (a deploy cannot draw a non-existent stablecoin reserve below the floor), so reserve_floor is satisfied/n-a and signing proceeds. This is the bootstrap SOL->Jito deploy case.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "jito",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 500,
+        "usdcBalance": 0,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": null
+      },
+      "approvedProtocols": ["jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "reserve_floor_withdraw_exempt",
+    "description": "Reserve floor set and stablecoin composition unmeasurable, but the action is a WITHDRAW (capital returns to reserves): the reserve-floor gate only constrains executable deploys, so a withdraw is exempt (n/a) and is not blocked.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "withdraw_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": null
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "compound_redeploy_reserve_floor_breach",
+    "description": "A compound redeploy (moves harvested yield back into a strategy: protocol + positive amount, not a withdraw) is an executable deploy and is subject to the reserve floor. Measurable stablecoin balance below the floor hard-blocks the compound deploy.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "compound_redeploy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": 10000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["reserve_floor"] }
+  },
+  {
+    "name": "nav_stale_blocks_deploy",
+    "description": "NAV-staleness gate: the on-chain treasury vault exposes last_revalued_at and a freshness window is configured, but the NAV was revalued longer ago than the window allows. An executable deploy priced against a stale NAV is hard-blocked.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxNavAgeSeconds": 600, "nowSecs": 2000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "navLastRevaluedAt": 1000000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["nav_freshness"] }
+  },
+  {
+    "name": "nav_fresh_deploy_signs",
+    "description": "NAV-staleness gate: NAV was revalued within the configured freshness window, so an executable deploy is priced against a fresh NAV and nav_freshness passes.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxNavAgeSeconds": 600, "nowSecs": 2000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "navLastRevaluedAt": 1999700
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "reserve_floor_breach_measurable",
+    "description": "Stablecoin balance is measurable and below the reserve floor: hard block.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": 10000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["reserve_floor"] }
+  },
+  {
+    "name": "rebalance_not_due",
+    "description": "Rebalance action attempted before the cadence has elapsed.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "nowSecs": 1000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "rebalance_exit",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "rebalanceFrequencySecs": 86400, "lastRebalanceAt": 999000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["rebalance_interval"] }
+  },
+  {
+    "name": "rebalance_due_ok",
+    "description": "Rebalance action after the cadence has elapsed: eligible, signs.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "nowSecs": 1000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "rebalance_exit",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "rebalanceFrequencySecs": 86400, "lastRebalanceAt": 900000 },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "gate_frozen_blocks_signing",
+    "description": "Signing role with on-chain gate frozen=true: agents_enabled fails closed and signing is blocked even though all other invariants pass.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": true },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 88,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["agents_enabled"] }
+  },
+  {
+    "name": "gate_agents_disabled_blocks_signing",
+    "description": "Signing role with on-chain gate agentsEnabled=false: agents_enabled fails closed and signing is blocked.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": false, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["agents_enabled"] }
+  },
+  {
+    "name": "gate_open_signs",
+    "description": "Signing role with gate present and open (frozen=false, agentsEnabled=true): agents_enabled passes and signing proceeds.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 88,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "mustFail": [] }
+  },
+  {
+    "name": "gate_closed_operational_exempt",
+    "description": "Operational role with gate closed (frozen=true): agents_enabled is a non-blocking warning so halt/expire monitoring still runs; operational never signs.",
+    "role": "operational",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "operational",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "operational_monitor",
+        "protocolId": null,
+        "expectedPayloadHash": null,
+        "amount": null
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70 },
+      "gate": { "agentsEnabled": false, "frozen": true },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "halt",
+      "confidence": 90,
+      "should_halt": true,
+      "should_clear_halt": false,
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": false, "mustFail": [] }
+  },
+  {
+    "name": "preset_conservative_over_cap",
+    "description": "Conservative preset (minStablecoin 60, maxDeployment 40, maxLending 20, liquidityReserve 25) rejects a deploy above the 40% cap.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 500000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 700000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 700000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 2000,
+        "maxTotalDeployedBps": 4000,
+        "minStablecoinReserveBps": 6000,
+        "minLiquidityBps": 2500,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["global_deployment_cap"] }
+  },
+  {
+    "name": "preset_conservative_in_policy_hold",
+    "description": "Conservative preset allows a hold that stays inside the 40% deployment cap and 25% liquidity floor.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "hold",
+        "protocolId": null,
+        "expectedPayloadHash": "abc123",
+        "amount": 0
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 700000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 700000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 2000,
+        "maxTotalDeployedBps": 4000,
+        "minStablecoinReserveBps": 6000,
+        "minLiquidityBps": 2500,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "hold", "confidence": 90, "should_sign": false, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": true, "shouldSign": false, "mustFail": [] }
+  },
+  {
+    "name": "preset_balanced_over_cap",
+    "description": "Balanced preset (minStablecoin 35, maxDeployment 65, maxLending 40, liquidityReserve 15) rejects a deploy above the 65% cap.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 700000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 800000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 800000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 6500,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["global_deployment_cap"] }
+  },
+  {
+    "name": "preset_balanced_in_policy_hold",
+    "description": "Balanced preset allows a hold inside the 65% deployment cap and 15% liquidity floor.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "hold",
+        "protocolId": null,
+        "expectedPayloadHash": "abc123",
+        "amount": 0
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 800000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 800000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 6500,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "hold", "confidence": 90, "should_sign": false, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": true, "shouldSign": false, "mustFail": [] }
+  },
+  {
+    "name": "preset_aggressive_over_cap",
+    "description": "Aggressive preset (minStablecoin 15, maxDeployment 85, maxLending 70, liquidityReserve 8) rejects a deploy above the 85% cap.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 900000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 900000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 900000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 7000,
+        "maxTotalDeployedBps": 8500,
+        "minStablecoinReserveBps": 1500,
+        "minLiquidityBps": 800,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["global_deployment_cap"] }
+  },
+  {
+    "name": "preset_aggressive_in_policy_hold",
+    "description": "Aggressive preset allows a hold inside the 85% deployment cap and 8% liquidity floor.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "hold",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "hold",
+        "protocolId": null,
+        "expectedPayloadHash": "abc123",
+        "amount": 0
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 900000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 900000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 7000,
+        "maxTotalDeployedBps": 8500,
+        "minStablecoinReserveBps": 1500,
+        "minLiquidityBps": 800,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1750000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "hold", "confidence": 90, "should_sign": false, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": true, "shouldSign": false, "mustFail": [] }
+  },
+  {
+    "name": "require_complete_zero_cap",
+    "description": "requireCompleteConstitution fails closed when the global deployment cap is 0.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 900000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 900000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 0,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["global_deployment_cap"] }
+  },
+  {
+    "name": "require_complete_missing_gate",
+    "description": "requireCompleteConstitution fails closed for a signing role when the agent gate is missing.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "hold",
+        "protocolId": null,
+        "expectedPayloadHash": "abc123",
+        "amount": 0
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 800000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 800000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 6500,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500
+      },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "hold", "confidence": 90, "should_sign": false, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["agents_enabled"] }
+  },
+  {
+    "name": "require_complete_missing_nav",
+    "description": "requireCompleteConstitution fails a strategy deploy when navLastRevaluedAt is missing.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 800000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 800000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 6500,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["nav_freshness"] }
+  },
+  {
+    "name": "require_complete_rebalance_intent",
+    "description": "requireCompleteConstitution applies rebalance cadence when policy intent is rebalance, even if the action name is execute_strategy.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "requireCompleteConstitution": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 3600, "nowSecs": 1760000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "policyIntent": "rebalance",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "aave",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 1000000,
+        "solBalance": 0,
+        "usdcBalance": 800000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 1000000,
+        "deployedBaseUnits": 0,
+        "stablecoinBaseUnits": 800000,
+        "navLastRevaluedAt": 1759999000
+      },
+      "approvedProtocols": ["aave"],
+      "riskParams": {
+        "confidenceThreshold": 70,
+        "maxSingleAllocationBps": 4000,
+        "maxTotalDeployedBps": 6500,
+        "minStablecoinReserveBps": 3500,
+        "minLiquidityBps": 1500,
+        "rebalanceFrequencySecs": 604800,
+        "lastRebalanceAt": 1760000000
+      },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": { "decision": "approve", "confidence": 90, "should_sign": true, "payload_hash": "abc123", "risk_flags": [] },
+    "expect": { "pass": false, "shouldSign": false, "mustFail": ["rebalance_interval"] }
+  }
+]

@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-07-10T17:53:07.176Z",
+  "gitCommit": "cdd5ff14d1d18f70e3b4a4954d2e67f0838c6264",
+  "network": "mainnet-beta",
+  "rpcUrl": "${SOLANA_RPC_URL}",
+  "supabase": {
+    "projectRef": "your-project-ref",
+    "url": "https://your-project-ref.supabase.co"
+  },
+  "signer": {
+    "url": "https://nave-server-production.up.railway.app"
+  },
+  "agentAutonomy": {
+    "model": "claude-sonnet-4-6",
+    "guardrailsFailClosed": true,
+    "autoProposeEnabled": false,
+    "autoProposeWithdrawEnabled": false,
+    "compoundEnabled": false,
+    "compoundMinGainBps": 100
+  },
+  "feeModel": {
+    "protocolRevenueWallet": "",
+    "performanceFeeBps": 850,
+    "managementFeeBps": 65,
+    "managementFeeIntervalMs": 3600000,
+    "agentSol": {
+      "request": 0.05,
+      "operate": 0.1,
+      "fillCeiling": 0.25,
+      "refillTrigger": 0.1
+    }
+  },
+  "creationFlow": {
+    "protocolFeeLamports": 0,
+    "treasurySeedLamports": 0,
+    "totalCarveoutLamports": 0,
+    "treasurySeedAsset": "wSOL (AssetKind::SolLike) \u2014 user-chosen, not a fee carve-out",
+    "bootstrapImmediateFirstAction": true,
+    "bootstrapLatch": "dao_registry.bootstrap_used",
+    "reviewWindowSecs": {
+      "default": 86400,
+      "min": 60,
+      "max": 604800
+    }
+  },
+  "naveStake": {
+    "mint": "EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory",
+    "stakeTargetUsd": 99,
+    "pinnedVia": "contracts cutover set_nave_mint (global_config.authority-gated, pre-handoff)",
+    "amountSource": "off-chain price oracle (nave-price-oracle) accepted quote",
+    "moonlighting": "record_moonlight_request \u2192 set_moonlight_distribution \u2192 execute_moonlight_distribution \u2192 finalize_moonlight; restore_dao re-stakes to reopen"
+  },
+  "signerInfra": {
+    "cluster": "mainnet",
+    "upstashConfigured": true,
+    "skipSimulation": false,
+    "ratePerAction": 20,
+    "ratePerRole": 20,
+    "rateGlobal": 300,
+    "cbThreshold": 5,
+    "cbWindowMs": 60000,
+    "cbCooldownMs": 120000
+  },
+  "navFreshness": {
+    "maxNavAgeSeconds": 0,
+    "onchainMaxStalenessSecs": 900,
+    "vaultLastRevaluedOffset": ""
+  },
+  "jupiter": {
+    "lendingProgramId": "",
+    "liquidityProgramId": ""
+  },
+  "evm": {
+    "enabled": false
+  },
+  "checks": {
+    "preflight": true,
+    "contractsKeys": false,
+    "contractsBuild": false,
+    "contractsDeploy": false,
+    "authorityHandoff": false,
+    "platformDeploy": false,
+    "verification": false
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "generatedAt": "2026-07-27T07:30:07.453Z",
+  "gitCommit": "7b81919997d8d5d28152247eb8d61a0cb86b1c10",
+  "chain": "Base Sepolia",
+  "chainId": 84532,
+  "explorer": "basescan",
+  "isTestnet": true,
+  "rpcUrl": "https://base-sepolia.drpc.org",
+  "addresses": {
+    "authority": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+    "chainId": 84532,
+    "executionImpl": "0xBA1bC52a8F3cc5A6482675f9a767BDAedCeCfD74",
+    "executionImplementation": "0xBA1bC52a8F3cc5A6482675f9a767BDAedCeCfD74",
+    "factory": "0x50693cB4DcF581b1FbfAA3138A21e81579d192C9",
+    "factoryImplementation": "0xE3030bBAa2a0333009D0CD8b95c944adA83cFe78",
+    "governorImpl": "0xDF886b7902A5BA1FC6AB03bF9061BD240041eeB4",
+    "governorImplementation": "0xDF886b7902A5BA1FC6AB03bF9061BD240041eeB4",
+    "oracle": "0x0526e57C0eab81c6cafE2d9e2025E649C7AB7dB0",
+    "oracleImplementation": "0x229F7C951127Bf98BB3BEEb66F58DCc02da419F1",
+    "protocol": "0x9BdE2F925fb71bDfC3EA0F0F9617786b5a642F02",
+    "protocolImplementation": "0xd5695B76602A288090f3a630dfBca23912cff76d",
+    "proxyPattern": "uups-singleton+uups-dao-consent",
+    "tokenDeployer": "0xA4C5A6F15152233E05029f69F25fD358B4D9B09F",
+    "treasuryImpl": "0x093c07223bb9a47C3ebFba881Cd68fcb60c757D0",
+    "treasuryImplementation": "0x093c07223bb9a47C3ebFba881Cd68fcb60c757D0"
+  },
+  "adapters": null,
+  "naveStake": null,
+  "authority": {
+    "expectedSafe": "0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552",
+    "handoff": null
+  },
+  "checks": {
+    "scope": "full",
+    "preflight": false,
+    "build": false,
+    "deploy": false,
+    "adapters": false,
+    "stake": false,
+    "handoff": false,
+    "verify": true
+  },
+  "verify": {
+    "executionImpl": {
+      "address": "0xBA1bC52a8F3cc5A6482675f9a767BDAedCeCfD74",
+      "hasCode": true
+    },
+    "factory": {
+      "address": "0x50693cB4DcF581b1FbfAA3138A21e81579d192C9",
+      "hasCode": true,
+      "eip1967Implementation": "0xe3030bbaa2a0333009d0cd8b95c944ada83cfe78",
+      "implementationHasCode": true
+    },
+    "governorImpl": {
+      "address": "0xDF886b7902A5BA1FC6AB03bF9061BD240041eeB4",
+      "hasCode": true
+    },
+    "oracle": {
+      "address": "0x0526e57C0eab81c6cafE2d9e2025E649C7AB7dB0",
+      "hasCode": true,
+      "eip1967Implementation": "0x229f7c951127bf98bb3beeb66f58dcc02da419f1",
+      "implementationHasCode": true
+    },
+    "protocol": {
+      "address": "0x9BdE2F925fb71bDfC3EA0F0F9617786b5a642F02",
+      "hasCode": true,
+      "eip1967Implementation": "0xd5695b76602a288090f3a630dfbca23912cff76d",
+      "implementationHasCode": true
+    },
+    "tokenDeployer": {
+      "address": "0xA4C5A6F15152233E05029f69F25fD358B4D9B09F",
+      "hasCode": true
+    },
+    "treasuryImpl": {
+      "address": "0x093c07223bb9a47C3ebFba881Cd68fcb60c757D0",
+      "hasCode": true
+    },
+    "protocolOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+    "protocolPendingOwner": "0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552",
+    "latestDaoImplementations": "0x093c07223bb9a47C3ebFba881Cd68fcb60c757D0\n0xDF886b7902A5BA1FC6AB03bF9061BD240041eeB4\n0xBA1bC52a8F3cc5A6482675f9a767BDAedCeCfD74",
+    "oracleOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+    "factoryOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+    "factoryPendingOwner": "0x0000000000000000000000000000000000000000",
+    "bridgeAuthority": {
+      "naveBridgeOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+      "naveBridgePendingOwner": "0x0000000000000000000000000000000000000000",
+      "naveBridgeRelayer": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+      "naveStakingOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+      "naveStakingPendingOwner": "0x0000000000000000000000000000000000000000",
+      "naveStakingRewarder": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+      "wrappedNaveOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+      "wrappedNavePendingOwner": "0x0000000000000000000000000000000000000000",
+      "p1Pending": [
+        "P1 violation (verify): bridge relayer 0x6695c652a79329658440cdaf53ab640f95d5e06d equals the current NaveBridge owner. Separate the multisig owner from the hot key before mainnet value flows.",
+        "P1 violation (verify): bridge rewarder 0x6695c652a79329658440cdaf53ab640f95d5e06d equals the current NaveBridge owner. Separate the multisig owner from the hot key before mainnet value flows."
+      ]
+    }
+  }
+}

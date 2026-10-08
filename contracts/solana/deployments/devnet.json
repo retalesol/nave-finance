@@ -1,0 +1,446 @@
+{
+  "cluster": "devnet",
+  "rpc": "${SOLANA_RPC_URL}",
+  "rpcApp": "${SOLANA_RPC_URL}",
+  "rpcNotes": "${SOLANA_RPC_URL}",
+  "deployedAt": "2026-06-07T02:40:00.000Z",
+  "authority": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+  "treasury": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+  "formationFeeLamports": 0,
+  "treasurySeedLamports": 0,
+  "naveToken": {
+    "mainnetMint": "EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory",
+    "devnetReplicaMint": "GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa",
+    "decimals": 6,
+    "mintAuthority": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+    "authorityTokenAccount": "HV2JH5MJQChD5zY7otp2VyxE9oCHgbtbFJJzacGby4qa",
+    "initialSupply": "100000",
+    "testRecipient": "6N5JiWP2zF6VXhG6hwgYEYhxBEARAV5P6WRgfYb2zskC",
+    "testRecipientTokenAccount": "EyEXW3YkjeVxsJg6CQKytbxeVP5PAupN2cZh6j6c4v4j",
+    "testRecipientAmount": "10000",
+    "devnetPriceUsd": 10,
+    "daoCreationStakeUsd": 99,
+    "daoCreationStakeNave": 9.9,
+    "createdAt": "2026-06-29T22:56:00.000-07:00",
+    "createMintSignature": "293ZCTpCHKmvKq7mTcnA2MV3aJT4ZYaMqEf6iJnZVXt44YL83vM27c76VPCnavKdWt6zBPTeFuQxMZBL6jpZ3sBD",
+    "mintSupplySignature": "5VdLT6P5RLjqG78EvJ5oEJH6oBESPcwhCVbJbVenujRxGGyjArdXgsUFMNU9z4wcPEYJ5bGrQCU8MkwCQhwDdh8z",
+    "fundRecipientSignature": "4QkhMhvq4WQj1v1A9mCXxR7uShRfqqg7gZ6Yfab4x2DDFEL1JvSrBb5u1YN1kwFbTDQEj6P7AVmufa7CmkNWEJ5C"
+  },
+  "globalConfig": "6mhwhFzRX7n8S4Fjj5wj1DLaQaGADoQG3jE5vFtqDa48",
+  "programs": {
+    "nave_core": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB",
+    "nave_governance": "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M",
+    "nave_execution": "2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb",
+    "nave_jito_adapter": "E2fviyVGWF8iEwZK2M8ysrd63DM5yKxu6nuBMzjBQ2XT",
+    "nave_kamino_adapter": "B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD",
+    "nave_marginfi_adapter": "Gavh8GezswR14BYC851r6vevk267iWDfBkC3Fo49b1q7",
+    "nave_bridge": "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6",
+    "nave_staking": "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf"
+  },
+  "protocolFeeVault": "ENrR9MsZ8fs7B1tgY2eWMrN2b8hLcSVqceA9csxa5gGV",
+  "upgrades": [
+    {
+      "date": "2026-06-06",
+      "programs": [
+        "nave_core",
+        "nave_execution"
+      ],
+      "features": [
+        "bootstrap_used",
+        "bootstrap_execution_request",
+        "treasury_seed_lamports"
+      ]
+    },
+    {
+      "date": "2026-06-06",
+      "programs": [
+        "nave_core",
+        "nave_execution"
+      ],
+      "features": [
+        "agent_threshold_usd",
+        "jupiter_swap"
+      ]
+    },
+    {
+      "date": "2026-06-07",
+      "programs": [
+        "nave_governance"
+      ],
+      "features": [
+        "create_proposal_transfer_enabled",
+        "upgrade_tx_57ShtMkkuoAdw8DY3i9RVdzc791TGZNhJhkXyQpfuct5sJVsjV3cPv1K98Pemi5Z6CHa9AKGsPN5pUZ857CgdiyW"
+      ]
+    },
+    {
+      "date": "2026-06-17",
+      "programs": [
+        "nave_core",
+        "nave_governance"
+      ],
+      "features": [
+        "guardian_nonce_coordination",
+        "mint_additional_tokens_frozen_check",
+        "revalue_treasury_founder_operational_pyth_conf",
+        "restore_agent_auto_unfreeze",
+        "token_mint_proposal_binding",
+        "sbpf_v3_agave_4_1",
+        "upgrade_tx_4PmfoU1rJQMSevrQdRyRTMHLcVBjtqR7miMkZiZuNhqQYvaXPYofQX1XS4Vm25ySpCtPiTNiJxu7qJZA7f9dXvPj",
+        "upgrade_tx_2kMXc5ckpnEYeVcx8WPASpd26wJHm6nAZpfKsC5kRKpDw1NL7FdB1DGK7qQ94R7Fg6cxTsf6EaZ5EQ4tMUNpFzuv"
+      ],
+      "slots": {
+        "nave_core": 470131169,
+        "nave_governance": 470131928
+      }
+    },
+    {
+      "date": "2026-06-17",
+      "programs": [
+        "nave_core",
+        "nave_governance"
+      ],
+      "features": [
+        "fix_restore_agent_guardian_freeze_bypass",
+        "fix_governance_transfer_nav_invalidation",
+        "upgrade_tx_4883jNTkUDtgonhN8df4kwp5Z9wz8MfaJNuwSvfmJV9RwNsos2rXXPL28U7dBMsEnA3JUHZQgsD3bKpuAFPaFd5H",
+        "upgrade_tx_3xEqMeGkJQRceaK2kerUNx6wBGuF7tx6XTiTQbbJrYfTZ6NrW9tjYd33NvbGwPiy2m1xUejZBhZaPihHTva9CtyL"
+      ],
+      "slots": {
+        "nave_core": 470137869,
+        "nave_governance": 470138233
+      }
+    },
+    {
+      "date": "2026-06-17",
+      "programs": [
+        "nave_core"
+      ],
+      "features": [
+        "unified_dao_creation_ux_fee_model",
+        "FORMATION_FEE_LAMPORTS_2_SOL_mainnet",
+        "TREASURY_SEED_LAMPORTS_0_user_seed_separate",
+        "upgrade_tx_5EbzELYvPjq7uVjsj215zHSBpGBb9eyv47sXpWnaSGTuF7FDqBJVwsJQeQSpUi1TFCpMf2tGSqMH5EZfhzDfhYdh"
+      ],
+      "slots": {
+        "nave_core": 470156078
+      }
+    },
+    {
+      "date": "2026-06-17",
+      "programs": [
+        "nave_core",
+        "nave_governance"
+      ],
+      "features": [
+        "deposit_sol",
+        "register_nft_asset",
+        "execute_governance_transfer_nft",
+        "execute_treasury_transfer_nft",
+        "consolidated_sprint_treasury_nft_agent_hardening",
+        "upgrade_tx_4QjEbuUv5Suu2chQj6aJ4yTazbATTF6kDUBy4sKboYXbBvv51St8BrN1PCKszq2ydpbkPHemxrYw6YTiLc7qqgJk",
+        "upgrade_tx_2gQ9B5ZUC4EhNcC5xJoHpRS6qBRYjrUzMueaJmVQu7iYqoNhu1zk7LPWrmHiivvP1KtepQMrStsbei9o4WHpVqrV"
+      ],
+      "slots": {
+        "nave_core": 470231224,
+        "nave_governance": 470231434
+      }
+    },
+    {
+      "date": "2026-06-29",
+      "programs": [
+        "nave_core",
+        "nave_governance",
+        "nave_execution"
+      ],
+      "features": [
+        "record_proposal_creation_instructions_sysvar_cpi_enforcement",
+        "create_proposal_forwards_instructions_sysvar_into_record_proposal_creation_cpi",
+        "execute_strategy_direct_requires_inreview_or_oversightapproved_status",
+        "register_dao_token_initial_supply_treasury_vault_destination_token_program",
+        "phase6a_audit_remediation_devnet_upgrade",
+        "reclaimed_dangling_nave_core_buffer_8GWE1FYtiJa2yGHufY8MdceGVVNmvq2D6hTBzj31HVHK_10.956_SOL",
+        "upgrade_tx_nave_core_5UegeMHavC1sVAPs4Wh7VSvpHzzCBDjBACRk5H6hUZG8u4HQbFA2QjpBkMgGDxFJxhKGEWhrwuQ1mkd7GHZhAy4P",
+        "upgrade_tx_nave_governance_3xeyXqacagufQmhnxvFvaEfevSwGP4WJw4cW5aZako73KvokWwKwhZCdRn47jvFexPnWqCQqGL5fjLtqvwJwMwUq",
+        "upgrade_tx_nave_execution_31H21VTahUsYgYrbUM5jQErKCKR7zcSyj8TSGjsiQ9LjCGvXFGGHHXaR3Af9aY3Ec8DTYAwCQjkaCpbRThDwoveU"
+      ],
+      "slots": {
+        "nave_core": 472910887,
+        "nave_governance": 472911129,
+        "nave_execution": 472911469
+      }
+    },
+    {
+      "date": "2026-06-30",
+      "programs": [
+        "nave_core",
+        "nave_governance",
+        "nave_execution"
+      ],
+      "features": [
+        "fee_free_dao_formation",
+        "nave_stake_dao_creation_DaoStakeLock_escrow",
+        "dao_moonlighting_lifecycle_request_distribute_finalize_restore",
+        "governance_MoonlightRequest_MoonlightDistribution_proposal_types",
+        "global_config_nave_mint_pinned_devnet_replica",
+        "set_nave_mint_GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa",
+        "upgrade_tx_nave_core_3ou8MY7QnwS8XCM6fYaDazF81NLpXaNJCnsJrhssi243meR2sJKMKyceEDC5CUWkNb6cofQa4hcC7wJzJvDhf26J",
+        "upgrade_tx_nave_governance_3U45ijKnzogQK7dqtZs7zEPm4TUpPJwk3BpNC4gLV1oaMgkuwcn5mMFaqfgXHKmf9hdAPwsyqteNifruzjNAp9kT",
+        "upgrade_tx_nave_execution_4z7KvxMmQvXC8Z9jkEAXK2G5VnfenkJ6AXnjoZA4U6qtEz7hirV6wEq5q1fqMeA4arrmhf8F9DRGvFjhaGmBLwzq",
+        "set_nave_mint_tx_5Ka7Lf6YC1LtPon8NvnLMaJU28MKDBxSQRPfFf3oA1WedoAo5EFG3eGNDKjjMR3uiEkiZX8GGrCCNm5hoswrDW6"
+      ],
+      "slots": {
+        "nave_core": 472977276,
+        "nave_governance": 472977484,
+        "nave_execution": 472977812
+      }
+    },
+    {
+      "date": "2026-06-30",
+      "programs": [
+        "nave_core"
+      ],
+      "features": [
+        "phase2_audit_m8_position_mark_step_and_cooldown_bound",
+        "update_strategy_position_value_bounded_to_max_position_mark_step_bps_50pct_per_call",
+        "update_strategy_position_value_position_mark_cooldown_secs_300",
+        "upgrade_tx_nave_core_627RxPcNwozuUZrhKyqP78vQvX8mznbejkC4LXjdVShGzStPTNuKwoGUQWau4KtYpz2E8KsBUMZYZ6seEdjG83TK"
+      ],
+      "slots": {
+        "nave_core": 473129616
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "programs": [
+        "nave_core"
+      ],
+      "features": [
+        "marginfi_real_cpi_integration",
+        "marginfi_program_id_constant_devnet_A7vUDErNPCTt9qrB6SSM4F6GkxzUe9d8P3cXSmRg4eY4_mainnet_MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA",
+        "configure_marginfi_position_uses_classic_marginfi_account_initialize_fresh_keypair_ledger_not_pda_variant_for_max_devnet_compat",
+        "marginfi_deposit_marginfi_withdraw_lending_account_deposit_withdraw_cpi",
+        "max_slippage_bps_constitution_field_and_jupiter_swap_guardrail",
+        "set_max_slippage_bps_instruction",
+        "stake_dao_creation_structural_mainnet_feature_guard_against_unset_nave_mint",
+        "live_devnet_verified_marginfi_deposit_tx_4w8pe1ua2n1hF1ipcF63sWErZWL6WyJkLNCEKZw6cKv6RJgEEpWyT3e1b9kvNZkAnzmPASo2KxdPaCDjebfnCMXW",
+        "marginfi_withdraw_blocked_only_by_22mo_stale_devnet_oracle_env_limitation_not_a_code_defect",
+        "iterated_5_upgrades_during_live_devnet_verification_final_tx_below",
+        "guardrails_confirmed_live_since_this_upgrade_no_further_deploy_needed",
+        "live_verified_set_max_slippage_bps_tx_2cXzwDW8nU4ENuBsF1WPjqF9RDUGcd4nZzAzqPRCzWMayXg7AqeWztjziE8NB3G7vNUGmUCVsjyrtdrfbT9TvjSG",
+        "live_verified_jupiter_swap_max_slippage_guardrail_rejects_violating_min_amount_out_and_allows_compliant_one",
+        "live_verified_stake_dao_creation_unchanged_devnet_happy_path_tx_2FdwmD8qxpU9fzUQRTH5mUAvcuygAvCZoqP53Qx66taFdAUAG81aB3kQsWUHtp9VWjSFXpyjTdx68sG3xB7QbnU"
+      ],
+      "slots": {
+        "nave_core": 473191419
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "programs": [
+        "nave_core",
+        "nave_governance"
+      ],
+      "features": [
+        "audit_batch1_solana_critical_sol_c1_c2_c3",
+        "sol_c1_governance_transfer_recipient_bound_to_payload_recipient_native_sol_spl_nft",
+        "sol_c2_switch_voting_system_cpi_only_from_passed_nave_governance_proposal",
+        "nave_governance_execute_switch_voting_system_new_instruction",
+        "sol_c3_jupiter_swap_max_slippage_bps_max_single_swap_bps_default_seeded_at_dao_creation_150_2000_bps",
+        "sol_c3_jupiter_swap_slippage_and_single_swap_size_guardrails_now_unconditional",
+        "upgrade_tx_nave_core_2Y9pA87A4AEU6ToWN16dG4XHaMBQgGqfspMqhAfvSasxi4UygfzeCqhzrBhtPzPkRibzKnj1kwckMtNcB6p6eK8x",
+        "upgrade_tx_nave_governance_2Gh584Tc1ZpgnfzRWYeNmM4Z3jF6E8eFArmkph8Y6aqVyiA2LNSM2QjwFduTS2mfwjUvXBtGeBbj3ugHs6zgqBye"
+      ],
+      "slots": {
+        "nave_core": 473547614,
+        "nave_governance": 473548056
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "programs": [
+        "nave_core"
+      ],
+      "features": [
+        "audit_batch2_solana_high_sol_h1_h2_h4_h3partial",
+        "sol_h1_guardian_action_signer_set_snapshotted_at_open_no_live_config_neutralization",
+        "sol_h2_nullify_agent_guardian_m_of_n_gated_removes_unilateral_executive_freeze_new_guardian_action_type_5",
+        "sec_h4_jupiter_swap_route_account_containment_rejects_foreign_vault_owned_token_accounts",
+        "sol_h3_partial_jupiter_deposit_nav_staleness_and_agent_threshold_gates_full_pipeline_routing_residual",
+        "upgrade_tx_nave_core_4pUaZxQcvk3AXFgmMNSSKXT3iSZ3rostMEvu7r9jZLBoLXX5pf6Td6PkoN9msCUvwFGbLiUdTAYySXJVeE2Q7K4F"
+      ],
+      "slots": {
+        "nave_core": 473561679
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "programs": [
+        "nave_core",
+        "nave_governance",
+        "nave_execution"
+      ],
+      "features": [
+        "audit_batch3_solana_medium_sec_m2_m3_m4_fn_h4",
+        "sec_m2_stake_dao_creation_min_nave_floor_1_000_000_base_units_plus_dormant_optional_pyth_nave_usd_check_NAVE_USD_PYTH_FEED_ID_unset",
+        "sec_m3_mint_additional_tokens_persistent_TokenGenesisRecord_latch_blocks_burn_to_zero_regenesis",
+        "sec_m3_fix_latent_defect_mint_now_cpi_via_new_nave_core_mint_dao_token_dao_pda_signs_in_owning_program",
+        "sec_m4_record_bootstrap_usage_instructions_sysvar_top_level_caller_verification_cpi_only_from_nave_execution",
+        "fn_h4_finalize_proposal_no_quorum_closed_window_resolves_terminal_Failed_escrows_releasable",
+        "upgrade_tx_nave_core_G3RQPDjBTwzmR3k4v3brJ7TNKf4ABbHK5uz685Vn7RCTuw8kRTpyqcGsb7RxtGdjvQEySEUvRepbPRkTofZcwHW",
+        "upgrade_tx_nave_governance_5UmN6DUneMP82hjvfErpeNxPyGsSCZ3faQcYR7GCHhKBGFfcBvwEg5kiLkUP6wMsgddUvFfgMaGSDYY4SZw1cDGt",
+        "upgrade_tx_nave_execution_3ML4N1YJWpAXWBZooo9PNwhzRmcR1PBFSa5DF8nhjvc9Jmm3fXNypBm5B9VhLDGEA59jJ1RdQEtWUjeZYNP7dZcV"
+      ],
+      "slots": {
+        "nave_core": 473589737,
+        "nave_governance": 473589961,
+        "nave_execution": 473590396
+      }
+    },
+    {
+      "date": "2026-07-06",
+      "programs": [
+        "nave_bridge",
+        "nave_staking"
+      ],
+      "features": [
+        "NEW_PROGRAM_nave_bridge_Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6_hardened_single_signature_bridge",
+        "NEW_PROGRAM_nave_staking_AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf_central_reward_pool",
+        "lock_embeds_evm_recipient_in_instruction_data_one_signature_no_offchain_recipient_message",
+        "fee_2_5pct_on_top_split_1pct_staking_1pct_protocol_0_5pct_burn_resolved_on_solana_both_directions",
+        "release_relayer_only_pause_per_tx_cap_rolling_daily_cap_ProcessedRelease_replay_pda",
+        "two_step_ownership_handoff_multisig_ready",
+        "masterchef_acc_reward_per_share_staking_with_reward_vault_as_bridge_staking_fee_destination",
+        "deploy_tx_nave_bridge_oEM6t1Nbwy9XeJ9LroYRUveoEoLsMJLxv1KbX5eyApZxWkxAasT6sZ3EzwGrUPzjBeZHBswA4M6NgC4KtUDAoN4",
+        "deploy_tx_nave_staking_4u5LWBCxzKV8jj3eiYWEUhpPAB99XCu5NV1CreaAGbuXp9BCUNUGfNqYLbBjp5qc8NiNbkfeNZBtAqRo5jLgxNas",
+        "initialize_config_tx_5zTuJhofh56u5hP2YNwEV2pmHRHxeyzH1dBCMyNLwzeGE7otVHkhweBMNUVTW84eGs5hNTsxqBNoiLZoxztXBccT",
+        "live_devnet_smoke_lock_tx_4ztg1bwB8hy4n85r4g9iNZyY2PEkLxGXrf5c7ryFBNKfBkiztR4NHAiqyq5Zbnb1snMRvSVLhMA85Zg2LajftjN5_exact_fee_split_asserted",
+        "live_devnet_smoke_release_tx_64h64HrzWUz1z1sU2mXYpcckzZjFuVGKnE6uKPKY2eeojY4RntjhFQaMgSN4TpdKGAtgzLy4K2bwsA8An7ADRtWi_replay_rejected"
+      ],
+      "slots": {
+        "nave_bridge": 474456623,
+        "nave_staking": 474456670
+      }
+    },
+    {
+      "date": "2026-07-06",
+      "programs": [
+        "nave_bridge",
+        "nave_staking"
+      ],
+      "features": [
+        "security_review_remediation_hardened_bridge",
+        "sec_high_nave_staking_persist_UserStake_bump_on_stake_prevents_unstake_claim_bricking_verified_live_devnet",
+        "sec_high_initialize_config_and_initialize_pool_gated_to_program_upgrade_authority_via_ProgramData_prevents_init_frontrun_race",
+        "sec_med_documented_rolling_daily_cap_2x_boundary_and_per_chain_supplyCap_stacking_in_docs_SECRETS_md",
+        "in_place_upgrade_ids_preserved_authority_unchanged_EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+        "upgrade_tx_nave_bridge_5GCuuRLkv4zNGijrorhynUSmoV2esnL3fqryUvXwCREmhDcUUSkZje81fcuZ2LWwvYGxgF5Vv6LCpzJKX6yRKMf8",
+        "upgrade_tx_nave_staking_2G7BGcUdqfAtVC67u1vo6gqScwjgzpVrACLzeiE9FteUu8udyVQioVCJ1WmZGnv3K7S42Qdnzvxmh25n1mbp1w6T",
+        "live_devnet_staking_smoke_stake_tx_3c49Yoh2uXJspZTHvMhPqPwni9XBxuNjhg84H6xyeUa11RN3yf5fySFh9S6TRyAzydazoPfvD9dFMrFyhqAYar2w_unstake_tx_46Vco6LFhtTB875Txy47CarbALEBYwG6mp9YZ4ekJnhjohwDc1Lgovbo2i3uT19NYNpB5a1pJxpBBz1yKorVoFqf",
+        "evm_hardened_stack_testnet_deployed_wrappedNave_0x8412cba812593CC8f9Fb510Cd983f79EA2D5fc50_lockbox_0xdC2c4f3a61AeA908Da5768b63eF9BFF74D13ACf0_staking_0x72939965d3ebb3D13be7C853B6DB6B19150c35b3_sepolia_and_base_sepolia"
+      ],
+      "slots": {
+        "nave_bridge": 474459000,
+        "nave_staking": 474459050
+      }
+    },
+    {
+      "date": "2026-07-06",
+      "programs": [
+        "nave_staking"
+      ],
+      "features": [
+        "staking_apy_drip_emission_rolling_365d_window",
+        "StakePool_reserved_carved_reward_rate_u128_period_finish_last_update_time_reward_duration_size_unchanged_299",
+        "sync_pool_replaced_with_update_pool_time_drip_plus_roll_in_new_rewards_synthetix_rolling_reset",
+        "new_owner_ixs_set_reward_duration_and_one_time_init_reward_schedule",
+        "in_place_upgrade_id_preserved_authority_unchanged_EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+        "upgrade_tx_nave_staking_38QSK2QGvypU7mainkC1HzUfK9i6RFW44MXJa757srGMY9KxFpgoKqQcF6dA71ruFcXgGA2msmjxF5FKUM1qKMbm",
+        "init_reward_schedule_tx_5bBnKNYw3pDg1nAmfewsKnTw6zK2NDVK1sLeyZB9Kw1nipYv8deMAFpSwd1VpHz8CuUspta4sfh4j4H4eAHmVe59_reward_duration_31536000s",
+        "staking_fee_collector_created_7HP36mTiamJDqF1rAHkWevKyw1jPy9Xw5pYg7YKFz1T_tx_5SbkVh1ULrPmH2nbGXGoixQKfwk4f6rgUr8sxAYv8fzPEmdnPRwPTgX2MgM4qfNM1bsivo7V7ToA1MSWGmmVWvKt",
+        "bridge_set_config_staking_pool_owner_repointed_to_relayer_wallet_tx_2MAm4sZvokziHkKsKC9v5qaQVV5MXttTGg64gdpgMcHpdHpWd37FxKhkuE4pmJCirpCjNNcBw45cteuAnpNuWJBx",
+        "buffers_reclaimed_post_upgrade"
+      ],
+      "slots": {
+        "nave_staking": 474485880
+      }
+    },
+    {
+      "date": "2026-07-07",
+      "programs": [
+        "nave_bridge"
+      ],
+      "features": [
+        "audit_P6_processed_release_pda_seed_now_includes_source_chain_id_u64_le_no_cross_chain_message_id_collision",
+        "off_chain_derivations_updated_in_lockstep_signer_service_bridgePrograms_bridgeRelayer_bridgePrograms_test_and_bridge_smoke_devnet_script",
+        "constants_rs_doc_comment_corrected_to_match_seed",
+        "in_place_upgrade_id_preserved_authority_unchanged_EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+        "programdata_extended_40000_bytes_new_data_length_404800",
+        "upgrade_tx_nave_bridge_2VcyCf4NYJ7aCspuh78VLnLYuzgV7exA99CixDmDFuaoubpoJD2EhzbXk3imzMEBj5c8V4GE2LXW4rDPy7TvMdDE",
+        "onchain_executable_sha256_8bbd1eec8c509acaf71fe174a42b32d02ca147808bd8e6e31e079b201789cf3e_matches_local_build",
+        "live_devnet_bridge_smoke_lock_tx_RHsedEenH1PHkmnw2Bf1qKDDgs3D8yFYM6353juuEU5nmf9vAaThZLghjRne4rUN4oAFyG4sXrsHURsKnNSPwvJ_release_tx_5FtDCA5E3VBqrajh23sLeAJPowUKaQoYq2CUcu9A4C4Av43P6Cpb2jVTF1e6TUatbxsnXoguCVPGHco8WNhpB37e_replay_rejected",
+        "dangling_buffer_5FJCt7HutTb4Jcr9epNe1op4trKxJkdKi1YVQH7GMDBD_closed_rent_reclaimed"
+      ],
+      "slots": {
+        "nave_bridge": 474625556
+      }
+    },
+    {
+      "date": "2026-07-26",
+      "programs": [
+        "nave_governance"
+      ],
+      "features": [
+        "permission_proposal_guardian_set_parity_with_evm_executePermissionProposal",
+        "guardian_config_governance_path_aligned_with_nave_core_bootstrap_model",
+        "in_place_upgrade_id_preserved_authority_unchanged_EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+        "upgrade_tx_nave_governance_5HxFomY5KeYKRgcrN3errQnjFmbp1jukhQzbwKcZLhLmwr4AacAkWjWuWJDk1Y846WTZYPfcAXADXyEsdBGQtkSB"
+      ],
+      "slots": {
+        "nave_governance": 479137553
+      }
+    },
+    {
+      "date": "2026-07-26",
+      "programs": [
+        "nave_core"
+      ],
+      "features": [
+        "guardian_config_update_one_shot_founder_bootstrap_instruction",
+        "guardian_config_governance_execute_path_parity",
+        "in_place_upgrade_id_preserved_authority_unchanged_EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+        "programdata_extended_to_1782720_bytes",
+        "upgrade_tx_nave_core_4T7dgefoawH681dWgcNJmDQwtJ3vA9dhLfhvoiT7GamGHpYbSry7hG2C6DwTGdvoZUc9EyfLKXz2omJmgr8YgHCT",
+        "buffers_reclaimed_post_upgrade"
+      ],
+      "slots": {
+        "nave_core": 479151224
+      }
+    }
+  ],
+  "bridgeV2": {
+    "description": "Hardened single-signature bridge: recipient embedded on-chain, 2.5% on-top fee split 1% staking / 1% protocol / 0.5% burn resolved on Solana, caps + pause + replay guards.",
+    "bridgeProgram": "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6",
+    "stakingProgram": "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf",
+    "bridgeConfig": "B7AEEMHQNvsiPGeKuEFWXhCPnexouXS1HuL6xRF8KLY7",
+    "custody": "Cww4xttTeD1qR6XVpSRZ5qitQmkJP8p2Tf2HUNdg2AmF",
+    "custodyAuthority": "8d7Do6DWyueT72EWkSXTUHJEapX9HkZpXkuWijsTtrp3",
+    "stakePool": "ErPMXb4Z5yGzgsdh42i5MkLxWUrgL7b5KRoQC6qsEfxt",
+    "poolAuthority": "5hyY47WbD9CodgMpZZtoR6kQ6aupQiorPcRmYBmAFDEo",
+    "stakeVault": "9xpDBgUDRVXL5W1j5kFZmoojqyXPWZSKxNVQ6Dxuk4jw",
+    "rewardVault": "ERC6WdtvAieWNC1aEfm7Nu4sQMUPWaYex4GLW4CtCwCW",
+    "protocolWallet": "6N5JiWP2zF6VXhG6hwgYEYhxBEARAV5P6WRgfYb2zskC",
+    "protocolFeeAccount": "EyEXW3YkjeVxsJg6CQKytbxeVP5PAupN2cZh6j6c4v4j",
+    "owner": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+    "relayer": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+    "feeBps": 250,
+    "stakingBps": 100,
+    "protocolBps": 100,
+    "burnBps": 50,
+    "perTxCap": "1000000000",
+    "dailyCap": "10000000000",
+    "initializedAt": "2026-07-06T21:01:11.904Z",
+    "stakingCollector": "7HP36mTiamJDqF1rAHkWevKyw1jPy9Xw5pYg7YKFz1T",
+    "stakingPoolOwner": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+    "stakingCollectorNote": "Neutral relayer-owned NAVE token account (dedicated keypair, NOT the wallet ATA). Destination of the bridge's 1% staking leg; drained by the signer-service staking mirror."
+  }
+}

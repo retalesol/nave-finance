@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Lockfiles
+bun.lock
+
+# Vite
+.vite
+
+# Build output
+dist
+
+# Cache
+cache
+test-results/
+
+# OS files
+.DS_Store
+
+# Local env (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+!.env.mainnet.cutover.example
+.vercel
+supabase/.temp/
+
+# Local resumable agentic E2E state lives under test-results/.
+
+# Local RPC endpoints rule contains a live API key (never commit)
+.cursor/rules/rpc-endpoints.mdc
+
+# Local Solana keypairs (never commit)
+wallets/
+wallet/
+
+# Private operator notes (redemption plan, Safe commands). Never commit.
+ops/private/

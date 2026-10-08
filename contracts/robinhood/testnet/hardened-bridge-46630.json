@@ -1,0 +1,16 @@
+{
+  "chainId": 46630,
+  "dailyCap": 25000000000,
+  "intendedOwner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+  "naveBridge": "0x3aEB011526a6fC6f88a4068094CBA214F3d95B63",
+  "naveBridgeImplementation": "0x2d1D4Da652877e912bd455679C7b091cE905e054",
+  "naveStaking": "0x4A4B79957C758b82EdEa964c48Cb3b19286a3167",
+  "naveStakingImplementation": "0xB4F75D3A8b1baEfF96fB886750FD3ac4EfEc5612",
+  "owner": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+  "perTxCap": 1000000000,
+  "proxyPattern": "uups-singleton+uups-dao-consent",
+  "relayer": "0x6695C652a79329658440CDAf53aB640F95D5E06D",
+  "supplyCap": 100000000000,
+  "wrappedNave": "0x7860FF876b49a5A992a7F3a4a6043ea57f17eD96",
+  "wrappedNaveImplementation": "0x5Cfb00D412a4963b318e9706EB055C706B44cfF6"
+}

@@ -1,0 +1,22 @@
+{
+  "chainId": 8453,
+  "dailyCap": 25000000000,
+  "intendedOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+  "naveBridge": "0xB1d76609D97382c64e130DBfdF4506FFce141268",
+  "naveBridgeImplementation": "0xf9A5524C008418c38df5F5a7583a6983b199E0ce",
+  "naveStaking": "0x0b4f21E42419F550589D9184d0a60f2FA62a11f5",
+  "naveStakingImplementation": "0x50e708e956551638ce1e85C89CF9e66A1cdE0103",
+  "owner": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+  "perTxCap": 1000000000,
+  "proxyPattern": "uups-singleton+uups-dao-consent",
+  "relayer": "0x745899B98CCd065Abf23010511eDa8a23094a6E7",
+  "supplyCap": 100000000000,
+  "wrappedNave": "0xE73dCcACbd5246C0616Ea19DC5186023D876a510",
+  "wrappedNaveImplementation": "0x2e114f14CdBE7f526492F22C966c82D11E6bB66C",
+  "stack": "v2-uups",
+  "status": "unused-parallel-wnave-do-not-wire",
+  "wireable": false,
+  "production": false,
+  "legacyV1Artifact": "hardened-bridge-v1-8453.json",
+  "note": "Accidentally deployed second wNAVE \u2014 do NOT point app/relayer here. Canonical wNAVE remains 0xFc04710C\u2026; v2 lockbox redeployed against that token."
+}

@@ -1,0 +1,17 @@
+---
+description: When changing Supabase schema or RPCs, apply migrations to the linked project in the same session—do not leave DDL as repo-only.
+globs: supabase/migrations/**/*.sql
+alwaysApply: true
+---
+
+# Supabase migrations: update and deploy end-to-end
+
+When you add or edit files under `supabase/migrations/` (or ship equivalent DDL):
+
+1. **Keep the repo file** as the source of truth (timestamped name, idempotent SQL where possible).
+2. **Deploy to the linked Supabase project in the same turn of work**—do not stop at “run this locally.”
+3. **Prefer MCP** (`user-supabase` → `apply_migration` for new DDL, or `execute_sql` when appropriate) so deployment is verified here.
+4. **CLI fallback** from repo root: `supabase db push` or `supabase migration up` when MCP is unavailable or the user’s project is not linked to MCP.
+6. When edge functions need **RPC URLs or `NAVE_INDEXER_SECRET`**, sync from the linked machine’s `.env.local` without prompting the user: `npm run secrets:sync-edge-rpc` (requires `supabase link` + `supabase login`). Only ask the user for values that are missing locally.
+
+If a migration fails, fix the SQL and re-apply; do not mark the task done with only a local file change.

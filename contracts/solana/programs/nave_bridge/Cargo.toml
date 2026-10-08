@@ -1,0 +1,24 @@
+[package]
+name = "nave_bridge"
+version = "0.1.0"
+description = "Nave cross-chain bridge program (NAVE <-> wNAVE lock/mint custody + fee split)"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "nave_bridge"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "anchor-spl/token", "anchor-spl/associated_token"]
+default = []
+# Selects mainnet-only constants (currently none diverge). Kept for parity with
+# the other programs' build matrix so `--features mainnet` is always valid.
+mainnet = []
+
+[dependencies]
+anchor-lang = { version = "=0.32.1", features = ["init-if-needed"] }
+anchor-spl = { version = "=0.32.1", features = ["token", "associated_token"] }

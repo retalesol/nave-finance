@@ -1,0 +1,41 @@
+{
+  "cluster": "devnet",
+  "rpc": "${SOLANA_RPC_URL}",
+  "createdAt": "2026-05-31T04:37:26.494Z",
+  "founder": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+  "daoId": 13,
+  "slug": "nave-gate-1780202208",
+  "name": "Nave Gate DAO",
+  "governanceType": "token",
+  "reviewWindowSecs": 120,
+  "addresses": {
+    "daoRegistry": "AqphaW7erQbFqiRhG6L7xV4LKoRLdBkkxGeWsqA9c6MM",
+    "globalConfig": "6mhwhFzRX7n8S4Fjj5wj1DLaQaGADoQG3jE5vFtqDa48",
+    "vaultAuthority": "5utZ9tcRGCEMNqf6M1BJRtmwj5ZmgMcdiDCr6f3cAD1h",
+    "treasuryVault": "2fJe15hGUXjzySK37CBmQobWriLZVmJeZUz6AP8VeXSa",
+    "vaultMint": "Fy4MhtNyERUMhj9XEUkT3NCXucCV9YWJzypjwFaVqq4Z",
+    "vaultTokenAccount": "8WDeoFdQnppe9eFuiELw8hjexeRA5CHuoTBCNHKBxmMa",
+    "constitution": "2iwaQFZ9JG5A2RhXdFFHK4P1d1Eo5S7FoWWcm2M62GuJ",
+    "agentSet": "7LbSmXrnpcPZcpAAaBiiC3qQ9TsUcrWPk3MeJkXYVvBR",
+    "guardianConfig": "3qPtaWKhURKApX6ySy9esxiCrAj6fu98fPsWhkVpYRsx",
+    "tokenRegistry": "7ZQQuCn8Mq5yUFC6ZnKesVFEXFbc6kYCi7Pnc3F2sV1A",
+    "feeConfig": "8N3xdmXf1uGegD2wssmUyFqc83CcKuL8AaiEoZ9qoMSK",
+    "strategyPosition": "37sY162n9WxNV7whrLkSJgDtv9VyRac7JJdBs4xHYXSd",
+    "strategyEscrow": "J2Mv5QVm7kEyd24Z6Bk8zMT5RjWueBnXvvgWDs58cFwY",
+    "proposal": "EVt1oDqFLbVNZ1yHuMTjrjM3cgkN4tYmfDY9XP9yZmZ5",
+    "executionRequest": "FX9gDSXkeRfgRrhqehCbm9iJTx4BpA3owT2Mo4TmtyQS"
+  },
+  "strategy": {
+    "protocol": "kamino",
+    "adapterProgram": "B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD",
+    "amountBaseUnits": "10000000000",
+    "payloadHashHex": "e1cb9401fb85c4cf0af3a5cba6b9bb9cfcb287d4e7b2a3031b773ea8c121e6c6"
+  },
+  "agents": {
+    "executive": "CSwnQLzcKDcRrknXnXwioWkkDbExH6xAzK7pDE1Loqbg",
+    "financial": "9bz8hz93nKthh5Hs2wTRxGxXdrZrgCaxWwgPgGUM313S",
+    "oversight": "B9ennWkac4pEuYo62eupvGG2WZEAxsQi4zprH6VskrYz",
+    "operational": "ApikAJKh4wHUFcTo2c3rcix7NPHrdvc3zuxJojGUcaXv"
+  },
+  "voter": "BxzZPiATRx7iLL44qxpNsAjDTAWz7uehM7w4gDFad4rL"
+}

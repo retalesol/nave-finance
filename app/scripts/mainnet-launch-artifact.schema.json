@@ -1,0 +1,464 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nave Mainnet Launch Artifact",
+  "type": "object",
+  "required": [
+    "generatedAt",
+    "gitCommit",
+    "network",
+    "rpcUrl",
+    "programs",
+    "authorities",
+    "supabase",
+    "webhook",
+    "checks"
+  ],
+  "properties": {
+    "generatedAt": {
+      "type": "string"
+    },
+    "gitCommit": {
+      "type": "string"
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "mainnet-beta"
+      ]
+    },
+    "rpcUrl": {
+      "type": "string"
+    },
+    "programs": {
+      "type": "object",
+      "required": [
+        "nave_core",
+        "nave_governance",
+        "nave_execution",
+        "nave_jito_adapter",
+        "nave_kamino_adapter",
+        "nave_marginfi_adapter"
+      ],
+      "properties": {
+        "nave_core": {
+          "type": "string"
+        },
+        "nave_governance": {
+          "type": "string"
+        },
+        "nave_execution": {
+          "type": "string"
+        },
+        "nave_jito_adapter": {
+          "type": "string"
+        },
+        "nave_kamino_adapter": {
+          "type": "string"
+        },
+        "nave_marginfi_adapter": {
+          "type": "string"
+        }
+      }
+    },
+    "authorities": {
+      "type": "object",
+      "required": [
+        "expectedMultisig",
+        "verified"
+      ],
+      "properties": {
+        "expectedMultisig": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "supabase": {
+      "type": "object",
+      "required": [
+        "projectRef",
+        "url"
+      ],
+      "properties": {
+        "projectRef": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "webhook": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "contractsPreflight",
+        "contractsBuild",
+        "contractsDeploy",
+        "authorityHandoff",
+        "contractsVerify",
+        "supabaseMigrations",
+        "functionsDeploy",
+        "webhookRegister",
+        "betaGoNoGo",
+        "e2eGate"
+      ],
+      "properties": {
+        "contractsPreflight": {
+          "type": "boolean"
+        },
+        "contractsBuild": {
+          "type": "boolean"
+        },
+        "contractsDeploy": {
+          "type": "boolean"
+        },
+        "authorityHandoff": {
+          "type": "boolean"
+        },
+        "contractsVerify": {
+          "type": "boolean"
+        },
+        "supabaseMigrations": {
+          "type": "boolean"
+        },
+        "functionsDeploy": {
+          "type": "boolean"
+        },
+        "webhookRegister": {
+          "type": "boolean"
+        },
+        "betaGoNoGo": {
+          "type": "boolean"
+        },
+        "e2eGate": {
+          "type": "boolean"
+        },
+        "bridgeOwnershipVerified": {
+          "type": "boolean",
+          "description": "Audit P1: the contracts cutover verify phase confirmed the nave_bridge/nave_staking config owner is the Squads vault (or pending to it) AND distinct from the relayer hot key."
+        },
+        "bridgeOwnership": {
+          "type": "object",
+          "description": "Audit P1 evidence: decoded on-chain owner/pendingOwner/relayer of the bridge + staking config accounts at verify time.",
+          "properties": {
+            "bridge": {
+              "type": "object",
+              "properties": {
+                "config": { "type": "string" },
+                "owner": { "type": "string" },
+                "pendingOwner": { "type": "string" },
+                "relayer": { "type": "string" }
+              }
+            },
+            "staking": {
+              "type": "object",
+              "properties": {
+                "pool": { "type": "string" },
+                "owner": { "type": "string" },
+                "pendingOwner": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentAutonomy": {
+      "type": "object",
+      "description": "Resolved agent-autonomy flag states at cutover time (staged behind flags; deterministic guardrails + on-chain invariants remain the signing authority).",
+      "required": [
+        "model",
+        "guardrailsFailClosed",
+        "autoProposeEnabled",
+        "autoProposeWithdrawEnabled",
+        "compoundEnabled",
+        "compoundMinGainBps"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "guardrailsFailClosed": {
+          "type": "boolean",
+          "enum": [true]
+        },
+        "autoProposeEnabled": {
+          "type": "boolean"
+        },
+        "autoProposeWithdrawEnabled": {
+          "type": "boolean"
+        },
+        "compoundEnabled": {
+          "type": "boolean"
+        },
+        "compoundMinGainBps": {
+          "type": "number"
+        }
+      }
+    },
+    "feeModel": {
+      "type": "object",
+      "description": "Resolved fee-model posture at cutover (post-redesign): 8.5% performance skim on realized yield + discrete annual 0.65% management fee, both paid to the protocol revenue wallet. On-chain FeeConfig is authoritative.",
+      "required": [
+        "protocolRevenueWallet",
+        "performanceFeeBps",
+        "managementFeeBps",
+        "managementFeeIntervalMs",
+        "agentSol"
+      ],
+      "properties": {
+        "protocolRevenueWallet": {
+          "type": "string",
+          "minLength": 32
+        },
+        "performanceFeeBps": {
+          "type": "number"
+        },
+        "managementFeeBps": {
+          "type": "number"
+        },
+        "managementFeeIntervalMs": {
+          "type": "number"
+        },
+        "agentSol": {
+          "type": "object",
+          "required": ["request", "operate", "fillCeiling", "refillTrigger"],
+          "properties": {
+            "request": { "type": "number" },
+            "operate": { "type": "number" },
+            "fillCeiling": { "type": "number" },
+            "refillTrigger": { "type": "number" }
+          }
+        }
+      }
+    },
+    "creationFlow": {
+      "type": "object",
+      "description": "Unified DAO creation flow posture: creation is FEE-FREE (protocolFeeLamports = 0; initialize_dao charges nothing) and gated by the recoverable $99-of-NAVE stake. User treasury seed is a separate wizard input (wrapped to wSOL and deposited client-side, not a fee carve-out). treasurySeedLamports is 0 on all networks.",
+      "required": [
+        "protocolFeeLamports",
+        "treasurySeedLamports",
+        "totalCarveoutLamports",
+        "bootstrapImmediateFirstAction",
+        "reviewWindowSecs"
+      ],
+      "properties": {
+        "protocolFeeLamports": { "type": "number" },
+        "treasurySeedLamports": { "type": "number" },
+        "totalCarveoutLamports": { "type": "number" },
+        "treasurySeedAsset": { "type": "string" },
+        "bootstrapImmediateFirstAction": { "type": "boolean", "enum": [true] },
+        "bootstrapLatch": { "type": "string" },
+        "reviewWindowSecs": {
+          "type": "object",
+          "required": ["default", "min", "max"],
+          "properties": {
+            "default": { "type": "number" },
+            "min": { "type": "number" },
+            "max": { "type": "number" }
+          }
+        }
+      }
+    },
+    "naveStake": {
+      "type": "object",
+      "description": "Recoverable $99-of-NAVE DAO creation stake (replaces the formation fee). The mainnet NAVE mint is pinned on-chain by the contracts cutover via set_nave_mint; the staked amount derives from the off-chain price oracle. The moonlighting lifecycle releases the stake to an approved recipient on DAO shutdown.",
+      "properties": {
+        "mint": { "type": "string" },
+        "stakeTargetUsd": { "type": "number" },
+        "pinnedVia": { "type": "string" },
+        "amountSource": { "type": "string" },
+        "moonlighting": { "type": "string" }
+      }
+    },
+    "signerInfra": {
+      "type": "object",
+      "description": "Resolved signer infrastructure posture at cutover (fail-closed on mainnet): cluster, Upstash limiter presence, simulation guard, rate-limiter + circuit-breaker tunables. The signer fails closed (refuses to sign) when the Upstash limiter is unreachable.",
+      "required": [
+        "cluster",
+        "upstashConfigured",
+        "skipSimulation",
+        "ratePerAction",
+        "ratePerRole",
+        "rateGlobal",
+        "cbThreshold",
+        "cbWindowMs",
+        "cbCooldownMs"
+      ],
+      "properties": {
+        "cluster": {
+          "type": "string",
+          "enum": ["mainnet"]
+        },
+        "upstashConfigured": {
+          "type": "boolean",
+          "enum": [true]
+        },
+        "skipSimulation": {
+          "type": "boolean",
+          "enum": [false]
+        },
+        "ratePerAction": { "type": "number" },
+        "ratePerRole": { "type": "number" },
+        "rateGlobal": { "type": "number" },
+        "cbThreshold": { "type": "number" },
+        "cbWindowMs": { "type": "number" },
+        "cbCooldownMs": { "type": "number" }
+      }
+    },
+    "navFreshness": {
+      "type": "object",
+      "description": "NAV-freshness deploy guard posture. Strategy deploys hard-block on stale NAV (on-chain NAV_MAX_STALENESS_SECS=900); revalue_treasury must be fresh (<15 min) before execute.",
+      "required": ["maxNavAgeSeconds", "onchainMaxStalenessSecs", "vaultLastRevaluedOffset"],
+      "properties": {
+        "maxNavAgeSeconds": { "type": "number" },
+        "onchainMaxStalenessSecs": { "type": "number", "enum": [900] },
+        "vaultLastRevaluedOffset": { "type": "string" }
+      }
+    },
+    "jupiter": {
+      "type": "object",
+      "description": "Asserted mainnet Jupiter Lend program IDs (signer/edge assert the live program account matches these).",
+      "required": ["lendingProgramId", "liquidityProgramId"],
+      "properties": {
+        "lendingProgramId": { "type": "string" },
+        "liquidityProgramId": { "type": "string" }
+      }
+    },
+    "evm": {
+      "type": "object",
+      "description": "Resolved EVM (Ethereum + Base) posture at cutover. enabled=false for a Solana-only launch. When enabled, network must be \"mainnet\" and only Ethereum (1) + Base (8453) are in scope (no BSC/Polygon/Arbitrum).",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "network": { "type": "string", "enum": ["mainnet"] },
+        "protocolRevenueWallet": { "type": "string" },
+        "tokenFees": {
+          "type": "object",
+          "required": ["mintWei", "revokeRewardWei"],
+          "properties": {
+            "mintWei": { "type": "string" },
+            "revokeRewardWei": { "type": "string" }
+          }
+        },
+        "formationFee": {
+          "type": "object",
+          "description": "EVM creation is FEE-FREE (mirrors Solana): feeWei and treasurySeedWei are 0 on the mainnet path (the contracts EVM cutover enforces this). The recoverable $99-of-NAVE stake (naveStake below) is the creation gate.",
+          "properties": {
+            "feeWei": { "type": "string" },
+            "treasurySeedWei": { "type": "string" },
+            "feeFree": { "type": "boolean" }
+          }
+        },
+        "naveStake": {
+          "type": "object",
+          "description": "EVM wrapped-NAVE DAO creation stake wired via NaveProtocol.setNaveStakeConfig(token, requiredStake) + setDaoStake(module) on the contracts EVM cutover `--phase stake`. Empty token/requiredStake ⇒ creation stays fee-free with NO stake gate until the Safe configures it.",
+          "properties": {
+            "token": { "type": "string" },
+            "requiredStake": { "type": "string" },
+            "daoStakeModule": { "type": "string" },
+            "stakeTargetUsd": { "type": "number" }
+          }
+        },
+        "releaseGates": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["label", "passed"],
+            "properties": {
+              "label": { "type": "string" },
+              "passed": { "type": "boolean" }
+            }
+          }
+        },
+        "ethereum": {
+          "type": "object",
+          "properties": {
+            "chainId": { "type": "number", "enum": [1] },
+            "protocol": { "type": "string" },
+            "factory": { "type": "string" },
+            "oracle": { "type": "string" },
+            "safe": { "type": "string" },
+            "adapters": {
+              "type": "object",
+              "description": "Deployed strategy-adapter addresses on this chain (subset of aaveV3, compoundV3, balancer). Only adapters whose per-chain protocol addresses were supplied are deployed.",
+              "properties": {
+                "aaveV3": { "type": "string" },
+                "compoundV3": { "type": "string" },
+                "balancer": { "type": "string" }
+              }
+            }
+          }
+        },
+        "base": {
+          "type": "object",
+          "properties": {
+            "chainId": { "type": "number", "enum": [8453] },
+            "protocol": { "type": "string" },
+            "factory": { "type": "string" },
+            "oracle": { "type": "string" },
+            "safe": { "type": "string" },
+            "adapters": {
+              "type": "object",
+              "description": "Deployed strategy-adapter addresses on this chain (subset of aaveV3, compoundV3, balancer). Only adapters whose per-chain protocol addresses were supplied are deployed.",
+              "properties": {
+                "aaveV3": { "type": "string" },
+                "compoundV3": { "type": "string" },
+                "balancer": { "type": "string" }
+              }
+            }
+          }
+        },
+        "robinhood": {
+          "type": "object",
+          "description": "Robinhood Chain (Arbitrum Nitro L2) — BRIDGE/STAKE-ONLY: no protocol/factory/oracle/adapters, only the hardened bridge triple (empty strings until deployed/configured).",
+          "properties": {
+            "chainId": { "type": "number", "enum": [4663] },
+            "wrappedNave": { "type": "string" },
+            "bridgeLockbox": { "type": "string" },
+            "staking": { "type": "string" }
+          }
+        },
+        "verify": {
+          "type": "object",
+          "properties": {
+            "etherscan": { "type": "boolean" },
+            "basescan": { "type": "boolean" },
+            "robinhoodBlockscout": { "type": "boolean" }
+          }
+        },
+        "indexerRpc": {
+          "type": "object",
+          "properties": {
+            "ethereum": { "type": "boolean" },
+            "base": { "type": "boolean" },
+            "robinhood": { "type": "boolean" }
+          }
+        },
+        "evmMasterKekConfigured": { "type": "boolean" },
+        "abiPath": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

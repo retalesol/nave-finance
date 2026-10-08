@@ -1,0 +1,20 @@
+{
+  "authority": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+  "chainId": 8453,
+  "daoStake": "0xA744784e186c549E490fE1c11F29Bc0aCd2277fd",
+  "daoStakeImplementation": "0xE397b5e27Ae892101435fCB74E6Ed949efD46ef1",
+  "executionImpl": "0x2Ad59AB5374F7Acbe7208D2093493f457755Bb43",
+  "executionImplementation": "0x2Ad59AB5374F7Acbe7208D2093493f457755Bb43",
+  "factory": "0x280470c7275d630f1a9Fc1C406D4754D1f523Dbb",
+  "factoryImplementation": "0xc3aD8EddF2C380E546e425896E9B8F30b38FAEaF",
+  "governorImpl": "0x6297A681CBb13191d15DE36EA782f314Db5e670D",
+  "governorImplementation": "0x6297A681CBb13191d15DE36EA782f314Db5e670D",
+  "oracle": "0x6D9d565320a75998862eE8e677A68bA74F6A7d66",
+  "oracleImplementation": "0xa11f5de1f18a3C820b35cBafE06DCfC4Ad3fdfF7",
+  "protocol": "0x377D976A31871060B4059fA244b76809A3Cc0C90",
+  "protocolImplementation": "0x84FB240bCFF05100CB13438790Ca4d481f0D5A70",
+  "proxyPattern": "uups-singleton+uups-dao-consent",
+  "tokenDeployer": "0x3a0Ef5de726e7056FA863C673D30Af06C58f80ce",
+  "treasuryImpl": "0x9c223F31CD736baFABF5BB1F75a7D6C8d8Fc3cb3",
+  "treasuryImplementation": "0x9c223F31CD736baFABF5BB1F75a7D6C8d8Fc3cb3"
+}

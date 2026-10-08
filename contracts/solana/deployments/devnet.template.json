@@ -1,0 +1,5 @@
+{
+  "cluster": "devnet",
+  "rpc": "${SOLANA_RPC_URL}",
+  "note": "Run ./instant-deploy.sh to populate this file after deployment."
+}

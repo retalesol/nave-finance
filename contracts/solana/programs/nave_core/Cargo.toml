@@ -1,0 +1,26 @@
+[package]
+name = "nave_core"
+version = "0.1.0"
+description = "Nave Finance core protocol program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "nave_core"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "anchor-spl/token", "anchor-spl/associated_token"]
+default = []
+# Selects mainnet external program ids (currently the Jupiter Lend program).
+# Devnet ids are used by default; build with `--features mainnet` for mainnet.
+mainnet = []
+
+[dependencies]
+anchor-lang = { version = "=0.32.1", features = ["init-if-needed"] }
+anchor-spl = { version = "=0.32.1", features = ["token", "associated_token"] }
+pyth-solana-receiver-sdk = "1.2.0"
+sha2 = "0.10"

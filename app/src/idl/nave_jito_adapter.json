@@ -1,0 +1,1360 @@
+{
+  "address": "E2fviyVGWF8iEwZK2M8ysrd63DM5yKxu6nuBMzjBQ2XT",
+  "metadata": {
+    "name": "nave_jito_adapter",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Nave Finance Jito strategy adapter"
+  },
+  "instructions": [
+    {
+      "name": "deposit_to_jito",
+      "discriminator": [
+        81,
+        229,
+        68,
+        253,
+        226,
+        9,
+        187,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "execution_authority"
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Asset mint deployed; keys the per-(protocol, mint) escrow + position."
+          ]
+        },
+        {
+          "name": "strategy_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  105,
+                  116,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "strategy_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  105,
+                  116,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "payer"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_from_jito",
+      "discriminator": [
+        134,
+        140,
+        86,
+        155,
+        84,
+        130,
+        5,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "execution_authority"
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Asset mint withdrawn; keys the per-(protocol, mint) escrow + position."
+          ]
+        },
+        {
+          "name": "strategy_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  105,
+                  116,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "strategy_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  105,
+                  116,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DaoRegistry",
+      "discriminator": [
+        182,
+        39,
+        16,
+        182,
+        109,
+        194,
+        206,
+        16
+      ]
+    },
+    {
+      "name": "StrategyPosition",
+      "discriminator": [
+        39,
+        177,
+        202,
+        35,
+        88,
+        177,
+        104,
+        129
+      ]
+    },
+    {
+      "name": "TreasuryVault",
+      "discriminator": [
+        86,
+        102,
+        19,
+        109,
+        56,
+        58,
+        144,
+        81
+      ]
+    },
+    {
+      "name": "VaultAuthority",
+      "discriminator": [
+        132,
+        34,
+        187,
+        202,
+        202,
+        195,
+        211,
+        53
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "JitoDepositEvent",
+      "discriminator": [
+        180,
+        234,
+        145,
+        40,
+        193,
+        11,
+        244,
+        231
+      ]
+    },
+    {
+      "name": "JitoWithdrawEvent",
+      "discriminator": [
+        178,
+        188,
+        37,
+        236,
+        176,
+        151,
+        22,
+        24
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorizedCaller",
+      "msg": "Unauthorized caller"
+    },
+    {
+      "code": 6001,
+      "name": "ProtocolNotApproved",
+      "msg": "Protocol not approved"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidAmount",
+      "msg": "Invalid amount"
+    },
+    {
+      "code": 6003,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6004,
+      "name": "InsufficientBalance",
+      "msg": "Insufficient balance"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidVaultAccount",
+      "msg": "Invalid vault token account"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidEscrowAccount",
+      "msg": "Invalid strategy escrow account"
+    }
+  ],
+  "types": [
+    {
+      "name": "DaoRegistry",
+      "docs": [
+        "Per-DAO registry and lifecycle state."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao_id",
+            "docs": [
+              "Monotonic DAO identifier."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "founder",
+            "docs": [
+              "DAO founder authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Fixed-size DAO name bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "name_len",
+            "docs": [
+              "Active name length."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "privacy_mode",
+            "docs": [
+              "Privacy mode (see PrivacyMode enum)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "frozen",
+            "docs": [
+              "Emergency freeze flag."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "agents_enabled",
+            "docs": [
+              "Whether agent approvals are enabled."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "proposal_count",
+            "docs": [
+              "Active proposal counter (governance-linked). Incremented on creation and",
+              "DECREMENTED by `archive_proposals`; used only for the",
+              "`MAX_PROPOSALS_PER_DAO` active-limit enforcement, never as a PDA seed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "archived_proposals",
+            "docs": [
+              "Cumulative archived proposals."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "docs": [
+              "Unix timestamp of last update."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "quorum_bps",
+            "docs": [
+              "Minimum participation for proposal passage (basis points of snapshot supply)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "governance_type",
+            "docs": [
+              "Active governance/voting model (see GovernanceType enum: 0 = Wallet, 1 = Token)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "voting_token",
+            "docs": [
+              "Designated voting token mint when governance_type == Token (default when none)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "next_proposal_index",
+            "docs": [
+              "Monotonic proposal index. Only ever INCREMENTS (on proposal creation);",
+              "`archive_proposals` never touches it. Used as the per-proposal PDA seed",
+              "(`PROPOSAL_SEED`) and `proposal_index` so an archived slot's index can",
+              "never be reused — which previously caused a PDA `init` collision because",
+              "the seed was derived from the decremented `proposal_count`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bootstrap_used",
+            "docs": [
+              "One-time founder bootstrap latch. `false` at creation; flipped to `true`",
+              "the first time the founder creates a bootstrap execution request (which",
+              "snapshots `review_window = 0` for immediate execution). Once set it can",
+              "never be reset, so the zero-review-window path is available exactly once",
+              "per DAO. Mutated only by `record_bootstrap_usage` (CPI from",
+              "`nave_execution`). Appended at the END of the layout to preserve the byte",
+              "offsets consumed by off-chain decoders / IDL clients."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JitoDepositEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JitoWithdrawEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StrategyPosition",
+      "docs": [
+        "On-chain strategy position tracking per (protocol, asset mint). A DAO can",
+        "hold positions in the same protocol for different mints, and the same mint",
+        "across different protocols, so positions are keyed by both."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Asset mint this position deploys (matches the funding `TreasuryAsset`)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "position_token_account",
+            "docs": [
+              "Receipt-token account holding protocol receipt tokens (cTokens / poolSOL)",
+              "for this position; `Pubkey::default()` when the position is escrow-only."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "ext_market",
+            "docs": [
+              "Approved external venue/market for this position (Kamino lending market,",
+              "or Jito SPL stake pool). Bound at init; every protocol CPI must target it.",
+              "`Pubkey::default()` until a real on-chain integration is configured."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "ext_reserve",
+            "docs": [
+              "Approved external reserve/pool account (Kamino reserve, or Jito stake pool",
+              "— same as `ext_market` for venues without a separate reserve). Bound at",
+              "init; prevents an agent from misrouting escrow into an arbitrary reserve."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "protocol_id",
+            "docs": [
+              "Fixed-size protocol identifier."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "protocol_id_len",
+            "docs": [
+              "Active protocol id length."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "deposited_amount",
+            "docs": [
+              "Deposited principal amount (in `mint` base units)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "current_value",
+            "docs": [
+              "Current marked value (in `mint` base units)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_updated",
+            "docs": [
+              "Last update timestamp."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryVault",
+      "docs": [
+        "Portfolio-level treasury accounting. With the multi-asset redesign the",
+        "USD-denominated aggregates (`current_nav`, `high_water_mark`,",
+        "`deployed_capital`, `total_deposited`, `total_withdrawn`) are stored in",
+        "micro-USD (`USD_SCALE` = 1e6) and recomputed by `revalue_treasury` from each",
+        "per-mint `TreasuryAsset` priced via Pyth. The legacy single-mint",
+        "`vault_token_account` is retained only for migration of pre-multi-asset DAOs",
+        "and is otherwise unused once `asset_count > 0`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_token_account",
+            "docs": [
+              "Legacy single-mint vault token account (migration only)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_deposited",
+            "docs": [
+              "Cumulative deposits in micro-USD."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_withdrawn",
+            "docs": [
+              "Cumulative withdrawals in micro-USD."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "current_nav",
+            "docs": [
+              "Current portfolio net asset value in micro-USD (idle + deployed)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "high_water_mark",
+            "docs": [
+              "High-water mark for performance fees, in micro-USD."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_management_fee_at",
+            "docs": [
+              "Last management fee collection timestamp."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_performance_fee_at",
+            "docs": [
+              "Last performance fee collection timestamp."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "deployed_capital",
+            "docs": [
+              "Capital currently deployed to strategy positions, in micro-USD."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "asset_count",
+            "docs": [
+              "Number of registered treasury assets (`TreasuryAsset` records)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "last_revalued_at",
+            "docs": [
+              "Unix timestamp of the last `revalue_treasury`. `0` means NAV has never",
+              "been computed. Executable strategy deploys hard-block when this is `0`",
+              "or older than the configured staleness window, so the USD-denominated",
+              "allocation / deployment / reserve caps are always enforced against a",
+              "fresh NAV rather than a stale snapshot."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultAuthority",
+      "docs": [
+        "Vault authority PDA used as CPI signer for treasury operations."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

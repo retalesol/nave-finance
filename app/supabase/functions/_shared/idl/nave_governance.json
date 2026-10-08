@@ -1,0 +1,3738 @@
+{
+  "address": "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M",
+  "metadata": {
+    "name": "nave_governance",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Nave Finance governance program"
+  },
+  "instructions": [
+    {
+      "name": "cancel_proposal",
+      "discriminator": [
+        106,
+        74,
+        128,
+        146,
+        19,
+        65,
+        39,
+        23
+      ],
+      "accounts": [
+        {
+          "name": "proposer",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cast_vote_wallet",
+      "discriminator": [
+        13,
+        252,
+        37,
+        252,
+        184,
+        166,
+        21,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "voter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        },
+        {
+          "name": "vote_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "voter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "choice",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "create_proposal",
+      "discriminator": [
+        132,
+        116,
+        68,
+        174,
+        216,
+        160,
+        198,
+        22
+      ],
+      "accounts": [
+        {
+          "name": "proposer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.next_proposal_index",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_token_mint"
+        },
+        {
+          "name": "token_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "nave_core_program",
+          "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "governance_program",
+          "address": "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "CreateProposalParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "execute_treasury_transfer_native_sol",
+      "docs": [
+        "Execute a passed native-SOL transfer proposal (payload mint = 32 zero bytes)."
+      ],
+      "discriminator": [
+        57,
+        18,
+        0,
+        108,
+        98,
+        23,
+        116,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "executor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.proposal_index",
+                "account": "Proposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "nave_core_program",
+          "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_treasury_transfer_spl",
+      "docs": [
+        "Execute a passed SPL transfer proposal (registered treasury asset mint)."
+      ],
+      "discriminator": [
+        217,
+        207,
+        143,
+        55,
+        13,
+        174,
+        21,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "executor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.proposal_index",
+                "account": "Proposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "asset_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121,
+                  95,
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "asset_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "recipient"
+        },
+        {
+          "name": "recipient_token",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "recipient"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "nave_core_program",
+          "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalize_proposal",
+      "discriminator": [
+        23,
+        68,
+        51,
+        167,
+        109,
+        173,
+        187,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "guardian_config",
+          "docs": [
+            "Used for early-finalization eligible-voter calculation in wallet-governance",
+            "DAOs (where snapshot_supply == 0). For token governance, this account is",
+            "still required but guardian_config.wallet_count is not used."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "lock_tokens_and_vote",
+      "discriminator": [
+        244,
+        255,
+        209,
+        86,
+        167,
+        106,
+        153,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "voter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        },
+        {
+          "name": "dao_token_mint"
+        },
+        {
+          "name": "voter_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow_token_account",
+          "writable": true
+        },
+        {
+          "name": "vote_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "voter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vote_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "voter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "choice",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "mint_additional_tokens",
+      "discriminator": [
+        145,
+        232,
+        211,
+        225,
+        5,
+        19,
+        26,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "The passed TokenMint proposal authorizing this mint. REQUIRED for every",
+            "post-genesis mint (audit M11) so a founder cannot mint outside a ratified",
+            "governance vote. It is omitted ONLY for the one-time genesis supply mint",
+            "(when the mint currently has zero supply and no governance exists yet).",
+            "Boxed to keep the large Proposal payload off the BPF stack."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "release_vote_escrow",
+      "discriminator": [
+        228,
+        119,
+        63,
+        32,
+        239,
+        52,
+        149,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "voter",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal"
+        },
+        {
+          "name": "vote_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "voter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_token_account",
+          "writable": true
+        },
+        {
+          "name": "voter_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AssetConfig",
+      "discriminator": [
+        57,
+        112,
+        247,
+        166,
+        247,
+        64,
+        140,
+        23
+      ]
+    },
+    {
+      "name": "DaoRegistry",
+      "discriminator": [
+        182,
+        39,
+        16,
+        182,
+        109,
+        194,
+        206,
+        16
+      ]
+    },
+    {
+      "name": "GuardianConfig",
+      "discriminator": [
+        253,
+        92,
+        160,
+        221,
+        64,
+        253,
+        141,
+        121
+      ]
+    },
+    {
+      "name": "NaveGlobalConfig",
+      "discriminator": [
+        20,
+        11,
+        3,
+        106,
+        198,
+        98,
+        48,
+        105
+      ]
+    },
+    {
+      "name": "Proposal",
+      "discriminator": [
+        26,
+        94,
+        189,
+        187,
+        116,
+        136,
+        53,
+        33
+      ]
+    },
+    {
+      "name": "TokenRegistry",
+      "discriminator": [
+        227,
+        255,
+        152,
+        118,
+        84,
+        200,
+        145,
+        120
+      ]
+    },
+    {
+      "name": "TreasuryAsset",
+      "discriminator": [
+        255,
+        23,
+        38,
+        43,
+        200,
+        65,
+        202,
+        129
+      ]
+    },
+    {
+      "name": "VaultAuthority",
+      "discriminator": [
+        132,
+        34,
+        187,
+        202,
+        202,
+        195,
+        211,
+        53
+      ]
+    },
+    {
+      "name": "VoteEscrow",
+      "discriminator": [
+        242,
+        251,
+        110,
+        92,
+        198,
+        238,
+        144,
+        106
+      ]
+    },
+    {
+      "name": "VoteRecord",
+      "discriminator": [
+        112,
+        9,
+        123,
+        165,
+        234,
+        9,
+        157,
+        167
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AdditionalTokensMinted",
+      "discriminator": [
+        166,
+        188,
+        237,
+        101,
+        180,
+        61,
+        10,
+        249
+      ]
+    },
+    {
+      "name": "DaoTokenMinted",
+      "discriminator": [
+        195,
+        25,
+        172,
+        172,
+        59,
+        87,
+        93,
+        152
+      ]
+    },
+    {
+      "name": "ExecutionRequestQueued",
+      "discriminator": [
+        192,
+        237,
+        127,
+        162,
+        96,
+        180,
+        102,
+        120
+      ]
+    },
+    {
+      "name": "ProposalCancelled",
+      "discriminator": [
+        253,
+        59,
+        104,
+        46,
+        129,
+        78,
+        9,
+        14
+      ]
+    },
+    {
+      "name": "ProposalCreated",
+      "discriminator": [
+        186,
+        8,
+        160,
+        108,
+        81,
+        13,
+        51,
+        206
+      ]
+    },
+    {
+      "name": "ProposalFinalized",
+      "discriminator": [
+        159,
+        104,
+        210,
+        220,
+        86,
+        209,
+        61,
+        51
+      ]
+    },
+    {
+      "name": "TokenAuthorityRevoked",
+      "discriminator": [
+        54,
+        58,
+        122,
+        43,
+        92,
+        111,
+        225,
+        6
+      ]
+    },
+    {
+      "name": "TokenMetadataUpdated",
+      "discriminator": [
+        61,
+        64,
+        22,
+        85,
+        194,
+        80,
+        154,
+        40
+      ]
+    },
+    {
+      "name": "VoteCast",
+      "discriminator": [
+        39,
+        53,
+        195,
+        104,
+        188,
+        17,
+        225,
+        213
+      ]
+    },
+    {
+      "name": "VoteEscrowLocked",
+      "discriminator": [
+        180,
+        17,
+        68,
+        241,
+        96,
+        143,
+        2,
+        204
+      ]
+    },
+    {
+      "name": "VoteEscrowReleased",
+      "discriminator": [
+        127,
+        71,
+        222,
+        51,
+        86,
+        206,
+        115,
+        110
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "GlobalPaused",
+      "msg": "Global protocol is paused"
+    },
+    {
+      "code": 6001,
+      "name": "DaoFrozen",
+      "msg": "DAO is frozen"
+    },
+    {
+      "code": 6002,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6003,
+      "name": "DaoOwnershipMismatch",
+      "msg": "DAO ownership mismatch"
+    },
+    {
+      "code": 6004,
+      "name": "MaxProposalsReached",
+      "msg": "Max proposals reached"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidProposalType",
+      "msg": "Invalid proposal type"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidProposalStatus",
+      "msg": "Invalid proposal status"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidVoteChoice",
+      "msg": "Invalid vote choice"
+    },
+    {
+      "code": 6008,
+      "name": "ProposalNotActive",
+      "msg": "Proposal not active"
+    },
+    {
+      "code": 6009,
+      "name": "ProposalAlreadyFinalized",
+      "msg": "Proposal already finalized"
+    },
+    {
+      "code": 6010,
+      "name": "VotingPeriodEnded",
+      "msg": "Voting period ended"
+    },
+    {
+      "code": 6011,
+      "name": "VotingPeriodNotEnded",
+      "msg": "Voting period not ended"
+    },
+    {
+      "code": 6012,
+      "name": "AlreadyVoted",
+      "msg": "Already voted"
+    },
+    {
+      "code": 6013,
+      "name": "GuardianRequired",
+      "msg": "Guardian membership required for wallet voting"
+    },
+    {
+      "code": 6014,
+      "name": "TokenNotInRegistry",
+      "msg": "Token not in registry"
+    },
+    {
+      "code": 6015,
+      "name": "TokenRegistryFull",
+      "msg": "Token registry full"
+    },
+    {
+      "code": 6016,
+      "name": "AuthorityAlreadyRevoked",
+      "msg": "Token authority already revoked"
+    },
+    {
+      "code": 6017,
+      "name": "EscrowNotLocked",
+      "msg": "Escrow not locked"
+    },
+    {
+      "code": 6018,
+      "name": "EscrowStillLocked",
+      "msg": "Escrow still locked"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidTitleLength",
+      "msg": "Invalid title length"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidDescriptionLength",
+      "msg": "Invalid description length"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidPayloadLength",
+      "msg": "Invalid payload length"
+    },
+    {
+      "code": 6022,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6023,
+      "name": "InsufficientEscrowBalance",
+      "msg": "Insufficient escrow balance"
+    },
+    {
+      "code": 6024,
+      "name": "QuorumNotMet",
+      "msg": "Quorum not met"
+    },
+    {
+      "code": 6025,
+      "name": "TokenMintNotRegistered",
+      "msg": "Token mint not registered"
+    },
+    {
+      "code": 6026,
+      "name": "WrongGovernanceMode",
+      "msg": "Wrong governance mode for this voting method"
+    },
+    {
+      "code": 6027,
+      "name": "ProposalTypeNotImplemented",
+      "msg": "Proposal type has no execution path and cannot be created"
+    },
+    {
+      "code": 6028,
+      "name": "PayloadMismatch",
+      "msg": "Mint/destination/amount does not match the proposal payload"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidVotingPeriod",
+      "msg": "Voting period out of allowed bounds"
+    }
+  ],
+  "types": [
+    {
+      "name": "AdditionalTokensMinted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AssetConfig",
+      "docs": [
+        "Per-(dao, mint) configuration for a treasury-eligible asset. Governs how the",
+        "asset is valued in USD on-chain (Pyth feed + decimals) and how the agent",
+        "pipeline is allowed to route it (asset_kind). Distinct from `TokenRegistry`,",
+        "which tracks tokens the DAO itself *issues* rather than *holds*."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "SPL mint of the held asset."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "decimals",
+            "docs": [
+              "Mint decimals (cached for valuation math)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "pyth_feed_id",
+            "docs": [
+              "Pyth price-feed id (32-byte feed id, NOT a price account address). Used",
+              "with `get_price_no_older_than` to value the asset in USD. May be all",
+              "zeroes for stablecoins valued at a hard $1."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "is_stablecoin",
+            "docs": [
+              "Whether the asset is a USD-pegged stablecoin valued at exactly $1."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "asset_kind",
+            "docs": [
+              "`AssetKind` discriminant for protocol routing."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether the asset is currently enabled for deposits/deployment."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateProposalParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "name": "proposal_type",
+            "type": "u8"
+          },
+          {
+            "name": "voting_period_seconds",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DaoRegistry",
+      "docs": [
+        "Per-DAO registry and lifecycle state."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao_id",
+            "docs": [
+              "Monotonic DAO identifier."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "founder",
+            "docs": [
+              "DAO founder authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Fixed-size DAO name bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "name_len",
+            "docs": [
+              "Active name length."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "privacy_mode",
+            "docs": [
+              "Privacy mode (see PrivacyMode enum)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "frozen",
+            "docs": [
+              "Emergency freeze flag."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "agents_enabled",
+            "docs": [
+              "Whether agent approvals are enabled."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "proposal_count",
+            "docs": [
+              "Active proposal counter (governance-linked). Incremented on creation and",
+              "DECREMENTED by `archive_proposals`; used only for the",
+              "`MAX_PROPOSALS_PER_DAO` active-limit enforcement, never as a PDA seed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "archived_proposals",
+            "docs": [
+              "Cumulative archived proposals."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "docs": [
+              "Unix timestamp of last update."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "quorum_bps",
+            "docs": [
+              "Minimum participation for proposal passage (basis points of snapshot supply)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "governance_type",
+            "docs": [
+              "Active governance/voting model (see GovernanceType enum: 0 = Wallet, 1 = Token)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "voting_token",
+            "docs": [
+              "Designated voting token mint when governance_type == Token (default when none)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "next_proposal_index",
+            "docs": [
+              "Monotonic proposal index. Only ever INCREMENTS (on proposal creation);",
+              "`archive_proposals` never touches it. Used as the per-proposal PDA seed",
+              "(`PROPOSAL_SEED`) and `proposal_index` so an archived slot's index can",
+              "never be reused — which previously caused a PDA `init` collision because",
+              "the seed was derived from the decremented `proposal_count`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bootstrap_used",
+            "docs": [
+              "One-time founder bootstrap latch. `false` at creation; flipped to `true`",
+              "the first time the founder creates a bootstrap execution request (which",
+              "snapshots `review_window = 0` for immediate execution). Once set it can",
+              "never be reset, so the zero-review-window path is available exactly once",
+              "per DAO. Mutated only by `record_bootstrap_usage` (CPI from",
+              "`nave_execution`). Appended at the END of the layout to preserve the byte",
+              "offsets consumed by off-chain decoders / IDL clients."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DaoTokenMinted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExecutionRequestQueued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "payload_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianConfig",
+      "docs": [
+        "Guardian multisig configuration for a DAO."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Required signatures for guardian actions."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "wallet_count",
+            "docs": [
+              "Active guardian wallet count."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "wallets",
+            "docs": [
+              "Fixed-size guardian wallet list."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "NaveGlobalConfig",
+      "docs": [
+        "Global protocol configuration singleton."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Protocol admin authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Treasury receiving formation fees."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "Whether all protocol activity is paused."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "formation_fee_lamports",
+            "docs": [
+              "Lamports required to initialize a DAO."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dao_count",
+            "docs": [
+              "Monotonic DAO identifier counter."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Reserved for future upgrades."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Proposal",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposal_index",
+            "type": "u64"
+          },
+          {
+            "name": "proposer",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposal_type",
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "title",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "title_len",
+            "type": "u8"
+          },
+          {
+            "name": "description",
+            "type": {
+              "array": [
+                "u8",
+                512
+              ]
+            }
+          },
+          {
+            "name": "description_len",
+            "type": "u16"
+          },
+          {
+            "name": "payload",
+            "type": {
+              "array": [
+                "u8",
+                512
+              ]
+            }
+          },
+          {
+            "name": "payload_len",
+            "type": "u16"
+          },
+          {
+            "name": "payload_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "snapshot_slot",
+            "type": "u64"
+          },
+          {
+            "name": "snapshot_supply",
+            "type": "u64"
+          },
+          {
+            "name": "votes_for",
+            "type": "u64"
+          },
+          {
+            "name": "votes_against",
+            "type": "u64"
+          },
+          {
+            "name": "votes_abstain",
+            "type": "u64"
+          },
+          {
+            "name": "voting_end",
+            "type": "i64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "finalized_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProposalCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProposalCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposal_index",
+            "type": "u64"
+          },
+          {
+            "name": "proposal_type",
+            "type": "u8"
+          },
+          {
+            "name": "snapshot_slot",
+            "type": "u64"
+          },
+          {
+            "name": "snapshot_supply",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProposalFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "votes_for",
+            "type": "u64"
+          },
+          {
+            "name": "votes_against",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenAuthorityRevoked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenMetadataUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenRegistry",
+      "docs": [
+        "DAO token registry (max 3 tokens)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_count",
+            "docs": [
+              "Active token count."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "tokens",
+            "docs": [
+              "Fixed-size token slots."
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "TokenSlot"
+                  }
+                },
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenSlot",
+      "docs": [
+        "Token slot within a DAO token registry."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "SPL token mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "authority_revoked",
+            "docs": [
+              "Whether mint authority has been revoked."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "decimals",
+            "docs": [
+              "Token decimals."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Fixed-size token name."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "name_len",
+            "docs": [
+              "Active name length."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "symbol",
+            "docs": [
+              "Fixed-size token symbol."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "symbol_len",
+            "docs": [
+              "Active symbol length."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryAsset",
+      "docs": [
+        "Per-(dao, mint) treasury accounting record. Each held asset has its own",
+        "holding token account (the `asset_vault` PDA owned by `vault_authority`) and",
+        "tracks principal in that asset's base units. Portfolio-level USD aggregates",
+        "live on `TreasuryVault`; this record holds the raw token figures that the",
+        "`revalue_treasury` instruction prices into USD."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "SPL mint of the held asset."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "The `asset_vault` holding token account (owned by vault_authority)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "deposited",
+            "docs": [
+              "Cumulative deposits in base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deployed_capital",
+            "docs": [
+              "Capital currently deployed to strategies in base units (sum across",
+              "protocols for this mint)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_valued_usd",
+            "docs": [
+              "USD micro-units value of this asset (idle + deployed) at the last",
+              "`revalue_treasury`. Diagnostic / reconciliation aid."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_valued_at",
+            "docs": [
+              "Timestamp of the last valuation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_management_fee_at",
+            "docs": [
+              "Accounting anchor for the discrete annual management fee, floored to a",
+              "midnight-UTC boundary. The fee becomes due when",
+              "`now >= last_management_fee_at + SECONDS_PER_YEAR`; on collection this is",
+              "advanced to `floor_to_utc_midnight(now)`. Seeded at asset registration so",
+              "the first period is anchored to (the UTC midnight of) registration time.",
+              "Per-asset (not vault-level) so each asset's annual cycle is independent."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultAuthority",
+      "docs": [
+        "Vault authority PDA used as CPI signer for treasury operations."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "docs": [
+              "Owning DAO registry key."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteCast",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "type": "pubkey"
+          },
+          {
+            "name": "choice",
+            "type": "u8"
+          },
+          {
+            "name": "method",
+            "type": "u8"
+          },
+          {
+            "name": "weight",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteEscrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrow_token_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "locked_amount",
+            "type": "u64"
+          },
+          {
+            "name": "released",
+            "type": "bool"
+          },
+          {
+            "name": "locked_at",
+            "type": "i64"
+          },
+          {
+            "name": "released_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteEscrowLocked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteEscrowReleased",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "proposal",
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "type": "pubkey"
+          },
+          {
+            "name": "choice",
+            "type": "u8"
+          },
+          {
+            "name": "method",
+            "type": "u8"
+          },
+          {
+            "name": "weight",
+            "type": "u64"
+          },
+          {
+            "name": "voted_at",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "pyth-poster",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated Pyth PriceUpdateV2 poster (avoids root rpc-websockets/jito-ts dep clash).",
+  "dependencies": {
+    "@coral-xyz/anchor": "0.29.0",
+    "@pythnetwork/hermes-client": "^2.0.0",
+    "@pythnetwork/pyth-solana-receiver": "^0.12.0",
+    "@solana/web3.js": "1.98.4"
+  },
+  "overrides": {
+    "@solana/web3.js": "1.98.4",
+    "rpc-websockets": "9.3.9"
+  }
+}

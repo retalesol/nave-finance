@@ -1,0 +1,7 @@
+.deploy-wallet*
+.staking-collector*
+*.keypair.tmp
+.test-runs/
+
+# Deployment JSON in this folder is sanitized (no RPC keys).
+# Never commit deploy wallets or keyed RPC URLs.

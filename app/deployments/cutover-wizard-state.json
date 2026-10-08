@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "mode": "dry-run",
+  "createdAt": "2026-07-09T07:03:12.041Z",
+  "steps": {
+    "sol-preflight": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.336Z"
+    },
+    "sol-keys": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.336Z"
+    },
+    "sol-build": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.337Z"
+    },
+    "sol-deploy": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.337Z"
+    },
+    "sol-bridge-init": {
+      "status": "done",
+      "note": "skipped: bridge/staking leg not enabled for this cutover (no BRIDGE_* / mirror)",
+      "at": "2026-07-09T07:03:12.056Z"
+    },
+    "sol-set-nave-mint": {
+      "status": "done",
+      "note": "skipped: bridge-stake scope \u2014 set_nave_mint requires nave_core (use --scope full for DAO cutover)",
+      "at": "2026-07-09T07:03:12.057Z"
+    },
+    "sol-handoff": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.337Z"
+    },
+    "sol-platform": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.337Z"
+    },
+    "sol-verify": {
+      "status": "planned",
+      "note": "plan-only run",
+      "at": "2026-07-09T07:03:17.337Z"
+    },
+    "final-invariants": {
+      "status": "done",
+      "note": "skipped: bridge/staking leg not part of this cutover",
+      "at": "2026-07-09T07:03:12.058Z"
+    },
+    "final-unpause": {
+      "status": "done",
+      "note": "skipped: bridge not enabled for this cutover \u2014 nothing to unpause",
+      "at": "2026-07-09T07:03:12.058Z"
+    }
+  },
+  "updatedAt": "2026-07-09T07:03:17.338Z"
+}

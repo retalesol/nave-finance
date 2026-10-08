@@ -1,0 +1,38 @@
+{
+  "cluster": "mainnet-beta",
+  "scope": "bridge-stake",
+  "rpc": "${SOLANA_RPC_URL}",
+  "deployedAt": "2026-07-10T21:30:41.581Z",
+  "authority": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+  "treasury": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+  "programs": {
+    "nave_bridge": "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6",
+    "nave_staking": "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf"
+  },
+  "naveMint": "EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory",
+  "bridgeV2": {
+    "description": "Hardened bridge: 2.5% on-top fee split 1%/1%/0.5%, caps + pause + replay; staking leg \u2192 relayer-owned collector.",
+    "bridgeProgram": "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6",
+    "stakingProgram": "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf",
+    "bridgeConfig": "B7AEEMHQNvsiPGeKuEFWXhCPnexouXS1HuL6xRF8KLY7",
+    "custody": "Cww4xttTeD1qR6XVpSRZ5qitQmkJP8p2Tf2HUNdg2AmF",
+    "custodyAuthority": "8d7Do6DWyueT72EWkSXTUHJEapX9HkZpXkuWijsTtrp3",
+    "stakePool": "ErPMXb4Z5yGzgsdh42i5MkLxWUrgL7b5KRoQC6qsEfxt",
+    "poolAuthority": "5hyY47WbD9CodgMpZZtoR6kQ6aupQiorPcRmYBmAFDEo",
+    "stakeVault": "9xpDBgUDRVXL5W1j5kFZmoojqyXPWZSKxNVQ6Dxuk4jw",
+    "rewardVault": "ERC6WdtvAieWNC1aEfm7Nu4sQMUPWaYex4GLW4CtCwCW",
+    "protocolWallet": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+    "protocolFeeAccount": "5RbW8g4zWhYom8fGfA6SSKXjL6qqq7HsRCj7bguBYYJq",
+    "stakingCollector": "GU6f4M672KkqTH7ior4F13V59Sc6ihcZ1pd8wGwdCxiK",
+    "stakingPoolOwner": "ik4dEP4eh8FCXVttYYR4ByAABibji6bkWRihX9cbp5v",
+    "owner": "GdRMR4nMKZDRNEauASa4JyRGptjQD6tEW4xtu5MfNave",
+    "relayer": "ik4dEP4eh8FCXVttYYR4ByAABibji6bkWRihX9cbp5v",
+    "feeBps": 250,
+    "stakingBps": 100,
+    "protocolBps": 100,
+    "burnBps": 50,
+    "perTxCap": "1000000000",
+    "dailyCap": "10000000000",
+    "initializedAt": "2026-07-10T21:32:46.537Z"
+  }
+}

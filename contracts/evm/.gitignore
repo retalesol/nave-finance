@@ -1,0 +1,13 @@
+# Foundry
+out/
+cache/
+docs/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!.env.testnet.example
+
+# Dependencies are managed via `forge install` (see foundry.toml remappings)
+.deploy-wallet-testnet.json

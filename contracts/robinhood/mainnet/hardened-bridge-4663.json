@@ -1,0 +1,18 @@
+{
+  "chainId": 4663,
+  "dailyCap": 25000000000,
+  "intendedOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+  "legacyV1Lockbox": "0x608c6Ee3d56C4Ac5241D5481E72bD236C5404654",
+  "naveBridge": "0xD6d361Cd70FCD82802646aA90c0BA2D6EDA5Bd71",
+  "naveBridgeImplementation": "0x617E6f2704B2613c21A1768a8BC6C956A057Dd82",
+  "naveStaking": "0x4C06d8b71C16428D828F8d5bd05e21E0D1d81573",
+  "naveStakingImplementation": "0x127b345C262F94A56956353FB3f2238A66541385",
+  "owner": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+  "perTxCap": 1000000000,
+  "proxyPattern": "uups-singleton+uups-dao-consent",
+  "relayer": "0x745899B98CCd065Abf23010511eDa8a23094a6E7",
+  "stack": "v2-uups-shared-wnave",
+  "status": "primary-awaiting-minter-rotation",
+  "wrappedNave": "0xFc04710C3F310f6ed84b441cf897a05807312358",
+  "note": "UUPS lockbox+staking against shared v1 wNAVE. Awaiting Safe setMinter \u2192 acceptMinterRole. Parallel unused wnave stacks archived as hardened-bridge-unused-parallel-wnave-*.json"
+}

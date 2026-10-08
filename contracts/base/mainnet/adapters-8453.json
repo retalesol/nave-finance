@@ -1,0 +1,21 @@
+{
+  "aaveV3Adapter": "0x2D4FaC2d91aE21ace6F24B5B288BC919f4685Dc1",
+  "balancerAdapter": "0x0000000000000000000000000000000000000000",
+  "balancer": {
+    "status": "unset",
+    "address": "0x0000000000000000000000000000000000000000",
+    "offerInUi": false,
+    "deploy": false,
+    "reason": "No Balancer pool id or minOut quote. Leave the adapter at the zero address. Do not deploy. A later constitution UI pass must hide it."
+  },
+  "curve": {
+    "status": "dormant",
+    "address": null,
+    "offerInUi": false,
+    "deploy": false,
+    "reason": "CurveAdapter source is retained and dormant until a vetted StableSwap-NG pool exists. No address is deployed. Do not deploy. A later constitution UI pass must hide it."
+  },
+  "chainId": 8453,
+  "compoundV3Adapter": "0x5c99A7a1934A95D650c62B639EED2234211a0Ad8",
+  "protocol": "0x377D976A31871060B4059fA244b76809A3Cc0C90"
+}

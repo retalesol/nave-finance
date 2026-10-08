@@ -1,0 +1,893 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nave Mainnet Cutover Env Schema",
+  "type": "object",
+  "description": "Env schema for mainnet cutover. Default scope is bridge-stake (required). Full DAO cutover also needs requiredFull.",
+  "required": [
+    "MAINNET_RPC_URL",
+    "DEPLOY_WALLET_PATH",
+    "SQUADS_VAULT",
+    "SUPABASE_PROJECT_REF",
+    "VITE_SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "VITE_SUPABASE_ANON_KEY",
+    "VITE_SUPABASE_PUBLISHABLE_KEY",
+    "HELIUS_API_KEY",
+    "NAVE_SIGNER_URL",
+    "NAVE_SIGNER_SECRET",
+    "NAVE_INDEXER_SECRET",
+    "NAVE_MASTER_KEK",
+    "NAVE_ALLOWED_ORIGINS",
+    "VITE_USE_MOCKS",
+    "NAVE_CLUSTER",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN"
+  ],
+  "requiredFull": [
+    "NAVE_AGENT_SECRET",
+    "ANTHROPIC_API_KEY",
+    "VITE_ESCROW_PDA_ENABLED",
+    "NAVE_ESCROW_PDA_ENABLED",
+    "VITE_NAVE_PROTOCOL_FEE_WALLET",
+    "JUPITER_LENDING_PROGRAM_ID",
+    "JUPITER_LIQUIDITY_PROGRAM_ID",
+    "VITE_MARGINFI_PROGRAM_ID",
+    "MARGINFI_PROGRAM_ID",
+    "NAVE_MAX_NAV_AGE_SECONDS",
+    "NAVE_VAULT_LAST_REVALUED_OFF",
+    "NAVE_REVALUE_TREASURY_KEEPER_CONFIRMED"
+  ],
+  "properties": {
+    "MAINNET_RPC_URL": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^https?://"
+    },
+    "DEPLOY_WALLET_PATH": {
+      "type": "string",
+      "minLength": 1
+    },
+    "SQUADS_VAULT": {
+      "type": "string",
+      "minLength": 32
+    },
+    "SUPABASE_PROJECT_REF": {
+      "type": "string",
+      "minLength": 10
+    },
+    "VITE_SUPABASE_URL": {
+      "type": "string",
+      "pattern": "^https://[a-z0-9-]+\\.supabase\\.co$"
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "type": "string",
+      "minLength": 20
+    },
+    "VITE_SUPABASE_ANON_KEY": {
+      "type": "string",
+      "minLength": 20
+    },
+    "VITE_SUPABASE_PUBLISHABLE_KEY": {
+      "type": "string",
+      "minLength": 20
+    },
+    "HELIUS_API_KEY": {
+      "type": "string",
+      "minLength": 20
+    },
+    "NAVE_SIGNER_URL": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "NAVE_AGENT_SECRET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_SIGNER_SECRET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_INDEXER_SECRET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_MASTER_KEK": {
+      "type": "string",
+      "minLength": 40
+    },
+    "NAVE_ALLOWED_ORIGINS": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ANTHROPIC_API_KEY": {
+      "type": "string",
+      "minLength": 20
+    },
+    "VITE_USE_MOCKS": {
+      "type": "string",
+      "enum": [
+        "false"
+      ]
+    },
+    "VITE_ESCROW_PDA_ENABLED": {
+      "type": "string",
+      "enum": [
+        "true"
+      ]
+    },
+    "NAVE_ESCROW_PDA_ENABLED": {
+      "type": "string",
+      "enum": [
+        "true"
+      ]
+    },
+    "VITE_NAVE_PROTOCOL_FEE_WALLET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "DAO_ADDRESS": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_POLICY_SECRET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_PROPOSER_SECRET": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_CORE_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_GOVERNANCE_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_EXECUTION_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_JITO_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_KAMINO_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "NAVE_MARGINFI_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_CORE_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_GOVERNANCE_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_EXECUTION_PROGRAM_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_JITO_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_KAMINO_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_NAVE_MARGINFI_ADAPTER_ID": {
+      "type": "string",
+      "minLength": 32
+    },
+    "VITE_JUPITER_LENDING_PROGRAM_ID": {
+      "type": "string",
+      "description": "Jupiter Lend lending program. Mainnet: jup3YeL8QhtSx1e253b2FDvsMNC87fDrgQZivbrndc9",
+      "minLength": 32
+    },
+    "VITE_JUPITER_LIQUIDITY_PROGRAM_ID": {
+      "type": "string",
+      "description": "Jupiter Lend liquidity program. Mainnet: jupeiUmn818Jg1ekPURTpr4mFo29p46vygyykFJ3wZC",
+      "minLength": 32
+    },
+    "JUPITER_LENDING_PROGRAM_ID": {
+      "type": "string",
+      "description": "Signer/edge: Jupiter Lend lending program ID. Same as VITE_ variant.",
+      "minLength": 32
+    },
+    "JUPITER_LIQUIDITY_PROGRAM_ID": {
+      "type": "string",
+      "description": "Signer/edge: Jupiter Lend liquidity program ID. Same as VITE_ variant.",
+      "minLength": 32
+    },
+    "VITE_MARGINFI_PROGRAM_ID": {
+      "type": "string",
+      "description": "MarginFi v2 lending program (configure_marginfi_position / marginfi_deposit / marginfi_withdraw). Mainnet: MFv2hWf31Z9kbCa1snEPYctwafyhdvnV7FZnsebVacA",
+      "minLength": 32
+    },
+    "MARGINFI_PROGRAM_ID": {
+      "type": "string",
+      "description": "Signer: MarginFi v2 lending program ID. Same as VITE_ variant.",
+      "minLength": 32
+    },
+    "JUPITER_API_KEY": {
+      "type": "string",
+      "description": "Jupiter API key for Earn account resolution + live yield rates. Required by signer and edge functions.",
+      "minLength": 20
+    },
+    "JITO_TIP_LAMPORTS": {
+      "type": "string",
+      "description": "SOL tip per Jito bundle in lamports (default 5000 ≈ $0.001 at $200/SOL). Higher = faster landing. Set to 10000-50000 for large treasury moves.",
+      "pattern": "^[0-9]+$"
+    },
+    "JITO_BUNDLE_REBALANCE_ENABLED": {
+      "type": "string",
+      "description": "Enable atomic Jito bundle rebalancing via Helius (default true on mainnet). Set false to disable globally.",
+      "enum": ["true", "false"]
+    },
+    "NAVE_AGENT_MODEL": {
+      "type": "string",
+      "description": "Dispatcher model id (fine-tuned A/B seam). Defaults to claude-sonnet-4-6 when unset. Changing the model NEVER bypasses the deterministic guardrails.",
+      "minLength": 1
+    },
+    "NAVE_GUARDRAILS_FAIL_CLOSED": {
+      "type": "string",
+      "description": "Dispatcher fail-closed override. Unset (default) and \"true\" both fail closed. MUST NEVER be \"false\" on mainnet — cutover refuses if set to \"false\".",
+      "enum": ["true"]
+    },
+    "NAVE_AUTOPROPOSE_ENABLED": {
+      "type": "string",
+      "description": "Master autonomy gate for proposal-creator. Default false (observe-only). When true, the planner creates on-chain Strategy proposals.",
+      "enum": ["true", "false"]
+    },
+    "NAVE_AUTOPROPOSE_WITHDRAW_ENABLED": {
+      "type": "string",
+      "description": "Extra opt-in gate for proposing withdraw legs, layered on NAVE_AUTOPROPOSE_ENABLED. Default false. Requires NAVE_AUTOPROPOSE_ENABLED=true to take effect.",
+      "enum": ["true", "false"]
+    },
+    "NAVE_COMPOUND_ENABLED": {
+      "type": "string",
+      "description": "Orchestrator yield-aware harvest->redeploy compounding. Default false. Explicit opt-in.",
+      "enum": ["true", "false"]
+    },
+    "NAVE_COMPOUND_MIN_GAIN_BPS": {
+      "type": "string",
+      "description": "Minimum realized gain (in bps of deposited principal) before a harvest is worthwhile. Default 100 (1%).",
+      "pattern": "^[0-9]+$"
+    },
+    "NAVE_SWAP_ENABLED": {
+      "type": "string",
+      "description": "Signer agent swap capability (jupiter_swap action — off-chain Jupiter swap/aggregator route + signer submit; distinct from Jupiter Lend). FAIL-CLOSED: disabled unless \"true\". The DAO creation/bootstrap flow does NOT depend on it (bootstrap first action is SOL->Jito). Default false.",
+      "enum": ["true", "false"]
+    },
+    "NAVE_SWAP_MAX_SLIPPAGE_BPS": {
+      "type": "string",
+      "description": "Cap on the per-swap slippage bound an agent may request for jupiter_swap (basis points). Default 1000 (10%). Only relevant when NAVE_SWAP_ENABLED=true.",
+      "pattern": "^[0-9]+$"
+    },
+    "NAVE_PROTOCOL_REVENUE_WALLET": {
+      "type": "string",
+      "description": "Server-side mirror of the protocol revenue wallet (perf-fee skim + annual management-fee destination). Defaults to VITE_NAVE_PROTOCOL_FEE_WALLET when unset. Must be a real funded mainnet wallet.",
+      "minLength": 32
+    },
+    "NAVE_PERFORMANCE_FEE_BPS": {
+      "type": "string",
+      "description": "Performance fee in bps (8.5% yield skim taken inline on strategy withdrawal). Default 850. On-chain FeeConfig is authoritative; this is for preflight surfacing.",
+      "pattern": "^[0-9]+$"
+    },
+    "NAVE_MANAGEMENT_FEE_BPS": {
+      "type": "string",
+      "description": "Annual management fee in bps (0.65% of idle balance, discrete per-asset). Default 65. On-chain FeeConfig is authoritative; this is for preflight surfacing.",
+      "pattern": "^[0-9]+$"
+    },
+    "FORMATION_FEE_LAMPORTS": {
+      "type": "string",
+      "description": "OPTIONAL Solana formation fee in lamports (written to global_config.formation_fee_lamports). Creation is now FEE-FREE: canonical value is 0 on all networks and initialize_dao charges nothing (the value is inert). The DAO creation gate is the recoverable $99-of-NAVE stake (stake_dao_creation), not a SOL fee. When set, the cutover REFUSES any value other than 0.",
+      "pattern": "^[0-9]+$"
+    },
+    "TREASURY_SEED_LAMPORTS": {
+      "type": "string",
+      "description": "OPTIONAL Solana treasury-seed constant in lamports (mirrors nave_core::TREASURY_SEED_LAMPORTS). Canonical value is 0 on all networks — user seed is supplied separately in the creation wizard. When set, the cutover REFUSES any value other than 0.",
+      "pattern": "^[0-9]+$"
+    },
+    "MAINNET_NAVE_MINT": {
+      "type": "string",
+      "description": "OPTIONAL re-confirmation of the canonical mainnet NAVE SPL mint used for the recoverable $99 DAO creation stake (EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory). Pinned on-chain by the contracts cutover via set_nave_mint. When set it MUST equal the canonical mint; the devnet replica mint (GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa) is REFUSED anywhere on the mainnet path.",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+    },
+    "NAVE_STAKE_TOKEN": {
+      "type": "string",
+      "description": "OPTIONAL wrapped-NAVE ERC-20 address for the EVM DAO creation stake (NaveProtocol.setNaveStakeConfig). Consumed by the CONTRACTS EVM cutover `--phase stake`. When unset, EVM creation stays fee-free with NO stake gate until the Safe configures it post-handoff.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "REQUIRED_NAVE_STAKE": {
+      "type": "string",
+      "description": "OPTIONAL required wrapped-NAVE creation stake in token base units (the $99-equivalent from the off-chain price oracle), paired with NAVE_STAKE_TOKEN for NaveProtocol.setNaveStakeConfig on the EVM cutover `--phase stake`.",
+      "pattern": "^[0-9]+$"
+    },
+    "DAO_STAKE_MODULE": {
+      "type": "string",
+      "description": "OPTIONAL NaveDaoStake escrow/moonlight module address wired via NaveProtocol.setDaoStake on the EVM cutover `--phase stake`. Zero/unset disables the EVM stake + moonlight path.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "NAVE_AGENT_SOL_REQUEST_THRESHOLD": {
+      "type": "string",
+      "description": "Critically-low REQUEST tier in SOL (default 0.05). Below this an agent is flagged URGENT and refilled.",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "NAVE_AGENT_SOL_OPERATE_LEVEL": {
+      "type": "string",
+      "description": "Operate tier in SOL (default 0.10). At/above this an agent can operate and makes no requests.",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "NAVE_AGENT_SOL_FILL_CEILING": {
+      "type": "string",
+      "description": "Refill target in SOL (default 0.25). Wallets are topped up to this; never above.",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "NAVE_AGENT_SOL_REFILL_TRIGGER": {
+      "type": "string",
+      "description": "Refill trigger in SOL (default 0.10). Refill toward the ceiling only when balance ≤ this (hysteresis).",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "MANAGEMENT_FEE_INTERVAL_MS": {
+      "type": "string",
+      "description": "Management-fee scheduler cadence (ms). Default 3600000 (hourly) so the worker catches each asset's UTC-midnight annual boundary. Each tick is a cheap no-op when no asset is due.",
+      "pattern": "^[0-9]+$"
+    },
+    "NAVE_OPS_WALLET_SECRET": {
+      "type": "string",
+      "description": "Protocol operations keypair (base64 or comma-separated bytes) used by the worker as the permissionless management-fee fee_collector/payer and for agent-wallet replenishment. Funded from protocol fee revenue.",
+      "minLength": 40
+    },
+    "NAVE_CLUSTER": {
+      "type": "string",
+      "description": "Signer/edge cluster selector. Allowed values: mainnet | mainnet-beta | devnet | localnet. MUST be \"mainnet\" on the mainnet cutover path — it drives the on-chain Jupiter program-id assertion and the signer rate-limiter fail-closed posture. Cutover REFUSES if it is not \"mainnet\".",
+      "enum": ["mainnet"]
+    },
+    "UPSTASH_REDIS_REST_URL": {
+      "type": "string",
+      "description": "Upstash Redis REST URL backing the signer rate-limiter + circuit breaker. REQUIRED on mainnet: the signer FAILS CLOSED (refuses to sign) when Redis is unreachable.",
+      "pattern": "^https://"
+    },
+    "UPSTASH_REDIS_REST_TOKEN": {
+      "type": "string",
+      "description": "Upstash Redis REST token for the signer rate-limiter + circuit breaker. REQUIRED on mainnet (signer fails closed without it).",
+      "minLength": 20
+    },
+    "NAVE_SIGNER_SKIP_SIMULATION": {
+      "type": "string",
+      "description": "Signer pre-broadcast transaction-simulation bypass. MUST NOT be \"true\" on mainnet — simulation is the final fail-closed guard before broadcasting a signed tx. Cutover REFUSES if set to \"true\".",
+      "enum": ["false"]
+    },
+    "NAVE_SIGNER_RATE_PER_ACTION": {
+      "type": "string",
+      "description": "Per-action signer rate limit (default 20). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_SIGNER_RATE_PER_ROLE": {
+      "type": "string",
+      "description": "Per-role signer rate limit (default 20). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_SIGNER_RATE_GLOBAL": {
+      "type": "string",
+      "description": "Global signer rate limit (default 300). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_SIGNER_CB_THRESHOLD": {
+      "type": "string",
+      "description": "Circuit-breaker consecutive-failure threshold before tripping (default 5). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_SIGNER_CB_WINDOW_MS": {
+      "type": "string",
+      "description": "Circuit-breaker failure-counting window in ms (default 60000). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_SIGNER_CB_COOLDOWN_MS": {
+      "type": "string",
+      "description": "Circuit-breaker cooldown before half-open in ms (default 120000). Positive integer.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_MAX_NAV_AGE_SECONDS": {
+      "type": "string",
+      "description": "App-side NAV freshness window (seconds) gating strategy deploys. Must be a positive integer that does NOT exceed the on-chain NAV_MAX_STALENESS_SECS=900 (recommend 900 to match). Strategy deploys hard-block on stale NAV; revalue_treasury must be fresh (<15 min) before execute.",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "NAVE_VAULT_LAST_REVALUED_OFF": {
+      "type": "string",
+      "description": "Byte offset of treasury_vault.last_revalued_at within the TreasuryVault account, used to read on-chain NAV age. For the current TreasuryVault layout this is 130 (account LEN 138); the cutover preflight REFUSES if it is unset, non-integer, or not equal to the expected offset. Required (non-negative integer) on mainnet so the offset is never silently 0.",
+      "pattern": "^[0-9]+$"
+    },
+    "NAVE_REVALUE_TREASURY_KEEPER_CONFIRMED": {
+      "type": "string",
+      "description": "Mainnet release acknowledgement that revalue_treasury keeper coverage is deployed and monitored. Required because strategy execution hard-blocks on stale NAV.",
+      "enum": ["passed"]
+    },
+
+    "VITE_EVM_NETWORK": {
+      "type": "string",
+      "description": "EVM environment selector. OPTIONAL (EVM is additive to Solana). When EVM is enabled (this set, or any VITE_EVM_*_FACTORY_ADDRESS present), the cutover REQUIRES this to be \"mainnet\". Scope is Ethereum + Base only.",
+      "enum": ["mainnet", "testnet"]
+    },
+    "VITE_EVM_CHAIN_ID": {
+      "type": "string",
+      "description": "Optional explicit active EVM chain id. Must be one of 1 (Ethereum) or 8453 (Base) on the mainnet path. Any other id (e.g. BSC 56) is HARD-REJECTED.",
+      "enum": ["1", "8453", "11155111", "84532"]
+    },
+    "VITE_EVM_ETHEREUM_PROTOCOL_ADDRESS": {
+      "type": "string",
+      "description": "NaveProtocol singleton on Ethereum mainnet (chain 1). REQUIRED before yield-sister cutover (Robinhood WETH to an Ethereum sister treasury), together with VITE_EVM_ETHEREUM_FACTORY_ADDRESS. The checked-in contracts/evm/deployments/1.json is an Anvil fixture (daoStack undeployed) and cutover refuses to treat it as production. Fill these only from a real Safe-owned chain-1 deploy.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_FACTORY_ADDRESS": {
+      "type": "string",
+      "description": "NaveDAOFactory singleton address on Ethereum mainnet (0x, 20 bytes).",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_PROTOCOL_ADDRESS": {
+      "type": "string",
+      "description": "NaveProtocol singleton address on Base mainnet (0x, 20 bytes). From deployments/8453.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_FACTORY_ADDRESS": {
+      "type": "string",
+      "description": "NaveDAOFactory singleton address on Base mainnet (0x, 20 bytes).",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_PROTOCOL_REVENUE_WALLET": {
+      "type": "string",
+      "description": "Nave-controlled EVM protocol revenue wallet used in DAO creation. REQUIRED when EVM is enabled on mainnet; founder fallback is refused by the app cutover.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_AAVE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Aave v3 strategy adapter deployed on Ethereum mainnet. Must match contracts/evm/deployments/adapters-1.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_COMPOUND_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Compound v3 strategy adapter deployed on Ethereum mainnet. Must match contracts/evm/deployments/adapters-1.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_BALANCER_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Balancer strategy adapter deployed on Ethereum mainnet. Must match contracts/evm/deployments/adapters-1.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_AAVE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Aave v3 strategy adapter deployed on Base mainnet. Must match contracts/evm/deployments/adapters-8453.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_COMPOUND_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Compound v3 strategy adapter deployed on Base mainnet. Must match contracts/evm/deployments/adapters-8453.json.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_BALANCER_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Balancer strategy adapter on Base. adapters-8453.json records balancerAdapter as the zero address, balancer.status unset, balancer.offerInUi false. Do not deploy Balancer and do not set this until a pool id and minOut quote exist. A later UI pass must hide it.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ROBINHOOD_ARBITRUM_BRIDGE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "Arbitrum Nitro bridge adapter on Robinhood (4663) for WETH outbound to Ethereum sister treasuries.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_CCTP_BRIDGE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "CCTP USDC bridge adapter on Base mainnet.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_CCTP_BRIDGE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "CCTP USDC bridge adapter on Ethereum mainnet.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_OP_BRIDGE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "OP StandardBridge adapter on Base for ETH/WETH hops to Ethereum.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_OP_BRIDGE_ADAPTER_ADDRESS": {
+      "type": "string",
+      "description": "OP StandardBridge adapter on Ethereum for ETH/WETH hops to Base.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_RPC_URL": {
+      "type": "string",
+      "description": "Browser/web RPC override for Ethereum mainnet (optional; falls back to viem public RPC).",
+      "pattern": "^https?://"
+    },
+    "VITE_EVM_BASE_RPC_URL": {
+      "type": "string",
+      "description": "Browser/web RPC override for Base mainnet (optional).",
+      "pattern": "^https?://"
+    },
+    "VITE_EVM_ROBINHOOD_RPC_URL": {
+      "type": "string",
+      "description": "Browser/web RPC override for Robinhood Chain mainnet (4663, Arbitrum Nitro L2; optional — falls back to the public https://rpc.mainnet.chain.robinhood.com). MUST be a PUBLIC endpoint: this value ships in the browser bundle, so never put a keyed (e.g. Alchemy) URL here.",
+      "pattern": "^https?://"
+    },
+    "VITE_EVM_ETHEREUM_WRAPPED_NAVE_ADDRESS": {
+      "type": "string",
+      "description": "WrappedNave (wNAVE) token on Ethereum mainnet (1) for the app bridge/stake UI. Must match contracts/evm/deployments/hardened-bridge-1.json wrappedNave.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_BRIDGE_LOCKBOX_ADDRESS": {
+      "type": "string",
+      "description": "NaveBridge lockbox on Ethereum mainnet (1) for the app bridge UI. Must match contracts/evm/deployments/hardened-bridge-1.json naveBridge and BRIDGE_EVM_LOCKBOX_1.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ETHEREUM_STAKING_ADDRESS": {
+      "type": "string",
+      "description": "NaveStaking drip pool on Ethereum mainnet (1) for the app stake UI. Must match BRIDGE_EVM_STAKING_1.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_WRAPPED_NAVE_ADDRESS": {
+      "type": "string",
+      "description": "WrappedNave (wNAVE) token on Base mainnet (8453) for the app bridge/stake UI. Must match contracts/evm/deployments/hardened-bridge-8453.json wrappedNave.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_BRIDGE_LOCKBOX_ADDRESS": {
+      "type": "string",
+      "description": "Preferred Base (8453) v2 UUPS lockbox (shared wNAVE). Minting follows on-chain wnave.minter(); keep VITE_EVM_BASE_BRIDGE_LOCKBOX_V1_ADDRESS until Safe rotates minter.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_BRIDGE_LOCKBOX_V1_ADDRESS": {
+      "type": "string",
+      "description": "Legacy immutable Base lockbox (still live). Mint fallback until wnave.minter() points at the v2 lockbox.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ROBINHOOD_BRIDGE_LOCKBOX_V1_ADDRESS": {
+      "type": "string",
+      "description": "Legacy immutable Robinhood lockbox (still live). Mint fallback until wnave.minter() points at the v2 lockbox.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_BASE_STAKING_ADDRESS": {
+      "type": "string",
+      "description": "NaveStaking drip pool on Base mainnet (8453) for the app stake UI. Must match BRIDGE_EVM_STAKING_8453.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ROBINHOOD_WRAPPED_NAVE_ADDRESS": {
+      "type": "string",
+      "description": "WrappedNave (wNAVE) token on Robinhood Chain mainnet (4663). Robinhood is BRIDGE/STAKE-ONLY (no DAO stack). Must match contracts/evm/deployments/hardened-bridge-4663.json wrappedNave.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ROBINHOOD_BRIDGE_LOCKBOX_ADDRESS": {
+      "type": "string",
+      "description": "NaveBridge lockbox on Robinhood Chain mainnet (4663). Must match contracts/evm/deployments/hardened-bridge-4663.json naveBridge.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_EVM_ROBINHOOD_STAKING_ADDRESS": {
+      "type": "string",
+      "description": "NaveStaking drip pool on Robinhood Chain mainnet (4663). Must match contracts/evm/deployments/hardened-bridge-4663.json naveStaking.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "VITE_NAVE_BRIDGE_RELAYER_URL": {
+      "type": "string",
+      "description": "Public base URL of the signer-service bridge relayer the app calls (/bridge-relay, /stake-claim, /stake-claim/pool, /bridge-queue). The bridge/stake UI is disabled without it.",
+      "pattern": "^https?://"
+    },
+    "VITE_NAVE_BRIDGE_PROGRAM_ID": {
+      "type": "string",
+      "description": "nave_bridge Solana program id for the app (lock/burn built client-side). Must equal BRIDGE_SOLANA_BRIDGE_PROGRAM."
+    },
+    "VITE_NAVE_STAKING_PROGRAM_ID": {
+      "type": "string",
+      "description": "nave_staking Solana program id for the app stake UI. Must equal BRIDGE_SOLANA_STAKING_PROGRAM."
+    },
+    "VITE_SOLANA_NAVE_MINT": {
+      "type": "string",
+      "description": "Canonical NAVE SPL mint the app bridges/stakes. Must equal BRIDGE_SOLANA_NAVE_MINT and MAINNET_NAVE_MINT."
+    },
+    "VITE_NAVE_BRIDGE_SOLANA_CUSTODY": {
+      "type": "string",
+      "description": "Bridge custody token account (PDA-derived from the nave_bridge program) the app's Solana→EVM lock deposits into. Bridge UI is disabled without it."
+    },
+    "VITE_NAVE_BRIDGE_FEE_BPS": {
+      "type": "string",
+      "description": "Total bridge fee in bps shown/charged by the app (default 250 = 2.5%). MUST equal BRIDGE_FEE_BPS and the on-chain BridgeConfig fee.",
+      "pattern": "^[0-9]+$"
+    },
+    "VITE_NAVE_BRIDGE_STAKING_POOL_ACCOUNT": {
+      "type": "string",
+      "description": "Staking fee-leg token account the app's Solana lock routes the 1% staking share to. With the mirror enabled this is the COLLECTOR — must equal BRIDGE_SOLANA_STAKING_POOL_ACCOUNT."
+    },
+    "VITE_NAVE_BRIDGE_PROTOCOL_FEE_ACCOUNT": {
+      "type": "string",
+      "description": "Protocol fee-leg token account the app's Solana lock routes the 1% protocol share to. Must equal BRIDGE_SOLANA_PROTOCOL_FEE_ACCOUNT."
+    },
+    "VITE_WALLETCONNECT_PROJECT_ID": {
+      "type": "string",
+      "description": "WalletConnect Cloud project id for RainbowKit connectors (optional).",
+      "minLength": 1
+    },
+    "EVM_ETHEREUM_RPC_URL": {
+      "type": "string",
+      "description": "Server RPC for the EVM indexer + signer relayer on Ethereum. REQUIRED when Ethereum EVM is enabled.",
+      "pattern": "^https?://"
+    },
+    "EVM_BASE_RPC_URL": {
+      "type": "string",
+      "description": "Server RPC for the EVM indexer + signer relayer on Base. REQUIRED when Base EVM is enabled.",
+      "pattern": "^https?://"
+    },
+    "EVM_ROBINHOOD_RPC_URL": {
+      "type": "string",
+      "description": "Server RPC for the EVM indexer + signer relayer on Robinhood Chain mainnet (4663). REQUIRED when the Robinhood bridge triple is configured. Keyed (e.g. Alchemy) URLs are fine here — server-side only, never exposed to the browser.",
+      "pattern": "^https?://"
+    },
+    "EVM_LOG_CHUNK_BLOCKS": {
+      "type": "string",
+      "description": "evm-indexer: max block span per eth_getLogs call. Free-tier RPCs cap this hard (e.g. Alchemy free = 10); paid mainnet endpoints usually allow 2000+. Too high → indexer errors, too low → slow backfill.",
+      "pattern": "^[0-9]+$"
+    },
+    "EVM_INDEXER_POLL_MS": {
+      "type": "string",
+      "description": "evm-indexer: poll cadence in milliseconds (default 15000).",
+      "pattern": "^[0-9]+$"
+    },
+    "EVM_CONFIRMATIONS": {
+      "type": "string",
+      "description": "evm-indexer: confirmation depth before an event is treated as indexable (reorg guard; independent of the relayer's BRIDGE_EVM_CONFIRMATIONS).",
+      "pattern": "^[0-9]+$"
+    },
+    "EVM_FINALITY_TAG": {
+      "type": "string",
+      "description": "evm-indexer: optional finality tag ('finalized'/'safe') used instead of a fixed confirmation count where the chain supports it.",
+      "enum": ["finalized", "safe", "latest"]
+    },
+    "EVM_REORG_REWIND_BLOCKS": {
+      "type": "string",
+      "description": "evm-indexer: how many blocks to rewind the cursor on restart to re-scan across possible reorgs.",
+      "pattern": "^[0-9]+$"
+    },
+    "ETHERSCAN_API_KEY": {
+      "type": "string",
+      "description": "Etherscan API key for EVM contract verification on Ethereum (chain 1). REQUIRED by the EVM cutover when Ethereum is configured.",
+      "minLength": 8
+    },
+    "BASESCAN_API_KEY": {
+      "type": "string",
+      "description": "Basescan API key for EVM contract verification on Base (chain 8453). REQUIRED by the EVM cutover when Base is configured.",
+      "minLength": 8
+    },
+    "NAVE_EVM_MASTER_KEK": {
+      "type": "string",
+      "description": "Dedicated EVM master KEK (base64 32 bytes) wrapping secp256k1 agent/guardian DEKs in encrypted_evm_keys. Falls back to NAVE_MASTER_KEK when unset; the keygen edge fn and signer MUST use the same selection. REQUIRED (or NAVE_MASTER_KEK) when EVM is enabled.",
+      "minLength": 40
+    },
+    "NAVE_EVM_ABI_PATH": {
+      "type": "string",
+      "description": "Optional path to the synced EVM contract event ABI JSON for the evm-indexer (overrides the built-in defaults).",
+      "minLength": 1
+    },
+    "EVM_RELEASE_GATE_TOKEN_ACCESS": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for token-gated access. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_GOVERNANCE_RATIFICATION": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for governance ratification flows. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_EXECUTION_REQUESTS": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for execution request creation. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_ASSET_REGISTRATION": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for asset registration. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_REVALUE_KEEPER": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for revalue keeper coverage before strategy execution. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_EMERGENCY_FREEZE": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for emergency freeze. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+    "EVM_RELEASE_GATE_EXPLORER_LINKS": {
+      "type": "string",
+      "description": "EVM mainnet release gate acknowledgement for Ethereum/Base explorer links. Must be \"passed\" when EVM is enabled.",
+      "enum": ["passed"]
+    },
+
+    "EVM_RPC_URL": {
+      "type": "string",
+      "description": "Fallback single-chain JSON-RPC for contracts EVM cutover (evm-mainnet-cutover.mjs). Prefer EVM_ETHEREUM_RPC_URL / EVM_BASE_RPC_URL / EVM_ROBINHOOD_RPC_URL — the cutover auto-selects from --chain-id and always verifies cast chain-id matches before deploy/handoff/verify.",
+      "pattern": "^https?://"
+    },
+    "EVM_DEPLOY_PRIVATE_KEY": {
+      "type": "string",
+      "description": "0x-prefixed deploy/owner private key for the CONTRACTS EVM cutover deploy + handoff phases (this wallet is the initial PROTOCOL_OWNER pre-handoff). NEVER commit. Use EVM_DEPLOY_ACCOUNT (foundry keystore) instead where possible. One of EVM_DEPLOY_PRIVATE_KEY or EVM_DEPLOY_ACCOUNT is required for deploy/handoff.",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "EVM_DEPLOY_ACCOUNT": {
+      "type": "string",
+      "description": "Foundry keystore account name (cast wallet) used instead of EVM_DEPLOY_PRIVATE_KEY for the CONTRACTS EVM cutover deploy + handoff phases. One of EVM_DEPLOY_PRIVATE_KEY or EVM_DEPLOY_ACCOUNT is required.",
+      "minLength": 1
+    },
+    "PROTOCOL_OWNER": {
+      "type": "string",
+      "description": "Initial owner of NaveProtocol + PythOracle at deploy time (the deploy wallet, PRE-handoff). Ownership is transferred to SAFE_ADDRESS in the handoff phase. Constructor arg consumed by contracts/evm script/Deploy.s.sol.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "PROTOCOL_TREASURY": {
+      "type": "string",
+      "description": "Protocol fee recipient (native fee sink) bound into NaveProtocol at deploy. Constructor arg consumed by contracts/evm script/Deploy.s.sol.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "PYTH_ADDRESS": {
+      "type": "string",
+      "description": "Per-chain Pyth contract address passed to PythOracle at deploy. Set the value for the chosen --chain-id (Ethereum/Base mainnet or Sepolia/Base Sepolia). Constructor arg consumed by contracts/evm script/Deploy.s.sol.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "SAFE_ADDRESS": {
+      "type": "string",
+      "description": "Safe (Gnosis Safe) multisig that receives NaveProtocol (Ownable2Step, pending->accept) + PythOracle (Ownable, immediate) ownership in the handoff phase. The cutover verifies SAFE_ADDRESS has on-chain bytecode (cast code != 0x) BEFORE transferring, so authority is never sent to an EOA/empty address. The Safe must call acceptOwnership() on NaveProtocol to finalize.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "FORMATION_FEE_WEI": {
+      "type": "string",
+      "description": "Optional NaveProtocol DAO formation fee in wei. Creation is now FEE-FREE (mirrors Solana): default 0, and the EVM mainnet cutover REFUSES any non-zero value. The recoverable $99-of-NAVE stake (setNaveStakeConfig) is the creation gate. Constructor arg for contracts/evm script/Deploy.s.sol.",
+      "pattern": "^[0-9]+$"
+    },
+    "TOKEN_MINT_FEE_WEI": {
+      "type": "string",
+      "description": "NaveProtocol token-mint fee in wei. Required by the EVM mainnet cutover when EVM is enabled; canonical mainnet value is 50000000000000000 (0.05 ETH). Constructor arg for contracts/evm script/Deploy.s.sol.",
+      "pattern": "^[0-9]+$"
+    },
+    "TREASURY_SEED_WEI": {
+      "type": "string",
+      "description": "EVM treasury-seed carve-out in wei (NaveProtocol.treasurySeed). Creation is now FEE-FREE so there is no fee to carve out: default 0 and the EVM mainnet cutover REFUSES any non-zero value. The founder supplies any initial treasury deposit separately. Constructor arg for contracts/evm script/Deploy.s.sol.",
+      "pattern": "^[0-9]+$"
+    },
+    "TOKEN_REVOKE_REWARD_WEI": {
+      "type": "string",
+      "description": "Reserved EVM token-revoke reward value. Current Solidity contracts do not implement a revoke reward, so app mainnet cutover requires this to be unset or 0.",
+      "enum": ["0"]
+    },
+
+    "AAVE_V3_POOL": {
+      "type": "string",
+      "description": "AaveV3Adapter constructor arg: the Aave v3 Pool address for the chosen --chain-id. Per-chain (Ethereum != Base). Consumed by the contracts adapter deploy (contracts/evm script/DeployAdapters.s.sol). Omit to skip the Aave adapter on this chain.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "COMPOUND_V3_COMET": {
+      "type": "string",
+      "description": "CompoundV3Adapter constructor arg: the Compound v3 Comet market address for the chosen --chain-id (single base asset per market). Per-chain. Omit to skip the Compound adapter on this chain.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "BALANCER_VAULT": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: the Balancer v2 Vault address for the chosen --chain-id. Requires BALANCER_POOL_ID, BALANCER_BPT, BALANCER_ROUTED_ASSET, BALANCER_ASSET_INDEX, BALANCER_TOKEN_COUNT. Omit the whole set to skip the Balancer adapter on this chain.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "BALANCER_POOL_ID": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: the 32-byte (0x, 64 hex) pool id for the routed Balancer pool on the chosen --chain-id.",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "BALANCER_BPT": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: the pool's BPT (LP) token address on the chosen --chain-id.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "BALANCER_ROUTED_ASSET": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: the single asset the adapter routes (joins/exits) on the chosen --chain-id; must be one of the pool's registered tokens.",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "BALANCER_ASSET_INDEX": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: index of BALANCER_ROUTED_ASSET within the pool's registered token ordering (uint, 0-based).",
+      "pattern": "^[0-9]+$"
+    },
+    "BALANCER_TOKEN_COUNT": {
+      "type": "string",
+      "description": "BalancerAdapter constructor arg: number of registered tokens in the pool (uint).",
+      "pattern": "^[0-9]+$"
+    },
+    "FAUCET_ENABLED": {
+      "type": "string",
+      "description": "Devnet-only faucet toggle (gates both the NAVE `/faucet-claim` and SOL `/faucet-claim-sol` endpoints). MUST NOT be \"true\" on mainnet — enforced by assertBridgeFaucetMainnetSafety; the faucet gives away free NAVE and SOL and has no place in a mainnet deployment.",
+      "enum": ["true", "false"]
+    },
+    "BRIDGE_RELAYER_ENABLED": {
+      "type": "string",
+      "description": "Solana<->EVM NAVE bridge relayer toggle. Bridge is testnet-only today. Its original recipient-authentication gap on /bridge-relay was FIXED 2026-06-30 (P6-1 in docs/AUDIT_FINDINGS.md — caller must now sign a message with the same wallet that performed the source-chain lock/burn), but the fix has only been exercised on devnet/testnet, not battle-tested against real mainnet traffic or formally second-reviewed. If any BRIDGE_* var is set, NAVE_BRIDGE_MAINNET_REVIEWED must also be \"true\" (confirming that live battle-testing/second-review happened) or cutover refuses.",
+      "enum": ["true", "false"]
+    },
+    "BRIDGE_SOLANA_RPC_URL": { "type": "string", "description": "Bridge relayer's Solana RPC endpoint. See BRIDGE_RELAYER_ENABLED." },
+    "BRIDGE_SOLANA_NAVE_MINT": { "type": "string", "description": "NAVE SPL mint the bridge locks/releases on Solana. See BRIDGE_RELAYER_ENABLED." },
+    "BRIDGE_SOLANA_BRIDGE_PROGRAM": { "type": "string", "description": "nave_bridge program id. Custody + config + replay PDAs derive from it; the relayer builds `release` against it. When any bridge env is set, cutover refuses if this id is missing, is the closed mainnet id Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6, or is not an executable program account. A future deploy needs a new program id. Do not put API keys in this value." },
+    "BRIDGE_SOLANA_RELAYER_AUTHORITY": { "type": "string", "description": "Relayer keypair secret = the on-chain BridgeConfig.relayer that signs `release`. KMS/HSM-backed on mainnet (see docs/SECRETS.md). Falls back to BRIDGE_SOLANA_CUSTODY_AUTHORITY for continuity." },
+    "BRIDGE_SOLANA_CUSTODY_AUTHORITY": { "type": "string", "description": "Legacy alias for BRIDGE_SOLANA_RELAYER_AUTHORITY (still honored). See BRIDGE_RELAYER_ENABLED." },
+    "BRIDGE_SOLANA_PROTOCOL_FEE_ACCOUNT": { "type": "string", "description": "Protocol-revenue NAVE token account the release fee-split routes the 1% protocol leg to. Owned by BRIDGE_SOLANA_PROTOCOL_WALLET." },
+    "BRIDGE_SOLANA_STAKING_POOL_ACCOUNT": { "type": "string", "description": "NAVE token account the fee-split routes the 1% staking leg to. With the staking mirror enabled this MUST be the neutral relayer-owned COLLECTOR (BRIDGE_SOLANA_STAKING_COLLECTOR — enforced at cutover), NOT the nave_staking reward vault; the mirror then splits collected fees across all chains by stake weight and each pool drips them over its rolling 365-day window." },
+    "BRIDGE_SOLANA_PROTOCOL_WALLET": { "type": "string", "description": "Owner pubkey of the protocol-revenue account. Default 6N5JiWP2zF6VXhG6hwgYEYhxBEARAV5P6WRgfYb2zskC." },
+    "BRIDGE_EVM_MINTER_PRIVATE_KEY": { "type": "string", "description": "EVM relayer EOA that calls the NaveBridge lockbox `bridgeIn`. KMS/HSM-backed on mainnet." },
+    "BRIDGE_EVM_LOCKBOX_11155111": { "type": "string", "description": "NaveBridge lockbox address (Sepolia) — the sole wNAVE minter, capped/paused/replay-guarded." },
+    "BRIDGE_EVM_LOCKBOX_84532": { "type": "string", "description": "NaveBridge lockbox address (Base Sepolia)." },
+    "BRIDGE_EVM_LOCKBOX_1": { "type": "string", "description": "NaveBridge lockbox address (Ethereum mainnet)." },
+    "BRIDGE_EVM_LOCKBOX_8453": { "type": "string", "description": "Preferred Base v2 UUPS lockbox (shared wNAVE). Signer resolveMintLockbox() follows on-chain minter." },
+    "BRIDGE_EVM_LOCKBOX_46630": { "type": "string", "description": "NaveBridge lockbox address (Robinhood Chain testnet 46630, Arbitrum Nitro L2)." },
+    "BRIDGE_EVM_LOCKBOX_4663": { "type": "string", "description": "Preferred Robinhood v2 UUPS lockbox (shared wNAVE)." },
+    "BRIDGE_EVM_LOCKBOX_V1_8453": { "type": "string", "description": "Legacy Base lockbox — mint fallback until Safe setMinter(v2) + acceptMinterRole." },
+    "BRIDGE_EVM_LOCKBOX_V1_4663": { "type": "string", "description": "Legacy Robinhood lockbox — mint fallback until Safe setMinter(v2) + acceptMinterRole." },
+    "BRIDGE_EVM_CONFIRMATIONS": { "type": "string", "description": "OPTIONAL global FLOOR for EVM confirmation depth. Semantics changed: it can only deepen, never shallow, a chain default. Authoritative depth is per chain: BRIDGE_EVM_CONFIRMATIONS_<chainId> (defaults 1: 12, 8453: 30, 4663: 60). Cutover refuses any configured chain below its default." },
+    "BRIDGE_EVM_CONFIRMATIONS_1": { "type": "string", "description": "Ethereum mainnet confirmation depth before releasing NAVE on Solana (default 12, ~2.4 min). Must be >= 12.", "pattern": "^[0-9]+$" },
+    "BRIDGE_EVM_CONFIRMATIONS_8453": { "type": "string", "description": "Base confirmation depth (default 30 blocks ≈ 60 s). Must be >= 30.", "pattern": "^[0-9]+$" },
+    "BRIDGE_EVM_CONFIRMATIONS_4663": { "type": "string", "description": "Robinhood Chain (Arbitrum Nitro, ~0.25 s blocks) confirmation depth (default 60). Soft sequencer confirmation precedes hard L1 finality — never lower than 60.", "pattern": "^[0-9]+$" },
+    "BRIDGE_EVM_CHAIN_IDS": { "type": "string", "description": "Optional comma-separated allow-list of EVM chain ids the relayer serves (default: every known chain on NAVE_EVM_NETWORK). Mainnet: subset of 1,8453,4663." },
+    "BRIDGE_LOOKBACK_SECONDS": { "type": "string", "description": "Missed-event scan window for the bridge watcher, converted to blocks per chain from block time (default 7200; cutover requires >= 3600). Replaces BRIDGE_WATCHER_EVM_LOOKBACK_BLOCKS, which is now only a floor in blocks.", "pattern": "^[0-9]+$" },
+    "NAVE_EVM_NETWORK": { "type": "string", "description": "Relayer/signer EVM network selector: mainnet | testnet. Sole resolver for family-name routes ('base'|'robinhood'|'ethereum') — the Solana cluster is no longer consulted. MUST be \"mainnet\" on the mainnet path; REQUIRED whenever EVM or the bridge is enabled.", "enum": ["mainnet"] },
+    "TRUSTED_PROXY_HOPS": { "type": "string", "description": "Reverse-proxy hops the signer trusts for X-Forwarded-For (Express `trust proxy`). Railway = 1 (default). 0 disables proxy trust. Rate-limit identity is derived from req.ip, never the leftmost XFF entry.", "pattern": "^[0-4]$" },
+    "EVM_ETHEREUM_PROTOCOL_ADDRESS": { "type": "string", "description": "Edge-function mirror of VITE_EVM_ETHEREUM_PROTOCOL_ADDRESS (auto-derived by the cutover). generate-evm-agent-keys bind verifies treasury.protocol() equals it.", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "EVM_BASE_PROTOCOL_ADDRESS": { "type": "string", "description": "Edge-function mirror of VITE_EVM_BASE_PROTOCOL_ADDRESS (auto-derived).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "EVM_ROBINHOOD_PROTOCOL_ADDRESS": { "type": "string", "description": "Edge-function mirror of VITE_EVM_ROBINHOOD_PROTOCOL_ADDRESS (auto-derived) — required when Robinhood hosts a DAO stack (--scope full).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "LLM_TIMEOUT_MS": { "type": "string", "description": "agent-dispatcher: AbortSignal timeout for each model call (default 60000).", "pattern": "^[0-9]+$" },
+    "LLM_DAILY_TOKEN_BUDGET": { "type": "string", "description": "agent-dispatcher: per-DAO daily token ceiling across all agent roles (default 2000000; 0 disables). Exceeding returns 429 llm_budget_exceeded.", "pattern": "^[0-9]+$" },
+    "NAVE_EXECUTION_GRACE_SECS": { "type": "string", "description": "agent-orchestrator: how long a post-review request may stay parked (request_review / non-terminal) before it is expired (default 86400).", "pattern": "^[0-9]+$" },
+    "NAVE_BREAK_GLASS_SECRET": { "type": "string", "description": "Operator-only secret required (header X-Break-Glass-Secret) for generate-agent-keys break_glass raw-DEK export. Leave UNSET on mainnet unless an incident runbook needs it; unset = mode disabled.", "minLength": 32 },
+    "NAVE_ORACLE_PERSIST_TTL_SECONDS": { "type": "string", "description": "nave-price-oracle: anonymous GETs persist a price row at most once per this many seconds (default 60); X-Indexer-Secret callers always persist.", "pattern": "^[0-9]+$" },
+    "BRIDGE_FEE_BPS": { "type": "string", "description": "Total bridge fee in bps charged on top (default 250 = 2.5%). Must match VITE_NAVE_BRIDGE_FEE_BPS." },
+    "STAKING_MIRROR_ENABLED": {
+      "type": "string",
+      "description": "Staking global-parity mirror toggle (signer-service worker tick). Splits the bridge's 1% staking-fee collector across the Solana nave_staking pool and each EVM NaveStaking by live stake weight; every pool drips its share over a rolling 365-day window (realized APY converges globally). Requires BRIDGE_SOLANA_STAKING_COLLECTOR + BRIDGE_SOLANA_STAKING_PROGRAM and BRIDGE_SOLANA_STAKING_POOL_ACCOUNT repointed at the collector; covered by the NAVE_BRIDGE_MAINNET_REVIEWED gate.",
+      "enum": ["true", "false"]
+    },
+    "BRIDGE_SOLANA_STAKING_COLLECTOR": { "type": "string", "description": "Neutral relayer-owned NAVE token account that accumulates the bridge's 1% staking leg for the mirror to distribute. On-chain BridgeConfig.staking_pool_owner must be this account's owner (the relayer wallet) — set via nave_bridge set_config at cutover." },
+    "BRIDGE_SOLANA_STAKING_PROGRAM": { "type": "string", "description": "nave_staking program id (stake-pool / reward-vault PDAs derive from it). The mirror reads StakePool.total_staked and sends the collector's Solana share + `sync` against it." },
+    "BRIDGE_EVM_STAKING_11155111": { "type": "string", "description": "NaveStaking drip pool address (Sepolia). The relayer EOA (BRIDGE_EVM_MINTER_PRIVATE_KEY) must be the on-chain `rewarder`.", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_EVM_STAKING_84532": { "type": "string", "description": "NaveStaking drip pool address (Base Sepolia).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_EVM_STAKING_1": { "type": "string", "description": "NaveStaking drip pool address (Ethereum mainnet).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_EVM_STAKING_8453": { "type": "string", "description": "NaveStaking drip pool address (Base mainnet).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_EVM_STAKING_46630": { "type": "string", "description": "NaveStaking drip pool address (Robinhood Chain testnet 46630).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_EVM_STAKING_4663": { "type": "string", "description": "NaveStaking drip pool address (Robinhood Chain mainnet 4663).", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "STAKING_MIRROR_MIN_RAW": { "type": "string", "description": "Minimum collector balance (NAVE base units, 6 decimals) before the mirror distributes; below it the tick only sends a permissionless `sync` poke. Default 1000000 (1 NAVE).", "pattern": "^[0-9]+$" },
+    "STAKING_MIRROR_SRC_CHAIN_ID": { "type": "string", "description": "Lockbox srcChainId reserved for staking-mirror wNAVE mints (replay-key partition). MUST differ from BRIDGE_SOLANA_SRC_CHAIN_ID (bridge mints, 900). Default 901.", "pattern": "^[0-9]+$" },
+    "STAKING_MIRROR_INTERVAL_MS": { "type": "string", "description": "Staking-mirror worker tick cadence in milliseconds. Default 600000 (10m).", "pattern": "^[0-9]+$" },
+    "STAKE_CLAIM_ENABLED": {
+      "type": "string",
+      "description": "EVM claim-on-demand rewards toggle (signer-service). EVM stakers accrue a pro-rata share of the ONE Solana reward pool in the Supabase evm_reward_accounts ledger; the relayer wraps + mints wNAVE straight to the staker at claim time (/stake-claim). When enabled, the staking mirror parks EVM fee shares in STAKE_CLAIM_RESERVE instead of pre-funding per-chain NaveStaking drip contracts.",
+      "enum": ["true", "false"]
+    },
+    "STAKE_CLAIM_RESERVE": { "type": "string", "description": "Relayer-owned Solana NAVE token account backing EVM claim-on-demand payouts. The mirror moves each tick's combined EVM fee share here; /stake-claim draws reserve → bridge custody before minting wNAVE, keeping wNAVE fully backed. Required when STAKE_CLAIM_ENABLED=true." },
+    "STAKE_CLAIM_SRC_CHAIN_ID": { "type": "string", "description": "Lockbox srcChainId partition for claim-on-demand reward mints. MUST differ from BRIDGE_SOLANA_SRC_CHAIN_ID (bridge, 900) and STAKING_MIRROR_SRC_CHAIN_ID (mirror, 901). Default 902.", "pattern": "^[0-9]+$" },
+    "STAKE_CLAIM_MAX_RAW": { "type": "string", "description": "Optional per-claim payout cap in NAVE base units (6 decimals). Unset/0 = uncapped; the reserve balance always caps payouts regardless.", "pattern": "^[0-9]*$" },
+    "STAKE_CLAIM_MIN_RAW": { "type": "string", "description": "Optional minimum claimable (NAVE base units, 6 decimals) before /stake-claim executes; sub-minimum claims are rejected with an explanation. Every payout costs the relayer a Solana wrap fee + EVM mint gas (meaningful on Ethereum mainnet), so a floor (e.g. 1000000 = 1 NAVE) blocks dust-claim griefing. Unset/0 = no floor.", "pattern": "^[0-9]*$" },
+    "BRIDGE_SOLANA_RELAYER_PUBKEY": { "type": "string", "description": "Optional: the PUBLIC key of the Solana bridge relayer hot wallet (audit P1). When set, the mainnet cutover asserts it differs from SQUADS_VAULT (the multisig owner). The authoritative owner!=relayer check runs on-chain in the contracts cutover verify phase." },
+    "BRIDGE_EVM_RELAYER_ADDRESS": { "type": "string", "description": "Optional: the PUBLIC address of the EVM bridge relayer/rewarder EOA (audit P1). When set, the mainnet cutover asserts it differs from SAFE_ADDRESS (the multisig owner). The authoritative owner!=relayer/rewarder check runs on-chain in the contracts cutover verify phase.", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "BRIDGE_WATCHER_ENABLED": {
+      "type": "string",
+      "description": "Independent bridge watcher toggle (signer-service worker tick, audit M-1). Retries stale/failed bridge_transfers through the verified relay path (bounded by retry_count, then parked as 'stuck') and optionally scans chains for missed BridgeLock/BridgeBurnTo events. Reuses the BRIDGE_* relayer config; on-chain replay guards remain the double-spend protection.",
+      "enum": ["true", "false"]
+    },
+    "BRIDGE_WATCHER_STALE_MS": { "type": "string", "description": "How long a transfer must be idle before the watcher retry sweep touches it (ms). Default 600000 (10m).", "pattern": "^[0-9]+$" },
+    "BRIDGE_WATCHER_MAX_RETRIES": { "type": "string", "description": "Max automatic re-executions before a transfer is parked as status 'stuck'. Default 5.", "pattern": "^[0-9]+$" },
+    "BRIDGE_WATCHER_BATCH_SIZE": { "type": "string", "description": "Transfers considered per watcher sweep. Default 25.", "pattern": "^[0-9]+$" },
+    "BRIDGE_WATCHER_SCAN_EVENTS": { "type": "string", "description": "Enable the missed-event chain scan in addition to the retry sweep.", "enum": ["true", "false"] },
+    "BRIDGE_WATCHER_INTERVAL_MS": { "type": "string", "description": "Watcher worker tick cadence in milliseconds. Default 300000 (5m).", "pattern": "^[0-9]+$" },
+    "NAVE_BRIDGE_MAINNET_REVIEWED": {
+      "type": "string",
+      "description": "Explicit override confirming the mainnet-hardened bridge review is complete (supplyCap + mintPaused set, multisig owners, KMS relayer keys, caps configured). Required (\"true\") if any BRIDGE_* var is set during a mainnet cutover; otherwise cutover refuses.",
+      "enum": ["true", "false"]
+    }
+  },
+  "additionalProperties": true
+}

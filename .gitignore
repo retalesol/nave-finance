@@ -1,0 +1,40 @@
+# Dependencies and build output
+node_modules/
+dist/
+target/
+out/
+cache/
+.anchor/
+.vite/
+test-results/
+test-ledger/
+coverage/
+playwright-report/
+
+# Secrets and local env. Examples (*.example) stay tracked.
+.env
+.env.*
+!.env.example
+!**/.env.example
+!.env.mainnet.cutover.example
+!.env.testnet.example
+
+# Keypairs and operator wallets
+wallets/
+wallet/
+ops/private/
+*.keypair
+*.keypair.tmp
+.deploy-wallet*
+evm-deploy-wallet.json
+.staking-collector*
+
+# Local RPC endpoint notes (contain a live API key)
+.cursor/rules/rpc-endpoints.mdc
+
+# Tooling noise
+.DS_Store
+.vercel/
+supabase/.temp/
+*.log
+.specstory/

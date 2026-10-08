@@ -1,0 +1,20 @@
+{
+  "description": "Status fields on files in evm/deployments. Cutover and deploy scripts refuse any artifact whose status, wireable, or production fields say it is not live. Do not invent replacement addresses in these files.",
+  "fields": {
+    "status": "Machine-readable lifecycle. See statuses below.",
+    "wireable": "false means the app and cutover must not load the addresses as live.",
+    "production": "false means deploy scripts must not treat the file as a completed mainnet deploy or broadcast against it.",
+    "daoStack": "undeployed means the chain has no NaveProtocol / factory / oracle / implementation stack.",
+    "offerInUi": "false means a later constitution UI pass must hide the adapter."
+  },
+  "statuses": {
+    "anvil-fixture-not-production": "deployments/1.json. Local Anvil DAO addresses (authority 0xf39F…). Chain 1 DAO stack is undeployed.",
+    "unused-parallel-wnave-do-not-wire": "hardened-bridge-unused-parallel-wnave-*.json. Not the canonical wNAVE 0xFc04710C….",
+    "do-not-wire": "evm-launch-8453.json points at the unused parallel Base wNAVE stack."
+  },
+  "chain1Dao": "Yield-sister cutover (Robinhood WETH to an Ethereum sister treasury) requires a real chain-1 NaveProtocol and NaveDAOFactory owned by the Safe. deployments/1.json is not that stack. Aave and Compound adapters are not deployed on chain 1.",
+  "adapters": {
+    "balancer": "adapters-8453.json balancerAdapter is the zero address. balancer.status is unset, balancer.offerInUi is false. Do not deploy Balancer without a pool id and minOut quote.",
+    "curve": "No curve address is recorded. curve.status is dormant and curve.offerInUi is false. CurveAdapter source stays unused. Do not deploy Curve."
+  }
+}

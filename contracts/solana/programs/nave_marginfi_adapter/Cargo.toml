@@ -1,0 +1,22 @@
+[package]
+name = "nave_marginfi_adapter"
+version = "0.1.0"
+description = "Nave Finance Marginfi strategy adapter"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "nave_marginfi_adapter"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "anchor-spl/token", "anchor-spl/associated_token", "nave_core/idl-build"]
+default = []
+
+[dependencies]
+anchor-lang = { version = "=0.32.1", features = ["init-if-needed"] }
+anchor-spl = { version = "=0.32.1", features = ["token", "associated_token"] }
+nave_core = { path = "../nave_core", features = ["cpi"] }

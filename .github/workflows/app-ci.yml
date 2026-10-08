@@ -1,0 +1,136 @@
+name: App CI (local tests)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'app/src/**'
+      - 'app/eval/**'
+      - 'app/scripts/**'
+      - 'app/tests/**'
+      - 'app/signer-service/**'
+      - 'app/supabase/functions/**'
+      - 'app/package.json'
+      - 'app/playwright.config.ts'
+      - '.github/workflows/app-ci.yml'
+  pull_request:
+    paths:
+      - 'app/src/**'
+      - 'app/eval/**'
+      - 'app/scripts/**'
+      - 'app/tests/**'
+      - 'app/signer-service/**'
+      - 'app/supabase/functions/**'
+      - 'app/package.json'
+      - 'app/playwright.config.ts'
+      - '.github/workflows/app-ci.yml'
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Typecheck (blocking)
+        run: npm run typecheck
+      - name: Lint (visible, not yet blocking)
+        # There is a tracked pre-existing lint debt (~120 `no-explicit-any` /
+        # unused-var errors, mostly in supabase/functions/, predating this CI
+        # gate — see docs/AUDIT_FINDINGS.md). Running it here makes lint state
+        # visible on every PR for the first time; `continue-on-error` keeps CI
+        # green while that debt is paid down, rather than either hiding lint
+        # entirely (the prior state) or breaking every PR on day one for
+        # pre-existing issues unrelated to the change being reviewed. Flip
+        # `continue-on-error` to `false` once the pre-existing errors are
+        # cleared.
+        run: npm run lint
+        continue-on-error: true
+
+  signer-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/signer-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Match the production Dockerfile (node:22-slim). Node 22 ships a
+          # native global WebSocket, which @supabase/supabase-js and
+          # rpc-websockets require at client construction (audit L-1); running
+          # CI on the same major avoids a Node-20/22 divergence.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/signer-service/package-lock.json
+      - run: npm ci
+      - name: Typecheck (blocking)
+        run: npm run typecheck
+      - name: Tests (blocking) — bridge relayer + staking mirror + rate limiter
+        # Hermetic: mock Solana RPC / EVM RPC / Supabase servers, no secrets.
+        run: npm test
+
+  eval-and-scripts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run eval:ci
+      - name: Syntax-check verifier scripts
+        run: |
+          node --check scripts/verify-e2e-gate.mjs
+          node --check scripts/devnet-multichain-verify.mjs
+          node --check scripts/agentic-e2e-run-verifiers.mjs
+          node --check scripts/agentic-e2e-checkpoint.mjs
+          node --check scripts/test-devnet-multichain.mjs
+
+  playwright-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+      - name: Playwright smoke (skipped without VITE_* env)
+        run: npm run test:e2e
+        env:
+          # Minimal devnet boot env (mirrors .env.example) so Vite can start in CI.
+          VITE_SOLANA_RPC_URL: https://api.devnet.solana.com
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder
+          VITE_NAVE_CORE_PROGRAM_ID: 8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB
+          VITE_NAVE_GOVERNANCE_PROGRAM_ID: CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M
+          VITE_NAVE_EXECUTION_PROGRAM_ID: 2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb
+          VITE_NAVE_JITO_ADAPTER_ID: E2fviyVGWF8iEwZK2M8ysrd63DM5yKxu6nuBMzjBQ2XT
+          VITE_NAVE_KAMINO_ADAPTER_ID: B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD
+          VITE_NAVE_MARGINFI_ADAPTER_ID: Gavh8GezswR14BYC851r6vevk267iWDfBkC3Fo49b1q7
+          VITE_NAVE_PROTOCOL_FEE_WALLET: EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn
+          VITE_EVM_SEPOLIA_RPC_URL: https://sepolia.drpc.org
+          VITE_EVM_BASE_SEPOLIA_RPC_URL: https://base-sepolia.drpc.org
+          VITE_EVM_SEPOLIA_PROTOCOL_ADDRESS: '0x678e69c53E53904ca6D060040E14DFc56003BC11'
+          VITE_EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS: '0x9BdE2F925fb71bDfC3EA0F0F9617786b5a642F02'
+          VITE_EVM_SEPOLIA_FACTORY_ADDRESS: '0x4C8dBdEaa7f5B043dB9A8831023b67994Dc2cb36'
+          VITE_EVM_BASE_SEPOLIA_FACTORY_ADDRESS: '0x50693cB4DcF581b1FbfAA3138A21e81579d192C9'
+          VITE_WALLETCONNECT_PROJECT_ID: placeholder-wc-project-id

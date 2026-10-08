@@ -1,0 +1,377 @@
+[
+  {
+    "name": "exec_approve_signs",
+    "description": "Executive, gate open, all invariants satisfied: model approve survives guardrails and signs.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 88,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": true, "decision": "approve", "mustFail": [] }
+  },
+  {
+    "name": "financial_low_confidence_downgrades_to_review",
+    "description": "Model approves but confidence is below threshold: deterministic layer downgrades the final decision to request_review and refuses to sign.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 55,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["confidence_threshold"] }
+  },
+  {
+    "name": "exec_gate_frozen_downgrades_to_review",
+    "description": "Model approves with high confidence but the DAO is frozen on-chain: agents_enabled fails closed and the decision is downgraded to request_review.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": true },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["agents_enabled"] }
+  },
+  {
+    "name": "exec_payload_mismatch_downgrades_to_review",
+    "description": "Model approves but its payload hash does not match the on-chain bound hash: payload_hash_equality fails and the decision becomes request_review.",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 90,
+      "should_sign": true,
+      "payload_hash": "deadbeef",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["payload_hash_equality"] }
+  },
+  {
+    "name": "oversight_severe_flag_downgrades_to_review",
+    "description": "Oversight flags a constitution violation: risk_severity fails and the decision is downgraded to request_review.",
+    "role": "oversight",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "oversight",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 95,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": ["constitution_violation"]
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["risk_severity"] }
+  },
+  {
+    "name": "financial_reserve_floor_breach_downgrades_to_review",
+    "description": "Model approves a strategy deploy but the measurable stablecoin reserve is below the constitution reserve floor: reserve_floor hard-blocks and the deterministic layer downgrades the final decision to request_review and refuses to sign (Phase 2 reserve-floor hard-block).",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "stablecoinBaseUnits": 10000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000, "minStablecoinReserveBps": 3500 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["reserve_floor"] }
+  },
+  {
+    "name": "financial_nav_stale_downgrades_to_review",
+    "description": "Model approves a strategy deploy but the on-chain NAV was revalued longer ago than the configured freshness window: nav_freshness hard-blocks (stale NAV would corrupt cap/floor math) and the decision is downgraded to request_review.",
+    "role": "financial",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600, "maxNavAgeSeconds": 600, "nowSecs": 2000000 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "financial",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "execute_strategy",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [],
+        "navBaseUnits": 100000,
+        "deployedBaseUnits": 2000,
+        "navLastRevaluedAt": 1000000
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["nav_freshness"] }
+  },
+  {
+    "name": "exec_finalize_frozen_parks_to_review",
+    "description": "Auto-finalize stage: a finalize action is attempted while the DAO is frozen on-chain. The agent gate fails closed for signing roles, so even a finalize is parked — the decision is downgraded to request_review and nothing is signed (Phase 2 frozen-gate finalize parking).",
+    "role": "executive",
+    "options": { "failClosedOnUnknown": true, "maxSnapshotAgeSeconds": 3600 },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "executive",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "finalize_proposal",
+        "protocolId": "kamino",
+        "expectedPayloadHash": "abc123",
+        "amount": 1000
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": [{ "current_value": 2000 }]
+      },
+      "approvedProtocols": ["kamino", "jito"],
+      "riskParams": { "confidenceThreshold": 70, "maxSingleAllocationBps": 5000 },
+      "gate": { "agentsEnabled": true, "frozen": true },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "approve",
+      "confidence": 92,
+      "should_sign": true,
+      "payload_hash": "abc123",
+      "risk_flags": []
+    },
+    "expect": { "pass": false, "shouldSign": false, "decision": "request_review", "mustFail": ["agents_enabled"] }
+  },
+  {
+    "name": "operational_halt_decision_preserved",
+    "description": "Operational agent decides to halt: deterministic layer never signs operational roles, the halt decision is preserved (not downgraded), and no critical check fails.",
+    "role": "operational",
+    "options": { "failClosedOnUnknown": true },
+    "context": {
+      "version": "1.1.0",
+      "daoAddress": "Dao1111111111111111111111111111111111111111",
+      "daoName": "Test DAO",
+      "governanceType": "token",
+      "role": "operational",
+      "request": {
+        "address": "Er11111111111111111111111111111111111111111",
+        "actionType": "operational_monitor",
+        "protocolId": null,
+        "expectedPayloadHash": null,
+        "amount": null
+      },
+      "treasury": {
+        "totalValueUsd": 100000,
+        "solBalance": 10,
+        "usdcBalance": 50000,
+        "snapshotAt": "2026-01-01T00:00:00Z",
+        "strategyPositions": []
+      },
+      "approvedProtocols": ["kamino"],
+      "riskParams": { "confidenceThreshold": 70 },
+      "gate": { "agentsEnabled": true, "frozen": false },
+      "priorActions": [],
+      "recentActivity": [],
+      "assembledAt": "2026-01-01T00:00:00Z"
+    },
+    "output": {
+      "decision": "halt",
+      "confidence": 90,
+      "should_halt": true,
+      "should_clear_halt": false,
+      "risk_flags": []
+    },
+    "expect": { "pass": true, "shouldSign": false, "decision": "halt", "mustFail": [] }
+  }
+]

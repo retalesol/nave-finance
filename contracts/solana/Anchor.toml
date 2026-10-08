@@ -1,0 +1,43 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+nave_core = "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+nave_governance = "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M"
+nave_execution = "2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb"
+nave_jito_adapter = "E2fviyVGWF8iEwZK2M8ysrd63DM5yKxu6nuBMzjBQ2XT"
+nave_kamino_adapter = "B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD"
+nave_marginfi_adapter = "Gavh8GezswR14BYC851r6vevk267iWDfBkC3Fo49b1q7"
+# Closed mainnet ids — do not `solana program deploy` these. A future pair needs new ids.
+nave_bridge = "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6"
+nave_staking = "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf"
+
+[programs.devnet]
+nave_core = "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+nave_governance = "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M"
+nave_execution = "2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb"
+nave_jito_adapter = "E2fviyVGWF8iEwZK2M8ysrd63DM5yKxu6nuBMzjBQ2XT"
+nave_kamino_adapter = "B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD"
+nave_marginfi_adapter = "Gavh8GezswR14BYC851r6vevk267iWDfBkC3Fo49b1q7"
+# Closed mainnet ids — do not `solana program deploy` these. A future pair needs new ids.
+nave_bridge = "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6"
+nave_staking = "AxVdBgc8eUZ3VXKCCJxF7mAmRAtvtM2eYAbE3XBjnhjf"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "../node_modules/.bin/ts-mocha -p ./tsconfig.json -t 1000000 ${ANCHOR_MOCHA_GREP:+--grep $ANCHOR_MOCHA_GREP} --ignore 'tests/*-devnet.ts' --ignore 'tests/devnet-e2e.ts' 'tests/*.ts'"
+
+[test]
+startup_wait = 20000
+shutdown_wait = 2000
+upgradeable = true

@@ -1,0 +1,83 @@
+# Supabase project configuration.
+# project_id is the project ref (the subdomain in your SUPABASE_URL:
+# https://<project_id>.supabase.co). Override with `supabase link --project-ref`.
+project_id = "suiivgqwxvqjuxqsrdnu"
+
+[functions.helius-webhook]
+# Helius posts without a Supabase JWT; auth is enforced via NAVE_INDEXER_SECRET.
+verify_jwt = false
+
+[functions.index-events]
+verify_jwt = false
+
+[functions.snapshot-treasury]
+verify_jwt = false
+
+[functions.agent-orchestrator]
+verify_jwt = false
+
+[functions.agent-dispatcher]
+verify_jwt = false
+
+[functions.agent-health]
+verify_jwt = false
+
+[functions.generate-agent-keys]
+verify_jwt = false
+
+[functions.register-dao]
+# Browser-reachable; auth is the on-chain founder binding + rate limit, not a JWT.
+verify_jwt = false
+
+[functions.orchestrator-proxy]
+# Browser-reachable; auth is the founder's ed25519-signed challenge, not a JWT.
+verify_jwt = false
+
+[functions.agent-admin]
+verify_jwt = false
+
+[functions.policy-evaluator]
+verify_jwt = false
+
+[functions.proposal-creator]
+verify_jwt = false
+
+[functions.yield-data]
+verify_jwt = false
+
+[functions.dao-access-check]
+verify_jwt = false
+
+[functions.update-dao-privacy]
+verify_jwt = false
+
+[functions.watch-dao]
+verify_jwt = false
+
+[functions.nave-price-oracle]
+# Browser-reachable public read-only price feed; no JWT (anon key only).
+verify_jwt = false
+
+[functions.evm-guardian-freeze]
+# Browser-reachable; founder EIP-191 challenge + custodied guardian EIP-712 sigs.
+verify_jwt = false
+
+[functions.evm-strategy-withdraw]
+# Browser-reachable; founder EIP-191 challenge → signer /relay-evm withdrawFromStrategy.
+verify_jwt = false
+
+[functions.simulation-data]
+# Browser-reachable public read of latest portfolio simulation batch.
+verify_jwt = false
+
+[functions.simulation-engine]
+# Cron / operator regenerate; auth via X-Indexer-Secret (or service-role bearer).
+verify_jwt = false
+
+[functions.generate-evm-agent-keys]
+# Browser-reachable; founder EIP-191 challenge + on-chain membership check.
+verify_jwt = false
+
+[functions.nave-token-stats]
+# Browser-reachable public read-only token stats.
+verify_jwt = false

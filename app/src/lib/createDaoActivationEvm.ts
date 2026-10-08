@@ -1,0 +1,246 @@
+// ─── Unified DAO creation — EVM auto-activation orchestration ─────────────────
+// Runs the post-init activation phase of the EVM creation flow:
+//
+//   Tx 2: updateConstitution (approved adapters) + setPolicyParameters
+//         → sent SEQUENTIALLY via sendEvm (unlike Solana's sendGrouped, EVM has
+//           no atomic multi-instruction transaction, so each call is its own tx
+//           and can independently succeed/fail/be rejected)
+//   Then: revalueTreasury (best-effort)
+//   Then: setAgentsEnabledViaProxyEvm (off-chain founder-gated proxy)
+//
+// Modelled after the Solana activation flow in createDaoActivation.ts, but with
+// PER-STEP on-chain idempotency checks (not just an outer "already done" gate):
+// because EVM steps are separate sequential transactions rather than one atomic
+// Solana transaction, a retry after a partial failure (e.g. updateConstitution
+// landed but the wallet rejected setPolicyParameters) must skip the step(s)
+// that already landed on-chain, or it will double-submit them.
+
+import { readContract } from '@wagmi/core';
+import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
+import {
+  buildUpdateConstitutionEvm,
+  buildSetPolicyParametersEvm,
+  buildRevalueTreasuryEvm,
+  type EvmBuildResult,
+  type EvmConstitutionAdapter,
+} from './evm/writers';
+import { fetchConstitutionEvm } from './evm/readers';
+import { NaveTreasuryAbi } from './evm/contracts';
+import { toAddress } from './evm/addresses';
+import { wagmiConfig } from './evm/wagmi';
+import { type EvmChainId } from './chain/types';
+import { getEvmAdapterAddress, SYSTEM_CONFIDENCE_THRESHOLD } from './programConfig';
+import { setAgentsEnabledViaProxyEvm } from './edgeFunctionClient';
+
+// Rough ETH/USD estimate for agentThresholdUsd derivation when no price feed
+// is available at creation time.
+const ESTIMATED_ETH_USD_PRICE = 3_500;
+
+/** Default per-adapter allocation cap when no custom cap is specified. */
+const DEFAULT_ADAPTER_MAX_ALLOCATION_BPS = 5_000;
+
+export interface EvmActivationContext {
+  daoAddress: string;
+  chainId: EvmChainId;
+  /** Chain family label expected by agent-admin: 'ethereum' | 'base' | 'robinhood' */
+  chain: 'ethereum' | 'base' | 'robinhood';
+  founderAddress: string;
+  policy: PolicyState;
+  seedAmount: string;
+  sendEvm: (
+    results: EvmBuildResult | EvmBuildResult[],
+    opts?: { successLabel?: string; quietMock?: boolean },
+  ) => Promise<{ status: string; error: string | null }>;
+  signMessage: (message: string) => Promise<string>;
+  onStep: (label: string) => void;
+}
+
+// ─── Resume detection helpers (EVM analogue of createDaoActivation.ts's Solana checks) ──
+
+/** True once the constitution has at least one approved adapter (mirrors Solana's constitutionRatified). */
+async function constitutionRatifiedEvm(chainId: EvmChainId, daoAddress: string): Promise<boolean> {
+  const data = await fetchConstitutionEvm(chainId, daoAddress);
+  return !!data && data.approvedProtocols.some((p) => p.approved);
+}
+
+interface EvmPolicyTarget {
+  reserveBps: number;
+  deployedBps: number;
+  liquidityBps: number;
+  rebalanceFreqSecs: number;
+}
+
+/** True when the on-chain policy already matches the wizard's target values exactly. */
+async function policyParametersAppliedEvm(
+  chainId: EvmChainId,
+  daoAddress: string,
+  target: EvmPolicyTarget,
+): Promise<boolean> {
+  const treasury = toAddress(daoAddress);
+  if (!treasury) return false;
+  try {
+    const [policyBps, rebalanceFreq] = await Promise.all([
+      readContract(wagmiConfig, { address: treasury, abi: NaveTreasuryAbi, functionName: 'policyBps', chainId }),
+      readContract(wagmiConfig, { address: treasury, abi: NaveTreasuryAbi, functionName: 'rebalanceFrequencySecs', chainId }),
+    ]);
+    const [reserveBps, deployedBps, liquidityBps] = policyBps as readonly [number, number, number];
+    return (
+      Number(reserveBps) === target.reserveBps &&
+      Number(deployedBps) === target.deployedBps &&
+      Number(liquidityBps) === target.liquidityBps &&
+      Number(rebalanceFreq as bigint) === target.rebalanceFreqSecs
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** True once the treasury has recorded at least one revalue (`lastRevaluedAt > 0`). */
+async function treasuryRevaluedEvm(chainId: EvmChainId, daoAddress: string): Promise<boolean> {
+  const treasury = toAddress(daoAddress);
+  if (!treasury) return false;
+  try {
+    const lastRevaluedAt = await readContract(wagmiConfig, {
+      address: treasury, abi: NaveTreasuryAbi, functionName: 'lastRevaluedAt', chainId,
+    });
+    return Number(lastRevaluedAt as bigint) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** True once the treasury's `agentsEnabled` flag is already set. */
+async function agentsAreEnabledEvm(chainId: EvmChainId, daoAddress: string): Promise<boolean> {
+  const treasury = toAddress(daoAddress);
+  if (!treasury) return false;
+  try {
+    const enabled = await readContract(wagmiConfig, {
+      address: treasury, abi: NaveTreasuryAbi, functionName: 'agentsEnabled', chainId,
+    });
+    return Boolean(enabled);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run EVM post-creation activation (Tx 2 + agent-enable).
+ * Returns `{ ok: true }` when all critical steps succeed; agent-enable failures
+ * are non-fatal and reported in `agentError`.
+ *
+ * Every step is idempotent + resumable: each `isDone` check reads on-chain
+ * state so a partially-completed flow (e.g. a wallet rejection between
+ * updateConstitution and setPolicyParameters) can be re-run and skips the
+ * steps that already landed — mirrors createDaoActivation.ts's Solana pattern.
+ */
+export async function runEvmActivation(
+  ctx: EvmActivationContext,
+): Promise<{ ok: boolean; error?: string; agentError?: string }> {
+  const { daoAddress, chainId, founderAddress, policy, seedAmount, sendEvm, onStep } = ctx;
+
+  // ── Tx 2: Update constitution + set policy parameters (idempotent) ────────
+  onStep('Sign Tx 2 of 2 — Activate & Ratify');
+
+  // Build the approved adapter list from the wizard's policy.approvedProtocols.
+  const adapters: EvmConstitutionAdapter[] = Object.entries(policy.approvedProtocols)
+    .filter(([, enabled]) => enabled)
+    .flatMap(([protocolId]) => {
+      const addr = getEvmAdapterAddress(chainId, protocolId as Parameters<typeof getEvmAdapterAddress>[1]);
+      if (!addr) return [];
+      return [{
+        adapter: addr,
+        maxAllocationBps: DEFAULT_ADAPTER_MAX_ALLOCATION_BPS,
+        approved: true,
+        protocolId,
+      }];
+    });
+
+  // Estimate agentThresholdUsd from seed amount (ETH × price), or 0 if no seed.
+  const seedNum = parseFloat(seedAmount);
+  const agentThresholdUsd =
+    !isNaN(seedNum) && seedNum > 0
+      ? Math.round(seedNum * ESTIMATED_ETH_USD_PRICE)
+      : 0;
+
+  const policyTarget: EvmPolicyTarget = {
+    reserveBps: Math.round(policy.minStablecoin * 100),
+    deployedBps: Math.round(policy.maxDeployment * 100),
+    liquidityBps: Math.round(policy.liquidityReserve * 100),
+    rebalanceFreqSecs: rebalanceFreqToSecs(policy.rebalanceFreq),
+  };
+
+  // Check EACH step independently — unlike Solana's single atomic transaction,
+  // sendEvm submits these SEQUENTIALLY as separate txs, so a retry must only
+  // resend whichever ones did not already land.
+  const [constitutionDone, policyDone] = await Promise.all([
+    constitutionRatifiedEvm(chainId, daoAddress),
+    policyParametersAppliedEvm(chainId, daoAddress, policyTarget),
+  ]);
+
+  const pendingTx2: EvmBuildResult[] = [];
+  if (!constitutionDone) {
+    pendingTx2.push(buildUpdateConstitutionEvm(chainId, daoAddress, adapters, SYSTEM_CONFIDENCE_THRESHOLD, agentThresholdUsd));
+  }
+  if (!policyDone) {
+    pendingTx2.push(buildSetPolicyParametersEvm(
+      chainId,
+      daoAddress,
+      policyTarget.reserveBps,
+      policyTarget.deployedBps,
+      policyTarget.liquidityBps,
+      policyTarget.rebalanceFreqSecs,
+    ));
+  }
+
+  if (pendingTx2.length > 0) {
+    const activationResult = await sendEvm(pendingTx2, {
+      successLabel: 'Constitution ratified',
+      quietMock: true,
+    });
+
+    if (activationResult.status !== 'success' && activationResult.status !== 'mock') {
+      return {
+        ok: false,
+        error: activationResult.error ?? 'Constitution update failed',
+      };
+    }
+  }
+
+  // Revalue is best-effort AND idempotent-checked: skip re-sending (and the
+  // extra wallet prompt) once the treasury has already recorded a revalue.
+  if (!(await treasuryRevaluedEvm(chainId, daoAddress))) {
+    await sendEvm(buildRevalueTreasuryEvm(chainId, daoAddress), {
+      successLabel: 'Revalued treasury NAV',
+      quietMock: true,
+    });
+  }
+
+  // ── Enable agents (off-chain, non-fatal, idempotent) ───────────────────────
+  onStep('Starting agents…');
+  if (await agentsAreEnabledEvm(chainId, daoAddress)) {
+    return { ok: true };
+  }
+  try {
+    const chain = ctx.chain;
+    const { error: agentError } = await setAgentsEnabledViaProxyEvm(
+      daoAddress,
+      founderAddress,
+      ctx.signMessage,
+      true,
+      chainId,
+      chain,
+    );
+    if (agentError) {
+      // Non-fatal: treasury is ratified; the founder can start agents later
+      // from Settings. Do not fail the whole flow.
+      return { ok: true, agentError };
+    }
+  } catch (err) {
+    return {
+      ok: true,
+      agentError: err instanceof Error ? err.message : 'Agent start failed',
+    };
+  }
+
+  return { ok: true };
+}

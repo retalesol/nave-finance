@@ -1,0 +1,20 @@
+{
+  "chainId": 4663,
+  "dailyCap": 25000000000,
+  "intendedOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+  "naveBridge": "0xE73dCcACbd5246C0616Ea19DC5186023D876a510",
+  "naveBridgeImplementation": "0x2e114f14CdBE7f526492F22C966c82D11E6bB66C",
+  "naveStaking": "0xB1d76609D97382c64e130DBfdF4506FFce141268",
+  "naveStakingImplementation": "0xf9A5524C008418c38df5F5a7583a6983b199E0ce",
+  "owner": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+  "perTxCap": 1000000000,
+  "proxyPattern": "uups-singleton+uups-dao-consent",
+  "relayer": "0x745899B98CCd065Abf23010511eDa8a23094a6E7",
+  "supplyCap": 100000000000,
+  "wrappedNave": "0xEccBfa0bD9708b019A6bAeC01e62aC7dbD052649",
+  "wrappedNaveImplementation": "0x280470c7275d630f1a9Fc1C406D4754D1f523Dbb",
+  "status": "unused-parallel-wnave-do-not-wire",
+  "wireable": false,
+  "production": false,
+  "note": "Accidentally deployed second wNAVE \u2014 do NOT point app/relayer here. Canonical wNAVE remains 0xFc04710C\u2026; v2 lockbox redeployed against that token."
+}

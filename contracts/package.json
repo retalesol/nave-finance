@@ -1,0 +1,42 @@
+{
+  "name": "nave-finance-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy:devnet": "bash solana/instant-deploy.sh",
+    "mainnet:cutover": "npm run mainnet:cutover --prefix solana",
+    "mainnet:cutover:evm": "npm run mainnet:cutover:evm --prefix solana",
+    "test:evm:dao-e2e-checklist": "bash scripts/evm-testnet-dao-e2e.sh",
+    "test": "npm run test:localnet",
+    "test:unit": "npm run test:unit --prefix solana",
+    "test:localnet": "cd solana && anchor test",
+    "test:integration": "npm run test:localnet",
+    "test:manifest": "npm run test:manifest --prefix solana",
+    "test:checkpoint": "npm run test:checkpoint --prefix solana",
+    "test:resume": "npm run test:resume --prefix solana",
+    "test:devnet:solana:smoke": "node solana/scripts/run-devnet-suite.mjs --tier smoke",
+    "test:devnet:solana:full": "node solana/scripts/run-devnet-suite.mjs --tier full",
+    "test:devnet:evm": "node solana/scripts/run-evm-testnet-suite.mjs",
+    "test:devnet:evm:live": "node solana/scripts/run-evm-testnet-suite.mjs --live",
+    "bridge:validate-fee": "npm run bridge:validate-fee --prefix solana",
+    "bridge:setup": "npm run bridge:setup --prefix solana",
+    "bridge:setup:dry": "npm run bridge:setup:dry --prefix solana",
+    "localnet:up": "npm run localnet:up --prefix solana"
+  },
+  "devDependencies": {
+    "@pythnetwork/hermes-client": "^2.0.0",
+    "@pythnetwork/pyth-solana-receiver": "^0.12.0",
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.32.1",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "generatedAt": "2026-07-27T03:09:45.087Z",
+  "gitCommit": "e3c2688f9b1052ca104cedd6f81252c445986fd4",
+  "chain": "Robinhood Chain",
+  "chainId": 4663,
+  "explorer": "blockscout",
+  "isTestnet": false,
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "addresses": {
+    "authority": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+    "chainId": 4663,
+    "executionImpl": "0x480360B18628144990F6970281fE799b1F92020d",
+    "factory": "0x23D69A8F152A15BEA92bB1f906f910Df7810dC3D",
+    "governorImpl": "0xa9d8eC33330d23a5e35Aa9a4132f073151b61aA2",
+    "oracle": "0x7b0824DF7C178419E30C89A15034FF9b005678e0",
+    "protocol": "0x7792dbB76a270c99f8c707a55A819dF33C417dce",
+    "tokenDeployer": "0x82038a642cd5e8A2F9ea2de30158f31bdAc8003a",
+    "treasuryImpl": "0x531e4842e03f6712Abe197cdc24D0b3B34C76D9a"
+  },
+  "adapters": null,
+  "naveStake": null,
+  "authority": {
+    "expectedSafe": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+    "handoff": null
+  },
+  "checks": {
+    "scope": "full",
+    "preflight": false,
+    "build": false,
+    "deploy": false,
+    "adapters": false,
+    "stake": false,
+    "handoff": false,
+    "verify": true
+  },
+  "verify": {
+    "authority": {
+      "address": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+      "hasCode": false
+    },
+    "executionImpl": {
+      "address": "0x480360B18628144990F6970281fE799b1F92020d",
+      "hasCode": true
+    },
+    "factory": {
+      "address": "0x23D69A8F152A15BEA92bB1f906f910Df7810dC3D",
+      "hasCode": true
+    },
+    "governorImpl": {
+      "address": "0xa9d8eC33330d23a5e35Aa9a4132f073151b61aA2",
+      "hasCode": true
+    },
+    "oracle": {
+      "address": "0x7b0824DF7C178419E30C89A15034FF9b005678e0",
+      "hasCode": true
+    },
+    "protocol": {
+      "address": "0x7792dbB76a270c99f8c707a55A819dF33C417dce",
+      "hasCode": true
+    },
+    "tokenDeployer": {
+      "address": "0x82038a642cd5e8A2F9ea2de30158f31bdAc8003a",
+      "hasCode": true
+    },
+    "treasuryImpl": {
+      "address": "0x531e4842e03f6712Abe197cdc24D0b3B34C76D9a",
+      "hasCode": true
+    },
+    "protocolOwner": "0xC00C1F6Bb6882bde84bbC8b9C4Dc4a3B24057586",
+    "protocolPendingOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+    "oracleOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+    "bridgeAuthority": {
+      "naveBridgeOwner": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+      "naveBridgePendingOwner": "0x0000000000000000000000000000000000000000",
+      "naveBridgeRelayer": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+      "naveStakingOwner": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+      "naveStakingPendingOwner": "0x0000000000000000000000000000000000000000",
+      "naveStakingRewarder": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+      "wrappedNaveOwner": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+      "wrappedNavePendingOwner": "0x0000000000000000000000000000000000000000",
+      "p1Pending": [
+        "P1 violation (verify): bridge relayer 0xff888986b1e7bf1ea2740825eecb7ff98b484879 equals the current NaveBridge owner. Separate the multisig owner from the hot key before mainnet value flows.",
+        "P1 violation (verify): bridge rewarder 0xff888986b1e7bf1ea2740825eecb7ff98b484879 equals the current NaveBridge owner. Separate the multisig owner from the hot key before mainnet value flows."
+      ]
+    }
+  }
+}

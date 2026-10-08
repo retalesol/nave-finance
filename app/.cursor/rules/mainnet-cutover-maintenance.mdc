@@ -1,0 +1,21 @@
+---
+description: Keep mainnet cutover system in sync with product changes
+alwaysApply: true
+---
+
+# Mainnet Cutover Maintenance Rule
+
+If a change affects mainnet deployment, runtime config, infra wiring, or verification paths, update the cutover system in the same PR.
+
+Required updates when relevant:
+
+- Update `scripts/mainnet-cutover.mjs` phase logic and validations.
+- Update `scripts/mainnet-cutover-env.schema.json` and `.env.mainnet.cutover.example` for new/changed env vars.
+- Update `scripts/mainnet-launch-artifact.schema.json` when launch outputs change.
+- Keep `docs/MAINNET_PREFLIGHT.md` aligned with command behavior and release gates.
+- Ensure `package.json` cutover scripts remain accurate.
+
+Verification expectation:
+
+- Run syntax/lint checks for touched cutover scripts.
+- Confirm no devnet/default fallbacks are unintentionally introduced for mainnet flow.

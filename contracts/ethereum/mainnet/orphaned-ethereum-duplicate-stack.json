@@ -1,0 +1,11 @@
+{
+  "note": "Accidental second Ethereum mainnet deploy (2026-07-10) when --chain-id 8453 ran against EVM_RPC_URL=Ethereum. NOT wired into the app. Canonical stack is hardened-bridge-1.json. Mint/bridge/staking paused on-chain 2026-07-10. Do not hand off to Safe.",
+  "chainId": 1,
+  "paused": true,
+  "broadcast": "broadcast/DeployHardenedBridgeStack.s.sol/1/run-1783714706777.json",
+  "wrappedNave": "0xe98F08B816D0A7c472e7E809172087Eb25e7b312",
+  "naveBridge": "0x8CF0C603456246FBD871E72ccEaDf1F45e3D06e9",
+  "naveStaking": "0x5525d529Fa90158B5722aD2E98E5987A2EbF24CC",
+  "owner": "0xFf888986b1e7Bf1ea2740825eeCB7fF98b484879",
+  "intendedOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c"
+}

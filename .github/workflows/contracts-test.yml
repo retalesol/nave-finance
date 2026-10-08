@@ -1,0 +1,178 @@
+name: Contracts CI (local)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'contracts/solana/**'
+      - 'contracts/evm/**'
+      - 'contracts/package.json'
+      - '.github/workflows/contracts-test.yml'
+  pull_request:
+    paths:
+      - 'contracts/solana/**'
+      - 'contracts/evm/**'
+      - 'contracts/package.json'
+      - '.github/workflows/contracts-test.yml'
+
+jobs:
+  solana-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+        working-directory: contracts
+      - run: npm run test:unit
+        working-directory: contracts
+
+  solana-cargo-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/solana -> target
+      - name: cargo test (all programs, host target — no BPF toolchain needed)
+        working-directory: contracts/solana
+        run: cargo test --workspace
+
+  solana-anchor-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/solana -> target
+      - name: Install Solana CLI (Agave, stable channel)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install AVM + pinned Anchor CLI (version from Anchor.toml)
+        working-directory: contracts/solana
+        run: |
+          ANCHOR_VERSION=$(grep -m1 'anchor_version' Anchor.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install "$ANCHOR_VERSION"
+          avm use "$ANCHOR_VERSION"
+      - name: anchor build (all programs — verifies the full BPF build, not just cargo check)
+        working-directory: contracts/solana
+        run: anchor build
+
+  solana-localnet-anchor:
+    # Localnet integration tests for the bridge/staking account constraints
+    # (init-race gating, owner-only setters, two-step ownership, the P6
+    # ProcessedRelease source_chain_id replay-seed). These need a validator with
+    # the built programs, so they run here rather than in cargo/unit lanes.
+    #
+    # Introduced non-blocking (continue-on-error) — same pattern this repo used
+    # for the slither lane — because it is a brand-new localnet lane; flip to
+    # blocking once it has run green on a few PRs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/solana -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+        working-directory: contracts
+      - name: Install Solana CLI (Agave, stable channel)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install AVM + pinned Anchor CLI (version from Anchor.toml)
+        working-directory: contracts/solana
+        run: |
+          ANCHOR_VERSION=$(grep -m1 'anchor_version' Anchor.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install "$ANCHOR_VERSION"
+          avm use "$ANCHOR_VERSION"
+      - name: Generate a localnet keypair for anchor test
+        run: solana-keygen new --no-bip39-passphrase --silent --outfile "$HOME/.config/solana/id.json"
+      - name: anchor test (bridge/staking localnet constraints)
+        working-directory: contracts/solana
+        # Scope mocha to the new suite (via the ANCHOR_MOCHA_GREP hook the
+        # Anchor.toml [scripts] test line reads); the validator still builds +
+        # deploys all programs so nave_bridge / nave_staking are live. `localnet`
+        # is a single-word regex that uniquely matches this suite's describe().
+        env:
+          ANCHOR_MOCHA_GREP: localnet
+        run: anchor test
+        continue-on-error: true
+
+  evm-forge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Forge unit + E2ETest
+        working-directory: contracts/evm
+        run: |
+          forge test
+          forge test --match-contract E2ETest
+      - name: TestnetE2E skips without live flag
+        working-directory: contracts/evm
+        run: forge test --match-contract TestnetE2E
+
+  evm-slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build (Slither reads Foundry's compiled artifacts)
+        working-directory: contracts/evm
+        run: forge build
+      - name: Install Slither
+        run: pip install slither-analyzer
+      - name: Slither static analysis (informational — see docs/AUDIT_FINDINGS.md)
+        # First static-analysis pass for this codebase; not yet triaged against
+        # the existing manual audit findings, so this is visibility-only for
+        # now rather than a hard gate. `continue-on-error` avoids blocking on
+        # unreviewed findings while still surfacing them on every PR. Flip to
+        # blocking (and add a .slither.json exclude/triage file for accepted
+        # findings) once a first triage pass has been done.
+        working-directory: contracts/evm
+        run: slither . --foundry-out-directory out --exclude-dependencies
+        continue-on-error: true
+
+  manifest-localnet-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+        working-directory: contracts
+      - run: npm run test:manifest --prefix solana
+        working-directory: contracts
+      - name: Assert devnet tests excluded from manifest
+        working-directory: contracts
+        run: |
+          node -e "
+          const m = require('./solana/.test-runs/manifest.json');
+          const bad = m.files.filter(f => f.includes('-devnet') || f.endsWith('devnet-e2e.ts'));
+          if (bad.length) { console.error('devnet files in manifest:', bad); process.exit(1); }
+          console.log('manifest localnet files:', m.files.length);
+          "

@@ -1,0 +1,7 @@
+{
+  "arbitrumBridgeAdapter": "0x0000000000000000000000000000000000000000",
+  "cctpBridgeAdapter": "0x0a32e918094ce9fC1CcDbe232e528a88a9c44c20",
+  "chainId": 8453,
+  "opStandardBridgeAdapter": "0xad3c7f1F26FBF52c9B6a1C02c15F5EBbDF2EaE27",
+  "protocol": "0x377D976A31871060B4059fA244b76809A3Cc0C90"
+}

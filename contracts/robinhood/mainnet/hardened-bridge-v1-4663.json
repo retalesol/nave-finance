@@ -1,0 +1,15 @@
+{
+  "chainId": 4663,
+  "stack": "v1-immutable",
+  "status": "legacy-live",
+  "note": "Immutable bridge stack kept live for exit of existing wNAVE (~3001 on RH). New Solana→EVM mints use hardened-bridge-4663.json (v2 UUPS) once deployed. Relayer must accept burns from this wNAVE.",
+  "dailyCap": 10000000000,
+  "intendedOwner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+  "naveBridge": "0x608c6Ee3d56C4Ac5241D5481E72bD236C5404654",
+  "naveStaking": "0xC8f3BD11a62D39133DdFb5D653789eAe9d8630ec",
+  "owner": "0xd338C8d0C3e28979D1cFec2f7C66769C796db89c",
+  "perTxCap": 1000000000,
+  "relayer": "0x745899B98CCd065Abf23010511eDa8a23094a6E7",
+  "supplyCap": 100000000000,
+  "wrappedNave": "0xFc04710C3F310f6ed84b441cf897a05807312358"
+}

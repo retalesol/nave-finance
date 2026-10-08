@@ -1,0 +1,55 @@
+{
+  "cluster": "devnet",
+  "rpc": "${SOLANA_RPC_URL}",
+  "createdAt": "2026-05-31T08:54:07.899Z",
+  "founder": "EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn",
+  "daoId": 14,
+  "slug": "nave-escrow-gate",
+  "name": "Nave Escrow Gate DAO",
+  "governanceType": "token",
+  "reviewWindowSecs": 120,
+  "addresses": {
+    "daoRegistry": "2UULs6vkMRcviEphUb4Pm2kjaVstyFBTWtjdM2yP2ToN",
+    "globalConfig": "6mhwhFzRX7n8S4Fjj5wj1DLaQaGADoQG3jE5vFtqDa48",
+    "vaultAuthority": "3Wum73oLQRrfDpSQvfZEAytaFx9swuG9Xd8DjL76cn2j",
+    "treasuryVault": "CqvbTKCvYXAe7nHofD86twz5fjtudtqDSszDgmrGmKP6",
+    "vaultMint": "GNc5gEqnrb7FVtvc25NTa9ABWbciCqq1VixmrCht53jG",
+    "vaultTokenAccount": "F6H9M5YxwLX4SaHA7JjwoCMfSbG99sgHey9dTn6VR6qg",
+    "constitution": "AdwBzc3SSGHsdH1S4huGPZKnQiwL73tAjeVj5Z9cvBnY",
+    "agentSet": "3f1pgyb7GtDJo4CgnHVDeTWaXnwe2D1mjN4LWBWHLzEi",
+    "guardianConfig": "EEZRhtL1zx8rtjDNNzS8ff1KPpjmz78LWtRkQqZTZGEu",
+    "tokenRegistry": "7d8kNet7J9fdNhtBKxFGp8LJ48eYBoTWXfFZtTZKr3ip",
+    "feeConfig": "7y884xtpFSqeHeuNN18y4qh5KM4PEWVMFhuiVVaL6LEv",
+    "strategyPosition": "CMnZdkoYrfkvbHHgpHh5FQsjhW2kGheDvqH3ZkKtmLib",
+    "strategyEscrow": "Hf5BPt8hg5FPvxiafTtMo1Dwj8KPXqvgdSSs4ceNcC6F",
+    "proposal": "59vhVzu2Yty8PC8gxanch4gJy7C8SLKbXyKBL7ZDUitf",
+    "executionRequest": "4vzJuoHGmR3b5kR7DDo46CzHPvMouvEM2yXpnGwRxNhM"
+  },
+  "strategy": {
+    "protocol": "kamino",
+    "adapterProgram": "B69DnA6h7B7MvLkNjRQDs4qDUbw9zrNwF9c8WuKo7kfD",
+    "amountBaseUnits": "10000000000",
+    "payloadHashHex": "e1cb9401fb85c4cf0af3a5cba6b9bb9cfcb287d4e7b2a3031b773ea8c121e6c6"
+  },
+  "strategyAccounts": {
+    "kamino": {
+      "strategyPosition": "CMnZdkoYrfkvbHHgpHh5FQsjhW2kGheDvqH3ZkKtmLib",
+      "strategyEscrow": "Hf5BPt8hg5FPvxiafTtMo1Dwj8KPXqvgdSSs4ceNcC6F"
+    },
+    "jito": {
+      "strategyPosition": "58oKcnwNvGN73XVMuvdVshYfGLpm5LBqRMkDiLmfqTDR",
+      "strategyEscrow": "2JXoGNDzQ4FyWnWoFzzKJjTY1sekjsgjxePtaVkXTmxW"
+    },
+    "marginfi": {
+      "strategyPosition": "GKgETZcEMMzspft4ZewjbgYAxPJz7W2AWKfmHBvTQm15",
+      "strategyEscrow": "7QFStYevxoTw54e2MdSGkKatsU66fRztsCUu4GT7mnnV"
+    }
+  },
+  "agents": {
+    "executive": "GBHfE7u9L8tLchywY4YFnpfuMcEkMwrduENA6qcvyuPn",
+    "financial": "47f68Zy8hAdxj9iyWng2MzfYzNkgLgDpudKcv5gTzSsn",
+    "oversight": "FR3eZp7BW8ZDcprFAPTD5yYFLWpYMXZMWQGidrXwa6pM",
+    "operational": "7VK6DUbxqE7v9g4GASRVpzXJBTpsGanLnowqD4RJWA6N"
+  },
+  "voter": "9ocq8gyhTmRm6mXWPxyuSLQJURuruUvCkMqmELK4qD8d"
+}

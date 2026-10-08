@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "eval/run-guardrails.ts",
+    "eval/run-decisions.ts",
+    "eval/run-ft-scorecard.ts",
+    "eval/run-agent-contracts.ts",
+    "supabase/functions/_shared/agentContracts.ts",
+    "scripts/export-finetune-traces.ts",
+    "supabase/functions/_shared/agentContext.ts",
+    "supabase/functions/_shared/guardrails.ts"
+  ]
+}

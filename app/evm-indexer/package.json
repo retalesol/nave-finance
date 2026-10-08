@@ -1,0 +1,21 @@
+{
+  "name": "nave-evm-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "viem-based polling worker that reads Nave EVM contract logs on Ethereum and Base (mainnets + Sepolia/Base Sepolia) and forwards normalized events to the shared index-events Supabase pipeline. Solana is indexed separately by Helius.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "tsx": "^4.19.2",
+    "viem": "^2.21.55"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4"
+  }
+}

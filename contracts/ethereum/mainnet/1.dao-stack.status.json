@@ -1,0 +1,10 @@
+{
+  "chainId": 1,
+  "artifact": "1.json",
+  "daoStack": "undeployed",
+  "artifactKind": "anvil-fixture",
+  "status": "anvil-fixture-not-production",
+  "wireable": false,
+  "production": false,
+  "note": "deployments/1.json is a local Anvil fixture (authority 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266). Ethereum mainnet has no NaveProtocol, factory, oracle, treasury/governor/execution implementations, NaveDaoStake, or Aave/Compound adapters. Do not overwrite 1.json with placeholder addresses. A real deploy must replace this fixture from a broadcast, owned by the Safe with threshold at least 2, before any yield-sister cutover. Deploy scripts refuse to treat 1.json as production while this status holds."
+}
