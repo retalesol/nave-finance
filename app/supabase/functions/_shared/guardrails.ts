@@ -12,6 +12,15 @@
 // fails (blocks signing) rather than silently passing.
 
 import { AgentContext, AgentRole, snapshotAgeSeconds } from "./agentContext.ts";
+import {
+  NAVE_GENLAYER_GATE,
+  NAVE_GENLAYER_HALT_GATE,
+  NAVE_GENLAYER_VENUE_GATE,
+  charterGateOutcome,
+  haltGateOutcome,
+  readGenlayerFlag,
+  venueGateOutcome,
+} from "./genlayerCharter.ts";
 
 export type CheckId =
   | "role_valid"
@@ -27,7 +36,10 @@ export type CheckId =
   | "reserve_floor"
   | "nav_freshness"
   | "rebalance_interval"
-  | "payload_hash_equality";
+  | "payload_hash_equality"
+  | "genlayer_charter"
+  | "genlayer_venue"
+  | "genlayer_halt";
 
 export type Severity = "critical" | "warning";
 
@@ -81,6 +93,15 @@ export interface GuardrailOptions {
    * - rebalance cadence also applies when `ctx.policyIntent` is `"rebalance"`
    */
   requireCompleteConstitution?: boolean;
+  /**
+   * Charter gate. True only when NAVE_GENLAYER_GATE=true. Default false:
+   * the check is recorded and does not block.
+   */
+  genlayerGate?: boolean;
+  /** Venue stop withholds new deploys only when this is true. Default false. */
+  genlayerVenueGate?: boolean;
+  /** keep_pause blocks clear_halt only when this is true. Default false. */
+  genlayerHaltGate?: boolean;
 }
 
 export interface GuardrailVerdict {
@@ -516,6 +537,41 @@ export function evaluateGuardrails(
       );
     }
   }
+
+  const actionNormEnd = norm(ctx.request.actionType ?? "");
+  const amountEnd = ctx.request.amount ?? null;
+  const isDeploy = !!ctx.request.protocolId && amountEnd != null && amountEnd > 0 && !actionNormEnd.includes("withdraw");
+  const clearing =
+    actionNormEnd.includes("clear_halt") ||
+    actionNormEnd.includes("operational_clear") ||
+    output.should_clear_halt === true;
+  const charterGate = opts.genlayerGate ?? readGenlayerFlag(NAVE_GENLAYER_GATE);
+  const venueGate = opts.genlayerVenueGate ?? readGenlayerFlag(NAVE_GENLAYER_VENUE_GATE);
+  const haltGate = opts.genlayerHaltGate ?? readGenlayerFlag(NAVE_GENLAYER_HALT_GATE);
+  const expectedAction = ctx.request.expectedPayloadHash ?? output.payload_hash ?? "";
+
+  const charter = charterGateOutcome({
+    gateOn: charterGate,
+    signing: isSigning,
+    expectedActionHash: expectedAction,
+    charter: ctx.genlayer?.charter,
+  });
+  const venue = venueGateOutcome({
+    gateOn: venueGate,
+    isDeploy,
+    venue: ctx.genlayer?.venue,
+  });
+  const halt = haltGateOutcome({
+    gateOn: haltGate,
+    clearing,
+    halt: ctx.genlayer?.halt,
+  });
+  const pushOutcome = (id: CheckId, outcome: { block: boolean; indeterminate: boolean; recordedOnly: boolean; detail: string }) => {
+    add(id, !outcome.block, outcome.detail, outcome.indeterminate, outcome.recordedOnly ? "warning" : "critical");
+  };
+  pushOutcome("genlayer_charter", charter);
+  pushOutcome("genlayer_venue", venue);
+  pushOutcome("genlayer_halt", halt);
 
   const failures = checks
     .filter((c) => !c.ok && c.severity === "critical")

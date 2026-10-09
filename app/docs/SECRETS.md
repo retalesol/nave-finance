@@ -23,6 +23,7 @@ server-side secret provisioned in the relevant runtime's secret store.
 | `BRIDGE_SOLANA_CUSTODY_AUTHORITY` | Solana keypair | Signer env (Railway) only | Signs custody releases on `/bridge-relay` |
 | `BRIDGE_EVM_MINTER_PRIVATE_KEY` | EVM EOA private key | Signer env (Railway) only | Mints/burns WrappedNAVE on `/bridge-relay` |
 | `FAUCET_WALLET_SECRET` | Solana keypair | Signer env (Railway) only | Sends devnet NAVE on `/faucet-claim` and devnet SOL on `/faucet-claim-sol`; dedicated wallet, separate from bridge custody and any deploy/ops wallet |
+| `NAVE_GENLAYER_SIGNER_KEY` | GenLayer EOA private key | Supabase edge secrets only | Submits `open_case`, `review_venue`, and `open_appeal`. Holds no Nave treasury authority |
 
 > The bridge and faucet wallets are intentionally **separate keys with separate roles** — a compromised faucet key cannot touch bridge custody, and vice versa. Neither is ever sent to the browser; `/bridge-relay` and `/faucet-claim` are public-but-verifying endpoints that independently re-check on-chain state rather than trusting the caller (see `docs/portal/tokenomics.md` for the trust model).
 
@@ -34,6 +35,11 @@ server-side secret provisioned in the relevant runtime's secret store.
 | `NAVE_PROPOSER_ROLE` | `planner` | `encrypted_agent_keys.agent_role` used as the proposal proposer. Keep distinct from the 4 pipeline roles (separation of duties). This key must be funded (pays proposal rent). |
 | `NAVE_YIELD_SOURCE_URL` | unset | Optional external yield-data source for the scanner; falls back to the conservative built-in table when unset. |
 | `POLICY_INTERVAL_MS` / `PROPOSAL_INTERVAL_MS` | `600000` | Worker cadences for the policy + proposal ticks. |
+| `NAVE_GENLAYER_GATE` | `false` | Charter fail-closed for signing roles. A finished pass does not authorize a transfer. See `docs/GENLAYER.md`. |
+| `NAVE_GENLAYER_VENUE_GATE` | `false` | A finished venue `stop` withholds a new deploy. |
+| `NAVE_GENLAYER_HALT_GATE` | `false` | A finished `keep_pause` blocks clear. `lift_pause` does not sign. |
+| `NAVE_GENLAYER_RPC_URL` | unset | GenLayer RPC. Not a secret, but required with the signer key and the three contract addresses before any review is written. |
+| `NAVE_GENLAYER_CHARTER_ADDRESS` / `NAVE_GENLAYER_VENUE_ADDRESS` / `NAVE_GENLAYER_HALT_ADDRESS` | unset | Deployed contract addresses. Public. A missing address means the dispatcher skips the submit and writes no row. |
 
 > The `planner` proposer key is a real signing key held by the signer service.
 > It can ONLY create Strategy proposals; it has no approval/execution authority.

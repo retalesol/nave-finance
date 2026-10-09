@@ -13,6 +13,7 @@ The dashboard is the treasury's at-a-glance summary.
 - **Net asset value (NAV)** — the total value of everything the treasury holds, priced from live market data.
 - **Deployed capital** — the portion of NAV currently working in strategies versus held as liquid reserve.
 - **Recent activity** — a reverse-chronological feed of indexed on-chain events: deposits, proposals, approvals, executions, and agent decisions.
+- **Charter check** — when a move has been reviewed, the treasury header and the proposal card show Checked, Needs a closer look, or Still checking. An empty treasury shows nothing. Ask for another check asks for a second look. It does not move funds.
 
 Use the dashboard to answer "what is this treasury worth, and what has it done lately?"
 

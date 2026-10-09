@@ -41,8 +41,9 @@ Supabase provides Postgres plus Deno edge functions. The functions handle event 
 | `helius-webhook` | Decodes Anchor events from raw logs and forwards them. |
 | `index-events` | Deduplicates by transaction signature, writes activity, triggers snapshots. |
 | `snapshot-treasury` | Values the treasury from real balances and live pricing. |
-| `agent-dispatcher` | Runs a single agent's reasoning step. |
+| `agent-dispatcher` | Runs a single agent's reasoning step. When a GenLayer session is configured, it submits the charter case for that execution request. |
 | `agent-orchestrator` | Walks the approval pipeline and calls the signer. |
+| `genlayer-adjudicator` | Submits and refreshes a GenLayer review. It does not sign a treasury transaction. |
 
 ### Signer service
 

@@ -8,6 +8,20 @@ import {
   computeReasoningHash,
 } from "../_shared/agentContext.ts";
 import { evaluateGuardrails, GuardrailOutput } from "../_shared/guardrails.ts";
+import { fetchGenlayerView } from "../_shared/genlayerStore.ts";
+import {
+  NAVE_GENLAYER_GATE,
+  NAVE_GENLAYER_HALT_GATE,
+  NAVE_GENLAYER_VENUE_GATE,
+  assetIsStable,
+  constitutionSnapshot,
+  isActionHash,
+  mandateFromRules,
+  networkForSigner,
+  readGenlayerFlag,
+} from "../_shared/genlayerCharter.ts";
+import { resolveAsset } from "../_shared/allowedAssets.ts";
+import { charterInput, ensureCharterReview } from "../_shared/genlayerSync.ts";
 import {
   canonicalPayloadHash,
   listRegisteredMints,
@@ -1083,6 +1097,75 @@ Based on this context, perform your analysis and produce your structured JSON re
       }
     }
 
+    let solanaRpc = "";
+    try {
+      solanaRpc = Deno.env.get("SOLANA_RPC_URL") ?? "";
+    } catch {
+      solanaRpc = "";
+    }
+    const reviewNetwork = networkForSigner({
+      chainFamily: chainSel.chain,
+      chainId: chainSel.chain_id,
+      solanaRpcUrl: solanaRpc,
+    });
+    const actionForReview = (expected_payload_hash ?? canonicalHash ?? "").trim();
+    const reviewAmount = typeof target_amount === "number" ? Math.trunc(target_amount) : 0;
+    const stable = mint ? assetIsStable(mint, resolveAsset(mint)?.assetClass ?? null) : null;
+    const snapshot = (
+      resolvedProtocolId
+      && typeof onchainCapBps === "number"
+      && typeof onchainMaxDeployedBps === "number"
+      && typeof onchainMinLiquidityBps === "number"
+      && typeof onchainMinReserveBps === "number"
+      && navBaseUnits != null
+      && deployedBaseUnits != null
+      && targetProtocolDeployedBaseUnits != null
+      && (stable === false || stablecoinBaseUnits != null)
+    )
+      ? constitutionSnapshot({
+        approvedVenues: onchainApprovedProtocols ?? [],
+        venue: resolvedProtocolId,
+        maxSingleAllocationBps: onchainCapBps,
+        maxDeploymentBps: onchainMaxDeployedBps,
+        liquidityFloorBps: onchainMinLiquidityBps,
+        reserveFloorBps: onchainMinReserveBps,
+        navBaseUnits,
+        deployedBaseUnits,
+        venueDeployedBaseUnits: targetProtocolDeployedBaseUnits,
+        reserveBaseUnits: stablecoinBaseUnits ?? 0,
+        assetIsStable: stable,
+      })
+      : null;
+    if (isActionHash(actionForReview) && snapshot && mint && reviewAmount > 0 && resolvedProtocolId) {
+      try {
+        await ensureCharterReview(charterInput({
+          chainFamily: chainSel.chain,
+          network: reviewNetwork,
+          treasury: dao_address,
+          actionHash: actionForReview,
+          venue: resolvedProtocolId,
+          amount: String(reviewAmount),
+          asset: mint,
+          mandateText: mandateFromRules({
+            maxSingleAllocationBps: onchainCapBps as number,
+            maxDeploymentBps: onchainMaxDeployedBps as number,
+            liquidityFloorBps: onchainMinLiquidityBps as number,
+            reserveFloorBps: onchainMinReserveBps as number,
+          }),
+          constitution: snapshot,
+        }));
+      } catch {
+        // Leave the stored review unchanged. The signing gate fails closed only when its flag is on.
+      }
+    }
+    const genlayerView = await fetchGenlayerView({
+      treasury: dao_address,
+      chainFamily: chainSel.chain,
+      network: reviewNetwork,
+      actionHash: actionForReview,
+      protocolId: resolvedProtocolId,
+    });
+
     const guardrailContext: AgentContext = {
       version: AGENT_CONTEXT_VERSION,
       daoAddress: dao_address,
@@ -1133,6 +1216,7 @@ Based on this context, perform your analysis and produce your structured JSON re
       })),
       recentActivity,
       assembledAt: new Date().toISOString(),
+      genlayer: genlayerView,
     };
 
     // For signing roles, the payload hash checked by the guardrail is the
@@ -1178,7 +1262,14 @@ Based on this context, perform your analysis and produce your structured JSON re
       agent_role as AgentRole,
       guardrailContext,
       guardrailOutput,
-      { failClosedOnUnknown: failClosed, maxNavAgeSeconds, requireCompleteConstitution: true },
+      {
+        failClosedOnUnknown: failClosed,
+        maxNavAgeSeconds,
+        requireCompleteConstitution: true,
+        genlayerGate: readGenlayerFlag(NAVE_GENLAYER_GATE),
+        genlayerVenueGate: readGenlayerFlag(NAVE_GENLAYER_VENUE_GATE),
+        genlayerHaltGate: readGenlayerFlag(NAVE_GENLAYER_HALT_GATE),
+      },
     );
     const guardrailFailures = verdict.failures;
 

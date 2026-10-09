@@ -1,0 +1,28 @@
+{
+  "chain_family": "base",
+  "network": "testnet",
+  "treasury": "0x2222222222222222222222222222222222222222",
+  "action_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "venue": "compound-v3",
+  "amount": "50000000000",
+  "asset": "USDC",
+  "mandate_text": "Stay liquid, diversify, and do not chase risk. Use only approved venues, and keep a cash buffer.",
+  "mandate_hash": "967be8639da607b4736b6d4eb3765b4858b1f9d9446b8d0e538a9da7b1619fe3",
+  "constitution": {
+    "approved_venues": ["compound-v3", "aave-v3"],
+    "max_single_allocation_bps": 4000,
+    "max_deployment_bps": 8000,
+    "liquidity_floor_bps": 1500,
+    "reserve_floor_bps": 2000,
+    "nav_base_units": "1000000000000",
+    "deployed_base_units": "200000000000",
+    "venue_deployed_base_units": "100000000000",
+    "liquid_base_units": "800000000000",
+    "reserve_base_units": "500000000000",
+    "asset_is_stable": true
+  },
+  "status_url": "https://status.example.test/base/compound-v3",
+  "status_page": "Operational status: all systems normal. No active incidents.",
+  "pause_reason": "Reviewers disagreed about whether this move fits the cash buffer.",
+  "counterevidence": "The amount sits inside the treasury limit and the venue is approved."
+}

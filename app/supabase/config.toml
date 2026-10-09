@@ -81,3 +81,7 @@ verify_jwt = false
 [functions.nave-token-stats]
 # Browser-reachable public read-only token stats.
 verify_jwt = false
+
+[functions.genlayer-adjudicator]
+# Appeal is browser-reachable. Submit requires X-Agent-Secret. No Nave mainnet txs.
+verify_jwt = false

@@ -28,6 +28,17 @@ import {
   type GuardrailVerdict,
 } from "./guardrails.ts";
 import {
+  NAVE_GENLAYER_GATE,
+  NAVE_GENLAYER_HALT_GATE,
+  NAVE_GENLAYER_VENUE_GATE,
+  type GenlayerView,
+  chainFamilyFrom,
+  haltGateOutcome,
+  networkForSigner,
+  readGenlayerFlag,
+} from "./genlayerCharter.ts";
+import { fetchGenlayerView } from "./genlayerStore.ts";
+import {
   listRegisteredMints,
   readAgentGate,
   readConstitution,
@@ -64,6 +75,8 @@ export interface SignerVerdictInput {
   payload_hash?: string;
   purpose?: "compound" | "auto_withdraw";
   policy_intent?: "rebalance" | "deploy_idle" | "reduce_exposure" | "hold";
+  /** Stored charter / venue / halt review. Loaded when omitted. */
+  genlayer?: GenlayerView;
 }
 
 export interface SignerVerdict {
@@ -325,6 +338,7 @@ function evaluateSlice(
     priorActions: [],
     recentActivity: [],
     assembledAt: nowIso,
+    genlayer: input.genlayer,
   };
   return evaluateGuardrails(
     ctx.role,
@@ -340,6 +354,9 @@ function evaluateSlice(
       failClosedOnUnknown: true,
       requireCompleteConstitution: true,
       maxNavAgeSeconds: envNum("NAVE_MAX_NAV_AGE_SECONDS"),
+      genlayerGate: readGenlayerFlag(NAVE_GENLAYER_GATE),
+      genlayerVenueGate: readGenlayerFlag(NAVE_GENLAYER_VENUE_GATE),
+      genlayerHaltGate: readGenlayerFlag(NAVE_GENLAYER_HALT_GATE),
     },
   );
 }
@@ -527,7 +544,19 @@ async function assessClearHalt(input: SignerVerdictInput): Promise<SignerVerdict
       !fresh,
     ),
   ];
-  const failures = checks.filter((c) => !c.ok).map((c) => `${c.id}: ${c.detail}`);
+  const halt = haltGateOutcome({
+    gateOn: readGenlayerFlag(NAVE_GENLAYER_HALT_GATE),
+    clearing: true,
+    halt: input.genlayer?.halt,
+  });
+  checks.push({
+    id: "genlayer_halt",
+    ok: !halt.block,
+    indeterminate: halt.indeterminate,
+    severity: halt.recordedOnly ? "warning" : "critical",
+    detail: halt.detail,
+  });
+  const failures = checks.filter((c) => !c.ok && c.severity === "critical").map((c) => `${c.id}: ${c.detail}`);
   const pass = failures.length === 0;
   return {
     allow: pass,
@@ -559,7 +588,32 @@ function allowRecord(action: string, klass: ActionClass, detail: string, extra?:
   };
 }
 
-export async function assessSignerPayload(input: SignerVerdictInput): Promise<SignerVerdict> {
+async function withGenlayer(input: SignerVerdictInput): Promise<SignerVerdictInput> {
+  if (input.genlayer) return input;
+  const chainFamily = chainFamilyFrom(input.chain, input.chain_id ?? null);
+  let rpc = "";
+  try {
+    rpc = Deno.env.get("SOLANA_RPC_URL") ?? "";
+  } catch {
+    rpc = "";
+  }
+  const network = networkForSigner({
+    chainFamily,
+    chainId: input.chain_id,
+    solanaRpcUrl: rpc,
+  });
+  const genlayer = await fetchGenlayerView({
+    treasury: input.dao_address,
+    chainFamily,
+    network,
+    actionHash: input.payload_hash ?? input.expected_payload_hash ?? "",
+    protocolId: input.protocol_id,
+  });
+  return { ...input, genlayer };
+}
+
+export async function assessSignerPayload(raw: SignerVerdictInput): Promise<SignerVerdict> {
+  const input = await withGenlayer(raw);
   try {
     const klass = classifyAction(input.action);
     if (klass === "accounting") {

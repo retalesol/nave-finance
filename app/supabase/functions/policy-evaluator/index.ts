@@ -30,7 +30,9 @@ import {
   readEvmStrategyPositions,
   readEvmTreasuryVault,
 } from "../_shared/evmPolicy.ts";
-import { scanYieldOpportunities } from "../_shared/yieldSources.ts";
+import { scanYieldOpportunities, withholdStoppedVenues } from "../_shared/yieldSources.ts";
+import { fetchVenueWatches } from "../_shared/genlayerStore.ts";
+import { NAVE_GENLAYER_VENUE_GATE, readGenlayerFlag } from "../_shared/genlayerCharter.ts";
 import {
   canonicalPolicy,
   evaluatePolicy,
@@ -175,10 +177,16 @@ Deno.serve(async (req: Request) => {
           await listRegisteredMints(rpcUrl, daoAddr),
         );
 
-      const opportunities = await scanYieldOpportunities(
+      const scanned = await scanYieldOpportunities(
         approvedProtocols.map((p) => ({ protocolId: p.protocolId, programId: p.programId })),
         undefined,
         dao.chain ?? undefined,
+      );
+      const venueWatches = await fetchVenueWatches(supabase, daoAddr, dao.chain ?? "solana");
+      const opportunities = withholdStoppedVenues(
+        scanned,
+        venueWatches,
+        readGenlayerFlag(NAVE_GENLAYER_VENUE_GATE),
       );
 
       const inputs: PolicyInputs = {

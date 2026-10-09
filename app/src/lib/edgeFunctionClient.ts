@@ -1039,3 +1039,24 @@ export async function dispatchViaProxyEvm(
     index,
   });
 }
+
+/** Ask for another independent check. Sends the case id and the pause reason, never a verdict. */
+export async function askForAnotherCheck(input: {
+  chain_family: 'solana' | 'ethereum' | 'base' | 'robinhood';
+  network: 'mainnet' | 'testnet' | 'devnet';
+  treasury: string;
+  action_hash: string;
+  pause_reason?: string;
+}): Promise<{ data: { success?: boolean } | null; error: string | null }> {
+  return callEdgeFunction('genlayer-adjudicator', {
+    mode: 'appeal',
+    chain_family: input.chain_family,
+    network: input.network,
+    treasury: input.treasury,
+    action_hash: input.action_hash,
+    pause_reason: input.pause_reason,
+    venue: 'move',
+    amount: '0',
+    asset: 'asset',
+  });
+}

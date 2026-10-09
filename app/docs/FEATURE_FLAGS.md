@@ -195,6 +195,9 @@ in signer service to keep in sync with the VITE flag.
 | `NAVE_POSITION_ORACLE_ENABLED` | Orchestrator | `true` | (A) App-only gate | Enabled by default; disable only for debugging |
 | `JITO_BUNDLE_REBALANCE_ENABLED` | Orchestrator | `true` | (A) App-only gate | Enabled by default; auto-falls-back on devnet |
 | `VITE_ESCROW_PDA_ENABLED` | Frontend/signer | `true` | (A) App-only gate | Enabled by default; set false only for legacy deployments |
+| `NAVE_GENLAYER_GATE` | Dispatcher and signer verdict | `false` | (A) App-only gate | After the charter contract address is real. A finished fail blocks a signing role. A finished pass does not authorize a transfer |
+| `NAVE_GENLAYER_VENUE_GATE` | Dispatcher and policy | `false` | (A) App-only gate | After VenueWatch is deployed. A finished `stop` withholds a new deploy only |
+| `NAVE_GENLAYER_HALT_GATE` | Dispatcher and signer verdict | `false` | (A) App-only gate | After HaltAppeal is deployed. A finished `keep_pause` blocks clear. `lift_pause` does not sign or shorten the review window |
 
 ---
 
@@ -207,6 +210,35 @@ not env flags:
 |----------|----------|--------|-----------|
 | EVM post-`Executed` state (compound/oracle/auto-withdraw) | `agent-orchestrator/index.ts` EVM branch of the `fresh.status === "Executed"` handler | FIXED (Phase 5) — reuses the same `NAVE_POSITION_ORACLE_ENABLED` / `NAVE_COMPOUND_ENABLED` / `NAVE_AUTO_WITHDRAW_ENABLED` flags as Solana, applied per-chain. Position is keyed by adapter address via `NaveTreasury.position(adapter)` / `updateStrategyPositionValue` (relayed from the custodied Operational agent EOA) instead of a Solana PDA. `min_out` for the EVM `withdraw_from_strategy` harvest/withdraw calls is omitted (defaults to 0 on testnets); a real EVM mainnet deployment will need a positive off-chain-quoted `min_out` threaded the same way `resolveEvmMinOut` does for founder-initiated withdrawals. | Phase 5 |
 | EVM guardian multi-sig UI | `src/lib/evm/writers.ts` | PARTIALLY WIRED | Phase 2C |
+
+---
+
+## GenLayer review gates (default off)
+
+These three flags are read only when the env value is the literal `true`. Unset is off. They sit in `evaluateGuardrails`, in front of both the Solana signer path and the EVM relay path. Full boundary: [`GENLAYER.md`](GENLAYER.md).
+
+### `NAVE_GENLAYER_GATE` (default: `false`)
+**Classification: (A) App-only gate**
+
+When on, a signing role needs a finished charter pass whose action hash matches the execution request. A missing, unfinished, or failed review blocks. A pass does not create a transfer. The vault, the caps, and the payload binding stay on the treasury chain.
+
+**Enable when:** `NAVE_GENLAYER_CHARTER_ADDRESS` points at a deployed `CharterAdjudicator`, and the same check has been exercised on Solana and on Ethereum, Base, and Robinhood.
+
+**Current status:** Off. Contracts are in `contracts/genlayer/` and are not deployed by this repository.
+
+### `NAVE_GENLAYER_VENUE_GATE` (default: `false`)
+**Classification: (A) App-only gate**
+
+When on, a finished venue status of `stop` withholds a new deploy into that venue. `fine` and `watch` do not. Changing the on-chain allowlist still takes a governance vote on the treasury chain.
+
+**Enable when:** `NAVE_GENLAYER_VENUE_ADDRESS` is set and each venue has a real `https` status page. The app does not invent one.
+
+### `NAVE_GENLAYER_HALT_GATE` (default: `false`)
+**Classification: (A) App-only gate**
+
+When on, a finished `keep_pause` blocks `clear_halt`. `lift_pause` does not sign `operational_clear` and does not shorten the review window. The Operational key on the treasury chain is still required to lift a pause.
+
+**Enable when:** `NAVE_GENLAYER_HALT_ADDRESS` is set.
 
 ---
 

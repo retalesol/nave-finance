@@ -229,6 +229,7 @@ export default function Governance() {
                 isFounder={isFounder}
                 isMember={isMember}
                 guardianCount={guardian.walletCount ?? 0}
+                chainId={dao?.chainId ?? null}
                 onChanged={liveProposals.refetch}
                 highlight={
                   highlightProposalNumber != null &&

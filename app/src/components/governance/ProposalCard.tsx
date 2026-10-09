@@ -8,6 +8,8 @@ import { parseUnits } from 'viem';
 import Fi from '@/components/Fi';
 import ProposalStatusStepper from '@/components/governance/ProposalStatusStepper';
 import ProposalPayloadSummary from '@/components/governance/ProposalPayloadSummary';
+import CharterCheckStatus from '@/components/governance/CharterCheckStatus';
+import { useCharterCheck } from '@/hooks/useCharterCheck';
 import { useSendTransaction } from '@/hooks/useSendTransaction';
 import { useChain } from '@/hooks/useChain';
 import { fetchDaoContracts } from '@/lib/evm/readers';
@@ -107,6 +109,7 @@ export default function ProposalCard({
   guardianCount = 0,
   onChanged,
   highlight = false,
+  chainId = null,
 }: {
   proposal: Proposal;
   daoAddress: string | null;
@@ -121,10 +124,13 @@ export default function ProposalCard({
   onChanged?: () => void;
   /** Deep-link highlight — auto-expand and scroll into view. */
   highlight?: boolean;
+  /** Treasury chain id so the check matches Ethereum, Base, or Robinhood. */
+  chainId?: number | null;
 }) {
   const { publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
   const { chainKind, evmChainId, chainFamily } = useChain();
+  const charter = useCharterCheck(daoAddress, chainId);
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const navigate = useNavigate();
@@ -1406,6 +1412,18 @@ export default function ProposalCard({
           </div>
         </div>
       </button>
+
+      {charter.status && (
+      <div className="px-5 pb-3">
+        <CharterCheckStatus
+          status={charter.status}
+          summary={charter.summary}
+          txId={charter.txId}
+          asking={charter.asking}
+          onAskAnother={charter.canAsk ? () => { void charter.askAnother(); } : undefined}
+        />
+      </div>
+      )}
 
       {primaryAction && (
         <div className="px-5 pb-4">

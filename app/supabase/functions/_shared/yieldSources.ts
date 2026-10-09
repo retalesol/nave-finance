@@ -230,3 +230,22 @@ export async function scanYieldOpportunities(
 
   return fromBuiltin(approved);
 }
+
+/**
+ * Drop venues a finished watch marked stop. The venue flag defaults off, so a
+ * stop is ignored until NAVE_GENLAYER_VENUE_GATE=true. Watch and fine stay.
+ */
+export function withholdStoppedVenues<T extends { protocolId: string }>(
+  opportunities: T[],
+  watches: Array<{ protocolId: string; status: string }>,
+  venueGate: boolean,
+): T[] {
+  if (!venueGate) return opportunities;
+  const stopped = new Set(
+    watches
+      .filter((watch) => watch.status === "stop")
+      .map((watch) => watch.protocolId.toLowerCase()),
+  );
+  if (stopped.size === 0) return opportunities;
+  return opportunities.filter((item) => !stopped.has(item.protocolId.toLowerCase()));
+}

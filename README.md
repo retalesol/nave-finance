@@ -31,6 +31,7 @@ Open the doc for the job you have. Paths are from the repository root.
 | Changing the app | [`app/README.md`](app/README.md) and [`app/docs/portal/contributing.md`](app/docs/portal/contributing.md) |
 | Changing contracts | [`contracts/README.md`](contracts/README.md) and [`contracts/evm/README.md`](contracts/evm/README.md) |
 | Evaluating risk | [`app/docs/portal/product-maturity.md`](app/docs/portal/product-maturity.md) and [`app/docs/portal/risk-and-controls.md`](app/docs/portal/risk-and-controls.md) |
+| Reviewing a treasury move | [`app/docs/GENLAYER.md`](app/docs/GENLAYER.md) |
 
 ### Product portal — `app/docs/portal/`
 
@@ -69,6 +70,7 @@ Written for readers who are not in the code. The in-app docs site serves these p
 | [`DEVNET_MULTICHAIN_BETA_E2E.md`](app/docs/DEVNET_MULTICHAIN_BETA_E2E.md) | Solana devnet plus EVM testnets, exercised together |
 | [`AGENTIC_E2E_MULTICHAIN_RUNBOOK.md`](app/docs/AGENTIC_E2E_MULTICHAIN_RUNBOOK.md) | Agent pipeline across Solana devnet, Sepolia, and Base Sepolia |
 | [`FINE_TUNING.md`](app/docs/FINE_TUNING.md) | Agent context contract and the scorecard a model override must pass |
+| [`GENLAYER.md`](app/docs/GENLAYER.md) | Independent review above Solana, Ethereum, Base, and Robinhood. A finished check can stop a signature. It cannot approve a transfer |
 | [`ALIGNMENT_VERIFICATION.md`](app/docs/ALIGNMENT_VERIFICATION.md) | Frontend, backend, signer, and on-chain instruction alignment |
 | [`TREASURY_CAPITAL_BRIDGES.md`](app/docs/TREASURY_CAPITAL_BRIDGES.md) | Agent hops of USDC, ETH, and WETH between Base, Ethereum, and Robinhood |
 | [`SAFE_DAO_STAKE_WIRING.md`](app/docs/SAFE_DAO_STAKE_WIRING.md) | Safe steps to set the NAVE DAO-creation stake on Base and Robinhood |
@@ -212,10 +214,11 @@ nave-finance/
     signer-service/             Agent signer, bridge relayer, worker loops
     evm-indexer/                EVM log poller
     scripts/                    Cutover, secret sync, eval verifiers
-    docs/                       Preflight, secrets, runbooks, audits
+    docs/                       Preflight, secrets, runbooks, audits, GenLayer boundary
   contracts/
     solana/                     Anchor workspace (programs, tests, deployments)
     evm/                        Foundry project (src, test, script, lib)
+    genlayer/                   Intelligent contracts that review a move. They do not hold assets |
     ethereum/                   Chain 1 and Sepolia records
     base/                       Chain 8453 and Base Sepolia records
     robinhood/                  Chain 4663 and Robinhood testnet records
@@ -259,6 +262,8 @@ Addresses for a chain are the JSON files in that chain folder, for example `cont
 ## Agentic system
 
 Agents are advisory. Deterministic guardrails and the programs decide what may be signed. The default model named by cutover preflight is `claude-sonnet-4-6` (`NAVE_AGENT_MODEL`). A fine-tuned override has to pass the scorecard in `app/docs/FINE_TUNING.md` before it is used.
+
+GenLayer is a separate review of the same execution request on every chain. It is off until `NAVE_GENLAYER_GATE` is set. A finished review can stop a signature. It cannot approve a transfer or hold assets. See `app/docs/GENLAYER.md`.
 
 ### Roles
 

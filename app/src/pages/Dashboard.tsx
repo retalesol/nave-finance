@@ -28,6 +28,8 @@ import {
 } from '../components/TreasuryActions';
 import { DepositAddressPanel } from '../components/DepositFlow';
 import { useAgentHealth, timeAgo } from '../hooks/useAgentHealth';
+import { useCharterCheck } from '../hooks/useCharterCheck';
+import CharterCheckStatus from '../components/governance/CharterCheckStatus';
 import { computeAgentStatus, summarizeAgentStatuses } from '../lib/agentStatus';
 import {
   AreaChart,
@@ -824,9 +826,10 @@ export default function Dashboard() {
   const daoRegistry = useDaoRegistry(daoAddress);
   const tokenRegistry = useTokenRegistry(daoAddress);
   const { chainKind } = useChain();
+  const daoChainId = daoRegistry.dao?.chainId ?? null;
+  const charter = useCharterCheck(daoAddress, daoChainId);
   // Label from dao_registry.chain_id so a Base or Robinhood treasury is not
   // called "Solana Devnet" when the connected wallet is on another chain.
-  const daoChainId = daoRegistry.dao?.chainId ?? null;
   const networkLabel = daoChainId != null
     ? daoNetworkLabel(daoChainId, SOLANA_NETWORK)
     : isEvmAddress(daoAddress)
@@ -1057,6 +1060,17 @@ export default function Dashboard() {
           <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
             {daoRegistry.dao?.name ?? 'Treasury'} · {networkLabel}
           </p>
+          {charter.status && (
+          <div className="mt-2">
+            <CharterCheckStatus
+              status={charter.status}
+              summary={charter.summary}
+              txId={charter.txId}
+              asking={charter.asking}
+              onAskAnother={charter.canAsk ? () => { void charter.askAnother(); } : undefined}
+            />
+          </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {!isEmptyTreasury && (

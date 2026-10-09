@@ -33,6 +33,8 @@ Before any signing, a guardrail evaluation runs outside the model over the agent
 
 A transaction is signed only when the evaluation passes **and** the role is a signing role **and** the model intended to sign. Any single failure blocks signing.
 
+An optional GenLayer review sits in the same guardrail. It is off unless `NAVE_GENLAYER_GATE` is the literal `true`. When it is on, a signing role needs a finished pass for that action hash. A finished fail blocks. A finished pass does not approve the transfer. The review is not written back onto the treasury chain. The operator boundary is [`GENLAYER.md`](../GENLAYER.md).
+
 ## Layer 2 — Fail-closed posture
 
 Guardrails can be configured to fail closed: if the context needed for a critical check is missing, the check fails and blocks signing rather than waving the action through. The mainnet end-state runs fully fail-closed, with the off-chain guardrails mirroring the on-chain invariants as redundant defense.

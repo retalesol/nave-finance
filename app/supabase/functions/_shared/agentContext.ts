@@ -10,6 +10,8 @@
 //
 // Dependency-free; uses Web Crypto (available in Deno and Node 18+).
 
+import type { GenlayerView } from "./genlayerCharter.ts";
+
 export const AGENT_CONTEXT_VERSION = "1.1.0";
 
 export type AgentRole = "executive" | "financial" | "oversight" | "operational";
@@ -131,6 +133,11 @@ export interface AgentContext {
   recentActivity: Array<Record<string, unknown>>;
   /** Server time the context was assembled (ISO). */
   assembledAt: string;
+  /**
+   * Independent charter / venue / halt review for this treasury and action.
+   * Absent in legacy contexts. Signing uses it only when the matching flag is on.
+   */
+  genlayer?: GenlayerView;
 }
 
 /** Age of the treasury snapshot in seconds, or null when no snapshot exists. */

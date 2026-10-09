@@ -17,6 +17,19 @@ Solana programs are in `solana/`. EVM contracts share one Foundry codebase in `e
 
 Each EVM chain folder holds that network's deployment JSON and broadcast logs. Do not copy private keys into those files.
 
+## GenLayer
+
+`genlayer/` holds the review contracts: `charter_adjudicator.py`, `venue_watch.py`, and `halt_appeal.py`. They judge a proposed move for Solana, Ethereum, Base, and Robinhood. They do not hold treasury tokens and they cannot call the programs in `solana/` or `evm/`.
+
+The operator boundary, the member wording, and the env vars are in [`app/docs/GENLAYER.md`](../app/docs/GENLAYER.md). The three gate flags default off. A finished review can stop a signature. It cannot approve a transfer.
+
+```bash
+genvm-lint check genlayer/charter_adjudicator.py
+genvm-lint check genlayer/venue_watch.py
+genvm-lint check genlayer/halt_appeal.py
+pytest genlayer/tests/direct -v
+```
+
 ## Commands
 
 From this directory:
