@@ -1,5 +1,7 @@
 # Nave contracts
 
+Product overview, deploy order, and agent operations are in the repository root [`README.md`](../README.md). This file is the contract layout.
+
 ## Chains
 
 Solana programs are in `solana/`. EVM contracts share one Foundry codebase in `evm/` and are deployed per chain:

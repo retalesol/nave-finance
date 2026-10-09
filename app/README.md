@@ -1,14 +1,18 @@
-# Nave
+# Nave app
+
+This directory is the application half of the Nave Finance monorepo (frontend,
+Supabase edge functions, signer service, and EVM indexer). Product overview,
+deploy order, and agent operations are in the repository root
+[`README.md`](../README.md).
 
 Nave is an AI-agent-governed DAO treasury platform. DAOs deposit a treasury,
 ratify a constitution, and four AI agents (Executive, Financial, Oversight,
 Operational) propose, review, and execute on-chain treasury actions under hard
 on-chain guardrails.
 
-This repository is the **frontend + backend**. Solana program deployments in
-this repo are still the devnet DAO stack. DAO creation in the app is live for
-**Base** and **Robinhood Chain**. Ethereum, Base, and Robinhood contracts are
-**unaudited**.
+Solana DAO program ids checked in here are the devnet stack. DAO creation in
+the app is wired for **Base** and **Robinhood Chain**. Ethereum, Base, and
+Robinhood contracts are **unaudited**.
 
 > **Status: unaudited, mixed networks.** Base and Robinhood Chain can create
 > treasuries. Solana DAO programs in the checked-in IDs are devnet. The Solana
