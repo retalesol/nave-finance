@@ -228,6 +228,38 @@ function Hero() {
             </div>
           ))}
         </div>
+        <aside className="home-backing" aria-label="Supporters">
+          <div className="home-backing-pair">
+            <div className="home-backing-row">
+              <span className="home-backing-role">Incubated by</span>
+              <a className="home-backing-name" href="https://trynoah.ai" target="_blank" rel="noopener noreferrer">
+                <img src="/partners/noah.svg" alt="" />
+                TryNoah.AI
+              </a>
+            </div>
+            <div className="home-backing-row">
+              <span className="home-backing-role">Accelerated by</span>
+              <a className="home-backing-name" href="https://www.denariilabs.xyz" target="_blank" rel="noopener noreferrer">
+                <img src="/partners/denarii-mark.svg" alt="" />
+                Denarii Labs
+                <span className="home-backing-note">Cohort 004</span>
+              </a>
+            </div>
+          </div>
+          <div className="home-backing-row home-backing-backed">
+            <span className="home-backing-role">Backed by</span>
+            <div className="home-backing-names">
+              <a className="home-backing-name" href="https://fin.com" target="_blank" rel="noopener noreferrer">
+                <img src="/partners/fin.svg" alt="" />
+                Fin.com
+              </a>
+              <a className="home-backing-name" href="https://genlayer.com" target="_blank" rel="noopener noreferrer">
+                <img src="/partners/genlayer-mark.svg" alt="" />
+                GenLayer
+              </a>
+            </div>
+          </div>
+        </aside>
       </div>
       <div className="home-hero-map" aria-hidden>
         <div className="home-map-canvas">

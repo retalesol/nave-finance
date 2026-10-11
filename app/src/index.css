@@ -977,9 +977,9 @@ input[type='range']::-moz-range-thumb {
 }
 .home-hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 .home-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 48px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
   margin-top: 56px;
   padding-top: 28px;
   border-top: 1px solid var(--home-line);
@@ -992,6 +992,64 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--home-muted);
+}
+.home-backing {
+  margin-top: auto;
+  padding-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+}
+.home-backing-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 64px;
+  row-gap: 20px;
+}
+.home-backing-role {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--home-muted);
+}
+.home-backing-names { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px; }
+.home-backing-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--home-ink);
+  font-size: 15.5px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+}
+.home-backing-name img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: none;
+}
+.home-backing-name:hover { color: var(--home-ink); opacity: 0.72; }
+.home-backing-backed .home-backing-role { font-size: 11px; margin-bottom: 10px; }
+.home-backing-backed .home-backing-name { font-size: 18px; gap: 12px; }
+.home-backing-backed .home-backing-names { gap: 14px 36px; }
+.home-backing-backed .home-backing-name img { width: 36px; height: 36px; }
+.home-backing-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--home-muted);
+  border: 1px solid var(--home-line);
+  border-radius: 999px;
+  padding: 3px 8px;
 }
 .home-hero-map {
   position: relative;
@@ -1403,7 +1461,8 @@ input[type='range']::-moz-range-thumb {
   }
   .home-hero { grid-template-columns: 1fr; min-height: 0; }
   .home-hero-copy { padding: 96px 24px 36px; }
-  .home-stats { gap: 28px; }
+  .home-backing { margin-top: 36px; }
+  .home-backing-pair { flex-direction: column; gap: 20px; }
   .home-hero-map {
     margin: 0 20px 24px;
     height: 56vh;
