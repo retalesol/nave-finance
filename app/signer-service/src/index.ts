@@ -1471,7 +1471,7 @@ function buildTipInstruction(payer: PublicKey, lamports: number): TransactionIns
 
 /**
  * Execute a list of protocol CPI operations as an atomic Jito bundle.
- * Each operation is built independently, signed by the operational agent,
+ * Each operation is built independently, signed by the Oversight agent (role operational),
  * and submitted together. A tip is appended to the last transaction.
  *
  * If the RPC endpoint doesn't support `sendBundle` (e.g. localnet), falls
@@ -1484,7 +1484,7 @@ async function handleBundleRebalance(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: 'bundle_rebalance must be signed by the operational agent' });
+    return res.status(400).json({ error: 'bundle_rebalance must be signed by the Oversight agent (agent_role "operational")' });
   }
   const ops = body.bundle_operations;
   if (!ops || ops.length === 0) {
@@ -2000,7 +2000,7 @@ async function handleRevalueTreasury(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: 'revalue_treasury must be signed by the operational agent' });
+    return res.status(400).json({ error: 'revalue_treasury must be signed by the Oversight agent (agent_role "operational")' });
   }
   if (!Array.isArray(body.assets) || body.assets.length === 0) {
     return res.status(400).json({ error: 'revalue_treasury requires a non-empty assets[]' });
@@ -2013,7 +2013,7 @@ async function handleRevalueTreasury(
     // Resolve each asset's on-chain AssetConfig to learn its Pyth feed id +
     // stablecoin flag. Non-stable assets without an explicitly-supplied price
     // account get a FRESH persistent Pyth update posted by the signer (the
-    // operational agent pays the small crank fee). This makes revalue a single
+    // Oversight agent (role operational) pays the small crank fee). This makes revalue a single
     // self-contained call: callers no longer have to pre-post prices.
     type Resolved = { mint: PublicKey; feedHex: string | null; explicit: PublicKey | null };
     const resolved: Resolved[] = [];
@@ -2128,7 +2128,7 @@ async function handleKaminoCpi(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
+    return res.status(400).json({ error: `${body.action} must be signed by the Oversight agent (agent_role "operational")` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint` });
   let k = body.kamino;
@@ -2298,7 +2298,7 @@ async function handleMarginfiCpi(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
+    return res.status(400).json({ error: `${body.action} must be signed by the Oversight agent (agent_role "operational")` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint` });
   const m = body.marginfi;
@@ -2380,7 +2380,7 @@ async function handleJitoCpi(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
+    return res.status(400).json({ error: `${body.action} must be signed by the Oversight agent (agent_role "operational")` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint (wSOL)` });
   let j = body.jito;
@@ -2456,7 +2456,7 @@ async function handleJitoCpi(
 
 /**
  * Jupiter Lend (Earn) deposit / withdraw via nave_core::jupiter_deposit /
- * jupiter_withdraw (Operational agent). Jupiter has no Nave adapter:
+ * jupiter_withdraw (Oversight agent, role operational). Jupiter has no Nave adapter:
  * execute_strategy moves the request's funds into the strategy escrow and
  * jupiter_deposit places them from there. The vault_authority PDA is the
  * Jupiter `signer`; it signs via invoke_signed.
@@ -2474,7 +2474,7 @@ async function handleJupiterCpi(
   effectiveAesKey?: string,
 ): Promise<express.Response> {
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
+    return res.status(400).json({ error: `${body.action} must be signed by the Oversight agent (agent_role "operational")` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint` });
 
@@ -2662,7 +2662,7 @@ async function handleJupiterSwap(
     });
   }
   if (body.agent_role !== 'operational') {
-    return res.status(400).json({ error: 'jupiter_swap must be signed by the operational agent' });
+    return res.status(400).json({ error: 'jupiter_swap must be signed by the Oversight agent (agent_role "operational")' });
   }
   if (!body.input_mint || !body.output_mint) {
     return res.status(400).json({ error: 'jupiter_swap requires input_mint and output_mint' });
@@ -3058,7 +3058,7 @@ app.post('/sign-evm', async (req, res) => {
  *    Requires { chain_id, dao_address, enabled }.
  *
  *  - update_strategy_position_value: NaveExecution.syncPositionValue(adapter)
- *    from the Operational agent; the value is read on-chain from the adapter.
+ *    from the Oversight agent (role operational); the value is read on-chain from the adapter.
  *    Requires { chain_id, dao_address, execution_address, adapter }.
  *
  *  - the four-agent pipeline on NaveExecution: executive_approve,
@@ -3893,7 +3893,7 @@ app.post('/sign', async (req, res) => {
         return res.status(400).json({ error: 'update_strategy_position_value mint must be a valid base58 pubkey' });
       }
       if (body.agent_role !== 'operational') {
-        return res.status(400).json({ error: 'update_strategy_position_value must be signed by the operational agent' });
+        return res.status(400).json({ error: 'update_strategy_position_value must be signed by the Oversight agent (agent_role "operational")' });
       }
       // The mark is read on-chain from the venue's exchange rate; the caller
       // only supplies which accounts hold the position.

@@ -1745,7 +1745,7 @@ export default function ProposalCard({
                 Execute: Enable Agents
               </div>
               <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                This proposal passed. Executing reconnects this DAO to the four autonomous agents (Executive, Financial, Oversight, Operational), which will resume checking the treasury for necessary actions under the current constitution.
+                This proposal passed. Executing reconnects this DAO to the four autonomous agents (Executive, Financial, Operational, Oversight), which will resume checking the treasury for necessary actions under the current constitution.
               </p>
               {isFounder ? (
                 <button

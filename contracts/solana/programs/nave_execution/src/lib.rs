@@ -380,8 +380,8 @@ pub mod nave_execution {
     }
 
     /// Transition an in-review request to Expired once its review window has
-    /// elapsed without execution. Gated to the Operational agent (the monitoring
-    /// role) so it cannot be used to grief a legitimately approved request.
+    /// elapsed without execution. Gated to the Oversight agent (`AgentRole::Operational`,
+    /// the monitoring role) so it cannot be used to grief a legitimately approved request.
     pub fn expire_request(ctx: Context<ExpireRequest>) -> Result<()> {
         validate_agent_signer(
             &ctx.accounts.authority.key(),
@@ -980,7 +980,7 @@ fn prepare_strategy_deposit<'info>(
 }
 
 /// Jupiter Lend has no nave adapter program: `execute_strategy` escrows the
-/// funds and the Operational agent supplies them with `nave_core::jupiter_deposit`.
+/// funds and the Oversight agent (`AgentRole::Operational`) supplies them with `nave_core::jupiter_deposit`.
 const JUPITER_PROTOCOL_ID: &[u8] = b"jupiter";
 
 fn protocol_id_for_program(program: Pubkey) -> Option<&'static [u8]> {

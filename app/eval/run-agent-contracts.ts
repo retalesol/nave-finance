@@ -129,7 +129,7 @@ for (const stray of ["approve", "reject", "", undefined, null, 42, "CONTINUE"]) 
 }
 
 // ── 3. Source-level contract ──────────────────────────────────────────────────
-// Dispatcher: the Operational JSON schema shown to the model lists exactly the enum.
+// Dispatcher: the Oversight JSON schema (wire role operational) shown to the model lists exactly the enum.
 const schemaUnions = [...dispatcherSrc.matchAll(/"decision":\s*((?:"[a-z_]+"\s*\|\s*)*"[a-z_]+")/g)]
   .map((m) => m[1].split("|").map((s) => s.trim().replace(/"/g, "")).sort());
 const opSchemas = schemaUnions.filter((u) => u.includes("continue"));

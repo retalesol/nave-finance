@@ -2137,7 +2137,7 @@ export type NaveExecution = {
       "name": "expireRequest",
       "docs": [
         "Transition an in-review request to Expired once its review window has",
-        "elapsed without execution. Gated to the Operational agent (the monitoring",
+        "elapsed without execution. Gated to the Oversight agent (AgentRole::Operational, the monitoring",
         "role) so it cannot be used to grief a legitimately approved request."
       ],
       "discriminator": [
@@ -4885,7 +4885,7 @@ export type NaveExecution = {
           {
             "name": "oversightReasoningHash",
             "docs": [
-              "SHA-256 hash of the Oversight agent's Claude reasoning JSON."
+              "SHA-256 hash of the Operational agent's Claude reasoning JSON."
             ],
             "type": {
               "array": [
@@ -4897,7 +4897,7 @@ export type NaveExecution = {
           {
             "name": "operationalHaltReasonHash",
             "docs": [
-              "SHA-256 hash of the Operational agent's halt reasoning JSON."
+              "SHA-256 hash of the Oversight agent's halt reasoning JSON."
             ],
             "type": {
               "array": [

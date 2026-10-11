@@ -235,7 +235,7 @@ Pause autonomous proposing (least-disruptive first):
   load it → `create_proposal` fails closed).
 
 Post-halt recovery: a `Halted` ExecutionRequest is no longer a dead-end — the
-orchestrator re-evaluates it and, when the Operational agent returns
+orchestrator re-evaluates it and, when the Oversight agent (key role `operational`) returns
 `clear_halt` with no guardrail failures, submits `operational_clear` (Halted →
 InReview). To prevent automatic recovery, break-glass disable agents.
 

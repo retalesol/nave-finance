@@ -328,7 +328,7 @@ pub const DEFAULT_REBALANCE_FREQUENCY_SECONDS: i64 = 30 * 86_400;
 /// SOL-C3: `jupiter_swap`'s slippage/size guardrails used to default to `0`
 /// (disabled) until the founder explicitly opted in via
 /// `set_max_slippage_bps`/`set_max_single_swap_bps`, leaving newly-created
-/// DAOs unprotected against a compromised/rogue Operational agent until the
+/// DAOs unprotected against a compromised/rogue Oversight agent (`AgentRole::Operational`) until the
 /// founder remembered to configure them. Seeding a conservative non-zero
 /// default here closes that window; the founder can still retune via the
 /// existing setter instructions (including raising or lowering it).
@@ -407,6 +407,13 @@ pub const REVIEW_WINDOW_DECREASE_DELAY_SECS: i64 = DEV_DELAY_SECS;
 /// max(current_value, deposited_amount). Downward marks are unbounded.
 pub const MAX_POSITION_DRIFT_BPS_PER_DAY: u128 = 100;
 
+/// Role index stored on-chain. Do not reorder: existing agent sets, instructions,
+/// and key slots depend on these discriminants.
+///
+/// Product language is Executive → Financial → Operational → Oversight.
+/// Variant 2 (`Oversight`) is the Operational agent, the final signer.
+/// Variant 3 (`Operational`) is the Oversight agent, the monitor that can halt.
+/// The variant identifiers stay aligned with instruction and key-slot names.
 #[repr(u8)]
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AgentRole {

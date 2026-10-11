@@ -19,6 +19,7 @@ import { useTokenRegistry } from '../hooks/useTokenRegistry';
 import { useAgentHealth, timeAgo } from '../hooks/useAgentHealth';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import { computeAgentStatus, summarizeAgentStatuses } from '../lib/agentStatus';
+import { agentRoleLabel } from '../lib/agentRoleLabel';
 import { useAgentSessions, type AgentSession } from '../hooks/useAgentSessions';
 import { useActivityLog } from '../hooks/useActivityLog';
 import { useSendTransaction } from '../hooks/useSendTransaction';
@@ -1512,8 +1513,8 @@ function ConfirmFreezeModal({ onConfirm, onCancel }: { onConfirm: () => void; on
 const AGENT_ROLES: { role: AgentRole; label: string; icon: string; desc: string }[] = [
   { role: 'executive', label: 'Executive', icon: 'crown', desc: 'Strategic coordinator — first approval' },
   { role: 'financial', label: 'Financial', icon: 'money-bill-wave', desc: 'Operations layer — second approval' },
-  { role: 'oversight', label: 'Oversight', icon: 'eye', desc: 'Safeguard layer — final approval' },
-  { role: 'operational', label: 'Operational', icon: 'gear', desc: 'Monitoring — does not sign' },
+  { role: 'oversight', label: 'Operational', icon: 'eye', desc: 'Safeguard layer — final approval' },
+  { role: 'operational', label: 'Oversight', icon: 'gear', desc: 'Monitoring — does not sign' },
 ];
 
 function sessionStatusMeta(status: string): { color: string; bg: string; label: string } {
@@ -1914,7 +1915,7 @@ function AgentAdminSection({ daoAddress, frozen }: { daoAddress: string | null; 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span style={{ fontSize: '12.5px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>
-                            {roleInfo?.label || session.agentRole}
+                            {roleInfo?.label || agentRoleLabel(session.agentRole)}
                           </span>
                           <span
                             className="px-1.5 py-0.5 rounded-full"

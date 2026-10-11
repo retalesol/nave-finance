@@ -23,9 +23,9 @@ pub struct ExecutionRequest {
     pub executive_reasoning_hash: [u8; 32],
     /// SHA-256 hash of the Financial agent's Claude reasoning JSON.
     pub financial_reasoning_hash: [u8; 32],
-    /// SHA-256 hash of the Oversight agent's Claude reasoning JSON.
+    /// SHA-256 hash of the Operational agent's Claude reasoning JSON.
     pub oversight_reasoning_hash: [u8; 32],
-    /// SHA-256 hash of the Operational agent's halt reasoning JSON.
+    /// SHA-256 hash of the Oversight agent's halt reasoning JSON.
     pub operational_halt_reason_hash: [u8; 32],
     /// Cumulative amount already withdrawn from the strategy for this request.
     /// Caps repeatable withdrawals at `amount` so a fully-unwound position cannot

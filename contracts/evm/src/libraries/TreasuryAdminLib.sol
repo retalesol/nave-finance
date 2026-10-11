@@ -76,7 +76,7 @@ library TreasuryAdminLib {
         if (signer != s.authority) revert NaveErrors.Unauthorized();
     }
 
-    /// Revert unless `caller` is `founder` or an active, non-nullified Operational agent.
+    /// Revert unless `caller` is `founder` or an active, non-nullified Oversight agent (`AgentRole.Operational`).
     /// Used by revalueTreasury.
     function requireFounderOrOperational(
         AgentSlot[4] storage agents,

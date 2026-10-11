@@ -379,7 +379,7 @@ describe("agent role boundaries", () => {
         .signers(signer === h.founder ? [] : [signer])
         .rpc();
 
-    // Only the founder or the Operational agent may trigger a mark.
+    // Only the founder or the Oversight agent (`AgentRole::Operational`) may trigger a mark.
     await h.expectError(() => mark(dao.agents[1]), "Unauthorized");
     await mark(dao.agents[3]);
 

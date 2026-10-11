@@ -298,7 +298,7 @@ export function getProposalDescription(type: ProposalType): string {
     case 'transfer':
       return 'This proposal authorises moving idle treasury funds (native SOL or a registered SPL asset) to a recipient you specified in the payload. After the vote passes and the proposal is finalized, any member can submit the on-chain execute transfer transaction; autonomous agents are not required for this path.';
     case 'agent-enable':
-      return 'This proposal requests resuming the four autonomous agents for this treasury. Once it passes, the founder executes the on-chain enable so the Executive, Financial, Oversight, and Operational agents reconnect and begin checking this DAO for necessary actions.';
+      return 'This proposal requests resuming the four autonomous agents for this treasury. Once it passes, the founder executes the on-chain enable so the Executive, Financial, Operational, and Oversight agents reconnect and begin checking this DAO for necessary actions.';
     case 'moonlight-request':
       return 'This proposal requests winding the DAO down (moonlighting). If it passes and is recorded by the founder, the autonomous agents are halted and the proposal creator unlocks the distribution wizard.';
     case 'moonlight-distribution':

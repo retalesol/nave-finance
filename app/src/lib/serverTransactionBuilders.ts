@@ -431,7 +431,7 @@ export async function buildFinancialApprove(
   return { instruction, programId: NAVE_EXECUTION_PROGRAM_ID };
 }
 
-/** oversight_approve(tx_payload_hash, reasoning_hash) — Oversight agent. */
+/** oversight_approve(tx_payload_hash, reasoning_hash) — Operational agent (role key oversight). */
 export async function buildOversightApprove(
   daoPubkey: PublicKey,
   proposalPubkey: PublicKey,
@@ -459,7 +459,7 @@ export async function buildOversightApprove(
   return { instruction, programId: NAVE_EXECUTION_PROGRAM_ID };
 }
 
-/** operational_halt(reason_hash) — Operational agent. */
+/** operational_halt(reason_hash) — Oversight agent (role key operational). */
 export async function buildOperationalHalt(
   daoPubkey: PublicKey,
   proposalPubkey: PublicKey,
@@ -486,7 +486,7 @@ export async function buildOperationalHalt(
   return { instruction, programId: NAVE_EXECUTION_PROGRAM_ID };
 }
 
-/** operational_clear(reason_hash) — Operational agent. Halted -> InReview. */
+/** operational_clear(reason_hash) — Oversight agent (role key operational). Halted -> InReview. */
 export async function buildOperationalClear(
   daoPubkey: PublicKey,
   proposalPubkey: PublicKey,

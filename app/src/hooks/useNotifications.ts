@@ -4,6 +4,7 @@ import { useProposals } from './useProposals';
 import { useTreasuryBalance } from './useTreasuryBalance';
 import { useDaoRegistry } from './useDaoRegistry';
 import { ProposalStatus } from '../lib/onChainTypes';
+import { agentRoleLabel } from '../lib/agentRoleLabel';
 
 export type NotificationKind = 'vote' | 'proposal' | 'deposit' | 'activity';
 
@@ -139,7 +140,7 @@ export function useNotifications(daoAddress: string | null) {
       items.push({
         id: `activity-${a.id}`,
         kind: 'activity',
-        title: a.agentRole ? `${a.agentRole} activity` : 'Treasury activity',
+        title: a.agentRole ? `${agentRoleLabel(a.agentRole)} activity` : 'Treasury activity',
         body: a.description,
         time: formatRelativeTime(ts),
         timestamp: ts,

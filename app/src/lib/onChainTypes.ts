@@ -12,6 +12,7 @@ export enum PrivacyMode {
   Private = 1,
 }
 
+/** Wire discriminants. Product names: 2 = Operational (final signer), 3 = Oversight (monitor). */
 export enum AgentRole {
   Executive = 0,
   Financial = 1,
@@ -326,7 +327,7 @@ export interface InitializeDaoParams {
   name: string;
   guardianWallets: string[];      // 1..10 base58, unique
   guardianThreshold: number;      // 1..7, <= wallet count
-  agentAuthorities: string[];     // exactly 4 base58 (Executive, Financial, Oversight, Operational)
+  agentAuthorities: string[];     // exactly 4 base58 (Executive, Financial, Operational, Oversight)
   managementFeeBps: number;
   performanceFeeBps: number;
   frozenManagementFeeBps: number;

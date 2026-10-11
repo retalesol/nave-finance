@@ -336,7 +336,8 @@ You must produce JSON matching this schema:
 
     oversight: `${base}
 
-You are the OVERSIGHT AGENT — the Safeguard Layer.
+You are the OPERATIONAL AGENT — the Safeguard Layer.
+Your public name is Operational. The stored role key is unchanged: set "agent_type" to "oversight" exactly. The on-chain status after your approval is still OversightApproved.
 You provide the THIRD and FINAL approval in the 3-of-3 multisig chain.
 
 Your responsibilities:
@@ -377,14 +378,15 @@ You must produce JSON matching this schema:
 
     operational: `${base}
 
-You are the OPERATIONAL AGENT — the Monitoring Layer.
+You are the OVERSIGHT AGENT — the Monitoring Layer.
+Your public name is Oversight. The stored role key is unchanged: set "agent_type" to "operational" exactly.
 You do NOT sign transactions. You monitor and protect.
 
 Your responsibilities:
 1. Monitor treasury health — are reserves adequate? Are positions performing as expected?
 2. Detect suspicious activity — unusual transaction patterns, unexpected protocol behavior, market anomalies
 3. Evaluate risk conditions — has the market changed significantly since the proposal was approved?
-4. Decide whether to raise an operational halt (blocking execution during the 48-hour review window) or clear a previous halt
+4. Decide whether to raise a halt (blocking execution during the 48-hour review window) or clear a previous halt
 5. Track portfolio concentration and compliance drift against the constitutional limits
 
 You monitor a yield-operating treasury: positions are SUPPOSED to accrue yield
@@ -407,7 +409,7 @@ Decision semantics (the orchestrator acts on these deterministically):
   elapsed this is the decision that lets the orchestrator PROCEED TO EXECUTION of
   the governance-approved request (subject to deterministic guardrails). Return it
   only when you would be comfortable with the capital movement happening now.
-- "halt": raise an operational halt (set should_halt=true and halt_reason).
+- "halt": raise a halt (set should_halt=true and halt_reason).
   Execution is blocked and the request is expired if it stays halted.
 - "clear_halt": lift a prior halt (set should_clear_halt=true) — only when the
   request is currently Halted and conditions have clearly recovered.
@@ -874,7 +876,7 @@ Deno.serve(async (req: Request) => {
     const gateLine = !agentGate
       ? "Unknown (on-chain gate not read). Signing roles fail closed until the gate is readable."
       : gateClosed
-      ? `CLOSED — frozen=${agentGate.frozen ?? "unknown"}, agents_enabled=${agentGate.agentsEnabled ?? "unknown"}. The DAO is frozen or has agents disabled. Signing roles (executive/financial/oversight) MUST NOT approve or sign while the gate is closed — recommend "reject"/"request_review" and should_sign=false. Operational monitoring (halt/clear_halt/expire) may still proceed.`
+      ? `CLOSED — frozen=${agentGate.frozen ?? "unknown"}, agents_enabled=${agentGate.agentsEnabled ?? "unknown"}. The DAO is frozen or has agents disabled. Signing roles (executive/financial/oversight) MUST NOT approve or sign while the gate is closed — recommend "reject"/"request_review" and should_sign=false. Oversight monitoring (role key operational; halt/clear_halt/expire) may still proceed.`
       : `OPEN — frozen=${agentGate.frozen ?? "unknown"}, agents_enabled=${agentGate.agentsEnabled ?? "unknown"}. Agents are enabled and the DAO is not frozen; capital movement is permitted subject to all other constitutional checks.`;
 
     // ── Build Context Message ─────────────────────────────────────────────

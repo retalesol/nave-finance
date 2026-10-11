@@ -218,7 +218,7 @@ contract ExecutionTest is NaveBase {
     // ── EVM-C2: execute() is Executive-only ──────────────────────────────
     /// A fully-approved, review-window-cleared request can only be triggered
     /// by the Executive — not a third party who would dictate `minOut`, and not
-    /// the Financial / Oversight / Operational agents (role boundary).
+    /// the Financial / Operational / Oversight agents (role boundary).
     function test_execute_onlyExecutive() public {
         uint64 idx = _passStrategyProposal(DEPLOY);
         e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));

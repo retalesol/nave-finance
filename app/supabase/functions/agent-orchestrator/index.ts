@@ -55,7 +55,7 @@ const STATUS_TO_AGENT: Record<string, AgentRole> = {
   FinancialApproved: "oversight",
   OversightApproved: "operational",
   InReview: "operational",
-  // Halted requests stay actionable so the Operational agent can re-evaluate
+  // Halted requests stay actionable so the Oversight agent (role key operational) can re-evaluate
   // and (if conditions cleared) lift the halt via `operational_clear`, moving
   // the request back to InReview. Without this a halt is a dead-end until a
   // human intervenes. Executed/Expired remain the only true terminal states.
@@ -369,7 +369,7 @@ function evaluateGate(gate: AgentGateView): GateDecision {
       allowOperationalMonitoring: true,
       skipStatus: "skipped_frozen",
       reason:
-        "DAO frozen (emergency): all capital movement paused — approvals, execution, withdraw, compound and bundle rebalances are blocked. Operational monitoring (halt + expire) remains active.",
+        "DAO frozen (emergency): all capital movement paused — approvals, execution, withdraw, compound and bundle rebalances are blocked. Oversight monitoring (halt + expire) remains active.",
     };
   }
   // Either flag unreadable → we cannot confirm the DAO is unfrozen / enabled, so
@@ -382,7 +382,7 @@ function evaluateGate(gate: AgentGateView): GateDecision {
       allowOperationalMonitoring: true,
       skipStatus: "skipped_gate_unreadable",
       reason:
-        "Agent gate unreadable on-chain: failing closed for signing and capital movement; operational monitoring (halt + expire) only.",
+        "Agent gate unreadable on-chain: failing closed for signing and capital movement; Oversight monitoring (halt + expire) only.",
     };
   }
   if (gate.agentsEnabled === false) {
@@ -393,7 +393,7 @@ function evaluateGate(gate: AgentGateView): GateDecision {
       allowOperationalMonitoring: true,
       skipStatus: "skipped_disabled",
       reason:
-        "Agents disabled: no new approvals or executions. Operational monitoring (halt + expire) only.",
+        "Agents disabled: no new approvals or executions. Oversight monitoring (halt + expire) only.",
     };
   }
   return {
@@ -1393,7 +1393,7 @@ Deno.serve(async (req: Request) => {
         for (const daoAddr of daoAddresses) {
           // Per-DAO agent gate (read once, cached). We DELIBERATELY no longer skip
           // the whole DAO when paused/frozen: a frozen or disabled DAO still needs
-          // operational monitoring (halt + expire_request) and, when it resumes,
+          // Oversight monitoring (halt + expire_request, role key operational) and, when it resumes,
           // its backlog must be picked up. Capital-movement / signing actions are
           // parked later, per-item, by the gate matrix in the dispatch loop.
           const gate = await getGate(daoAddr);
@@ -2251,7 +2251,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // ── Operational halt handling — submit operational_halt on-chain ──
+        // ── Oversight halt handling — submit operational_halt on-chain ──
         if (agentRole === "operational" && dispatchData.should_halt) {
           const signRes = await callSigner({
             action: "operational_halt",
@@ -2267,8 +2267,8 @@ Deno.serve(async (req: Request) => {
             agent_role: "operational",
             action_type: "halt",
             reasoning: signRes.ok
-              ? `Orchestrator: Operational agent halted execution on-chain (sig ${signRes.signature}). Reason: ${dispatchData.halt_reason}`
-              : `Orchestrator: Operational halt failed to sign: ${signRes.error}`,
+              ? `Orchestrator: Oversight agent halted execution on-chain (sig ${signRes.signature}). Reason: ${dispatchData.halt_reason}`
+              : `Orchestrator: Oversight halt failed to sign: ${signRes.error}`,
             constitution_check: persistedConstitutionCheck("halt", signRes.constitution_check, {
               halt_causes: haltCausesFrom(dispatchData.guardrail_checks),
             }),
@@ -2287,7 +2287,7 @@ Deno.serve(async (req: Request) => {
         }
 
         // ── Post-halt recovery — lift a halt once conditions clear ──
-        // When a request is Halted and the Operational agent now judges it safe
+        // When a request is Halted and the Oversight agent (role key operational) now judges it safe
         // (decision=clear_halt, should_clear_halt, no guardrail failures), submit
         // operational_clear on-chain to move Halted → InReview. The cleared
         // request is then re-queued so the same run can proceed to the
@@ -2335,7 +2335,7 @@ Deno.serve(async (req: Request) => {
             agent_role: "operational",
             action_type: "clear_halt",
             reasoning: clearRes.ok
-              ? `Orchestrator: Operational agent cleared a prior halt on-chain (sig ${clearRes.signature}); request returned to InReview.`
+              ? `Orchestrator: Oversight agent cleared a prior halt on-chain (sig ${clearRes.signature}); request returned to InReview.`
               : `Orchestrator: operational_clear failed to sign: ${clearRes.error}`,
             constitution_check: persistedConstitutionCheck("clear_halt", clearRes.constitution_check, {
               operational_gate: clearDecision,
@@ -2376,13 +2376,13 @@ Deno.serve(async (req: Request) => {
         }
 
         // ── Execution / expiry — after the review window ──
-        // The operational agent monitors during InReview. Once the window elapses
+        // The Oversight agent (role key operational) monitors during InReview. Once the window elapses
         // the shared contract (agentContracts.postReviewAction) decides:
         //   • continue + no guardrail failures → execute_strategy
         //   • halt → expire_request
         //   • request_review / blocked → park until the grace window elapses,
         //     then expire_request (timeout cleanup)
-        // NOTE: the Operational schema never emits "approve"; gating on it made
+        // NOTE: the Oversight schema (role key operational) never emits "approve"; gating on it made
         // autonomous execution dead code.
         if (agentRole === "operational" && !dispatchData.should_halt) {
           const onchain = await readWorkItemRequest(item);

@@ -204,11 +204,11 @@ export const MOCK_ACTION_LOGS: AgentActionLog[] = [
 
 export const MOCK_ACTIVITIES: ActivityEntry[] = [
   { id: 'act-1',  eventType: 'agent_deposit',    description: 'Financial Agent deployed capital to approved yield strategy',    actor: FAKE_AGENT_FIN,  agentRole: 'financial',   txSignature: '5xKp3m…abc', slot: 298401200, blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
-  { id: 'act-2',  eventType: 'agent_validation',  description: 'Oversight Agent validated: transaction within policy bounds',    actor: FAKE_AGENT_OVER, agentRole: 'oversight',   txSignature: '5xKp3m…abd', slot: 298401201, blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
-  { id: 'act-3',  eventType: 'agent_alert',       description: 'Operational Agent flagged: stablecoin reserve approaching floor', actor: FAKE_AGENT_OPS,  agentRole: 'operational', txSignature: '',            slot: null,      blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
+  { id: 'act-2',  eventType: 'agent_validation',  description: 'Operational Agent validated: transaction within policy bounds',    actor: FAKE_AGENT_OVER, agentRole: 'oversight',   txSignature: '5xKp3m…abd', slot: 298401201, blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
+  { id: 'act-3',  eventType: 'agent_alert',       description: 'Oversight Agent flagged: stablecoin reserve approaching floor', actor: FAKE_AGENT_OPS,  agentRole: 'operational', txSignature: '',            slot: null,      blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
   { id: 'act-4',  eventType: 'agent_stake',       description: 'Financial Agent deployed SOL to liquid staking strategy',        actor: FAKE_AGENT_FIN,  agentRole: 'financial',   txSignature: '9aRz8v…efg', slot: 298398100, blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
   { id: 'act-5',  eventType: 'agent_rebalance',   description: 'Executive Agent initiated rebalance based on governance mandate', actor: FAKE_AGENT_EXEC, agentRole: 'executive', txSignature: '4sLm1n…hij', slot: 298395000, blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
-  { id: 'act-6',  eventType: 'agent_compliance',  description: 'Operational Agent: policy compliance check passed',              actor: FAKE_AGENT_OPS,  agentRole: 'operational', txSignature: '',            slot: null,      blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
+  { id: 'act-6',  eventType: 'agent_compliance',  description: 'Oversight Agent: policy compliance check passed',              actor: FAKE_AGENT_OPS,  agentRole: 'operational', txSignature: '',            slot: null,      blockTime: daysAgo(0), createdAt: daysAgo(0), rawData: {} },
   { id: 'act-7',  eventType: 'proposal_created',  description: 'Proposal #6 created: Increase minimum stablecoin reserve to 45%', actor: FAKE_WALLET_A, agentRole: null, txSignature: '7xKp3m…klm', slot: 298380000, blockTime: daysAgo(2), createdAt: daysAgo(2), rawData: {} },
   { id: 'act-8',  eventType: 'proposal_voted',    description: 'Vote cast on Proposal #6: Increase minimum stablecoin reserve', actor: FAKE_WALLET_B, agentRole: null, txSignature: '2hYn5c…nop', slot: 298360000, blockTime: daysAgo(4), createdAt: daysAgo(4), rawData: {} },
   { id: 'act-9',  eventType: 'guardian_update',    description: 'Threshold changed from 2-of-3 to 2-of-4',                      actor: FAKE_WALLET_A, agentRole: null, txSignature: '8dVc2x…qrs', slot: 298200000, blockTime: daysAgo(10), createdAt: daysAgo(10), rawData: {} },
@@ -548,17 +548,17 @@ export const MOCK_DASHBOARD_ALLOC = [
 export const MOCK_DASHBOARD_AGENT_STATUS = [
   { icon: 'crown',           label: 'Executive',   status: 'active' as const, lastAction: '4m ago' },
   { icon: 'money-bill-wave', label: 'Financial',   status: 'active' as const, lastAction: '2m ago' },
-  { icon: 'eye',             label: 'Oversight',   status: 'active' as const, lastAction: '2m ago' },
-  { icon: 'gear',            label: 'Operational', status: 'active' as const, lastAction: '1m ago' },
+  { icon: 'eye',             label: 'Operational', status: 'active' as const, lastAction: '2m ago' },
+  { icon: 'gear',            label: 'Oversight',   status: 'active' as const, lastAction: '1m ago' },
 ];
 
 export const MOCK_DASHBOARD_RECENT_ACTIVITY = [
   { id: 1, desc: 'Financial Agent deployed capital to approved yield strategy',       agent: 'Financial',   time: '2m ago',  status: 'success' },
-  { id: 2, desc: 'Oversight Agent validated: transaction within policy bounds',       agent: 'Oversight',   time: '2m ago',  status: 'success' },
-  { id: 3, desc: 'Operational Agent flagged: stablecoin reserve approaching floor',   agent: 'Operational', time: '14m ago', status: 'warning' },
+  { id: 2, desc: 'Operational Agent validated: transaction within policy bounds',       agent: 'Operational', time: '2m ago',  status: 'success' },
+  { id: 3, desc: 'Oversight Agent flagged: stablecoin reserve approaching floor',     agent: 'Oversight',   time: '14m ago', status: 'warning' },
   { id: 4, desc: 'Financial Agent deployed SOL to liquid staking strategy',           agent: 'Financial',   time: '45m ago', status: 'success' },
   { id: 5, desc: 'Executive Agent initiated rebalance based on governance mandate',   agent: 'Executive',   time: '1h ago',  status: 'success' },
-  { id: 6, desc: 'Operational Agent: policy compliance check passed',                 agent: 'Operational', time: '2h ago',  status: 'success' },
+  { id: 6, desc: 'Oversight Agent: policy compliance check passed',                   agent: 'Oversight',   time: '2h ago',  status: 'success' },
 ];
 
 export const MOCK_DASHBOARD_YIELD_BY_ASSET: { asset: string; earned: number; color: string }[] = [];
@@ -625,7 +625,7 @@ export const MOCK_DASHBOARD_REPORT_YEARS = [
         agentActions: [
           { agent: 'Financial', action: 'Deployed SOL to liquid staking strategy', amount: '$20,400' },
           { agent: 'Financial', action: 'Deployed USDC to lending protocol', amount: '$15,000' },
-          { agent: 'Oversight', action: 'Validated all transactions', amount: undefined },
+          { agent: 'Operational', action: 'Validated all transactions', amount: undefined },
         ],
         walletActions: [
           { wallet: '9aRz…8vWq', action: 'Added 12,000 USDC to treasury', amount: '$12,000' },
@@ -660,7 +660,7 @@ export const MOCK_DASHBOARD_REPORT_YEARS = [
         agentActions: [
           { agent: 'Financial', action: 'Deployed USDC to lending strategy', amount: '$5,000' },
           { agent: 'Financial', action: 'Harvested liquid staking rewards', amount: '$410' },
-          { agent: 'Operational', action: 'Flagged approaching stablecoin floor', amount: undefined },
+          { agent: 'Oversight', action: 'Flagged approaching stablecoin floor', amount: undefined },
         ],
         walletActions: [],
         proposals: [
@@ -676,8 +676,8 @@ export const MOCK_DASHBOARD_REPORT_YEARS = [
         agentActions: [
           { agent: 'Financial', action: 'Deployed USDC to lending strategy', amount: '$5,000' },
           { agent: 'Financial', action: 'Deployed SOL to liquid staking strategy', amount: '$8,750' },
-          { agent: 'Oversight', action: 'Validated 12 transactions', amount: undefined },
-          { agent: 'Operational', action: 'Policy compliance: 94 checks passed', amount: undefined },
+          { agent: 'Operational', action: 'Validated 12 transactions', amount: undefined },
+          { agent: 'Oversight', action: 'Policy compliance: 94 checks passed', amount: undefined },
         ],
         walletActions: [
           { wallet: '7xKp…3mBf', action: 'Deposited 2,000 USDC', amount: '$2,000' },

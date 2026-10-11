@@ -895,7 +895,7 @@ export const ADAPTER_PROGRAM_IDS: Record<string, PublicKey> = {
 
 /**
  * Protocols with no Nave adapter program. `execute_strategy` moves the funds
- * into the strategy escrow, then the Operational agent places them with
+ * into the strategy escrow, then the Oversight agent (role key operational) places them with
  * nave_core::jupiter_deposit (and redeems with jupiter_withdraw).
  */
 export const DIRECT_CPI_PROTOCOLS: ReadonlySet<string> = new Set(['jupiter']);

@@ -23,13 +23,13 @@ const AGENTS = [
   },
   {
     icon: 'eye',
-    role: 'Oversight Agent',
+    role: 'Operational Agent',
     tag: 'Safeguard Layer',
     desc: 'Enforces constitutional compliance, reviews all agent decisions, validates execution safety, and signs final multisig approval.',
   },
   {
     icon: 'gear',
-    role: 'Operational Agent',
+    role: 'Oversight Agent',
     tag: 'Monitoring Layer',
     desc: 'Continuous treasury monitoring, accounting, analytics, optimization recommendations, suspicious activity detection, and emergency halt capabilities.',
   },
@@ -39,7 +39,7 @@ const STEPS = [
   { step: '01', label: 'Governance Vote', desc: 'DAO token holders approve proposal' },
   { step: '02', label: 'Executive Review', desc: 'Constitutional alignment validated, first signature' },
   { step: '03', label: 'Financial Execution', desc: 'Transaction prepared, profitability verified, second signature' },
-  { step: '04', label: 'Oversight Approval', desc: 'Compliance validated, final signature, treasury executes' },
+  { step: '04', label: 'Operational Approval', desc: 'Compliance validated, final signature, treasury executes' },
 ];
 
 const WP = [0.24, 0.45, 0.66, 0.87];

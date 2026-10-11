@@ -208,7 +208,7 @@ not env flags:
 
 | Behavior | Location | Status | Phase ref |
 |----------|----------|--------|-----------|
-| EVM post-`Executed` state (compound/oracle/auto-withdraw) | `agent-orchestrator/index.ts` EVM branch of the `fresh.status === "Executed"` handler | FIXED (Phase 5) — reuses the same `NAVE_POSITION_ORACLE_ENABLED` / `NAVE_COMPOUND_ENABLED` / `NAVE_AUTO_WITHDRAW_ENABLED` flags as Solana, applied per-chain. Position is keyed by adapter address via `NaveTreasury.position(adapter)` / `updateStrategyPositionValue` (relayed from the custodied Operational agent EOA) instead of a Solana PDA. `min_out` for the EVM `withdraw_from_strategy` harvest/withdraw calls is omitted (defaults to 0 on testnets); a real EVM mainnet deployment will need a positive off-chain-quoted `min_out` threaded the same way `resolveEvmMinOut` does for founder-initiated withdrawals. | Phase 5 |
+| EVM post-`Executed` state (compound/oracle/auto-withdraw) | `agent-orchestrator/index.ts` EVM branch of the `fresh.status === "Executed"` handler | FIXED (Phase 5) — reuses the same `NAVE_POSITION_ORACLE_ENABLED` / `NAVE_COMPOUND_ENABLED` / `NAVE_AUTO_WITHDRAW_ENABLED` flags as Solana, applied per-chain. Position is keyed by adapter address via `NaveTreasury.position(adapter)` / `updateStrategyPositionValue` (relayed from the custodied Oversight agent EOA, role `operational`) instead of a Solana PDA. `min_out` for the EVM `withdraw_from_strategy` harvest/withdraw calls is omitted (defaults to 0 on testnets); a real EVM mainnet deployment will need a positive off-chain-quoted `min_out` threaded the same way `resolveEvmMinOut` does for founder-initiated withdrawals. | Phase 5 |
 | EVM guardian multi-sig UI | `src/lib/evm/writers.ts` | PARTIALLY WIRED | Phase 2C |
 
 ---
@@ -236,7 +236,7 @@ When on, a finished venue status of `stop` withholds a new deploy into that venu
 ### `NAVE_GENLAYER_HALT_GATE` (default: `false`)
 **Classification: (A) App-only gate**
 
-When on, a finished `keep_pause` blocks `clear_halt`. `lift_pause` does not sign `operational_clear` and does not shorten the review window. The Operational key on the treasury chain is still required to lift a pause.
+When on, a finished `keep_pause` blocks `clear_halt`. `lift_pause` does not sign `operational_clear` and does not shorten the review window. The Oversight key (role `operational`) on the treasury chain is still required to lift a pause.
 
 **Enable when:** `NAVE_GENLAYER_HALT_ADDRESS` is set.
 

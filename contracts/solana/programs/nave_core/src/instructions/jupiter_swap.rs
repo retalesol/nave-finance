@@ -39,7 +39,7 @@ pub fn jupiter_swap_handler<'info>(
     route_data: Vec<u8>,
 ) -> Result<()> {
     // 1. Agent gating: global pause, DAO freeze, agents-enabled, and the
-    //    Operational agent identity/operational-status checks.
+    //    Oversight agent (`AgentRole::Operational`) identity and active-status checks.
     require_not_paused(&ctx.accounts.global_config)?;
     require_dao_active(&ctx.accounts.dao_registry)?;
     require_agents_enabled(&ctx.accounts.agent_set)?;
@@ -57,7 +57,7 @@ pub fn jupiter_swap_handler<'info>(
     );
 
     // 2b. Constitution-level max-slippage guardrail. `min_amount_out` alone is
-    // caller-supplied by the same Operational agent executing the swap, so a
+    // caller-supplied by the same Oversight agent (`AgentRole::Operational`) executing the swap, so a
     // compromised/rogue agent could pick an unbounded (near-zero) floor and
     // still pass every other check. Require the agent's `min_amount_out` to
     // be within `max_slippage_bps` of an off-chain-quoted `expected_amount_out`
@@ -117,7 +117,7 @@ pub fn jupiter_swap_handler<'info>(
     // 4b. Constitution-level max-single-swap-size guardrail. Unlike deposits
     // into Kamino/Jito/MarginFi — which can only move funds already escrowed
     // via a governance-approved, multi-agent-reviewed `execute_strategy` —
-    // `jupiter_swap` is gated by a single Operational agent signature with no
+    // `jupiter_swap` is gated by a single Oversight agent (`AgentRole::Operational`) signature with no
     // prior approval step. Bound `amount_in` to `max_single_swap_bps` of the
     // pre-swap balance of the asset being sold, so one compromised/rogue
     // agent signature cannot move more than the configured share of a given
@@ -145,7 +145,7 @@ pub fn jupiter_swap_handler<'info>(
     // agent-supplied and forwarded verbatim to a CPI signed by the
     // `vault_authority` PDA, so the PDA's signature authorizes token moves out
     // of ANY `vault_authority`-owned token account referenced by the route —
-    // not just the intended `source_token_account`. A rogue Operational agent
+    // not just the intended `source_token_account`. A rogue Oversight agent (`AgentRole::Operational`)
     // could otherwise craft a route that drains a different treasury holding
     // (a strategy escrow, another asset's vault, the legacy vault ATA, …),
     // sidestepping the single-swap-size and slippage guards which only bind

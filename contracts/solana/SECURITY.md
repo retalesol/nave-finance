@@ -13,16 +13,16 @@ Nave Finance is a multi-program Solana treasury system where DAO governance auth
 | Guardians | Medium | M-of-N emergency freeze/unfreeze |
 | Executive Agent | High (ops) | First approval, emergency direct execute when frozen |
 | Financial Agent | High (ops) | Sets transaction payload hash |
-| Oversight Agent | High (ops) | Verifies payload hash, starts review window |
-| Operational Agent | High (ops) | Halt/clear execution during review |
+| Operational Agent | High (ops) | Verifies payload hash, starts review window |
+| Oversight Agent | High (ops) | Halt/clear execution during review |
 | Token Holders | Governance | Escrow-weighted voting with quorum |
 | Anyone | Low | Permissionless fee collection to configured recipient only |
 
 ## Execution Pipeline
 
 1. Passed strategy proposal required to create execution request
-2. Executive → Financial → Oversight approvals (sequential)
-3. 24-hour review window (Operational agent may halt)
+2. Executive → Financial → Operational approvals (sequential)
+3. 24-hour review window (Oversight agent may halt)
 4. `execute_strategy` CPIs to adapter with `execution_authority` PDA signer
 5. Adapters verify execution authority and move SPL from vault to strategy escrow
 
@@ -30,7 +30,7 @@ Nave Finance is a multi-program Solana treasury system where DAO governance auth
 
 - **No founder vault withdraw**: Treasury exits require the agent pipeline
 - **Allocation caps**: `max_allocation_bps` enforced against NAV at request creation and execution
-- **Payload binding**: Financial/Oversight hash chain enforced; proposal hash seeded at request creation
+- **Payload binding**: Financial/Operational hash chain enforced; proposal hash seeded at request creation
 - **Adapter auth**: Only `nave_execution` execution_authority PDA can invoke adapter deposits/withdrawals
 - **Guardian threshold**: Emergency actions require M-of-N signatures via `GuardianAction` PDAs
 - **Agent rotation timelock**: 48-hour delay before scheduled agent key changes apply

@@ -549,7 +549,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
 
     /// Mark a strategy position from the adapter's own accounting. Adapters
     /// scope `positionValue` to `msg.sender`, so this contract is the only
-    /// caller that reads this DAO's position. Founder or Operational agent;
+    /// caller that reads this DAO's position. Founder or Oversight agent (`AgentRole.Operational`);
     /// the treasury caps upward drift per day. Accounting only (moves no
     /// funds), so it stays available while the DAO is frozen or agents are off.
     function syncPositionValue(address adapter) external notPaused returns (uint256 applied) {

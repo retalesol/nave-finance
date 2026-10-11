@@ -23,6 +23,7 @@ import { useChain } from '../hooks/useChain';
 import { SOLANA_NETWORK } from '../lib/programConfig';
 import { daoNetworkLabel, isEvmAddress } from '../lib/chain/types';
 import { isMockDaoAddress } from '../lib/mockData';
+import { agentRoleLabel } from '../lib/agentRoleLabel';
 import {
   DepositFundsModal,
   CreateTransactionModal,
@@ -60,8 +61,8 @@ import {
 const AGENT_ROLE_META: Record<string, { icon: string; label: string }> = {
   executive:   { icon: 'crown',          label: 'Executive Agent'  },
   financial:   { icon: 'money-bill-wave', label: 'Financial Agent' },
-  oversight:   { icon: 'eye',            label: 'Oversight Agent'  },
-  operational: { icon: 'gear',           label: 'Operational Agent' },
+  oversight:   { icon: 'eye',            label: 'Operational Agent' },
+  operational: { icon: 'gear',           label: 'Oversight Agent' },
 };
 
 const AGENT_ROLES_ORDER = ['executive', 'financial', 'oversight', 'operational'] as const;
@@ -524,7 +525,7 @@ function ActivityFeed({ activities, onViewAll }: { activities: ActivityEntry[]; 
                   <p style={{ fontSize: '13px', color: 'hsl(var(--foreground))', lineHeight: 1.5 }}>{item.description}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}>
-                      {item.agentRole || item.eventType}
+                      {item.agentRole ? agentRoleLabel(item.agentRole) : item.eventType}
                     </span>
                     <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}>
                       {item.blockTime ? new Date(item.blockTime).toLocaleString() : new Date(item.createdAt).toLocaleString()}

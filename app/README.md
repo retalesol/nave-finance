@@ -6,8 +6,8 @@ deploy order, and agent operations are in the repository root
 [`README.md`](../README.md).
 
 Nave is an AI-agent-governed DAO treasury platform. DAOs deposit a treasury,
-ratify a constitution, and four AI agents (Executive, Financial, Oversight,
-Operational) propose, review, and execute on-chain treasury actions under hard
+ratify a constitution, and four AI agents (Executive, Financial, Operational,
+Oversight) propose, review, and execute on-chain treasury actions under hard
 on-chain guardrails.
 
 Solana DAO program ids checked in here are the devnet stack. DAO creation in

@@ -1,4 +1,4 @@
-// Deterministic gate on the Operational agent's `continue` and `clear_halt`.
+// Deterministic gate on the Oversight agent's `continue` and `clear_halt` (wire role `operational`).
 //
 // The model's decision is advisory. Before the orchestrator executes after the
 // review window or lifts a halt, it needs reasons it can check itself: the

@@ -33,7 +33,7 @@ use crate::utils::{value_stable, value_usd};
 /// callers may pass the same `asset_vault` as a placeholder for the 4th slot.
 pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
     crate::utils::require_not_paused(&ctx.accounts.global_config)?;
-    // Authority gate: only the founder or an operational Operational agent may
+    // Authority gate: only the founder or an active Oversight agent (`AgentRole::Operational`) may
     // revalue. A permissionless revalue lets any caller stamp a fresh
     // `last_revalued_at` and (combined with a partial asset set, below) deflate
     // NAV to loosen the constitution's USD-denominated allocation caps and

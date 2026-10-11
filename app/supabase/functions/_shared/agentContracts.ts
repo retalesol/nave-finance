@@ -3,7 +3,7 @@
 // The dispatcher (LLM output schema + validators) and the orchestrator (what to
 // do with a decision) MUST agree on the decision vocabulary. Historically the
 // orchestrator gated autonomous execution on `decision === "approve"` while the
-// Operational schema could only ever emit continue|halt|clear_halt|request_review,
+// Oversight schema (wire role `operational`) could only ever emit continue|halt|clear_halt|request_review,
 // so execution was dead code. Both sides now import from this module and the
 // eval harness (eval/run-agent-contracts.ts) asserts the contract.
 //
@@ -17,18 +17,18 @@ export type AgentRole = (typeof AGENT_ROLES)[number];
 export const SIGNING_DECISIONS = ["approve", "reject", "request_review"] as const;
 export type SigningDecision = (typeof SIGNING_DECISIONS)[number];
 
-/** Decisions the Operational (monitoring) role may return. */
+/** Decisions the Oversight agent (wire role `operational`, the monitor) may return. */
 export const OPERATIONAL_DECISIONS = ["continue", "halt", "clear_halt", "request_review"] as const;
 export type OperationalDecision = (typeof OPERATIONAL_DECISIONS)[number];
 
 /**
- * The ONLY Operational decision that permits autonomous execution once the
+ * The ONLY Oversight decision (wire role `operational`) that permits autonomous execution once the
  * on-chain review window has elapsed. `continue` means "no reason to block —
- * proceed to execution" (see the Operational system prompt in agent-dispatcher).
+ * proceed to execution" (see the Oversight system prompt in agent-dispatcher).
  */
 export const OPERATIONAL_EXECUTE_DECISIONS: readonly OperationalDecision[] = ["continue"];
 
-/** Operational decisions that expire the request outright once the window elapsed. */
+/** Oversight decisions (wire role `operational`) that expire the request outright once the window elapsed. */
 export const OPERATIONAL_EXPIRE_DECISIONS: readonly OperationalDecision[] = ["halt"];
 
 export function isSigningDecision(d: unknown): d is SigningDecision {
@@ -45,11 +45,11 @@ export interface OperationalVerdictInput {
   guardrail_failures?: readonly string[] | null;
 }
 
-/** What the orchestrator does with an Operational verdict after review_end. */
+/** What the orchestrator does with an Oversight verdict (wire role `operational`) after review_end. */
 export type PostReviewAction = "execute" | "expire" | "park";
 
 /**
- * Deterministic post-review routing for the Operational role. Called ONLY when
+ * Deterministic post-review routing for the Oversight role (wire key `operational`). Called ONLY when
  * the on-chain request is InReview and `now >= review_end`.
  *
  *   - should_halt                                → "park"    (halt path handles it)
@@ -58,7 +58,7 @@ export type PostReviewAction = "execute" | "expire" | "park";
  *   - request_review / clear_halt / blocked      → "park" until the execution
  *     grace window elapses, then "expire" (timeout cleanup)
  *
- * Anything outside the Operational enum (e.g. a stray "approve") never executes.
+ * Anything outside the Oversight decision enum (e.g. a stray "approve") never executes.
  */
 export function postReviewAction(
   input: OperationalVerdictInput,

@@ -132,7 +132,7 @@ Each folder holds that network's address manifests and Foundry broadcast logs. S
 A treasury on Nave has three layers of control.
 
 1. **Constitution.** Members ratify approved venues, allocation caps, a liquidity floor, confidence thresholds, and cadence. Those rules are stored on-chain and are what capital movement is checked against.
-2. **Agents.** Four roles — Executive, Financial, Oversight, and Operational — read treasury state, reason, and either approve, halt, or clear a pending action. A separate planner key can draft Strategy proposals. None of these keys can move funds by themselves.
+2. **Agents.** Four roles — Executive, Financial, Operational, and Oversight — read treasury state, reason, and either approve, halt, or clear a pending action. A separate planner key can draft Strategy proposals. None of these keys can move funds by themselves.
 3. **Programs.** Solana Anchor programs and EVM UUPS contracts execute only what the constitution and the pipeline allow. Value, caps, and pauses live on-chain. Postgres and the UI are projections of that state.
 
 ### What a member does

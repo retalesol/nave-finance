@@ -6,7 +6,10 @@ pragma solidity 0.8.28;
 /// values are preserved exactly (e.g. `ProposalType.Transfer == 8`) so the
 /// feature-parity matrix and any cross-chain tooling line up.
 
-/// Four-role agent pipeline (Executive -> Financial -> Oversight, Operational monitors).
+/// Four-role agent pipeline. Discriminants are wire-stable.
+/// Product language: Executive -> Financial -> Operational -> Oversight.
+/// `Oversight` (2) is the Operational agent (final signer).
+/// `Operational` (3) is the Oversight agent (monitor / halt).
 enum AgentRole {
     Executive, // 0
     Financial, // 1

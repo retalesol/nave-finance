@@ -129,7 +129,8 @@ function norm(s: string): string {
 
 /**
  * Evaluate all deterministic guardrails. `role` is the acting agent role.
- * Signing roles: executive | financial | oversight. operational never signs.
+ * Signing roles: executive | financial | oversight (product name: Operational).
+ * The operational key (product name: Oversight) never signs.
  */
 export function evaluateGuardrails(
   role: AgentRole,

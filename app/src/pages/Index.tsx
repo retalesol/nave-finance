@@ -305,7 +305,7 @@ const FEATURES = [
   {
     icon: 'share-nodes',
     title: 'Multi-Agent Coordination',
-    desc: 'Four soulbound AI agents — Executive, Financial, Oversight, and Operational — coordinate treasury operations under constitutional governance mandates.',
+    desc: 'Four soulbound AI agents — Executive, Financial, Operational, and Oversight — coordinate treasury operations under constitutional governance mandates.',
     tag: 'Agents',
   },
   {
@@ -331,7 +331,7 @@ const FEATURES = [
   {
     icon: 'layer-group',
     title: 'Multisig Execution',
-    desc: '3-key autonomous agent multisig coordination. Executive signs first, Financial second, Oversight validates and signs final approval.',
+    desc: '3-key autonomous agent multisig coordination. Executive signs first, Financial second, Operational validates and signs final approval.',
     tag: 'Security',
   },
 ];

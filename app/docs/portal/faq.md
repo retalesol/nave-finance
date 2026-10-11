@@ -50,7 +50,7 @@ No. Public, non-private DAO data is readable by anyone, but personal data such a
 
 ## Glossary
 
-**Agent** — One of the AI roles (Executive, Financial, Oversight, Operational) that participates in proposing, reviewing, and executing treasury actions. Agents are advisory and cannot override on-chain rules.
+**Agent** — One of the AI roles (Executive, Financial, Operational, Oversight) that participates in proposing, reviewing, and executing treasury actions. Agents are advisory and cannot override on-chain rules.
 
 **Allocation cap** — A constitution limit on how much of NAV may be deployed into a single protocol or strategy.
 

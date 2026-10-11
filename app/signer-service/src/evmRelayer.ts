@@ -59,7 +59,7 @@ const MAX_CUSTODIED_GUARDIANS = 10;
 const DISABLE_AGENTS_DEADLINE_SECS = 3600;
 
 // Position-oracle tick. The mark is read on-chain from the adapter by
-// `NaveExecution.syncPositionValue(adapter)` (founder or Operational agent);
+// `NaveExecution.syncPositionValue(adapter)` (founder or Oversight agent, role operational);
 // the relayer never supplies a value, and the treasury caps upward drift.
 const EXECUTION_POSITION_ABI = [
   {
@@ -497,7 +497,7 @@ export async function relayEvmAgentToggle(body: EvmRelayToggleRequest): Promise<
 
 /**
  * Submit a position-oracle tick on-chain: `NaveExecution.syncPositionValue(adapter)`
- * from the custodied Operational agent EOA. The contract reads the value from
+ * from the custodied Oversight agent EOA (role operational). The contract reads the value from
  * the adapter itself, so the relayer cannot inject a mark.
  */
 export async function relayEvmUpdateStrategyPositionValue(

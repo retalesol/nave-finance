@@ -19,6 +19,7 @@ import { ExecutionStatus, AgentStatus } from '../lib/onChainTypes';
 import { isMockDaoAddress } from '../lib/mockData';
 import { AGENT_ENABLE_PROPOSAL_TITLE } from '../lib/programConfig';
 import { computeAgentStatus, type AgentStatusDisplay } from '../lib/agentStatus';
+import { agentRoleLabel } from '../lib/agentRoleLabel';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
 import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
@@ -120,7 +121,7 @@ const AGENTS = [
   },
   {
     id: 'oversight',
-    role: 'Oversight Agent',
+    role: 'Operational Agent',
     tag: 'Safeguard Layer',
     icon: 'eye',
     responsibilities: [
@@ -136,7 +137,7 @@ const AGENTS = [
   },
   {
     id: 'operational',
-    role: 'Operational Agent',
+    role: 'Oversight Agent',
     tag: 'Monitoring Layer',
     icon: 'gear',
     responsibilities: [
@@ -154,11 +155,11 @@ const AGENTS = [
 
 const ACTIVITY_LOG = [
   { id: 1, desc: 'Financial Agent deployed capital to approved yield strategy', agent: 'Financial', time: '2m ago', status: 'success' },
-  { id: 2, desc: 'Oversight Agent validated: transaction within policy bounds', agent: 'Oversight', time: '2m ago', status: 'success' },
-  { id: 3, desc: 'Operational Agent flagged: stablecoin reserve approaching floor', agent: 'Operational', time: '14m ago', status: 'warning' },
+  { id: 2, desc: 'Operational Agent validated: transaction within policy bounds', agent: 'Operational', time: '2m ago', status: 'success' },
+  { id: 3, desc: 'Oversight Agent flagged: stablecoin reserve approaching floor', agent: 'Oversight', time: '14m ago', status: 'warning' },
   { id: 4, desc: 'Financial Agent deployed SOL via liquid staking strategy', agent: 'Financial', time: '45m ago', status: 'success' },
   { id: 5, desc: 'Executive Agent initiated rebalance based on governance mandate', agent: 'Executive', time: '1h ago', status: 'success' },
-  { id: 6, desc: 'Operational Agent: policy compliance check passed', agent: 'Operational', time: '2h ago', status: 'success' },
+  { id: 6, desc: 'Oversight Agent: policy compliance check passed', agent: 'Oversight', time: '2h ago', status: 'success' },
 ];
 
 function statusColor(s: string) {
@@ -262,10 +263,10 @@ function AgentCard({ agent, frozen = false }: { agent: Omit<typeof AGENTS[0], 's
 const EXECUTION_STAGES: Array<{ status: ExecutionStatus; label: string; agent: string }> = [
   { status: ExecutionStatus.Pending, label: 'Created — awaiting Executive approval', agent: 'Executive' },
   { status: ExecutionStatus.ExecutiveApproved, label: 'Executive approved — awaiting Financial', agent: 'Financial' },
-  { status: ExecutionStatus.FinancialApproved, label: 'Financial approved — awaiting Oversight', agent: 'Oversight' },
-  { status: ExecutionStatus.OversightApproved, label: 'Oversight approved — entering review', agent: 'Operational' },
-  { status: ExecutionStatus.InReview, label: 'In review window — Operational monitoring', agent: 'Operational' },
-  { status: ExecutionStatus.Executed, label: 'Executed on-chain', agent: 'Operational' },
+  { status: ExecutionStatus.FinancialApproved, label: 'Financial approved — awaiting Operational', agent: 'Operational' },
+  { status: ExecutionStatus.OversightApproved, label: 'Operational approved — entering review', agent: 'Oversight' },
+  { status: ExecutionStatus.InReview, label: 'In review window — Oversight monitoring', agent: 'Oversight' },
+  { status: ExecutionStatus.Executed, label: 'Executed on-chain', agent: 'Oversight' },
 ];
 
 function executionStatusLabel(status: ExecutionStatus): { label: string; tone: 'complete' | 'pending' | 'halt' } {
@@ -317,7 +318,7 @@ function LiveExecutionRow({ exec }: { exec: ExecutionInfo }) {
         })}
         {exec.operationalHalt && (
           <div style={{ fontSize: '11px', color: 'hsl(var(--destructive))', marginTop: '4px' }}>
-            Halt: {exec.operationalHaltReason || 'flagged by Operational agent'}
+            Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
           </div>
         )}
         {exec.status === ExecutionStatus.InReview && exec.timeRemainingSeconds > 0 && (
@@ -421,7 +422,7 @@ function confidenceColor(score: number | null): string {
 }
 
 function roleLabel(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  return agentRoleLabel(role);
 }
 
 /* ── Constitution Check Display ────────────────────────── */
@@ -811,7 +812,7 @@ function gateView(state: GateUiState): {
   if (state === 'frozen') {
     return {
       label: 'Frozen',
-      summary: 'Emergency freeze: all capital movement is paused. Monitoring stays active — the Operational agent can still halt and expire requests.',
+      summary: 'Emergency freeze: all capital movement is paused. Monitoring stays active — the Oversight agent can still halt and expire requests.',
       color: 'hsl(0 60% 40%)',
       bg: 'hsl(var(--destructive-muted))',
       border: 'hsl(0 72% 80%)',
@@ -821,7 +822,7 @@ function gateView(state: GateUiState): {
         { label: 'Strategy execution / capital deployment', allowed: false },
         { label: 'Withdraw / yield compounding', allowed: false },
         { label: 'Atomic rebalances', allowed: false },
-        { label: 'Operational monitoring & halts', allowed: true },
+        { label: 'Oversight monitoring & halts', allowed: true },
         { label: 'Expire stale requests', allowed: true },
       ],
     };
@@ -839,7 +840,7 @@ function gateView(state: GateUiState): {
         { label: 'Strategy execution / capital deployment', allowed: false },
         { label: 'Withdraw / yield compounding', allowed: false },
         { label: 'Atomic rebalances', allowed: false },
-        { label: 'Operational monitoring & halts', allowed: true },
+        { label: 'Oversight monitoring & halts', allowed: true },
         { label: 'Expire stale requests', allowed: true },
       ],
     };
@@ -856,7 +857,7 @@ function gateView(state: GateUiState): {
       { label: 'Strategy execution / capital deployment', allowed: true },
       { label: 'Withdraw / yield compounding', allowed: true },
       { label: 'Atomic rebalances', allowed: true },
-      { label: 'Operational monitoring & halts', allowed: true },
+      { label: 'Oversight monitoring & halts', allowed: true },
       { label: 'Expire stale requests', allowed: true },
     ],
   };
@@ -1072,7 +1073,7 @@ export default function Agent() {
         proposeAgentEnable: {
           title: AGENT_ENABLE_PROPOSAL_TITLE,
           description:
-            'Resume the four autonomous agents (Executive, Financial, Oversight, Operational) for this treasury. Once this proposal passes, the founder executes the on-chain enable so the agents reconnect and begin checking the DAO for necessary actions under the current constitution.',
+            'Resume the four autonomous agents (Executive, Financial, Operational, Oversight) for this treasury. Once this proposal passes, the founder executes the on-chain enable so the agents reconnect and begin checking the DAO for necessary actions under the current constitution.',
           // 1-byte marker tags this as an agent-enable proposal in addition to the title.
           payload: [1],
         },

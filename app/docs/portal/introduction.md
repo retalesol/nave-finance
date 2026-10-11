@@ -7,7 +7,7 @@ Welcome to the Nave documentation portal. Nave is an autonomous treasury operati
 Nave lets a DAO or fund run an actively managed treasury without surrendering control to a model or an operator. Three ideas define it:
 
 1. **A constitution sets the rules.** Approved protocols, allocation caps, liquidity floors, confidence thresholds, and cadences are ratified on-chain.
-2. **Agents are advisory.** Four AI roles — Executive, Financial, Oversight, and Operational — propose and review treasury actions, but hold no unilateral authority.
+2. **Agents are advisory.** Four AI roles — Executive, Financial, Operational, and Oversight — propose and review treasury actions, but hold no unilateral authority.
 3. **The chain is the authority.** Deterministic guardrails and program invariants decide what is permitted, so the model can be wrong without the treasury being harmed.
 
 Nave is multi-chain: a treasury can be created on **Solana**, **Ethereum**, or **Base**, and the protocol token (`$NAVE`, "Nave Shares") can move between Solana and the supported EVM testnets through a dedicated bridge. See [Tokenomics & Bridge](/docs/tokenomics) for the token model and bridge mechanics.

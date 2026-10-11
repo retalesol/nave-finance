@@ -14,7 +14,7 @@ These checks stay there too:
 - Payload binding: the signed transaction still has to match the action the treasury recorded.
 - The review window, including who may pause and who may clear a pause.
 
-The Operational key on that chain is still required to lift a pause. A GenLayer result does not shorten the window and does not move the vault.
+The Oversight key (role `operational`) on that chain is still required to lift a pause. A GenLayer result does not shorten the window and does not move the vault.
 
 GenLayer contracts cannot call Nave's Solana programs or the treasury contracts on Ethereum, Base, or Robinhood.
 
@@ -173,7 +173,7 @@ It returns and stores `chain_family`, `network`, `treasury`, `action_hash`, `dec
 
 A pause reason or a counterevidence text that is only a verdict word (`lift_pause`, `keep_pause`, `pass`, `fail`, and the like) is rejected. The contract does not read CharterAdjudicator. Pass the public facts in. A second appeal for the same case id does not replace the first.
 
-`lift_pause` still needs the Operational key on the treasury chain and does not shorten the review window. `keep_pause` means a clear stays blocked in the shared guardrail.
+`lift_pause` still needs the Oversight key (role `operational`) on the treasury chain and does not shorten the review window. `keep_pause` means a clear stays blocked in the shared guardrail.
 
 `has_appeal` and `get_appeal` match the case id. Validators must agree on `decision` exactly. The score may differ by up to 15 points and is not stored.
 
