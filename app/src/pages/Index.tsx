@@ -94,7 +94,6 @@ const NAV_ITEMS = [
 ];
 
 function NavBar() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const deep = useNavOnDeep();
   const { chainFamily, setChainFamily } = useChain();
   useEffect(() => {
@@ -118,30 +117,11 @@ function NavBar() {
           <div className="home-wallet">
             <WalletNetworkMenu chains={APP_WALLET_CHAINS} />
           </div>
-          <button
-            className="home-menu-btn"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            aria-label="Toggle menu"
-            type="button"
-          >
-            <Fi icon={mobileMenuOpen ? 'xmark' : 'bars'} style={{ fontSize: '18px' }} />
-          </button>
         </div>
       </header>
       <div className="home-banner-slot">
         <DevnetBanner />
       </div>
-      {mobileMenuOpen && (
-        <div className={`home-mobile-nav${deep ? ' is-deep' : ''}`}>
-          <nav>
-            {NAV_ITEMS.map((item) => (
-              <a key={item.label} href={item.href} onClick={() => setMobileMenuOpen(false)}>
-                {item.label}
-              </a>
-            ))}
-          </nav>
-        </div>
-      )}
     </>
   );
 }
