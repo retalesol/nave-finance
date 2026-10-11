@@ -6,15 +6,18 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::constants::{
     jupiter_lending_program, AgentRole, AGENT_SET_SEED, CONSTITUTION_SEED, DAO_REGISTRY_SEED,
-    GLOBAL_CONFIG_SEED, NAV_MAX_STALENESS_SECS, STRATEGY_POSITION_SEED, TREASURY_VAULT_SEED,
-    VAULT_AUTHORITY_SEED,
+    GLOBAL_CONFIG_SEED, NAV_MAX_STALENESS_SECS, STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED,
+    TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
 use crate::state::{
     AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, TreasuryConstitution, TreasuryVault,
     VaultAuthority,
 };
-use crate::utils::{require_agent_authority, require_dao_active, require_not_paused};
+use crate::utils::{
+    require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused,
+    transfer_escrow_to_account,
+};
 
 /// SOL-H3 (partial): gate a Jupiter Lend DEPLOYMENT on the same NAV-freshness
 /// and agent-operating-threshold conditions the `nave_execution` pipeline
@@ -23,13 +26,9 @@ use crate::utils::{require_agent_authority, require_dao_active, require_not_paus
 /// step, so at minimum a deployment must not run against a stale/never-computed
 /// treasury NAV or below the configured operating threshold.
 ///
-/// NOTE (residual, flagged for follow-up): this does NOT yet route Jupiter Lend
-/// through the full `nave_execution` execution-request pipeline + per-protocol
-/// escrow + `record_strategy_deposit` accounting like the other adapters. Doing
-/// so is a larger re-architecture because Jupiter Lend derives its token
-/// accounts as ATAs of the signer (`vault_authority`) rather than the
-/// escrow/asset-vault PDA model `revalue_treasury` prices, so partial accounting
-/// would risk NAV corruption. Tracked as SOL-H3-residual.
+/// Capital reaches Jupiter only from the per-(dao, "jupiter", mint) escrow,
+/// which `nave_execution::execute_strategy` fills after the full agent
+/// pipeline and the allocation / max-deployed / reserve caps.
 fn require_fresh_nav_and_threshold(
     constitution: &TreasuryConstitution,
     treasury_vault: &TreasuryVault,
@@ -59,8 +58,9 @@ const DISC_WITHDRAW: [u8; 8] = [183, 18, 70, 156, 148, 109, 161, 34];
 
 // ── jupiter_deposit ──────────────────────────────────────────────────────────
 // Operational-agent-gated. Supplies `amount` base units of the underlying asset
-// from the vault-owned underlying ATA into the Jupiter Lend Earn vault, minting
-// jlTokens (fTokens) into the vault-owned jlToken ATA. The vault_authority PDA is
+// that `execute_strategy` escrowed for "jupiter" (escrow -> vault-owned
+// underlying ATA -> Jupiter Lend Earn vault), minting jlTokens (fTokens) into
+// the vault-owned jlToken ATA. The vault_authority PDA is
 // the Jupiter `signer` (token-transfer authority) and signs via invoke_signed.
 //
 // Unlike Kamino/Jito (which use PDA escrow / receipt accounts), Jupiter Lend
@@ -77,6 +77,7 @@ pub fn jupiter_deposit_handler(ctx: Context<JupiterDeposit>, amount: u64) -> Res
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
     // SOL-H3 (partial): refuse to deploy against a stale NAV or below the
     // agent operating threshold, matching the `nave_execution` pipeline gates.
     require_fresh_nav_and_threshold(&ctx.accounts.constitution, &ctx.accounts.treasury_vault)?;
@@ -94,15 +95,26 @@ pub fn jupiter_deposit_handler(ctx: Context<JupiterDeposit>, amount: u64) -> Res
         ctx.accounts.jupiter_lending_program.key() == jupiter_lending_program::ID,
         NaveError::InvalidExternalProgram
     );
+    require!(amount > 0, NaveError::MathOverflow);
     require!(
-        ctx.accounts.depositor_token_account.amount >= amount,
-        NaveError::InsufficientEscrowBalance
+        ctx.accounts.strategy_escrow.amount >= amount,
+        NaveError::VenueDepositRequiresEscrow
     );
 
     let dao_key = ctx.accounts.dao_registry.key();
     let bump = [ctx.accounts.vault_authority.bump];
     let seeds: &[&[u8]] = &[VAULT_AUTHORITY_SEED, dao_key.as_ref(), &bump];
     let signer: &[&[&[u8]]] = &[seeds];
+
+    // Jupiter debits the signer's ATA, so stage exactly `amount` from escrow.
+    transfer_escrow_to_account(
+        &ctx.accounts.vault_authority,
+        &ctx.accounts.strategy_escrow,
+        &ctx.accounts.depositor_token_account,
+        &ctx.accounts.token_program,
+        &dao_key,
+        amount,
+    )?;
 
     let mut data = DISC_DEPOSIT.to_vec();
     data.extend_from_slice(&amount.to_le_bytes());
@@ -170,6 +182,7 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == JUPITER_PROTOCOL_ID, NaveError::ProtocolNotApproved);
@@ -186,6 +199,7 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
     let seeds: &[&[u8]] = &[VAULT_AUTHORITY_SEED, dao_key.as_ref(), &bump];
     let signer: &[&[&[u8]]] = &[seeds];
 
+    let underlying_before = ctx.accounts.recipient_token_account.amount;
     let mut data = DISC_WITHDRAW.to_vec();
     data.extend_from_slice(&amount.to_le_bytes());
 
@@ -237,6 +251,26 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
         ],
         signer,
     )?;
+
+    // Redeemed underlying goes back to the strategy escrow, where
+    // `withdraw_from_strategy` settles it (fee skim + accounting).
+    ctx.accounts.recipient_token_account.reload()?;
+    let redeemed = ctx
+        .accounts
+        .recipient_token_account
+        .amount
+        .checked_sub(underlying_before)
+        .ok_or(NaveError::MathOverflow)?;
+    if redeemed > 0 {
+        transfer_escrow_to_account(
+            &ctx.accounts.vault_authority,
+            &ctx.accounts.recipient_token_account,
+            &ctx.accounts.strategy_escrow,
+            &ctx.accounts.token_program,
+            &dao_key,
+            redeemed,
+        )?;
+    }
     Ok(())
 }
 
@@ -298,6 +332,14 @@ pub struct JupiterDeposit<'info> {
         constraint = strategy_position.dao == dao_registry.key() @ NaveError::Unauthorized
     )]
     pub strategy_position: Box<Account<'info, StrategyPosition>>,
+
+    #[account(
+        mut,
+        seeds = [STRATEGY_ESCROW_SEED, dao_registry.key().as_ref(), JUPITER_PROTOCOL_ID, mint.key().as_ref()],
+        bump,
+        constraint = strategy_escrow.owner == vault_authority.key() @ NaveError::Unauthorized
+    )]
+    pub strategy_escrow: Box<Account<'info, TokenAccount>>,
 
     /// Vault-owned underlying ATA (deposit source).
     #[account(
@@ -395,6 +437,14 @@ pub struct JupiterWithdraw<'info> {
         constraint = strategy_position.dao == dao_registry.key() @ NaveError::Unauthorized
     )]
     pub strategy_position: Box<Account<'info, StrategyPosition>>,
+
+    #[account(
+        mut,
+        seeds = [STRATEGY_ESCROW_SEED, dao_registry.key().as_ref(), JUPITER_PROTOCOL_ID, mint.key().as_ref()],
+        bump,
+        constraint = strategy_escrow.owner == vault_authority.key() @ NaveError::Unauthorized
+    )]
+    pub strategy_escrow: Box<Account<'info, TokenAccount>>,
 
     /// Vault-owned jlToken ATA (withdraw source, burned).
     #[account(

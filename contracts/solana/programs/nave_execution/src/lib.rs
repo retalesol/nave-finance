@@ -12,12 +12,12 @@ use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 use nave_core::{
     constants::{
-        pyth_receiver_program, AgentRole, AssetKind, MoonlightStatus, ASSET_CONFIG_SEED,
-        DAO_LIFECYCLE_SEED, FEE_CONFIG_SEED, GLOBAL_CONFIG_SEED, PYTH_MAX_PRICE_AGE_SECS,
+        jupiter_lending_program, pyth_receiver_program, AgentRole, AssetKind, MoonlightStatus,
+        ASSET_CONFIG_SEED, DAO_CONTROL_SEED, DAO_LIFECYCLE_SEED, FEE_CONFIG_SEED, GLOBAL_CONFIG_SEED, PYTH_MAX_PRICE_AGE_SECS,
         STRATEGY_ESCROW_SEED, TREASURY_ASSET_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
     },
     state::{
-        AgentSet, AssetConfig, DaoLifecycle, DaoRegistry, FeeConfig, NaveGlobalConfig,
+        AgentSet, AssetConfig, DaoControl, DaoLifecycle, DaoRegistry, FeeConfig, NaveGlobalConfig,
         TreasuryAsset, TreasuryConstitution, TreasuryVault, VaultAuthority,
     },
     utils::{
@@ -277,7 +277,8 @@ pub mod nave_execution {
             ExecutionError::ReasoningHashRequired
         );
         require!(
-            tx_payload_hash == ctx.accounts.execution_request.tx_payload_hash,
+            tx_payload_hash != [0u8; 32]
+                && tx_payload_hash == ctx.accounts.execution_request.tx_payload_hash,
             ExecutionError::PayloadHashMismatch
         );
         transition_status(
@@ -354,7 +355,7 @@ pub mod nave_execution {
         Ok(())
     }
 
-    pub fn operational_clear(ctx: Context<OperationalClear>) -> Result<()> {
+    pub fn operational_clear(ctx: Context<OperationalClear>, reason_hash: [u8; 32]) -> Result<()> {
         validate_agent_signer(
             &ctx.accounts.authority.key(),
             &ctx.accounts.global_config,
@@ -362,6 +363,7 @@ pub mod nave_execution {
             &ctx.accounts.agent_set,
             AgentRole::Operational,
         )?;
+        require!(reason_hash != [0u8; 32], ExecutionError::ReasoningHashRequired);
         require!(
             ctx.accounts.execution_request.status == ExecutionStatus::Halted as u8,
             ExecutionError::InvalidStateTransition
@@ -372,6 +374,7 @@ pub mod nave_execution {
         emit!(OperationalClearEvent {
             request: ctx.accounts.execution_request.key(),
             agent: ctx.accounts.authority.key(),
+            reason_hash,
         });
         Ok(())
     }
@@ -417,9 +420,9 @@ pub mod nave_execution {
         require!(!ctx.accounts.dao_registry.frozen, ExecutionError::DaoFrozen);
         // Moonlighting halts new deployments: an in-review request must not be
         // able to deploy capital after the DAO voted to wind down. (This path
-        // is permissionless and does NOT consult `agent_set.agents_enabled`,
-        // so the agent halt alone would not block it.)
+        // is permissionless, so the agent halt is checked explicitly below.)
         require_not_moonlighting(&ctx.accounts.dao_lifecycle)?;
+        require!(ctx.accounts.agent_set.agents_enabled, ExecutionError::AgentsDisabled);
         let request = &ctx.accounts.execution_request;
         require!(
             request.status == ExecutionStatus::InReview as u8
@@ -520,8 +523,13 @@ pub mod nave_execution {
 
     pub fn execute_strategy_direct(ctx: Context<ExecuteStrategyDirect>) -> Result<()> {
         require!(!ctx.accounts.global_config.paused, ExecutionError::GlobalPaused);
+        // Break-glass opens only on a guardian-quorum state: a freeze, or a
+        // guardian-locked disable. A single-actor `emergency_pause_agents`
+        // leaves `guardian_locked` unset and does not open it.
+        let guardian_locked = DaoControl::is_guardian_locked(&ctx.accounts.dao_control)?;
         require!(
-            ctx.accounts.dao_registry.frozen || !ctx.accounts.agent_set.agents_enabled,
+            ctx.accounts.dao_registry.frozen
+                || (!ctx.accounts.agent_set.agents_enabled && guardian_locked),
             ExecutionError::DirectExecutionNotAllowed
         );
         // The moonlight halt disables the agents, which is exactly the
@@ -547,9 +555,13 @@ pub mod nave_execution {
         // before Oversight approval, the Executive can file a new governance
         // proposal once the DAO is unfrozen by guardians.
         require!(
-            request.status == ExecutionStatus::InReview as u8
-                || request.status == ExecutionStatus::OversightApproved as u8,
+            request.status == ExecutionStatus::InReview as u8,
             ExecutionError::InvalidStateTransition
+        );
+        // Break-glass never skips the human review window.
+        require!(
+            Clock::get()?.unix_timestamp >= request.review_end,
+            ExecutionError::ReviewWindowActive
         );
         require!(
             request.tx_payload_hash != [0u8; 32],
@@ -822,6 +834,7 @@ fn transition_status(
 fn required_asset_kind(protocol_program: Pubkey) -> Option<AssetKind> {
     if protocol_program == nave_kamino_adapter::ID
         || protocol_program == nave_marginfi_adapter::ID
+        || protocol_program == jupiter_lending_program::ID
     {
         Some(AssetKind::Stable)
     } else if protocol_program == nave_jito_adapter::ID {
@@ -966,6 +979,10 @@ fn prepare_strategy_deposit<'info>(
     Ok(amount_usd)
 }
 
+/// Jupiter Lend has no nave adapter program: `execute_strategy` escrows the
+/// funds and the Operational agent supplies them with `nave_core::jupiter_deposit`.
+const JUPITER_PROTOCOL_ID: &[u8] = b"jupiter";
+
 fn protocol_id_for_program(program: Pubkey) -> Option<&'static [u8]> {
     if program == nave_kamino_adapter::ID {
         Some(nave_kamino_adapter::KAMINO_PROTOCOL_ID)
@@ -973,6 +990,8 @@ fn protocol_id_for_program(program: Pubkey) -> Option<&'static [u8]> {
         Some(nave_jito_adapter::JITO_PROTOCOL_ID)
     } else if program == nave_marginfi_adapter::ID {
         Some(nave_marginfi_adapter::MARGINFI_PROTOCOL_ID)
+    } else if program == jupiter_lending_program::ID {
+        Some(JUPITER_PROTOCOL_ID)
     } else {
         None
     }
@@ -1216,6 +1235,23 @@ fn cpi_adapter_deposit<'info>(
     instructions: &AccountInfo<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> Result<()> {
+    if protocol_program == jupiter_lending_program::ID {
+        require!(
+            adapter_program.key() == jupiter_lending_program::ID,
+            ExecutionError::UnsupportedAdapter
+        );
+        require!(amount > 0, ExecutionError::MathOverflow);
+        require!(vault_token_account.amount >= amount, ExecutionError::InsufficientVaultBalance);
+        require!(
+            strategy_escrow.owner == vault_authority.key()
+                && strategy_escrow.mint == vault_token_account.mint
+                && strategy_escrow.key() != vault_token_account.key(),
+            ExecutionError::EscrowAccountMismatch
+        );
+        let _ = (execution_authority, dao_registry, treasury_vault, strategy_position, mint);
+        let _ = (payer, token_program, system_program, instructions, signer_seeds);
+        return Ok(());
+    }
     if protocol_program == nave_kamino_adapter::ID {
         require!(
             adapter_program.key() == nave_kamino_adapter::ID,
@@ -1317,6 +1353,22 @@ fn cpi_adapter_withdraw<'info>(
     instructions: &AccountInfo<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> Result<()> {
+    if protocol_program == jupiter_lending_program::ID {
+        require!(
+            adapter_program.key() == jupiter_lending_program::ID,
+            ExecutionError::UnsupportedAdapter
+        );
+        require!(amount > 0, ExecutionError::MathOverflow);
+        require!(
+            strategy_escrow.owner == vault_authority.key()
+                && strategy_escrow.mint == vault_token_account.mint
+                && strategy_escrow.amount >= amount,
+            ExecutionError::EscrowAccountMismatch
+        );
+        let _ = (execution_authority, dao_registry, treasury_vault, strategy_position, mint);
+        let _ = (token_program, instructions, signer_seeds);
+        return Ok(());
+    }
     if protocol_program == nave_kamino_adapter::ID {
         require!(
             adapter_program.key() == nave_kamino_adapter::ID,
@@ -1764,6 +1816,13 @@ pub struct ExecuteStrategy<'info> {
     /// CHECK: nave_core program for accounting CPI.
     #[account(address = nave_core::ID)]
     pub nave_core_program: AccountInfo<'info>,
+
+    #[account(
+        seeds = [nave_core::constants::AGENT_SET_SEED, dao_registry.key().as_ref()],
+        bump = agent_set.bump,
+        seeds::program = nave_core::ID,
+    )]
+    pub agent_set: Box<Account<'info, AgentSet>>,
 }
 
 #[derive(Accounts)]
@@ -1882,6 +1941,15 @@ pub struct ExecuteStrategyDirect<'info> {
     /// CHECK: nave_core program for accounting CPI.
     #[account(address = nave_core::ID)]
     pub nave_core_program: AccountInfo<'info>,
+
+    /// CHECK: nave_core `DaoControl` PDA; may be uninitialized (reads as not
+    /// guardian-locked). Owner checked by `DaoControl::is_guardian_locked`.
+    #[account(
+        seeds = [DAO_CONTROL_SEED, dao_registry.key().as_ref()],
+        bump,
+        seeds::program = nave_core::ID,
+    )]
+    pub dao_control: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

@@ -12,7 +12,7 @@ use crate::errors::NaveError;
 use crate::state::{
     AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority,
 };
-use crate::utils::{require_agent_authority, require_dao_active, require_not_paused};
+use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused};
 
 /// klend protocol id this module operates on.
 const KAMINO_PROTOCOL_ID: &[u8] = b"kamino";
@@ -122,6 +122,7 @@ pub fn kamino_deposit_handler<'info>(
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == KAMINO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
@@ -216,6 +217,7 @@ pub fn kamino_withdraw_handler<'info>(
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == KAMINO_PROTOCOL_ID, NaveError::ProtocolNotApproved);

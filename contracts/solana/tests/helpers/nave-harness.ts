@@ -64,6 +64,13 @@ export const MAX_GUARDIAN_WALLETS = 10;
 
 /** guardian_action.action_type for the break-glass agent kill-switch (constants.rs). */
 export const GUARDIAN_ACTION_DISABLE_AGENTS = 4;
+/** guardian_action.action_type values added with `DaoControl`. */
+export const GUARDIAN_ACTION_ENABLE_AGENTS = 6;
+export const GUARDIAN_ACTION_RESTORE_AGENT = 7;
+export const GUARDIAN_ACTION_CANCEL_AGENT_ROTATION = 8;
+/** `DaoControl.pending_agent_changes[].kind` (state/dao_control.rs). */
+export const GUARDIAN_CHANGE_ROTATE_KEY = 1;
+export const GUARDIAN_CHANGE_SET_STATUS = 2;
 
 export const VOTE_FOR = 0;
 export const VOTE_AGAINST = 1;
@@ -79,6 +86,12 @@ export interface DaoSetupConfig {
   governanceType?: number;
   /** Equal DAO tokens per member (default 1). */
   tokensPerMember?: bigint;
+  /**
+   * Per-DAO review window applied before the first proposal (default 60s, the
+   * on-chain minimum, so break-glass tests can wait it out). `null` keeps the
+   * constitution default.
+   */
+  reviewWindowSecs?: number | null;
 }
 
 export interface InitializedDao {
@@ -443,6 +456,19 @@ export class NaveTestHarness {
 
     await this.revalueTreasury(daoRegistry, treasuryVault, vaultMint, this.founder.publicKey);
 
+    const reviewWindowSecs = config.reviewWindowSecs === undefined ? 60 : config.reviewWindowSecs;
+    if (reviewWindowSecs !== null) {
+      await this.core.methods
+        .setReviewWindow(new anchor.BN(reviewWindowSecs))
+        .accountsPartial({
+          authority: this.founder.publicKey,
+          globalConfig: this.globalConfig,
+          daoRegistry,
+          constitution,
+        })
+        .rpc();
+    }
+
     return {
       config,
       daoId,
@@ -549,8 +575,23 @@ export class NaveTestHarness {
         { pubkey: treasuryAsset, isWritable: true, isSigner: false },
         { pubkey: assetVault, isWritable: false, isSigner: false },
         { pubkey: assetVault, isWritable: false, isSigner: false },
+        ...(await this.principalPositions(daoRegistry)).map((pubkey) => ({
+          pubkey,
+          isWritable: false,
+          isSigner: false,
+        })),
       ])
       .rpc();
+  }
+
+  /** StrategyPositions holding principal; revalue values each asset at their marks. */
+  async principalPositions(daoRegistry: PublicKey): Promise<PublicKey[]> {
+    const rows = await (this.core.account as any).strategyPosition.all([
+      { memcmp: { offset: 9, bytes: daoRegistry.toBase58() } },
+    ]);
+    return rows
+      .filter((r: any) => BigInt(r.account.depositedAmount.toString()) > 0n)
+      .map((r: any) => r.publicKey as PublicKey);
   }
 
   async setupConstitution(daoRegistry: PublicKey, constitution: PublicKey): Promise<void> {
@@ -1291,9 +1332,13 @@ export class NaveTestHarness {
       .rpc();
   }
 
-  async operationalClear(dao: InitializedDao, executionRequest: PublicKey): Promise<void> {
+  async operationalClear(
+    dao: InitializedDao,
+    executionRequest: PublicKey,
+    reasonHash: number[] = Array.from({ length: 32 }, (_, i) => i + 1)
+  ): Promise<void> {
     await this.execution.methods
-      .operationalClear()
+      .operationalClear(reasonHash)
       .accounts({
         authority: dao.agents[3].publicKey,
         globalConfig: this.globalConfig,
@@ -1306,10 +1351,9 @@ export class NaveTestHarness {
   }
 
   /**
-   * Disable agents so Executive can direct-execute (bypasses 24h review window in
-   * tests). NE-6: disabling is a break-glass kill-switch that requires guardian
-   * M-of-N accumulation via `guardian_disable_agents` (a single agent can no
-   * longer halt the pipeline). Re-enabling stays an Executive op (`enableAgents`).
+   * Guardian-quorum disable (sets `DaoControl.guardian_locked`), which opens the
+   * Executive break-glass path. Re-enabling after a guardian disable needs a
+   * guardian quorum too (`guardian_enable_agents`).
    */
   async disableAgentsForDirectExecute(dao: InitializedDao, actionNonce = 1): Promise<void> {
     const guardianAction = this.guardianActionPda(
@@ -1336,7 +1380,54 @@ export class NaveTestHarness {
     }
   }
 
+  daoControlPda(daoRegistry: PublicKey): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("dao_control"), daoRegistry.toBuffer()],
+      this.core.programId
+    )[0];
+  }
+
+  /** `DaoControl` for the DAO, or null if it was never created. */
+  async fetchDaoControl(dao: InitializedDao): Promise<any | null> {
+    return this.core.account.daoControl
+      .fetch(this.daoControlPda(dao.daoRegistry))
+      .catch(() => null);
+  }
+
+  /** Guardian quorum re-enable (clears the guardian lock). */
+  async guardianEnableAgents(
+    dao: InitializedDao,
+    actionNonce: number,
+    signers: Keypair[] = dao.guardians.slice(0, dao.config.guardianThreshold)
+  ): Promise<void> {
+    const guardianAction = this.guardianActionPda(dao, GUARDIAN_ACTION_ENABLE_AGENTS, [], actionNonce);
+    for (const guardian of signers) {
+      await this.core.methods
+        .guardianEnableAgents(new anchor.BN(actionNonce))
+        .accountsPartial({
+          guardian: guardian.publicKey,
+          globalConfig: this.globalConfig,
+          daoRegistry: dao.daoRegistry,
+          guardianConfig: dao.guardianConfig,
+          guardianAction,
+          agentSet: dao.agentSet,
+          daoControl: this.daoControlPda(dao.daoRegistry),
+        })
+        .signers([guardian])
+        .rpc();
+    }
+  }
+
+  /**
+   * Turn the agent pipeline on. After a guardian-quorum disable only a
+   * guardian quorum can re-enable, so this uses that path when locked.
+   */
   async enableAgents(dao: InitializedDao): Promise<void> {
+    const control = await this.fetchDaoControl(dao);
+    if (control?.guardianLocked) {
+      await this.guardianEnableAgents(dao, Date.now());
+      return;
+    }
     await this.core.methods
       .toggleAgents(true)
       .accounts({
@@ -1362,6 +1453,7 @@ export class NaveTestHarness {
       protocolId,
       dao.vaultMint
     );
+    await this.waitForReviewEnd(executionRequest);
 
     await this.execution.methods
       .executeStrategyDirect()
@@ -1390,6 +1482,28 @@ export class NaveTestHarness {
       })
       .signers([dao.agents[0]])
       .rpc();
+  }
+
+  /**
+   * Break-glass never skips the review window: wait until the request's
+   * `review_end` has passed on-chain (bounded so a 24h window fails fast).
+   */
+  async waitForReviewEnd(executionRequest: PublicKey, maxWaitSecs = 180): Promise<void> {
+    const req = await this.execution.account.executionRequest
+      .fetch(executionRequest)
+      .catch(() => null);
+    if (!req || Number(req.reviewEnd) === 0) return;
+    const reviewEnd = Number(req.reviewEnd);
+    for (;;) {
+      const slot = await this.provider.connection.getSlot("confirmed");
+      const now = (await this.provider.connection.getBlockTime(slot)) ?? Math.floor(Date.now() / 1000);
+      const remaining = reviewEnd - now;
+      if (remaining < 0) return;
+      if (remaining > maxWaitSecs) {
+        throw new Error(`review window ends in ${remaining}s; lower it with reviewWindowSecs`);
+      }
+      await this.sleep(Math.min(remaining + 2, 10) * 1000);
+    }
   }
 
   /** Founder lowers the per-DAO review window (bounded on-chain to 60s..7d). */

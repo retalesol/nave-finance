@@ -99,6 +99,37 @@
               }
             ]
           }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -107,6 +138,403 @@
           "type": "u8"
         }
       ]
+    },
+    {
+      "name": "apply_guardian_agent_change",
+      "discriminator": [
+        60,
+        127,
+        203,
+        43,
+        134,
+        78,
+        58,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agent_set",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "agent_slot",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "apply_guardian_config_from_governance",
+      "docs": [
+        "CPI-only from `nave_governance::execute_permission_proposal`. Applies",
+        "wallets+threshold bound to a Passed Permission proposal payload."
+      ],
+      "discriminator": [
+        132,
+        235,
+        65,
+        153,
+        67,
+        79,
+        38,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_review_window",
+      "discriminator": [
+        196,
+        165,
+        199,
+        198,
+        154,
+        226,
+        119,
+        31
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "constitution",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  115,
+                  116,
+                  105,
+                  116,
+                  117,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "approve_holder_annotation",
@@ -325,6 +753,107 @@
       ]
     },
     {
+      "name": "cancel_agent_rotation",
+      "discriminator": [
+        48,
+        124,
+        140,
+        77,
+        6,
+        88,
+        138,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agent_set",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "role",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "cancel_guardian_action",
       "docs": [
         "Founder-callable: close a finished or stale `GuardianAction` PDA and",
@@ -408,6 +937,109 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "cancel_guardian_agent_change",
+      "discriminator": [
+        197,
+        137,
+        57,
+        228,
+        42,
+        254,
+        115,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "agent_slot",
+          "type": "u8"
+        }
+      ]
     },
     {
       "name": "collect_management_fee",
@@ -2822,6 +3454,35 @@
           }
         },
         {
+          "name": "agent_set",
+          "docs": [
+            "Agents stay disabled on the moonlighted DAO: flip the real gate here."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
           "name": "dao_lifecycle",
           "writable": true,
           "pda": {
@@ -2853,6 +3514,151 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "guardian_cancel_agent_rotation",
+      "discriminator": [
+        228,
+        150,
+        236,
+        100,
+        43,
+        15,
+        114,
+        171
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_action",
+          "writable": true
+        },
+        {
+          "name": "agent_set",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "role",
+          "type": "u8"
+        },
+        {
+          "name": "action_nonce",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "guardian_disable_agents",
@@ -2975,6 +3781,204 @@
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "action_nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "guardian_enable_agents",
+      "discriminator": [
+        137,
+        11,
+        156,
+        101,
+        231,
+        189,
+        142,
+        2
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_action",
+          "writable": true
+        },
+        {
+          "name": "agent_set",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -3933,6 +4937,31 @@
                   116,
                   114,
                   121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agent_set",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
                 ]
               },
               {
@@ -5005,6 +6034,54 @@
           }
         },
         {
+          "name": "strategy_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  112,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "depositor_token_account",
           "docs": [
             "Vault-owned underlying ATA (deposit source)."
@@ -5795,6 +6872,54 @@
                   105,
                   111,
                   110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  112,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strategy_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
                 ]
               },
               {
@@ -7552,6 +8677,36 @@
           }
         },
         {
+          "name": "agent_set",
+          "docs": [
+            "The DAO's agent set: `agents_enabled` here is the flag every agent gate",
+            "reads, so the moonlight halt must flip it (not only the registry mirror)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
           "name": "dao_lifecycle",
           "writable": true,
           "pda": {
@@ -8666,7 +9821,11 @@
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "Writable for the optional `initial_supply` mint_to."
+          ],
+          "writable": true
         },
         {
           "name": "token_program",
@@ -8860,6 +10019,92 @@
       "args": []
     },
     {
+      "name": "resize_guardian_config",
+      "docs": [
+        "Permissionless one-byte layout migration for GuardianConfig accounts",
+        "created before the `bootstrapped` latch field existed."
+      ],
+      "discriminator": [
+        30,
+        159,
+        64,
+        233,
+        151,
+        218,
+        129,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "restore_agent",
       "discriminator": [
         31,
@@ -8873,7 +10118,8 @@
       ],
       "accounts": [
         {
-          "name": "authority",
+          "name": "guardian",
+          "writable": true,
           "signer": true
         },
         {
@@ -8927,6 +10173,41 @@
           }
         },
         {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_action",
+          "writable": true
+        },
+        {
           "name": "agent_set",
           "writable": true,
           "pda": {
@@ -8951,12 +10232,20 @@
               }
             ]
           }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
           "name": "role",
           "type": "u8"
+        },
+        {
+          "name": "action_nonce",
+          "type": "u64"
         }
       ]
     },
@@ -9567,6 +10856,34 @@
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -10416,6 +11733,7 @@
       "accounts": [
         {
           "name": "authority",
+          "writable": true,
           "signer": true
         },
         {
@@ -10496,6 +11814,38 @@
               }
             ]
           }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -10918,6 +12268,36 @@
               }
             ]
           }
+        },
+        {
+          "name": "dao_control",
+          "docs": [
+            "(never guardian-locked). Decoded by `DaoControl::is_guardian_locked`."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -11011,6 +12391,37 @@
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
                 ]
               },
               {
@@ -11150,6 +12561,34 @@
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dao_control",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -11361,6 +12800,11 @@
     },
     {
       "name": "update_guardian_config",
+      "docs": [
+        "Founder one-shot ActivationHub bootstrap. After `GuardianConfig.bootstrapped`",
+        "is true, further changes require `apply_guardian_config_from_governance`",
+        "via a passed Permission proposal."
+      ],
       "discriminator": [
         219,
         121,
@@ -11612,16 +13056,97 @@
               }
             ]
           }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strategy_escrow",
+          "docs": [
+            "Escrowed principal not yet supplied to the venue."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "arg",
+                "path": "protocol_id"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "venue_state",
+          "docs": [
+            "key, owner and embedded mints are verified in the handler."
+          ]
+        },
+        {
+          "name": "receipt_token_account",
+          "docs": [
+            "in the handler."
+          ]
         }
       ],
       "args": [
         {
           "name": "protocol_id",
           "type": "string"
-        },
-        {
-          "name": "new_value",
-          "type": "u64"
         }
       ]
     },
@@ -11916,6 +13441,19 @@
       ]
     },
     {
+      "name": "DaoControl",
+      "discriminator": [
+        178,
+        15,
+        140,
+        155,
+        194,
+        53,
+        116,
+        116
+      ]
+    },
+    {
       "name": "DaoLifecycle",
       "discriminator": [
         42,
@@ -12178,6 +13716,19 @@
       ]
     },
     {
+      "name": "AgentRotationCancelled",
+      "discriminator": [
+        152,
+        151,
+        113,
+        22,
+        108,
+        142,
+        117,
+        233
+      ]
+    },
+    {
       "name": "AgentRotationScheduled",
       "discriminator": [
         62,
@@ -12425,6 +13976,32 @@
       ]
     },
     {
+      "name": "GuardianAgentChangeCancelled",
+      "discriminator": [
+        110,
+        95,
+        125,
+        208,
+        237,
+        106,
+        125,
+        39
+      ]
+    },
+    {
+      "name": "GuardianAgentChangeQueued",
+      "discriminator": [
+        7,
+        243,
+        164,
+        250,
+        130,
+        57,
+        89,
+        4
+      ]
+    },
+    {
       "name": "GuardianConfigUpdated",
       "discriminator": [
         57,
@@ -12435,6 +14012,19 @@
         101,
         40,
         247
+      ]
+    },
+    {
+      "name": "GuardiansBootstrapped",
+      "discriminator": [
+        196,
+        115,
+        120,
+        38,
+        210,
+        8,
+        149,
+        108
       ]
     },
     {
@@ -12607,6 +14197,19 @@
       ]
     },
     {
+      "name": "PositionMarked",
+      "discriminator": [
+        163,
+        113,
+        109,
+        161,
+        103,
+        185,
+        43,
+        12
+      ]
+    },
+    {
       "name": "ProposalCountRecorded",
       "discriminator": [
         121,
@@ -12630,6 +14233,19 @@
         78,
         129,
         188
+      ]
+    },
+    {
+      "name": "ReviewWindowChangeQueued",
+      "discriminator": [
+        196,
+        133,
+        181,
+        169,
+        27,
+        160,
+        36,
+        222
       ]
     },
     {
@@ -13210,63 +14826,133 @@
     },
     {
       "code": 6094,
+      "name": "PositionMarkNoBase",
+      "msg": "Position has no deposited base to bound the mark against; deposit first"
+    },
+    {
+      "code": 6095,
       "name": "PositionMarkCooldownActive",
       "msg": "Position mark was updated too recently; wait for the cooldown to elapse"
     },
     {
-      "code": 6095,
+      "code": 6096,
       "name": "StakeMintUnset",
       "msg": "stake_dao_creation requires global_config.nave_mint to be pinned outside devnet/test builds"
     },
     {
-      "code": 6096,
+      "code": 6097,
       "name": "MaxSlippageExceeded",
       "msg": "Swap slippage exceeds the DAO's configured maximum"
     },
     {
-      "code": 6097,
+      "code": 6098,
       "name": "InvalidMaxSlippageBps",
       "msg": "Invalid max_slippage_bps value"
     },
     {
-      "code": 6098,
+      "code": 6099,
       "name": "MaxSingleSwapExceeded",
       "msg": "Swap amount exceeds the DAO's configured maximum single-swap size"
     },
     {
-      "code": 6099,
+      "code": 6100,
       "name": "InvalidMaxSingleSwapBps",
       "msg": "Invalid max_single_swap_bps value"
     },
     {
-      "code": 6100,
+      "code": 6101,
       "name": "RecipientMismatch",
       "msg": "Governance transfer recipient does not match the account passed to the instruction"
     },
     {
-      "code": 6101,
+      "code": 6102,
       "name": "SwitchVotingSystemProposalInvalid",
       "msg": "switch_voting_system must be invoked via a passed nave_governance SwitchVotingSystem proposal"
     },
     {
-      "code": 6102,
+      "code": 6103,
       "name": "SwitchVotingSystemPayloadMismatch",
       "msg": "Switch-voting-system proposal payload does not match the proposal hash"
     },
     {
-      "code": 6103,
+      "code": 6104,
       "name": "RouteAccountNotAllowed",
       "msg": "Jupiter swap route references a vault-owned token account other than the intended source/destination"
     },
     {
-      "code": 6104,
+      "code": 6105,
       "name": "NavStale",
       "msg": "Treasury NAV is stale or never computed; revalue before deploying"
     },
     {
-      "code": 6105,
+      "code": 6106,
       "name": "AgentThresholdNotMet",
       "msg": "Treasury NAV is below the configured agent operating threshold"
+    },
+    {
+      "code": 6107,
+      "name": "GuardiansAlreadyBootstrapped",
+      "msg": "Founder one-shot guardian bootstrap already consumed; further changes require a passed Permission proposal"
+    },
+    {
+      "code": 6108,
+      "name": "PermissionProposalInvalid",
+      "msg": "apply_guardian_config_from_governance must be invoked via a passed nave_governance Permission proposal"
+    },
+    {
+      "code": 6109,
+      "name": "PermissionPayloadMismatch",
+      "msg": "Permission proposal payload does not match the proposal hash"
+    },
+    {
+      "code": 6110,
+      "name": "GuardianConfigLayoutInvalid",
+      "msg": "GuardianConfig account has an unexpected data length"
+    },
+    {
+      "code": 6111,
+      "name": "AgentsLockedByGuardians",
+      "msg": "Agents were disabled by guardian quorum; only guardians can re-enable them"
+    },
+    {
+      "code": 6112,
+      "name": "AgentKeyConflict",
+      "msg": "Agent keys must be nonzero, distinct, and differ from the founder and every guardian"
+    },
+    {
+      "code": 6113,
+      "name": "NoPendingGuardianChange",
+      "msg": "No queued guardian agent change for this slot"
+    },
+    {
+      "code": 6114,
+      "name": "GuardianChangeNotReady",
+      "msg": "Queued guardian agent change has not reached its effective time"
+    },
+    {
+      "code": 6115,
+      "name": "NoPendingReviewWindow",
+      "msg": "No queued review-window change"
+    },
+    {
+      "code": 6116,
+      "name": "ReviewWindowChangeNotReady",
+      "msg": "Queued review-window change has not reached its effective time"
+    },
+    {
+      "code": 6117,
+      "name": "PositionMarkSourceMismatch",
+      "msg": "Position mark source account does not match the configured venue"
+    },
+    {
+      "code": 6118,
+      "name": "VenueDepositRequiresEscrow",
+      "msg": "Strategy funds must be escrowed by an executed request before a venue deposit"
+    },
+    {
+      "code": 6119,
+      "name": "RiskTierCapExceeded",
+      "msg": "Approved Tier 2 caps may total at most 30% and Tier 3 caps at most 15%"
     }
   ],
   "types": [
@@ -13354,6 +15040,22 @@
           {
             "name": "new_authority",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AgentRotationCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "role",
+            "type": "u8"
           }
         ]
       }
@@ -13650,6 +15352,68 @@
           {
             "name": "founder",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DaoControl",
+      "docs": [
+        "Per-DAO agent-safety state. Companion PDA to `DaoRegistry`/`AgentSet`",
+        "(seeds `[\"dao_control\", dao]`), created lazily so existing account layouts",
+        "stay frozen across the program upgrade. A missing account reads as default."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian_locked",
+            "docs": [
+              "Set by a guardian-quorum `guardian_disable_agents`; cleared only by",
+              "`guardian_enable_agents`. While set, `toggle_agents(true)` reverts."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "pending_review_window_secs",
+            "docs": [
+              "Queued review-window reduction (0 = none)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "review_window_effective_at",
+            "type": "i64"
+          },
+          {
+            "name": "pending_agent_changes",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PendingGuardianAgentChange"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
           }
         ]
       }
@@ -14516,6 +16280,58 @@
       }
     },
     {
+      "name": "GuardianAgentChangeCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_slot",
+            "type": "u8"
+          },
+          {
+            "name": "cancelled_by",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardianAgentChangeQueued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_slot",
+            "type": "u8"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_status",
+            "type": "u8"
+          },
+          {
+            "name": "effective_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "GuardianConfig",
       "docs": [
         "Guardian multisig configuration for a DAO."
@@ -14562,12 +16378,43 @@
                 10
               ]
             }
+          },
+          {
+            "name": "bootstrapped",
+            "docs": [
+              "False until the founder completes the ActivationHub one-shot guardian",
+              "edit (or the first Permission proposal executes). After true, only a",
+              "passed `ProposalType::Permission` governance path may change the set.",
+              "Appended at the END of the layout to preserve byte offsets for",
+              "off-chain decoders; legacy accounts omit this byte until resized."
+            ],
+            "type": "bool"
           }
         ]
       }
     },
     {
       "name": "GuardianConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "threshold",
+            "type": "u8"
+          },
+          {
+            "name": "wallet_count",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GuardiansBootstrapped",
       "type": {
         "kind": "struct",
         "fields": [
@@ -15127,6 +16974,42 @@
       }
     },
     {
+      "name": "PendingGuardianAgentChange",
+      "docs": [
+        "A guardian-quorum agent change waiting out `GUARDIAN_AGENT_CHANGE_DELAY_SECS`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "docs": [
+              "`GUARDIAN_CHANGE_*`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "new_authority",
+            "docs": [
+              "New authority for `ROTATE_KEY`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_status",
+            "docs": [
+              "New status for `SET_STATUS`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "effective_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "PerformanceFeeSkimmed",
       "docs": [
         "Emitted on every strategy withdrawal that realizes yield: `fee` base units of",
@@ -15195,6 +17078,30 @@
           {
             "name": "rebalance_frequency_secs",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionMarked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "observed",
+            "type": "u64"
+          },
+          {
+            "name": "applied",
+            "type": "u64"
           }
         ]
       }
@@ -15272,7 +17179,8 @@
           {
             "name": "max_allocation_bps",
             "docs": [
-              "Maximum allocation in basis points."
+              "Maximum allocation in basis points, with the venue risk tier packed into",
+              "the two high bits. Read through `allocation_bps` / `risk_tier`."
             ],
             "type": "u16"
           },
@@ -15341,6 +17249,26 @@
           {
             "name": "approved",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReviewWindowChangeQueued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "review_window_secs",
+            "type": "i64"
+          },
+          {
+            "name": "effective_at",
+            "type": "i64"
           }
         ]
       }

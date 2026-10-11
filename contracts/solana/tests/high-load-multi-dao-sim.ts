@@ -27,9 +27,9 @@ describe("high-load: multi-DAO deploy/compound/withdraw stays consistent", () =>
   const DEPLOY_BPS = 2000; // 20% of NAV per DAO (under 40% kamino cap)
   const MIN_REVIEW = 60;
   const WAIT_MS = (MIN_REVIEW + 6) * 1000;
-  // Mirrors `POSITION_MARK_COOLDOWN_SECS` (constants.rs) + a small buffer so
-  // the on-chain clock has unambiguously cleared it.
-  const POSITION_MARK_COOLDOWN_MS = (5 * 60 + 10) * 1000;
+  // Upward marks are capped at 1%/day of the position; this wait lets each
+  // simulated harvest below fit comfortably under the cap.
+  const MARK_ACCRUAL_MS = 30 * 1000;
 
   const dao: InitializedDao[] = [];
   const execReq: anchor.web3.PublicKey[] = [];
@@ -65,7 +65,7 @@ describe("high-load: multi-DAO deploy/compound/withdraw stays consistent", () =>
       dao.push(d);
       execReq.push(er);
       deployed.push(amount);
-      gain.push(amount / 10n); // +10% simulated harvest
+      gain.push(amount / 1_000_000n); // simulated harvest well under the drift cap
     }
   });
 
@@ -123,13 +123,10 @@ describe("high-load: multi-DAO deploy/compound/withdraw stays consistent", () =>
   });
 
   it("PHASE 3 — compounds (harvest yield) into each position", async function () {
-    this.timeout(POSITION_MARK_COOLDOWN_MS + 120_000);
-    // `update_strategy_position_value` now enforces POSITION_MARK_COOLDOWN_SECS
-    // (5 minutes) between marks on the same position; PHASE 1's deploy already
-    // stamped `last_updated`, so wait out the cooldown before marking up the
-    // simulated harvest — this exercises the real bounded-step/cooldown path
-    // instead of tripping PositionMarkCooldownActive.
-    await h.sleep(POSITION_MARK_COOLDOWN_MS);
+    this.timeout(MARK_ACCRUAL_MS + 120_000);
+    // The mark is read from on-chain balances (escrow for an unbound position)
+    // and capped at 1%/day of the position since the last mark.
+    await h.sleep(MARK_ACCRUAL_MS);
     for (let i = 0; i < N; i++) {
       // Mint the simulated harvest into the per-protocol escrow (the tokens a
       // real adapter withdraw would have returned as yield), then mark the
@@ -137,14 +134,18 @@ describe("high-load: multi-DAO deploy/compound/withdraw stays consistent", () =>
       const escrow = h.strategyEscrowPda(dao[i].daoRegistry, "kamino", dao[i].vaultMint);
       await mintTo(h.provider.connection, h.founder, dao[i].vaultMint, escrow, h.founder, gain[i]);
       await h.core.methods
-        .updateStrategyPositionValue("kamino", new anchor.BN((deployed[i] + gain[i]).toString()))
-        .accounts({
+        .updateStrategyPositionValue("kamino")
+        .accountsPartial({
           authority: h.founder.publicKey,
           globalConfig: h.globalConfig,
           daoRegistry: dao[i].daoRegistry,
           agentSet: dao[i].agentSet,
           mint: dao[i].vaultMint,
           strategyPosition: positionPda(dao[i]),
+          vaultAuthority: dao[i].vaultAuthority,
+          strategyEscrow: escrow,
+          venueState: escrow,
+          receiptTokenAccount: escrow,
         })
         .rpc();
 

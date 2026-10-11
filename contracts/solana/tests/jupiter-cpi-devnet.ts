@@ -208,7 +208,7 @@ async function main() {
     .accounts({
       founder: founder.publicKey,
       globalConfig,
-      protocolTreasury: founder.publicKey,
+      protocolTreasury: global.treasury,
       daoRegistry,
       vaultAuthority,
       treasuryVault,

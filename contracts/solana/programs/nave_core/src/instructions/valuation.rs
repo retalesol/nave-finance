@@ -8,25 +8,31 @@ use crate::constants::{
 };
 use crate::errors::NaveError;
 use crate::state::{
-    AgentSet, AssetConfig, DaoRegistry, NaveGlobalConfig, TreasuryAsset, TreasuryVault,
+    AgentSet, AssetConfig, DaoRegistry, NaveGlobalConfig, StrategyPosition, TreasuryAsset,
+    TreasuryVault,
 };
 use crate::utils::{value_stable, value_usd};
 
 /// Recompute the portfolio's USD NAV from every registered asset and reseed the
-/// performance high-water-mark. Each asset is supplied as a 4-account group in
-/// `remaining_accounts`:
+/// performance high-water-mark. `remaining_accounts` holds one 4-account group
+/// per registered asset:
 ///
 ///   [AssetConfig, TreasuryAsset, asset_vault (TokenAccount), Pyth PriceUpdateV2]
 ///
-/// The asset's total base-unit balance = idle (`asset_vault.amount`) + deployed
-/// principal (`TreasuryAsset.deployed_capital`). Stablecoins are valued at $1;
-/// other assets are valued via their Pyth feed (staleness + feed-id checked).
-/// Deployed is summed separately so USD `deployed_capital` stays consistent with
-/// the constitution's deployment cap / liquidity floor.
+/// followed by the DAO's `StrategyPosition` accounts that hold principal.
 ///
-/// The Pyth account is ignored for stablecoins; callers may pass the same
-/// `asset_vault` as a placeholder for the 4th slot.
+/// An asset's total base-unit balance = idle (`asset_vault.amount`) + the
+/// marked value (`current_value`) of its positions, so NAV includes yield and
+/// losses. The positions supplied for a mint must carry all of that asset's
+/// `deployed_capital`, so a position cannot be left out to move NAV. Deployed
+/// principal is summed separately so USD `deployed_capital` stays consistent
+/// with the constitution's deployment cap / liquidity floor.
+///
+/// Stablecoins are valued at $1; other assets are valued via their Pyth feed
+/// (staleness + feed-id checked). The Pyth account is ignored for stablecoins;
+/// callers may pass the same `asset_vault` as a placeholder for the 4th slot.
 pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
+    crate::utils::require_not_paused(&ctx.accounts.global_config)?;
     // Authority gate: only the founder or an operational Operational agent may
     // revalue. A permissionless revalue lets any caller stamp a fresh
     // `last_revalued_at` and (combined with a partial asset set, below) deflate
@@ -40,21 +46,27 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
 
     let dao_key = ctx.accounts.dao_registry.key();
     let clock = Clock::get()?;
-    let accs = ctx.remaining_accounts;
-    require!(!accs.is_empty() && accs.len() % 4 == 0, NaveError::InvalidAssetKind);
-
     // Full-coverage gate: the caller must supply EVERY registered asset (one
     // 4-account group each), so NAV cannot be deflated by omitting holdings.
     // `asset_count` is incremented on register and never decremented (assets
     // cannot be disabled), so it equals the number of valuable assets.
     let expected_groups = ctx.accounts.treasury_vault.asset_count as usize;
-    require!(accs.len() / 4 == expected_groups, NaveError::InvalidAssetKind);
+    let group_accounts = expected_groups
+        .checked_mul(4)
+        .ok_or(NaveError::MathOverflow)?;
+    require!(
+        expected_groups > 0 && ctx.remaining_accounts.len() >= group_accounts,
+        NaveError::InvalidAssetKind
+    );
+    let (accs, position_accs) = ctx.remaining_accounts.split_at(group_accounts);
+    let positions = load_positions(position_accs, &dao_key)?;
 
     let mut nav_usd: u128 = 0;
     let mut deployed_usd: u128 = 0;
     // Reject duplicate assets so the count gate above cannot be satisfied by
     // repeating one asset while omitting others.
     let mut seen_assets: Vec<Pubkey> = Vec::with_capacity(expected_groups);
+    let mut seen_mints: Vec<Pubkey> = Vec::with_capacity(expected_groups);
 
     for group in accs.chunks(4) {
         let cfg_ai = &group[0];
@@ -83,13 +95,15 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
         require!(cfg.mint == asset.mint, NaveError::MintMismatch);
         require!(vault_ai.key() == asset.token_account, NaveError::InvalidVaultTokenAccount);
         require!(cfg.enabled, NaveError::AssetNotEnabled);
+        seen_mints.push(asset.mint);
 
         let vault_amount: u64 = {
             let data = vault_ai.try_borrow_data()?;
             TokenAccount::try_deserialize(&mut &data[..])?.amount
         };
+        let marked = marked_position_value(&positions, &asset.mint, asset.deployed_capital)?;
         let total = vault_amount
-            .checked_add(asset.deployed_capital)
+            .checked_add(marked)
             .ok_or(NaveError::MathOverflow)?;
 
         let (total_value, deployed_value) = if cfg.is_stablecoin {
@@ -136,6 +150,12 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
         }
     }
 
+    // Every supplied position must belong to a registered asset.
+    require!(
+        positions.iter().all(|p| seen_mints.contains(&p.mint)),
+        NaveError::InvalidAssetKind
+    );
+
     let nav_u64 = u64::try_from(nav_usd).map_err(|_| error!(NaveError::MathOverflow))?;
     let deployed_u64 = u64::try_from(deployed_usd).map_err(|_| error!(NaveError::MathOverflow))?;
 
@@ -150,6 +170,49 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
     }
 
     Ok(())
+}
+
+struct PositionMark {
+    mint: Pubkey,
+    deposited: u64,
+    value: u64,
+}
+
+/// Deserialize the trailing `StrategyPosition` accounts (owner, discriminator,
+/// DAO and uniqueness checked).
+fn load_positions(accs: &[AccountInfo], dao: &Pubkey) -> Result<Vec<PositionMark>> {
+    let mut seen: Vec<Pubkey> = Vec::with_capacity(accs.len());
+    let mut out = Vec::with_capacity(accs.len());
+    for ai in accs {
+        require!(ai.owner == &crate::ID, NaveError::InvalidOracleAccount);
+        require!(!seen.contains(&ai.key()), NaveError::InvalidAssetKind);
+        seen.push(ai.key());
+        let pos: StrategyPosition = {
+            let data = ai.try_borrow_data()?;
+            StrategyPosition::try_deserialize(&mut &data[..])?
+        };
+        require!(pos.dao == *dao, NaveError::DaoOwnershipMismatch);
+        out.push(PositionMark {
+            mint: pos.mint,
+            deposited: pos.deposited_amount,
+            value: pos.current_value,
+        });
+    }
+    Ok(out)
+}
+
+/// Marked value of `mint`'s positions. The supplied positions' principal must
+/// cover the asset's `deployed_capital`, which equals the sum of its positions'
+/// principal, so no position holding principal can be omitted.
+fn marked_position_value(positions: &[PositionMark], mint: &Pubkey, deployed: u64) -> Result<u64> {
+    let mut principal: u64 = 0;
+    let mut value: u64 = 0;
+    for p in positions.iter().filter(|p| p.mint == *mint) {
+        principal = principal.checked_add(p.deposited).ok_or(NaveError::MathOverflow)?;
+        value = value.checked_add(p.value).ok_or(NaveError::MathOverflow)?;
+    }
+    require!(principal >= deployed, NaveError::InvalidAssetKind);
+    Ok(value)
 }
 
 #[derive(Accounts)]

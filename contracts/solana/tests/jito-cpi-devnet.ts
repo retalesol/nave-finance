@@ -75,8 +75,36 @@ function pda(seeds: (Buffer | Uint8Array)[], programId: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
 }
 
+/** Fill unset vars from the gitignored local env. Never overrides the process. */
+function loadLocalEnv() {
+  const envPath = path.resolve(__dirname, "../.env.testnet.local");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match || process.env[match[1]]) continue;
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[match[1]] = value;
+  }
+}
+
+function redactRpc(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}/…`;
+  } catch {
+    return "(configured)";
+  }
+}
+
 async function main() {
-  const rpc = process.env.RPC || "https://api.devnet.solana.com";
+  loadLocalEnv();
+  const rpc = process.env.RPC || process.env.SOLANA_DEVNET_RPC || "https://api.devnet.solana.com";
 
   const walletPath = path.resolve(__dirname, "../.deploy-wallet-devnet.json");
   const founder = Keypair.fromSecretKey(
@@ -92,7 +120,7 @@ async function main() {
   const program = new anchor.Program(idl as anchor.Idl, provider);
   const CORE = program.programId;
 
-  console.log("RPC          :", rpc);
+  console.log("RPC          :", redactRpc(rpc));
   console.log("Founder      :", founder.publicKey.toBase58());
   console.log("nave_core    :", CORE.toBase58());
 
@@ -171,7 +199,7 @@ async function main() {
     .accounts({
       founder: founder.publicKey,
       globalConfig,
-      protocolTreasury: founder.publicKey,
+      protocolTreasury: global.treasury,
       daoRegistry,
       vaultAuthority,
       treasuryVault,

@@ -130,6 +130,44 @@ pub struct AgentRestored {
 }
 
 #[event]
+pub struct GuardianAgentChangeQueued {
+    pub dao: Pubkey,
+    pub agent_slot: u8,
+    pub kind: u8,
+    pub new_authority: Pubkey,
+    pub new_status: u8,
+    pub effective_at: i64,
+}
+
+#[event]
+pub struct GuardianAgentChangeCancelled {
+    pub dao: Pubkey,
+    pub agent_slot: u8,
+    pub cancelled_by: Pubkey,
+}
+
+#[event]
+pub struct AgentRotationCancelled {
+    pub dao: Pubkey,
+    pub role: u8,
+}
+
+#[event]
+pub struct ReviewWindowChangeQueued {
+    pub dao: Pubkey,
+    pub review_window_secs: i64,
+    pub effective_at: i64,
+}
+
+#[event]
+pub struct PositionMarked {
+    pub dao: Pubkey,
+    pub mint: Pubkey,
+    pub observed: u64,
+    pub applied: u64,
+}
+
+#[event]
 pub struct AgentStatusChangedEvent {
     pub dao: Pubkey,
     pub agent_slot: u8,

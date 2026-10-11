@@ -15,7 +15,7 @@ use crate::constants::{
 };
 use crate::errors::NaveError;
 use crate::state::{AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority};
-use crate::utils::{require_agent_authority, require_dao_active, require_not_paused};
+use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused};
 
 /// jito protocol id this module operates on.
 const JITO_PROTOCOL_ID: &[u8] = b"jito";
@@ -36,6 +36,7 @@ pub fn jito_deposit_handler(ctx: Context<JitoDeposit>, amount: u64) -> Result<()
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == JITO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
@@ -160,6 +161,7 @@ pub fn jito_withdraw_handler(ctx: Context<JitoWithdraw>, pool_tokens: u64) -> Re
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == JITO_PROTOCOL_ID, NaveError::ProtocolNotApproved);

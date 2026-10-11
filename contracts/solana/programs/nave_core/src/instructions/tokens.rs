@@ -325,6 +325,8 @@ pub struct RegisterDaoToken<'info> {
     )]
     pub protocol_fee_vault: Account<'info, ProtocolFeeVault>,
 
+    /// Writable for the optional `initial_supply` mint_to.
+    #[account(mut)]
     pub mint: Account<'info, Mint>,
 
     pub token_program: Program<'info, Token>,

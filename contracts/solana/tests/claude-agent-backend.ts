@@ -8,6 +8,8 @@ import {
   makeReasoningHash,
   ZERO_HASH,
   AGENT_STATUS,
+  GUARDIAN_CHANGE_ROTATE_KEY,
+  GUARDIAN_CHANGE_SET_STATUS,
 } from "./helpers/nave-harness";
 
 describe("claude agent backend support", () => {
@@ -286,19 +288,35 @@ describe("claude agent backend support", () => {
       "Unauthorized"
     );
 
-    // Reactivating restores approval ability.
+    // Guardian re-activation is queued for 24h (founder can veto), so the
+    // agent stays paused and still cannot approve.
     await harness.guardianUpdateAgentStatus(dao, 0, AGENT_STATUS.Active, 2, [
       dao.guardians[0],
       dao.guardians[1],
     ]);
-    await harness.execution.methods
-      .executiveApprove(makeReasoningHash("after-reactivate"))
-      .accounts({ authority: dao.agents[0].publicKey, ...execBase(dao, execReq) })
-      .signers([dao.agents[0]])
-      .rpc();
+    const queued = await harness.core.account.agentSet.fetch(dao.agentSet);
+    assert.equal(queued.agents[0].status, AGENT_STATUS.Paused);
+    const control = await harness.fetchDaoControl(dao);
+    assert.equal(control.pendingAgentChanges[0].kind, GUARDIAN_CHANGE_SET_STATUS);
+    assert.equal(control.pendingAgentChanges[0].newStatus, AGENT_STATUS.Active);
+    await harness.expectError(
+      () =>
+        harness.core.methods
+          .applyGuardianAgentChange(0)
+          .accountsPartial({
+            authority: dao.members[0].publicKey,
+            globalConfig: harness.globalConfig,
+            daoRegistry: dao.daoRegistry,
+            agentSet: dao.agentSet,
+            guardianConfig: dao.guardianConfig,
+          })
+          .signers([dao.members[0]])
+          .rpc(),
+      "GuardianChangeNotReady"
+    );
 
     const req = await harness.execution.account.executionRequest.fetch(execReq);
-    assert.equal(req.status, 1); // ExecutiveApproved
+    assert.equal(req.status, 0); // still Pending
   });
 
   it("does not reach quorum with a single guardian signature", async () => {
@@ -320,7 +338,7 @@ describe("claude agent backend support", () => {
     assert.equal(agentSet.agents[1].status, AGENT_STATUS.Active);
   });
 
-  it("rotate_agent_key swaps the pubkey and resets status to active", async () => {
+  it("rotate_agent_key queues the swap for 24h and the founder can veto it", async () => {
     const dao = await harness.createDao({
       name: "key-rotation",
       memberCount: 3,
@@ -339,10 +357,23 @@ describe("claude agent backend support", () => {
     const agentSet = await harness.core.account.agentSet.fetch(dao.agentSet);
     assert.equal(
       agentSet.agents[1].authority.toBase58(),
-      newKey.publicKey.toBase58()
+      dao.agents[1].publicKey.toBase58(),
+      "key is unchanged until the 24h delay elapses"
     );
-    assert.equal(agentSet.agents[1].status, AGENT_STATUS.Active);
-    assert.isTrue(agentSet.agents[1].active);
+    let control = await harness.fetchDaoControl(dao);
+    assert.equal(control.pendingAgentChanges[1].kind, GUARDIAN_CHANGE_ROTATE_KEY);
+    assert.equal(control.pendingAgentChanges[1].newAuthority.toBase58(), newKey.publicKey.toBase58());
+
+    await harness.core.methods
+      .cancelGuardianAgentChange(1)
+      .accountsPartial({
+        authority: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+      })
+      .rpc();
+    control = await harness.fetchDaoControl(dao);
+    assert.equal(control.pendingAgentChanges[1].kind, 0);
   });
 
   it("rotate_agent_key rejects an invalid slot", async () => {

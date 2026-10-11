@@ -151,6 +151,75 @@
           }
         },
         {
+          "name": "dao_lifecycle",
+          "docs": [
+            "seeds; may be uninitialized (never moonlighted) — validated in handler."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  108,
+                  105,
+                  102,
+                  101,
+                  99,
+                  121,
+                  99,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
           "name": "proposal"
         },
         {
@@ -468,6 +537,75 @@
                 "kind": "account",
                 "path": "dao_registry.dao_id",
                 "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_lifecycle",
+          "docs": [
+            "seeds; may be uninitialized (never moonlighted) — validated in handler."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  108,
+                  105,
+                  102,
+                  101,
+                  99,
+                  121,
+                  99,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
               }
             ],
             "program": {
@@ -936,6 +1074,68 @@
         {
           "name": "nave_core_program",
           "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "agent_set",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
         }
       ],
       "args": []
@@ -1040,6 +1240,75 @@
                 "kind": "account",
                 "path": "dao_registry.dao_id",
                 "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_lifecycle",
+          "docs": [
+            "seeds; may be uninitialized (never moonlighted) — validated in handler."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  108,
+                  105,
+                  102,
+                  101,
+                  99,
+                  121,
+                  99,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
               }
             ],
             "program": {
@@ -1567,6 +1836,73 @@
         {
           "name": "nave_core_program",
           "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "dao_control",
+          "docs": [
+            "guardian-locked). Owner checked by `DaoControl::is_guardian_locked`."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
         }
       ],
       "args": []
@@ -2443,7 +2779,17 @@
           "writable": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "reason_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "operational_halt",
@@ -3995,6 +4341,11 @@
       "code": 6030,
       "name": "AgentThresholdNotMet",
       "msg": "Treasury NAV is below the agent operating threshold"
+    },
+    {
+      "code": 6031,
+      "name": "DaoMoonlighting",
+      "msg": "DAO is moonlighting; new strategy deployments are blocked"
     }
   ],
   "types": [
@@ -4823,6 +5174,15 @@
           {
             "name": "agent",
             "type": "pubkey"
+          },
+          {
+            "name": "reason_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -5005,6 +5365,20 @@
           {
             "name": "finalized_at",
             "type": "i64"
+          },
+          {
+            "name": "token_mint",
+            "docs": [
+              "Governance token mint this proposal is voted with. Snapshotted from",
+              "`dao_registry.voting_token` at creation for token-weighted DAOs and",
+              "enforced by `lock_tokens_and_vote` (`dao_token_mint` MUST equal this),",
+              "so a voter cannot supply an arbitrary attacker-minted token to buy",
+              "unbounded voting weight. `Pubkey::default()` for wallet-governed DAOs",
+              "(which never lock tokens). Appended at the END of the layout so the",
+              "byte offsets consumed by `nave_core::GovernanceProposalLayout` and",
+              "off-chain decoders are preserved."
+            ],
+            "type": "pubkey"
           }
         ]
       }
@@ -5046,7 +5420,8 @@
           {
             "name": "max_allocation_bps",
             "docs": [
-              "Maximum allocation in basis points."
+              "Maximum allocation in basis points, with the venue risk tier packed into",
+              "the two high bits. Read through `allocation_bps` / `risk_tier`."
             ],
             "type": "u16"
           },

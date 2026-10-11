@@ -88,6 +88,11 @@ pub fn initialize_dao_handler(ctx: Context<InitializeDao>, params: InitializeDao
         seen.len() == params.guardian_wallets.len()
     };
     require!(unique_guardians, NaveError::DuplicateGuardianWallet);
+    crate::utils::require_agent_params_distinct(
+        &params.agent_authorities,
+        &ctx.accounts.founder.key(),
+        &params.guardian_wallets,
+    )?;
 
     let global_config = &mut ctx.accounts.global_config;
     let dao_id = global_config.dao_count;
@@ -160,6 +165,15 @@ pub fn initialize_dao_extensions_handler(
     params: InitializeDaoParams,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
+    require!(
+        params.agent_authorities.len() == AGENT_COUNT,
+        NaveError::InvalidAgentRole
+    );
+    crate::utils::require_agent_params_distinct(
+        &params.agent_authorities,
+        &ctx.accounts.dao_registry.founder,
+        &params.guardian_wallets,
+    )?;
 
     let agent_set = &mut ctx.accounts.agent_set;
     agent_set.bump = ctx.bumps.agent_set;
@@ -206,6 +220,7 @@ pub fn initialize_dao_governance_handler(
     params: InitializeDaoParams,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
+    crate::utils::require_guardians_not_agents(&params.guardian_wallets, &ctx.accounts.agent_set)?;
 
     let guardian_config = &mut ctx.accounts.guardian_config;
     guardian_config.bump = ctx.bumps.guardian_config;
@@ -410,6 +425,13 @@ pub struct InitializeDaoGovernance<'info> {
         bump
     )]
     pub token_registry: Box<Account<'info, TokenRegistry>>,
+
+    #[account(
+        seeds = [AGENT_SET_SEED, dao_registry.key().as_ref()],
+        bump = agent_set.bump,
+        constraint = agent_set.dao == dao_registry.key() @ NaveError::DaoOwnershipMismatch
+    )]
+    pub agent_set: Box<Account<'info, AgentSet>>,
 
     pub system_program: Program<'info, System>,
 }

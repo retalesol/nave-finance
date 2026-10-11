@@ -79,7 +79,7 @@ const EVM_CONTRACTS_DIR = resolve(ROOT, "..", "evm");
 const DEPLOYMENTS_DIR = join(EVM_CONTRACTS_DIR, "deployments");
 
 // The closed set of supported EVM chain ids. Anything else is rejected.
-const SUPPORTED_CHAIN_IDS = new Set([1, 8453, 4663, 11155111, 84532, 46630]);
+const SUPPORTED_CHAIN_IDS = new Set([1, 8453, 4663, 11155111, 84532, 46630, 5042002]);
 const MAINNET_CHAIN_IDS = new Set([1, 8453, 4663]);
 // Robinhood Chain (Arbitrum Nitro L2) hosts ONLY the bridge/staking stack when
 // the DAO stack is deployed separately. With `--scope bridge-stake` (default)
@@ -139,6 +139,13 @@ const CHAIN_META = {
     verifierUrl: "https://explorer.testnet.chain.robinhood.com/api",
     testnet: true,
     rpcEnvKeys: ["EVM_ROBINHOOD_TESTNET_RPC_URL", "EVM_ROBINHOOD_RPC_URL", "EVM_RPC_URL"],
+  },
+  5042002: {
+    label: "Arc Testnet",
+    explorer: "blockscout",
+    apiKeyEnv: null,
+    testnet: true,
+    rpcEnvKeys: ["EVM_ARC_TESTNET_RPC_URL", "EVM_RPC_URL"],
   },
 };
 
@@ -206,7 +213,7 @@ function parseArgs() {
   // ── Hard chain-id guard (reject BSC 56 and any other EVM network) ──
   if (!SUPPORTED_CHAIN_IDS.has(out.chainId)) {
     throw new Error(
-      `Unsupported EVM chain id ${out.chainId}. Nave supports ONLY 1, 8453, 4663, 11155111, 84532, 46630 ` +
+      `Unsupported EVM chain id ${out.chainId}. Nave supports ONLY 1, 8453, 4663, 11155111, 84532, 46630, 5042002 ` +
         "(Ethereum + Base + Robinhood Chain mainnets/testnets). No BSC/Polygon.",
     );
   }

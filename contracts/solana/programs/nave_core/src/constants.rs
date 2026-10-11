@@ -31,6 +31,7 @@ pub const STAKE_ESCROW_SEED: &[u8] = b"stake_escrow";
 /// `DaoRegistry` so the registry byte layout consumed by off-chain decoders /
 /// IDL clients is preserved (the lifecycle is opt-in, created on first use).
 pub const DAO_LIFECYCLE_SEED: &[u8] = b"dao_lifecycle";
+pub const DAO_CONTROL_SEED: &[u8] = b"dao_control";
 pub const STRATEGY_POSITION_SEED: &[u8] = b"strategy_position";
 pub const STRATEGY_ESCROW_SEED: &[u8] = b"strategy_escrow";
 pub const GUARDIAN_ACTION_SEED: &[u8] = b"guardian_action";
@@ -62,6 +63,15 @@ pub const MAX_GUARDIAN_THRESHOLD: u8 = 7;
 /// `threshold(1) ‖ wallet_count(1) ‖ wallets(MAX_GUARDIAN_WALLETS × 32)`.
 pub const PERMISSION_PAYLOAD_LEN: usize = 1 + 1 + (MAX_GUARDIAN_WALLETS * 32);
 pub const MAX_CONSTITUTION_PROTOCOLS: usize = 10;
+/// `ProtocolEntry::max_allocation_bps` packs the venue risk tier into its two
+/// high bits (bps never exceed 10_000 < 2^14): `bps | (tier - 1) << 14`.
+/// Legacy entries read as Tier 1.
+pub const RISK_TIER_SHIFT: u16 = 14;
+pub const ALLOCATION_BPS_MASK: u16 = (1 << RISK_TIER_SHIFT) - 1;
+pub const MAX_RISK_TIER: u8 = 3;
+/// Sum of approved per-protocol caps allowed within Tier 2 / Tier 3.
+pub const MAX_TIER2_TOTAL_BPS: u32 = 3_000;
+pub const MAX_TIER3_TOTAL_BPS: u32 = 1_500;
 pub const MAX_TOKEN_REGISTRY: usize = 3;
 /// Maximum number of distinct treasury assets a DAO may register.
 pub const MAX_TREASURY_ASSETS: usize = 8;
@@ -245,7 +255,14 @@ pub const SECONDS_PER_DAY: i64 = 86_400;
 /// due once `now >= last_management_fee_at + SECONDS_PER_YEAR`. Equals 365 whole
 /// UTC days, so a midnight-aligned anchor stays midnight-aligned after a period.
 pub const SECONDS_PER_YEAR: i64 = 365 * SECONDS_PER_DAY;
+/// Every timelock below is its production value only in a `mainnet` build;
+/// devnet/localnet builds use this instead so the flows can be exercised.
+pub const DEV_DELAY_SECS: i64 = 60;
+
+#[cfg(feature = "mainnet")]
 pub const AGENT_ROTATION_DELAY_SECONDS: i64 = 172_800;
+#[cfg(not(feature = "mainnet"))]
+pub const AGENT_ROTATION_DELAY_SECONDS: i64 = DEV_DELAY_SECS;
 
 /// Default performance fee: 8.5% (850 bps) of realized yield, skimmed on the
 /// strategy-withdrawal path before the gain reaches the treasury balance. The
@@ -266,7 +283,10 @@ pub const MAX_CONFIDENCE_THRESHOLD: u8 = 100;
 
 /// Default mandatory review window (24h) between Oversight approval and
 /// `execute_strategy`. Mirrors `nave_execution`'s historical constant.
+#[cfg(feature = "mainnet")]
 pub const DEFAULT_REVIEW_WINDOW_SECONDS: i64 = 86_400;
+#[cfg(not(feature = "mainnet"))]
+pub const DEFAULT_REVIEW_WINDOW_SECONDS: i64 = DEV_DELAY_SECS;
 /// Minimum review window a DAO may configure (1 minute). Bounded so a DAO
 /// cannot disable the human-oversight delay entirely.
 pub const MIN_REVIEW_WINDOW_SECONDS: i64 = 60;
@@ -364,6 +384,28 @@ pub const GUARDIAN_ACTION_DISABLE_AGENTS: u8 = 4;
 /// compromised Executive could combine with `execute_strategy_direct` to skip
 /// the mandatory review window on an already-approved request.
 pub const GUARDIAN_ACTION_NULLIFY_AGENT: u8 = 5;
+/// Re-enable the agent pipeline after a guardian-quorum disable. The Executive
+/// cannot lift a guardian lock on its own.
+pub const GUARDIAN_ACTION_ENABLE_AGENTS: u8 = 6;
+/// Restore a nullified agent slot (guardian quorum, mirrors nullify).
+pub const GUARDIAN_ACTION_RESTORE_AGENT: u8 = 7;
+/// Cancel a founder-scheduled agent rotation during its 48h delay.
+pub const GUARDIAN_ACTION_CANCEL_AGENT_ROTATION: u8 = 8;
+
+/// Guardian key rotations and agent re-activations wait this long before they
+/// can be applied, giving the founder a veto window. Pause/revoke are immediate.
+#[cfg(feature = "mainnet")]
+pub const GUARDIAN_AGENT_CHANGE_DELAY_SECS: i64 = 86_400;
+#[cfg(not(feature = "mainnet"))]
+pub const GUARDIAN_AGENT_CHANGE_DELAY_SECS: i64 = DEV_DELAY_SECS;
+/// A review-window REDUCTION is queued this long (increases apply immediately).
+#[cfg(feature = "mainnet")]
+pub const REVIEW_WINDOW_DECREASE_DELAY_SECS: i64 = 86_400;
+#[cfg(not(feature = "mainnet"))]
+pub const REVIEW_WINDOW_DECREASE_DELAY_SECS: i64 = DEV_DELAY_SECS;
+/// Upward position-mark drift allowed per elapsed day, in bps of
+/// max(current_value, deposited_amount). Downward marks are unbounded.
+pub const MAX_POSITION_DRIFT_BPS_PER_DAY: u128 = 100;
 
 #[repr(u8)]
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]

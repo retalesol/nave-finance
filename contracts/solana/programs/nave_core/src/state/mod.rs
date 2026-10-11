@@ -1,6 +1,7 @@
 pub mod agent_set;
 pub mod asset_config;
 pub mod constitution;
+pub mod dao_control;
 pub mod dao_lifecycle;
 pub mod dao_registry;
 pub mod dao_stake_lock;
@@ -21,6 +22,7 @@ pub mod vault_authority;
 pub use agent_set::*;
 pub use asset_config::*;
 pub use constitution::*;
+pub use dao_control::*;
 pub use dao_lifecycle::*;
 pub use dao_registry::*;
 pub use dao_stake_lock::*;

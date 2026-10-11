@@ -61,6 +61,7 @@ pub struct OperationalHaltEvent {
 pub struct OperationalClearEvent {
     pub request: Pubkey,
     pub agent: Pubkey,
+    pub reason_hash: [u8; 32],
 }
 
 #[event]

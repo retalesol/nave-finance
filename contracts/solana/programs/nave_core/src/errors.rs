@@ -224,4 +224,22 @@ pub enum NaveError {
     PermissionPayloadMismatch,
     #[msg("GuardianConfig account has an unexpected data length")]
     GuardianConfigLayoutInvalid,
+    #[msg("Agents were disabled by guardian quorum; only guardians can re-enable them")]
+    AgentsLockedByGuardians,
+    #[msg("Agent keys must be nonzero, distinct, and differ from the founder and every guardian")]
+    AgentKeyConflict,
+    #[msg("No queued guardian agent change for this slot")]
+    NoPendingGuardianChange,
+    #[msg("Queued guardian agent change has not reached its effective time")]
+    GuardianChangeNotReady,
+    #[msg("No queued review-window change")]
+    NoPendingReviewWindow,
+    #[msg("Queued review-window change has not reached its effective time")]
+    ReviewWindowChangeNotReady,
+    #[msg("Position mark source account does not match the configured venue")]
+    PositionMarkSourceMismatch,
+    #[msg("Strategy funds must be escrowed by an executed request before a venue deposit")]
+    VenueDepositRequiresEscrow,
+    #[msg("Approved Tier 2 caps may total at most 30% and Tier 3 caps at most 15%")]
+    RiskTierCapExceeded,
 }

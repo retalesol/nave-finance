@@ -626,6 +626,265 @@
       ]
     },
     {
+      "name": "execute_permission_proposal",
+      "docs": [
+        "Execute a passed `Permission` proposal: replace guardian wallets +",
+        "threshold. CPIs into `nave_core::apply_guardian_config_from_governance`,",
+        "which decodes `(threshold, wallets)` from this proposal's bound payload",
+        "and latches `GuardianConfig.bootstrapped`. Marks the proposal `Executed`",
+        "immediately after the CPI so it cannot be replayed."
+      ],
+      "discriminator": [
+        195,
+        31,
+        18,
+        46,
+        207,
+        243,
+        85,
+        27
+      ],
+      "accounts": [
+        {
+          "name": "executor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "global_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "dao_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "DaoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "DaoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "guardian_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.proposal_index",
+                "account": "Proposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nave_core_program",
+          "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "execute_switch_voting_system",
       "docs": [
         "Execute a passed `SwitchVotingSystem` proposal (SOL-C2). CPIs into",
@@ -2743,7 +3002,11 @@
           "writable": true
         },
         {
-          "name": "dao_token_mint"
+          "name": "dao_token_mint",
+          "docs": [
+            "Must be the governance mint snapshotted on the proposal at creation —",
+            "a caller-supplied arbitrary mint could otherwise buy unbounded weight."
+          ]
         },
         {
           "name": "voter_token_account",
@@ -3923,6 +4186,11 @@
       "code": 6029,
       "name": "InvalidVotingPeriod",
       "msg": "Voting period out of allowed bounds"
+    },
+    {
+      "code": 6030,
+      "name": "VotingMintMismatch",
+      "msg": "Token mint does not match the proposal's governance voting mint"
     }
   ],
   "types": [
@@ -4286,6 +4554,17 @@
                 10
               ]
             }
+          },
+          {
+            "name": "bootstrapped",
+            "docs": [
+              "False until the founder completes the ActivationHub one-shot guardian",
+              "edit (or the first Permission proposal executes). After true, only a",
+              "passed `ProposalType::Permission` governance path may change the set.",
+              "Appended at the END of the layout to preserve byte offsets for",
+              "off-chain decoders; legacy accounts omit this byte until resized."
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -4515,6 +4794,20 @@
           {
             "name": "finalized_at",
             "type": "i64"
+          },
+          {
+            "name": "token_mint",
+            "docs": [
+              "Governance token mint this proposal is voted with. Snapshotted from",
+              "`dao_registry.voting_token` at creation for token-weighted DAOs and",
+              "enforced by `lock_tokens_and_vote` (`dao_token_mint` MUST equal this),",
+              "so a voter cannot supply an arbitrary attacker-minted token to buy",
+              "unbounded voting weight. `Pubkey::default()` for wallet-governed DAOs",
+              "(which never lock tokens). Appended at the END of the layout so the",
+              "byte offsets consumed by `nave_core::GovernanceProposalLayout` and",
+              "off-chain decoders are preserved."
+            ],
+            "type": "pubkey"
           }
         ]
       }

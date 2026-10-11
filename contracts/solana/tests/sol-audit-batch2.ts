@@ -266,6 +266,7 @@ describe("Batch 2 — Solana high audit fixes", () => {
           systemProgram: SystemProgram.programId,
         })
         .rpc();
+      await harness.initStrategyEscrow(dao, "jupiter");
 
       const fTokenMint = await createMint(
         harness.provider.connection,

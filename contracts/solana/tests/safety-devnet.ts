@@ -155,30 +155,45 @@ async function main() {
   assert(registry.frozen === false, "2-of-2 guardian unfreeze sig must unfreeze DAO");
   console.log("✓ emergency_unfreeze: M-of-N (2-of-2) unfroze the DAO");
 
-  // ── 5: guardian update_agent_status (pause + restore Oversight slot) ────────
-  const OVERSIGHT_SLOT = 2;
-  await harness.guardianUpdateAgentStatus(dao, OVERSIGHT_SLOT, 1 /* Paused */, 301, dao.guardians.slice(0, 2));
+  // ── 5: guardian update_agent_status (pause Operational; re-activation queued) ─
+  // Operational is not needed by the approval pipeline below, so it can stay
+  // paused for the rest of the run.
+  const PAUSED_SLOT = 3;
+  await harness.guardianUpdateAgentStatus(dao, PAUSED_SLOT, 1 /* Paused */, 301, dao.guardians.slice(0, 2));
   let agentSetAcc = await harness.core.account.agentSet.fetch(dao.agentSet);
-  assert(agentSetAcc.agents[OVERSIGHT_SLOT].status === 1, "oversight slot paused via guardian M-of-N");
-  console.log("✓ guardian update_agent_status: Oversight slot paused (M-of-N)");
+  assert(agentSetAcc.agents[PAUSED_SLOT].status === 1, "operational slot paused via guardian M-of-N");
+  console.log("✓ guardian update_agent_status: Operational slot paused (M-of-N)");
 
-  await harness.guardianUpdateAgentStatus(dao, OVERSIGHT_SLOT, 0 /* Active */, 302, dao.guardians.slice(0, 2));
+  await harness.guardianUpdateAgentStatus(dao, PAUSED_SLOT, 0 /* Active */, 302, dao.guardians.slice(0, 2));
   agentSetAcc = await harness.core.account.agentSet.fetch(dao.agentSet);
-  assert(agentSetAcc.agents[OVERSIGHT_SLOT].status === 0, "oversight slot restored to Active via guardian M-of-N");
-  console.log("✓ guardian update_agent_status: Oversight slot restored to Active (M-of-N)");
+  assert(agentSetAcc.agents[PAUSED_SLOT].status === 1, "guardian re-activation is queued, slot stays Paused");
+  let control = await harness.fetchDaoControl(dao);
+  assert(control.pendingAgentChanges[PAUSED_SLOT].kind === 2, "re-activation queued in DaoControl");
+  await harness.core.methods
+    .cancelGuardianAgentChange(PAUSED_SLOT)
+    .accountsPartial({
+      authority: harness.founder.publicKey,
+      globalConfig: harness.globalConfig,
+      daoRegistry: dao.daoRegistry,
+    })
+    .rpc();
+  console.log("✓ guardian update_agent_status: re-activation queued 24h; founder vetoed it");
 
-  // ── 6: guardian rotate_agent_key — IMMEDIATE M-of-N path ────────────────────
+  // ── 6: guardian rotate_agent_key — queued 24h (founder can veto) ────────────
   const FINANCIAL_SLOT = 1;
   const newFinancialKey = Keypair.generate();
   await harness.guardianRotateAgentKey(dao, FINANCIAL_SLOT, newFinancialKey.publicKey, 401, dao.guardians.slice(0, 2));
   agentSetAcc = await harness.core.account.agentSet.fetch(dao.agentSet);
   assert(
-    new PublicKey(agentSetAcc.agents[FINANCIAL_SLOT].authority).equals(newFinancialKey.publicKey),
-    "financial slot authority rotated via guardian M-of-N (immediate)"
+    new PublicKey(agentSetAcc.agents[FINANCIAL_SLOT].authority).equals(dao.agents[FINANCIAL_SLOT].publicKey),
+    "guardian rotation does not swap the key before the 24h delay"
   );
-  assert(agentSetAcc.agents[FINANCIAL_SLOT].status === 0, "rotated slot is Active immediately (no timelock)");
-  console.log("✓ rotate_agent_key: guardian M-of-N IMMEDIATE rotation — financial key swapped, active with no delay");
-  dao.agents[FINANCIAL_SLOT] = newFinancialKey; // local reference must track the new on-chain authority
+  control = await harness.fetchDaoControl(dao);
+  assert(
+    new PublicKey(control.pendingAgentChanges[FINANCIAL_SLOT].newAuthority).equals(newFinancialKey.publicKey),
+    "rotation queued in DaoControl"
+  );
+  console.log("✓ rotate_agent_key: guardian M-of-N rotation queued for 24h");
 
   // ── 7: founder 48h TIMELOCKED rotation path ─────────────────────────────────
   const OPERATIONAL_SLOT = 3;
@@ -238,7 +253,7 @@ async function main() {
 
   const execReq = await harness.createExecutionRequest(dao, proposal, deployAmount, harness.kamino.programId);
   await harness.runAgentApprovals(dao, execReq, payloadHash);
-  console.log("✓ full 3-agent approval pipeline signed (executive / rotated-financial / oversight)");
+  console.log("✓ full 3-agent approval pipeline signed (executive / financial / oversight)");
 
   await harness.disableAgentsForDirectExecute(dao, 501);
   await harness.executeStrategyDirect(dao, execReq, harness.kamino.programId, "kamino");
@@ -272,8 +287,8 @@ async function main() {
       "toggle_agents",
       "guardian_disable_agents (M-of-N)",
       "emergency_freeze/unfreeze (M-of-N)",
-      "guardian update_agent_status (M-of-N)",
-      "rotate_agent_key (guardian immediate M-of-N)",
+      "guardian update_agent_status (M-of-N pause; re-activation queued 24h + founder veto)",
+      "rotate_agent_key (guardian M-of-N, queued 24h)",
       "update_agent_set + apply_agent_rotation (founder 48h timelock; scheduling + not-ready rejection verified live, full 48h wait not performed)",
       "execute_strategy_direct (Executive break-glass)",
       "withdraw_from_strategy realized_yield_withdraw_cap (over-cap rejected, in-cap succeeded)",

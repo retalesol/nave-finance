@@ -52,6 +52,71 @@ pub fn require_agent_authority(
     Ok(())
 }
 
+/// Agent keys must be nonzero, pairwise distinct, and never the founder or a
+/// guardian, so one compromised key can't act in two lanes. Nullified slots
+/// are skipped (their key is retired).
+pub fn require_agent_keys_distinct(
+    keys: &[Pubkey; crate::constants::AGENT_COUNT],
+    skip: &[bool; crate::constants::AGENT_COUNT],
+    founder: &Pubkey,
+    guardian_config: &crate::state::GuardianConfig,
+) -> Result<()> {
+    for i in 0..keys.len() {
+        if skip[i] {
+            continue;
+        }
+        let k = &keys[i];
+        require!(*k != Pubkey::default(), NaveError::AgentKeyConflict);
+        require!(k != founder, NaveError::AgentKeyConflict);
+        require!(!guardian_config.is_guardian(k), NaveError::AgentKeyConflict);
+        for j in (i + 1)..keys.len() {
+            if !skip[j] {
+                require!(*k != keys[j], NaveError::AgentKeyConflict);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A guardian wallet may never also be a live agent key.
+pub fn require_guardians_not_agents(wallets: &[Pubkey], agent_set: &AgentSet) -> Result<()> {
+    for a in agent_set.agents.iter().filter(|a| !a.nullified) {
+        require!(!wallets.contains(&a.authority), NaveError::AgentKeyConflict);
+    }
+    Ok(())
+}
+
+/// Creation-time check over raw params (no accounts exist yet).
+pub fn require_agent_params_distinct(
+    agents: &[Pubkey],
+    founder: &Pubkey,
+    guardian_wallets: &[Pubkey],
+) -> Result<()> {
+    for (i, k) in agents.iter().enumerate() {
+        require!(*k != Pubkey::default(), NaveError::AgentKeyConflict);
+        require!(k != founder, NaveError::AgentKeyConflict);
+        require!(!guardian_wallets.contains(k), NaveError::AgentKeyConflict);
+        require!(!agents[i + 1..].contains(k), NaveError::AgentKeyConflict);
+    }
+    Ok(())
+}
+
+/// Current agent keys with `slot` replaced by `new_key`.
+pub fn agent_keys_with(
+    agent_set: &AgentSet,
+    slot: usize,
+    new_key: Pubkey,
+) -> ([Pubkey; crate::constants::AGENT_COUNT], [bool; crate::constants::AGENT_COUNT]) {
+    let mut keys = [Pubkey::default(); crate::constants::AGENT_COUNT];
+    let mut skip = [false; crate::constants::AGENT_COUNT];
+    for (i, a) in agent_set.agents.iter().enumerate() {
+        keys[i] = a.authority;
+        skip[i] = a.nullified;
+    }
+    keys[slot] = new_key;
+    (keys, skip)
+}
+
 pub fn copy_fixed_bytes<const N: usize>(dest: &mut [u8; N], src: &[u8]) -> Result<usize> {
     require!(!src.is_empty() && src.len() <= N, NaveError::InvalidNameLength);
     dest.fill(0);

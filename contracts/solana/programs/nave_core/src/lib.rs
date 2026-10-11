@@ -231,8 +231,45 @@ pub mod nave_core {
         nullify_agent_handler(ctx, role, action_nonce)
     }
 
-    pub fn restore_agent(ctx: Context<RestoreAgent>, role: u8) -> Result<()> {
-        restore_agent_handler(ctx, role)
+    pub fn restore_agent(ctx: Context<RestoreAgent>, role: u8, action_nonce: u64) -> Result<()> {
+        restore_agent_handler(ctx, role, action_nonce)
+    }
+
+    pub fn guardian_enable_agents(
+        ctx: Context<GuardianEnableAgents>,
+        action_nonce: u64,
+    ) -> Result<()> {
+        guardian_enable_agents_handler(ctx, action_nonce)
+    }
+
+    pub fn cancel_agent_rotation(ctx: Context<CancelAgentRotation>, role: u8) -> Result<()> {
+        cancel_agent_rotation_handler(ctx, role)
+    }
+
+    pub fn guardian_cancel_agent_rotation(
+        ctx: Context<GuardianCancelAgentRotation>,
+        role: u8,
+        action_nonce: u64,
+    ) -> Result<()> {
+        guardian_cancel_agent_rotation_handler(ctx, role, action_nonce)
+    }
+
+    pub fn apply_guardian_agent_change(
+        ctx: Context<ApplyGuardianAgentChange>,
+        agent_slot: u8,
+    ) -> Result<()> {
+        apply_guardian_agent_change_handler(ctx, agent_slot)
+    }
+
+    pub fn cancel_guardian_agent_change(
+        ctx: Context<CancelGuardianAgentChange>,
+        agent_slot: u8,
+    ) -> Result<()> {
+        cancel_guardian_agent_change_handler(ctx, agent_slot)
+    }
+
+    pub fn apply_review_window(ctx: Context<ApplyReviewWindow>) -> Result<()> {
+        apply_review_window_handler(ctx)
     }
 
     pub fn update_agent_status(
@@ -544,8 +581,7 @@ pub mod nave_core {
     pub fn update_strategy_position_value(
         ctx: Context<UpdateStrategyPositionValue>,
         protocol_id: String,
-        new_value: u64,
     ) -> Result<()> {
-        update_strategy_position_value_handler(ctx, protocol_id, new_value)
+        update_strategy_position_value_handler(ctx, protocol_id)
     }
 }

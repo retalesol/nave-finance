@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 pub const EXECUTION_REQUEST_SEED: &[u8] = b"execution_request";
 
 pub const MAX_TX_PAYLOAD_HASH_LEN: usize = 32;
-pub const REVIEW_WINDOW_SECONDS: i64 = 86_400;
+pub const REVIEW_WINDOW_SECONDS: i64 = nave_core::constants::DEFAULT_REVIEW_WINDOW_SECONDS;
 
 /// Maximum age (seconds) of the treasury NAV (`TreasuryVault.last_revalued_at`)
 /// accepted when deploying capital into a strategy. The USD-denominated

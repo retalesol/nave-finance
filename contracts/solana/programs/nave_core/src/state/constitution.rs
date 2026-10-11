@@ -1,6 +1,8 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{MAX_CONSTITUTION_PROTOCOLS, MAX_PROTOCOL_ID_LEN};
+use crate::constants::{
+    ALLOCATION_BPS_MASK, MAX_CONSTITUTION_PROTOCOLS, MAX_PROTOCOL_ID_LEN, RISK_TIER_SHIFT,
+};
 
 /// Approved protocol entry within a DAO constitution.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug)]
@@ -11,13 +13,23 @@ pub struct ProtocolEntry {
     pub protocol_id_len: u8,
     /// Target program id for CPI.
     pub program_id: Pubkey,
-    /// Maximum allocation in basis points.
+    /// Maximum allocation in basis points, with the venue risk tier packed into
+    /// the two high bits. Read through `allocation_bps` / `risk_tier`.
     pub max_allocation_bps: u16,
     /// Whether the protocol is approved.
     pub approved: bool,
 }
 
 impl ProtocolEntry {
+    pub fn allocation_bps(&self) -> u16 {
+        self.max_allocation_bps & ALLOCATION_BPS_MASK
+    }
+
+    /// Venue risk tier, 1..=3.
+    pub fn risk_tier(&self) -> u8 {
+        (self.max_allocation_bps >> RISK_TIER_SHIFT) as u8 + 1
+    }
+
     pub fn protocol_id_slice(&self) -> &[u8] {
         &self.protocol_id[..self.protocol_id_len as usize]
     }

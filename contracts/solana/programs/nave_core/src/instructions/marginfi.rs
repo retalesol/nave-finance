@@ -9,7 +9,7 @@ use crate::constants::{
 };
 use crate::errors::NaveError;
 use crate::state::{AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority};
-use crate::utils::{require_agent_authority, require_dao_active, require_founder, require_not_paused};
+use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_founder, require_not_paused};
 
 /// MarginFi protocol id this module operates on.
 const MARGINFI_PROTOCOL_ID: &[u8] = b"marginfi";
@@ -178,6 +178,7 @@ pub fn marginfi_deposit_handler(ctx: Context<MarginfiDeposit>, amount: u64) -> R
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID, NaveError::ProtocolNotApproved);
@@ -262,6 +263,7 @@ pub fn marginfi_withdraw_handler<'info>(
         &ctx.accounts.agent_set,
         AgentRole::Operational,
     )?;
+    require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
     require!(sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID, NaveError::ProtocolNotApproved);

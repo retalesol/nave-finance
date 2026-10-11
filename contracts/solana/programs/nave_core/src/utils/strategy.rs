@@ -242,7 +242,7 @@ pub fn enforce_allocation_cap(
         .ok_or(NaveError::ProtocolNotApproved)?;
 
     let cap = (treasury_vault.current_nav as u128)
-        .checked_mul(entry.max_allocation_bps as u128)
+        .checked_mul(entry.allocation_bps() as u128)
         .ok_or(NaveError::MathOverflow)?
         .checked_div(BPS_DENOMINATOR)
         .ok_or(NaveError::MathOverflow)?;

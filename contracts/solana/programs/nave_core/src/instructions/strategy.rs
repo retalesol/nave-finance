@@ -2,19 +2,20 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::constants::{
-    nave_execution_program, AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, FEE_CONFIG_SEED,
-    GLOBAL_CONFIG_SEED, MAX_POSITION_MARK_STEP_BPS, MAX_PROTOCOL_ID_LEN, POSITION_MARK_COOLDOWN_SECS,
-    STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED, TREASURY_ASSET_SEED, TREASURY_VAULT_SEED,
-    VAULT_AUTHORITY_SEED,
+    jupiter_lending_program, kamino_lending_program, nave_execution_program,
+    spl_stake_pool_program, AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, FEE_CONFIG_SEED,
+    GLOBAL_CONFIG_SEED, MAX_PROTOCOL_ID_LEN, STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED,
+    TREASURY_ASSET_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
-use crate::events::PerformanceFeeSkimmed;
+use crate::events::{PerformanceFeeSkimmed, PositionMarked};
 use crate::state::{
     AgentSet, DaoRegistry, FeeConfig, NaveGlobalConfig, StrategyPosition, TreasuryAsset,
     TreasuryVault, VaultAuthority,
 };
 use crate::utils::{
-    calculate_performance_skim, record_strategy_deposit, record_strategy_withdrawal,
+    calculate_performance_skim, capped_mark, jupiter_ftoken_value, kamino_collateral_value,
+    record_strategy_deposit, record_strategy_withdrawal, require_not_paused, stake_pool_token_value,
     transfer_escrow_to_account, transfer_escrow_to_vault, transfer_vault_to_escrow,
     verify_execution_authority,
 };
@@ -273,11 +274,14 @@ pub fn record_strategy_withdrawal_handler(
     Ok(())
 }
 
+/// Mark a position from on-chain state: escrowed principal plus the venue
+/// receipt tokens valued at the venue's own exchange rate. The caller only
+/// chooses WHEN to mark, never the value; upward moves are drift-capped.
 pub fn update_strategy_position_value_handler(
     ctx: Context<UpdateStrategyPositionValue>,
     protocol_id: String,
-    new_value: u64,
 ) -> Result<()> {
+    require_not_paused(&ctx.accounts.global_config)?;
     require!(
         !protocol_id.is_empty() && protocol_id.len() <= MAX_PROTOCOL_ID_LEN,
         NaveError::InvalidProtocolIdLength
@@ -290,53 +294,107 @@ pub fn update_strategy_position_value_handler(
     let signer = ctx.accounts.authority.key();
     let founder_ok = signer == ctx.accounts.dao_registry.founder;
     let operational = ctx.accounts.agent_set.get_agent(AgentRole::Operational);
-    let operational_ok = signer == operational.authority && operational.is_operational();
+    let operational_ok = signer == operational.authority
+        && operational.is_operational()
+        && ctx.accounts.agent_set.agents_enabled;
     require!(founder_ok || operational_ok, NaveError::Unauthorized);
 
-    let position = &mut ctx.accounts.strategy_position;
+    let observed = observe_position_value(&ctx, protocol_id.as_bytes())?;
     let now = Clock::get()?.unix_timestamp;
-
-    // Rate-limit manual marks: `current_value` is live input to the
-    // per-protocol allocation cap (deposit path), the anti-drain withdrawal
-    // floor, the realized-yield withdrawal cap, and the performance-fee
-    // gain/principal split (see MAX_POSITION_MARK_STEP_BPS doc-comment) — it
-    // is never reconciled by `revalue_treasury`, so an unbounded single call
-    // could understate it to bypass the allocation cap or overstate it to
-    // inflate the withdrawal/fee ceiling. Require a cooldown between marks so
-    // the bounded step below also bounds total drift per unit time.
-    if position.last_updated > 0 {
-        require!(
-            now.saturating_sub(position.last_updated) >= POSITION_MARK_COOLDOWN_SECS,
-            NaveError::PositionMarkCooldownActive
-        );
-    }
-
-    // Bound the step relative to the pre-update mark (or `deposited_amount` if
-    // never marked) so one call can only move the value within
-    // [base * (1 - step), base * (1 + step)].
-    let base = if position.current_value > 0 {
-        position.current_value
-    } else {
-        position.deposited_amount
-    };
-    // A position with neither a prior mark nor any deposited principal has no
-    // base to bound against; a mark there would be arbitrary (it used to be
-    // accepted unbounded). Require a real deposit to establish the base first.
-    require!(base > 0, NaveError::PositionMarkNoBase);
-    require!(
-        crate::utils::position_mark_within_step(base, new_value, MAX_POSITION_MARK_STEP_BPS),
-        NaveError::PositionMarkStepExceeded
-    );
-
-    // Mark the position's current value in the asset's base units. Portfolio USD
-    // NAV is no longer derived from this single mark; `revalue_treasury` reprices
-    // every asset + position via Pyth. This remains an off-chain hook to record a
-    // receipt-token mark for a specific position between revalue ticks, now
-    // bounded (step + cooldown) so it can't be used to game the caps above.
-    position.current_value = new_value;
+    let position = &mut ctx.accounts.strategy_position;
+    let applied = capped_mark(
+        position.current_value,
+        position.deposited_amount,
+        position.last_updated,
+        now,
+        observed,
+    )?;
+    position.current_value = applied;
     position.last_updated = now;
 
+    emit!(PositionMarked {
+        dao: position.dao,
+        mint: position.mint,
+        observed,
+        applied,
+    });
     Ok(())
+}
+
+fn receipt_token(
+    info: &AccountInfo,
+    expected_key: Option<&Pubkey>,
+    owner: &Pubkey,
+    mint: &Pubkey,
+) -> Result<u64> {
+    if let Some(k) = expected_key {
+        require!(info.key() == *k, NaveError::PositionMarkSourceMismatch);
+    }
+    require!(info.owner == &anchor_spl::token::ID, NaveError::PositionMarkSourceMismatch);
+    let data = info.try_borrow_data()?;
+    let acct = TokenAccount::try_deserialize(&mut &data[..])
+        .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?;
+    require!(acct.owner == *owner && acct.mint == *mint, NaveError::PositionMarkSourceMismatch);
+    Ok(acct.amount)
+}
+
+fn observe_position_value(ctx: &Context<UpdateStrategyPositionValue>, protocol_id: &[u8]) -> Result<u64> {
+    let sp = &ctx.accounts.strategy_position;
+    let vault_authority = ctx.accounts.vault_authority.key();
+    let venue = &ctx.accounts.venue_state;
+    let receipt = &ctx.accounts.receipt_token_account;
+    let escrowed = ctx.accounts.strategy_escrow.amount;
+
+    // Venue deposits require a bound venue, so an unbound position holds
+    // nothing outside its escrow.
+    let unbound = sp.ext_market == Pubkey::default() && sp.ext_reserve == Pubkey::default();
+    let in_venue = if unbound {
+        0
+    } else {
+        match protocol_id {
+        b"kamino" => {
+            require!(
+                venue.key() == sp.ext_reserve && venue.owner == &kamino_lending_program::ID,
+                NaveError::PositionMarkSourceMismatch
+            );
+            let data = receipt.try_borrow_data()?;
+            let collateral_mint = TokenAccount::try_deserialize(&mut &data[..])
+                .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
+                .mint;
+            drop(data);
+            let c = receipt_token(receipt, Some(&sp.position_token_account), &vault_authority, &collateral_mint)?;
+            kamino_collateral_value(&venue.try_borrow_data()?, &sp.mint, &collateral_mint, c)?
+        }
+        b"jupiter" => {
+            require!(
+                venue.key() == sp.ext_market && venue.owner == &jupiter_lending_program::ID,
+                NaveError::PositionMarkSourceMismatch
+            );
+            let lending = venue.try_borrow_data()?;
+            let (_, f_token_mint) = jupiter_ftoken_value(&lending, &sp.mint, 0)?;
+            let ata = anchor_spl::associated_token::get_associated_token_address(&vault_authority, &f_token_mint);
+            let f = receipt_token(receipt, Some(&ata), &vault_authority, &f_token_mint)?;
+            jupiter_ftoken_value(&lending, &sp.mint, f)?.0
+        }
+        b"jito" => {
+            require!(
+                venue.key() == sp.ext_market && venue.owner == &spl_stake_pool_program::ID,
+                NaveError::PositionMarkSourceMismatch
+            );
+            let data = receipt.try_borrow_data()?;
+            let pool_mint = TokenAccount::try_deserialize(&mut &data[..])
+                .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
+                .mint;
+            drop(data);
+            let t = receipt_token(receipt, Some(&sp.position_token_account), &vault_authority, &pool_mint)?;
+            stake_pool_token_value(&venue.try_borrow_data()?, &pool_mint, t)?
+        }
+        _ => return err!(NaveError::PositionMarkSourceMismatch),
+        }
+    };
+    escrowed
+        .checked_add(in_venue)
+        .ok_or_else(|| error!(NaveError::MathOverflow))
 }
 
 #[derive(Accounts)]
@@ -528,4 +586,27 @@ pub struct UpdateStrategyPositionValue<'info> {
         constraint = strategy_position.mint == mint.key() @ NaveError::MintMismatch
     )]
     pub strategy_position: Account<'info, StrategyPosition>,
+
+    #[account(
+        seeds = [VAULT_AUTHORITY_SEED, dao_registry.key().as_ref()],
+        bump = vault_authority.bump,
+        constraint = vault_authority.dao == dao_registry.key() @ NaveError::Unauthorized
+    )]
+    pub vault_authority: Account<'info, VaultAuthority>,
+
+    /// Escrowed principal not yet supplied to the venue.
+    #[account(
+        seeds = [STRATEGY_ESCROW_SEED, dao_registry.key().as_ref(), protocol_id.as_bytes(), mint.key().as_ref()],
+        bump,
+        constraint = strategy_escrow.owner == vault_authority.key() @ NaveError::Unauthorized
+    )]
+    pub strategy_escrow: Account<'info, TokenAccount>,
+
+    /// CHECK: venue state (klend reserve / Jupiter lending / SPL stake pool);
+    /// key, owner and embedded mints are verified in the handler.
+    pub venue_state: UncheckedAccount<'info>,
+
+    /// CHECK: vault-owned receipt token account; key, owner and mint verified
+    /// in the handler.
+    pub receipt_token_account: UncheckedAccount<'info>,
 }
