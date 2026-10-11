@@ -1,8 +1,25 @@
-# Helius Webhook Setup
+# Solana event delivery
 
 The `helius-webhook` function decodes Anchor program events from raw transaction
-logs and forwards them to `index-events`. It only works with **raw** webhooks
-(enhanced webhooks do not expose `Program data:` log lines for custom programs).
+logs and forwards them to `index-events`. The function name is historical. Live
+delivery is a QuickNode Stream, not a Helius webhook.
+
+## Live path — QuickNode Streams
+
+Stream `nave-solana-devnet` (`d41f57ba-0909-417d-bbd3-81fcb6557b7a`) is active on
+`solana-devnet`, dataset `programs_with_logs`, region `usa_east`. It posts to
+`https://suiivgqwxvqjuxqsrdnu.supabase.co/functions/v1/helius-webhook` with
+`Authorization: Bearer <NAVE_INDEXER_SECRET>`, compression off, and a filter
+that forwards only transactions whose logs mention the six program IDs below.
+The body is an array of `{ signature, slot, blockTime, logs }`.
+
+Do not put the secret in the URL. The QuickNode platform API key stays in the
+QuickNode dashboard; it is not a repo secret.
+
+## Fallback — Helius raw webhook
+
+The Helius plan has ended. Keep this only if a raw webhook is turned back on.
+Enhanced webhooks do not expose `Program data:` log lines for custom programs.
 
 ## Option A — Helius Dashboard (manual)
 

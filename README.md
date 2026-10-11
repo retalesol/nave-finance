@@ -449,12 +449,12 @@ Edge secrets:
 
 `snapshot-treasury` also runs once per 24 hours at 00:00 UTC from `pg_cron` via `pg_net`, with secrets in Supabase Vault. SOL price comes from CoinGecko and falls back to `price_cache`.
 
-Helius webhook (Solana):
+Solana event delivery:
 
-- URL: `https://<project>.supabase.co/functions/v1/helius-webhook`
-- Type: Raw
+- Live path: QuickNode stream `nave-solana-devnet` (`d41f57ba-0909-417d-bbd3-81fcb6557b7a`) on Solana devnet, dataset `programs_with_logs`.
+- URL: `https://<project>.supabase.co/functions/v1/helius-webhook` (function name is historical)
 - Authorization header: `NAVE_INDEXER_SECRET` (`Authorization` or `X-Indexer-Secret`). Do not put the secret in the query string; Supabase logs query params.
-- Accounts: the program ids in the table above, plus bridge and staking ids when those programs are the ones you intend to index.
+- Accounts: the six program ids in `app/supabase/functions/helius-webhook/SETUP.md`.
 
 ```bash
 curl "https://<project>.supabase.co/functions/v1/helius-webhook?selftest=1"
@@ -541,7 +541,7 @@ npm run beta:health-report
 npm run verify:e2e-gate          # needs SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DAO_ADDRESS
 ```
 
-GitHub Actions at `.github/workflows/` run app typecheck and tests (`app/`) and contract unit tests (`contracts/`). Paths are rooted at the monorepo, not at `app/` or `contracts/` alone.
+This repo does not use GitHub Actions. Run app typecheck from `app/` and contract tests from `contracts/` on the machine that is about to deploy.
 
 ### Secrets
 

@@ -1,0 +1,263 @@
+/* ─────────────────────────────────────────────────────────
+   Nave homepage demos — shared base
+   Mirrors app/src/index.css tokens (Phase 1 design system) without
+   Tailwind. Load Google Fonts separately (see scaffold.html).
+───────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 6%;
+  --surface-0: 0 0% 100%;
+  --surface-1: 0 0% 97.5%;
+  --surface-2: 0 0% 94%;
+  --surface-raised: 0 0% 100%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 6%;
+
+  /* Primary / secondary / muted */
+  --primary: 0 0% 6%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 18%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 6%;
+  --accent-foreground: 0 0% 100%;
+
+  /* Status */
+  --success: 152 60% 38%;
+  --warning: 38 92% 50%;
+  --destructive: 0 72% 51%;
+
+  /* Borders */
+  --border: 0 0% 90%;
+  --border-strong: 0 0% 78%;
+  --ring: 0 0% 6%;
+
+  /* Typography */
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radius */
+  --radius: 0.5rem;
+  --radius-sm: 0.25rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.03);
+  --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.04), 0 1px 2px -1px hsl(0 0% 0% / 0.03);
+  --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.05), 0 2px 4px -2px hsl(0 0% 0% / 0.03);
+  --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.06), 0 4px 6px -4px hsl(0 0% 0% / 0.03);
+  --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.07), 0 8px 10px -6px hsl(0 0% 0% / 0.03);
+
+  /* Transitions */
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 350ms;
+
+  /* Layout */
+  --container: 1152px; /* Tailwind max-w-6xl */
+  --nav-height: 56px;
+}
+
+/* ── Base resets ── */
+*, *::before, *::after { box-sizing: border-box; border-color: hsl(var(--border)); }
+* { margin: 0; padding: 0; }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+code, pre, kbd, samp { font-family: var(--font-mono); }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img, svg, canvas { display: block; max-width: 100%; }
+ul, ol { list-style: none; }
+
+/* ── Type utilities ── */
+.text-display { font-family: var(--font-display); }
+.text-mono { font-family: var(--font-mono); }
+.text-serif { font-family: var(--font-display); font-style: italic; }
+.text-muted { color: hsl(var(--muted-foreground)); }
+.italic-muted { font-style: italic; color: hsl(var(--muted-foreground)); }
+
+.nave-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.nave-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.nave-mono { font-family: var(--font-mono); font-size: 13px; }
+.nave-divider { height: 1px; background-color: hsl(var(--border)); }
+
+/* ── Cards ── */
+.nave-card {
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+.nave-card-hover {
+  transition: border-color var(--duration-base) var(--ease-ui),
+              box-shadow var(--duration-base) var(--ease-ui),
+              transform var(--duration-base) var(--ease-ui);
+}
+.nave-card-hover:hover {
+  border-color: hsl(var(--border-strong));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.nave-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.nave-chip {
+  display: inline-block;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  background-color: hsl(var(--surface-1));
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: hsl(var(--foreground));
+}
+
+/* ── Buttons (match Index.tsx hero CTAs) ── */
+.nave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  transition: transform var(--duration-base) var(--ease-ui),
+              box-shadow var(--duration-base) var(--ease-ui),
+              background-color var(--duration-base) var(--ease-ui);
+}
+.nave-btn-primary {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: var(--shadow-md);
+}
+.nave-btn-primary:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.nave-btn-secondary {
+  background-color: hsl(var(--surface-0));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border-strong));
+}
+.nave-btn-secondary:hover { background-color: hsl(var(--surface-1)); }
+
+/* ── Layout helpers ── */
+.nave-container { width: 100%; max-width: var(--container); margin-inline: auto; padding-inline: 24px; }
+@media (min-width: 768px) { .nave-container { padding-inline: 40px; } }
+
+/* Dither layer: the usual "behind the content" placement from Index.tsx */
+.nave-dither-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.38;
+  mix-blend-mode: multiply;
+}
+.nave-dither-layer canvas,
+.nave-dither-canvas { display: block; width: 100%; height: 100%; }
+
+/* ─────────────────────────────────────────────────────────
+   Animations (from index.css)
+───────────────────────────────────────────────────────── */
+@keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+@keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(36px) scale(0.97); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0px); }
+}
+@keyframes hero-line-draw { from { width: 0; opacity: 0; } to { width: 64px; opacity: 1; } }
+@keyframes hero-stat-count { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes reveal-up    { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes reveal-scale { from { opacity: 0; transform: scale(0.95) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes reveal-left  { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes reveal-right { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+
+.animate-fade-in { animation: fade-in var(--duration-slow) var(--ease-ui) both; }
+
+/* Hero orchestration */
+.hero-h1   { animation: hero-rise 900ms var(--ease-out-expo) 250ms both; }
+.hero-sub  { animation: hero-rise 800ms var(--ease-out-expo) 450ms both; }
+.hero-cta  { animation: hero-rise 700ms var(--ease-out-expo) 600ms both; }
+.hero-line { animation: hero-line-draw 600ms var(--ease-out-expo) 750ms both; }
+.hero-stat { animation: hero-stat-count 600ms var(--ease-out-expo) both; }
+.hero-stat:nth-child(1) { animation-delay: 850ms; }
+.hero-stat:nth-child(2) { animation-delay: 950ms; }
+.hero-stat:nth-child(3) { animation-delay: 1050ms; }
+
+/* Scroll reveal — driven by reveal.js (NaveReveal.init) */
+.sr-hidden { opacity: 0; }
+.sr-visible       { animation: reveal-up 700ms var(--ease-out-expo) both; }
+.sr-visible-scale { animation: reveal-scale 700ms var(--ease-out-expo) both; }
+.sr-visible-left  { animation: reveal-left 700ms var(--ease-out-expo) both; }
+.sr-visible-right { animation: reveal-right 700ms var(--ease-out-expo) both; }
+.sr-stagger > * { opacity: 0; }
+.sr-stagger.sr-visible > * { animation: reveal-up 600ms var(--ease-out-expo) both; }
+.sr-stagger.sr-visible > :nth-child(1) { animation-delay: 0ms; }
+.sr-stagger.sr-visible > :nth-child(2) { animation-delay: 80ms; }
+.sr-stagger.sr-visible > :nth-child(3) { animation-delay: 160ms; }
+.sr-stagger.sr-visible > :nth-child(4) { animation-delay: 240ms; }
+.sr-stagger.sr-visible > :nth-child(5) { animation-delay: 320ms; }
+.sr-stagger.sr-visible > :nth-child(6) { animation-delay: 400ms; }
+
+/* Reduced motion: show everything, skip entrance animations */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .sr-hidden, .sr-stagger > * { opacity: 1; }
+  .hero-h1, .hero-sub, .hero-cta, .hero-line, .hero-stat,
+  .sr-visible, .sr-visible-scale, .sr-visible-left, .sr-visible-right,
+  .sr-stagger.sr-visible > * { animation: none; }
+  .hero-line { width: 64px; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(0 0% 85%); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(0 0% 72%); }

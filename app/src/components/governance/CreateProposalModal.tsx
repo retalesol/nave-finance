@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -19,6 +19,14 @@ import { fetchTreasuryVault } from '@/lib/onChainFetcher';
 import { decodeConstitutionPayload } from '@/lib/constitutionPayload';
 import { isMockDaoAddress } from '@/lib/mockData';
 import { isEvmAddress } from '@/lib/chain/types';
+import { EVM_DEPLOYMENT_MODE, SOLANA_NETWORK } from '@/lib/programConfig';
+import {
+  actionDelayContextFrom,
+  defaultReviewPeriodSeconds,
+  proposalPeriodOptions,
+  resolveSubmittedVotingPeriod,
+  usesProductionActionDelay,
+} from '@/lib/actionDelays';
 import { ProposalType as OnChainProposalType } from '@/lib/onChainTypes';
 import {
   TYPE_META,
@@ -90,24 +98,27 @@ export default function CreateProposalModal({
   const { publicKey } = useWallet();
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
+  const delayCtx = actionDelayContextFrom({
+    chainKind,
+    evmChainId,
+    solanaNetwork: SOLANA_NETWORK,
+    evmDeploymentMode: EVM_DEPLOYMENT_MODE,
+  });
+  const shortActionDelay = !usesProductionActionDelay(delayCtx);
   // In review mode (initial provided), everything is pre-derived — no edits.
   const isReview = !!initial;
   const resolvedType: ProposalType = initial?.type ?? 'policy';
   const resolvedTitle = initial?.title ?? '';
   const resolvedDescription = initial?.description ?? '';
 
-  // Voting period options for the review picker (in seconds).
-  const PERIOD_OPTIONS = [
-    { label: '1 hour',   secs: 3600     },
-    { label: '6 hours',  secs: 21600    },
-    { label: '1 day',    secs: 86400    },
-    { label: '3 days',   secs: 259200   },
-    { label: '7 days',   secs: 604800   },
-  ];
-  // Default: 1 day for policy/constitutional proposals; 3 days for strategy/transfer.
-  const defaultPeriodSecs =
-    resolvedType === 'strategy' || resolvedType === 'transfer' ? 259200 : 86400;
+  // Mainnet: 1 hour through 7 days. Testnet/devnet adds 1 minute and defaults to it.
+  const PERIOD_OPTIONS = proposalPeriodOptions(delayCtx);
+  const defaultPeriodSecs = defaultReviewPeriodSeconds(resolvedType, delayCtx);
   const [reviewPeriodSecs, setReviewPeriodSecs] = useState(defaultPeriodSecs);
+  const periodTouched = useRef(false);
+  useEffect(() => {
+    if (!periodTouched.current) setReviewPeriodSecs(defaultPeriodSecs);
+  }, [defaultPeriodSecs]);
 
   // Manual-mode state (only used when initial is not provided).
   const [form, setForm] = useState<NewProposal>({
@@ -223,9 +234,12 @@ export default function CreateProposalModal({
         }
       }
 
-      const votingPeriodSeconds = isReview
-        ? reviewPeriodSecs
-        : Math.max(86400, Math.round(votingDays) * 86400);
+      const votingPeriodSeconds = resolveSubmittedVotingPeriod({
+        ctx: delayCtx,
+        isReview,
+        reviewPeriodSecs,
+        votingDays,
+      });
       const outcome = await tx.sendEvm(
         buildCreateProposalEvm(evmChainId, trio.governor, {
           title,
@@ -306,11 +320,12 @@ export default function CreateProposalModal({
         description,
         payload: payloadBytes,
         proposalType,
-        // Review mode: use seconds directly for sub-day precision.
-        // Manual mode: votingDays was parsed from the day picker (days × 86400).
-        votingPeriodSeconds: isReview
-          ? reviewPeriodSecs
-          : Math.max(86400, Math.round(votingDays) * 86400),
+        votingPeriodSeconds: resolveSubmittedVotingPeriod({
+          ctx: delayCtx,
+          isReview,
+          reviewPeriodSecs,
+          votingDays,
+        }),
       },
       daoTokenMint,
     );
@@ -414,7 +429,10 @@ export default function CreateProposalModal({
                       <button
                         key={opt.secs}
                         type="button"
-                        onClick={() => setReviewPeriodSecs(opt.secs)}
+                        onClick={() => {
+                          periodTouched.current = true;
+                          setReviewPeriodSecs(opt.secs);
+                        }}
                         className="px-3 py-1.5 rounded-lg border transition-all"
                         style={{
                           fontSize: '12px',
@@ -612,6 +630,12 @@ export default function CreateProposalModal({
                   </p>
                 </div>
               </div>
+            )}
+
+            {shortActionDelay && (
+              <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+                Voting stays open for 1 minute on this network.
+              </p>
             )}
 
             {error && (

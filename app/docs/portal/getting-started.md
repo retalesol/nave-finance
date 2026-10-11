@@ -1,41 +1,65 @@
 # Getting Started
 
-This guide walks a first-time user from a wallet to a Base treasury that agents can watch. No prior DeFi or DAO experience is assumed.
+This guide walks a first-time user from a wallet to a testnet treasury that agents can watch. No prior DeFi or DAO experience is assumed.
 
 ## Launch posture
 
-The founder path is **Base, observe-only**. Quick setup is the default. It writes the Conservative constitution: **60% stays in stablecoins, at most 40% can be deployed, 20% per venue, and 25% stays liquid.** Policy runs may record drift. They do not create proposals while `NAVE_AUTOPROPOSE_ENABLED` is false, which is the default.
+Public beta runs on five networks: **Solana devnet**, **Ethereum Sepolia**, **Base Sepolia**, **Robinhood Testnet**, and **Arc Testnet**. The programs and contracts are unaudited. No mainnet funds are involved.
 
-Mainnet create is refused while `bridgeCanRedeemNave()` in `src/lib/programConfig.ts` is false. That function is false for the closed Solana `nave_bridge` program, so the app will not create a Base treasury until a replacement bridge can redeem locked NAVE for wNAVE. Do not send a lock or redeem against that closed program.
+Do not lock or redeem NAVE against the closed Solana bridge program `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`. That program cannot redeem locked NAVE for wNAVE. Mainnet create stays refused while `bridgeCanRedeemNave()` in `src/lib/programConfig.ts` is false for that program.
+
+Quick setup is the default. It writes the Conservative constitution: **60% stays in stablecoins, at most 40% can be deployed, 20% per venue, and 25% stays liquid.** Policy runs may record drift. They do not create proposals while `NAVE_AUTOPROPOSE_ENABLED` is false, which is how this beta runs.
+
+Yield a tester can use:
+
+| Network | What you can do with capital |
+| --- | --- |
+| Solana devnet | Deposit to Jito, and withdraw. |
+| Ethereum Sepolia | Deposit to Compound. Sepolia Aave is over the pool supply cap. |
+| Base Sepolia | Deposit to Aave. |
+| Robinhood Testnet | Create a treasury, deposit, and govern. No lending venue. |
+| Arc Testnet | Create a treasury, deposit, and govern. No lending venue. |
+
+MarginFi, swaps, autonomous proposing, and GenLayer are not part of this beta.
+
+Agents watch. They do not open proposals on their own. A new treasury starts with the agent pipeline off. Funding it, then passing a proposal, is what turns the pipeline on. A second guardian is required to close a proposal. New treasuries use a one-minute review window before execution. Treasuries created before the timelock upgrade still have 24-hour delays.
+
+The four roles, in order, are Executive, Financial, Operational, and Oversight. Operational is the final signer. Its stored key is named oversight. Oversight monitors and does not sign. Its stored key is named operational. Leave those stored names as they are.
 
 Capital moves are refused unless they pass the treasury’s on-chain constitution. `callSigner` in `supabase/functions/agent-orchestrator/index.ts` asks `assessSignerPayload` in `supabase/functions/_shared/constitutionVerdict.ts` before it contacts the signer. Capital checks run `evaluateGuardrails` with `requireCompleteConstitution: true`. A failed or indeterminate critical check is logged and the signer is not called.
 
 ## What you need
 
-- An EVM wallet (MetaMask, Phantom’s EVM mode, or similar) on **Base** for the launch create flow.
-- A Solana wallet only if you are inspecting a Solana devnet treasury. Solana DAO programs in this app are still the devnet deployment, and Solana is not a create network.
-- A few minutes. Reading a treasury requires no deposit and no signature.
+- A wallet for the network you will use. Phantom in devnet mode for Solana. An EVM wallet for Ethereum Sepolia, Base Sepolia, Robinhood Testnet, or Arc Testnet. Arc gas is native USDC (18 decimals). Treasury USDC on Arc is a separate 6-decimal token.
+- Testnet gas from the site banner. **Network** selects the chain and, on EVM, asks the wallet to add or switch to it. Solana Devnet opens Phantom’s devnet instructions. **Faucet** opens a QuickNode faucet for Solana devnet SOL, Ethereum Sepolia ETH, Base Sepolia ETH, or Robinhood Testnet ETH. Arc uses Circle’s faucet.
+- The creation stake, which is recoverable and returned if the treasury winds down:
+  - Solana devnet prices NAVE at a built-in $10. Creation stakes about 9.9 devnet NAVE. That is the devnet amount. It is not a $99 mainnet stake.
+  - Ethereum Sepolia and Base Sepolia stake 0.1 wNAVE.
+  - Robinhood Testnet and Arc Testnet require no NAVE stake. Value sent with creation on those chains is a treasury seed, not a fee.
 
-> Nave is unaudited. Agents watch; they do not move capital until a constitution check passes. Treat mainnet balances accordingly.
+> Nave is unaudited. Agents watch. They do not move capital until a constitution check passes and a second guardian closes the proposal. Keep mainnet balances out of this beta.
 
-## Step 1 — Connect your wallet
+## Step 1 — Connect and pick a network
 
-1. Open the app and select **Connect Wallet**.
-2. Approve the connection in your EVM wallet on Base.
-3. Connecting shares your public address. Nave never asks for your seed phrase, and connecting alone never moves funds.
+1. Open the app. The banner names the five testnets.
+2. Open **Network** and select the chain. Approve the wallet add or switch when it asks.
+3. Select **Connect Wallet** and approve. Connecting shares your public address. Nave never asks for your seed phrase, and connecting alone never moves funds.
+4. Open **Faucet** if the wallet needs gas.
 
 ## Step 2 — Create a treasury
 
 Open **Create DAO**. The flow opens on **Quick setup**.
 
-- The network field is Base only. The copy names the Conservative constitution: 60% stable, 40% deployed, 20% per venue, 25% liquid.
-- Aggressive and Custom are not on the constitution card. Advanced setup offers Conservative and Balanced only. Sliders stay on the amend flow.
-- If the oracle quote, the on-chain stake, and `VITE_NAVE_DAO_CREATION_STAKE_USD` disagree, creation waits. The app does not invent a fallback price.
-- While `bridgeCanRedeemNave()` is false, deploy stops with the closed-bridge message and does not broadcast a create transaction.
+- The network field lists Solana, Ethereum, Base, Robinhood, and Arc.
+- Quick setup uses wallet governance, with your connected wallet as a guardian, and writes the Conservative constitution: 60% stable, 40% deployed, 20% per venue, 25% liquid.
+- Advanced setup offers Conservative, Balanced, and Yield 6%. The venues that can take a deposit in this beta are still only Jito, Sepolia Compound, and Base Sepolia Aave.
+- Mainnet create stops with the closed-bridge message and does not broadcast. Testnet create on the five networks above proceeds.
 
-## Step 3 — Fund, then watch
+## Step 3 — Fund, then govern
 
-After a treasury exists, Home shows one next step: **fund the treasury**. Once it is funded, the same card says agents are watching. They record drift and do not move capital until a check passes.
+After a treasury exists, Home shows one next step: **fund the treasury**. Once it is funded, propose enabling the agents if the pipeline is still off. A second guardian has to vote before that proposal can close. After it passes, agents watch: they record drift, and they do not create proposals while `NAVE_AUTOPROPOSE_ENABLED` is false.
+
+A yield deposit is available only on the venues in the table above. Robinhood and Arc stop at deposit and governance.
 
 ## Step 4 — Read the treasury
 
@@ -52,5 +76,5 @@ The left sidebar’s primary items are:
 ## Where to go next
 
 - Readiness, the closed bridge, and the capital-verdict gate: [Product Maturity](/docs/product-maturity).
-- Operator cutover checks: `docs/MAINNET_PREFLIGHT.md`.
 - Terminology: [FAQ & Glossary](/docs/faq).
+- The stake and the closed bridge: [Tokenomics & Bridge](/docs/tokenomics).

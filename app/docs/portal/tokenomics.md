@@ -1,6 +1,6 @@
 # Tokenomics & Bridge
 
-What `$NAVE` (Nave Shares) does, how it is used in the protocol, and how it moves between chains. This page covers the token model and the cross-chain bridge; treasury-level fees are covered in [Treasury Operations](/docs/treasury-operations).
+What `$NAVE` (Nave Shares) does, how it is used in the protocol, and the state of the cross-chain bridge. Treasury-level fees are covered in [Treasury Operations](/docs/treasury-operations).
 
 ## Nave Shares ($NAVE)
 
@@ -19,23 +19,35 @@ There is no team or insider allocation carved out of supply, and no vesting sche
 
 | Use | Mechanics |
 | --- | --- |
-| **Form a DAO** | A founder stakes the USD-equivalent of **$99 in $NAVE** to create a treasury and activate its on-chain infrastructure. |
+| **Form a DAO** | Where a network requires a stake, the founder locks a recoverable amount to create the treasury. The amount depends on the network. See below. |
 | **Vote** | Where a DAO enables token governance, $NAVE (or that DAO's own governance token) is the voting weight for proposals and treasury decisions. |
-| **Bridge** | $NAVE can move between Solana and supported EVM testnets (see below). |
+| **Bridge** | A designed path for moving $NAVE between Solana and EVM. The Solana program that accepted locks is closed. Do not use it in this beta. |
 
 ### The DAO-formation stake is recoverable, not a fee
 
-Forming a DAO requires staking $99 of $NAVE — this **replaces** an earlier flat SOL creation fee. The key difference: the stake is **recoverable**, not spent. It is locked against the DAO while it is active and is returned to the founder if the DAO winds down (moonlights) and the founder later wants to reopen it, or distributed as part of a moonlight wind-down. See [Treasury Operations](/docs/treasury-operations#winding-a-treasury-down-moonlighting) for the full lifecycle.
+Where a stake is required, it replaces an earlier flat SOL creation fee. The stake is **recoverable**, not spent. It is locked against the DAO while it is active and is returned to the founder if the DAO winds down (moonlights) and the founder later wants to reopen it, or distributed as part of a moonlight wind-down. See [Treasury Operations](/docs/treasury-operations#winding-a-treasury-down-moonlighting) for the full lifecycle.
 
-The USD price of the stake is resolved by a central price oracle (a Supabase edge function) so the NAVE amount required tracks the live NAVE/USD price rather than a stale on-chain constant. Devnet uses a fixed test price; mainnet samples live market pools and fails closed if too few healthy price sources are available.
+Public beta amounts:
+
+| Network | Creation stake |
+| --- | --- |
+| Solana devnet | Built-in price of **$10 per NAVE**, which is about **9.9 devnet NAVE**. This is not a $99 mainnet stake. The app does not use a live market quote for this amount. |
+| Ethereum Sepolia | **0.1 wNAVE** |
+| Base Sepolia | **0.1 wNAVE** |
+| Robinhood Testnet | None |
+| Arc Testnet | None |
+
+Mainnet create stays refused while the closed Solana bridge cannot redeem locked NAVE for wNAVE. A mainnet quote, when that path exists, fails closed if too few healthy price sources are available. Testers do not use that path.
 
 ## The cross-chain bridge
 
-Nave is multi-chain: treasuries can be created on **Solana**, **Ethereum**, or **Base**. `$NAVE` itself lives natively on Solana (an SPL token) and is represented on supported EVM chains by **WrappedNAVE**, an ERC-20 minted and burned exclusively by the bridge relayer.
+Treasuries in this beta can be created on **Solana devnet**, **Ethereum Sepolia**, **Base Sepolia**, **Robinhood Testnet**, and **Arc Testnet**. `$NAVE` itself lives natively on Solana (an SPL token) and is represented on Ethereum and Base by **WrappedNAVE**, an ERC-20.
 
-> **Status: testnet-only trusted-relayer MVP.** The bridge currently runs between Solana **devnet** and Ethereum **Sepolia** / Base **Sepolia**. It has not been extended to mainnet and has not been independently audited — treat it the same as the rest of the devnet beta. See [Product Maturity](/docs/product-maturity) and [Security & Trust](/docs/security-and-trust).
+> **Status: do not use the closed Solana bridge.** Program `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6` cannot redeem locked NAVE for wNAVE. Do not broadcast a lock or a redeem against it. Mainnet create stays refused until a replacement bridge can redeem. The design below is a testnet trusted-relayer model. It is unaudited, and it is not a step in this beta. See [Product Maturity](/docs/product-maturity) and [Security & Trust](/docs/security-and-trust).
 
-### How a transfer works
+### How a transfer is designed
+
+These steps describe the trusted-relayer design. They are not a beta procedure. Do not lock or redeem against `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`.
 
 ```
 Solana → EVM                              EVM → Solana
@@ -53,25 +65,24 @@ The relayer is "public-but-verifying": the browser never holds a privileged secr
 
 ### Fees
 
-A flat **2% bridge fee** is charged on every transfer, taken from the gross amount and routed to the protocol's configured fee wallet on the destination chain. There is no separate network/gas surcharge — the 2% is the only fee, covering the relayer's operating cost on both legs.
+The designed fee is **2.5%** (250 bps) on top of the bridged amount, split into staking, protocol, and burn legs. There is no separate relayer surcharge in that design. Testers should not pay it: the Solana bridge program is closed.
 
 ### Explicit destination, every time
 
-The bridge form always requires you to type (or confirm a pre-filled, fully editable) destination address before signing anything — it never silently infers a recipient from whichever wallet happens to be connected. A confirmation dialog shows the exact destination and fee breakdown before you sign. Only the **source-side** wallet (the one signing the lock or burn) needs to be connected at all.
+The bridge form is built to require an explicit destination address before a signature, with a confirmation of the destination and the fee. It does not infer a recipient from the connected wallet. That form is not a path around the closed program. Do not sign a lock or a redeem to `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`.
 
 ### Pending transfers
 
 Once the source-chain lock or burn confirms, the Bridge page shows a **pending** card immediately and polls for completion every 5 seconds — it does not wait for the relayer's full round trip to resolve before giving you feedback. The pending state is persisted locally, so refreshing the page or reconnecting your wallet resumes monitoring instead of losing track of an in-flight transfer.
 
-## The devnet faucet
+## Testnet gas
 
-To make it possible to actually try the bridge without already holding NAVE (or the SOL to pay fees), the Bridge page includes a small devnet faucet that dispenses two assets:
+Testers get gas from the site banner.
 
-- **NAVE claim:** 0.1 NAVE per claim. The receiving address must already hold at least 0.01 devnet SOL — a lightweight proof that it's a real, already-funded wallet rather than a disposable address spun up purely to drain the faucet.
-- **SOL claim:** 0.05 devnet SOL per claim, for transaction fees. No minimum-balance requirement (the whole point is to fund addresses that have no SOL yet).
-- **Rate limit:** one claim per asset per 24 hours, enforced on **two independent dimensions at once** — the receiving address and the caller's IP address. Both must pass; rotating IPs cannot bypass the per-address cooldown, and claiming to many addresses from one IP cannot bypass the per-IP cooldown. The NAVE and SOL cooldowns are tracked separately, so claiming one doesn't block the other.
+- **Network** selects Solana devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, or Arc Testnet, and asks an EVM wallet to add or switch chains. Solana Devnet opens Phantom’s devnet instructions.
+- **Faucet** opens a QuickNode faucet for Solana devnet SOL, Ethereum Sepolia ETH, Base Sepolia ETH, or Robinhood Testnet ETH. Arc uses Circle’s faucet. Arc gas is native USDC (18 decimals). Treasury USDC on Arc is a separate 6-decimal token.
 
-The faucet is a dedicated, separately-funded wallet — distinct from the bridge's own custody authority and from any deployment/ops wallet — so a faucet running low on funds never affects bridge custody.
+Solana creation still needs about 9.9 devnet NAVE in the wallet, at the built-in $10 price. The banner faucets supply gas. They are not a reason to lock NAVE in the closed bridge.
 
 ## Where to go next
 

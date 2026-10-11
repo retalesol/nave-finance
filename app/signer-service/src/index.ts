@@ -51,12 +51,9 @@ import { readStakingMirrorConfig, runStakingMirror } from './stakingMirror.js';
 import { getStakeClaimPending, getStakeClaimReserve, handleStakeClaim } from './stakeClaims.js';
 import { checkMinSolBalance, readFaucetConfig, sendFaucetClaim, sendSolFaucetClaim } from './faucetRelayer.js';
 import { publicCorsMiddleware } from './cors.js';
+import { solanaVotingPeriodSeconds } from './actionDelays.js';
 
 const PORT = Number(process.env.PORT || 8787);
-
-// Mirror nave_governance::DEFAULT_VOTING_PERIOD (7 days). Used when a
-// create_proposal request does not specify a voting window.
-const DEFAULT_VOTING_PERIOD_SECS = 604_800;
 
 // On-chain ProposalType::Strategy. Autonomous proposals only ever create
 // Strategy proposals — capital MOVEMENTS (deploy OR withdraw) — never Policy
@@ -304,7 +301,7 @@ interface SignRequest {
   title?: string;
   /** Proposal description (create_proposal). */
   description?: string;
-  /** Voting window in seconds (create_proposal). Defaults to DEFAULT_VOTING_PERIOD. */
+  /** Voting window in seconds (create_proposal). Omitted: 7 days on mainnet, 60s on devnet. */
   voting_period_seconds?: number;
   /**
    * Exactly-once key (create_proposal). The source recommendation's
@@ -858,9 +855,7 @@ async function handleCreateProposal(
     const proposalIndex = Number(daoAcc.proposalCount?.toString?.() ?? daoAcc.proposalCount ?? 0);
 
     const proposal = pdas.proposal(dao, proposalIndex);
-    const votingPeriod = Number(body.voting_period_seconds) > 0
-      ? Number(body.voting_period_seconds)
-      : DEFAULT_VOTING_PERIOD_SECS;
+    const votingPeriod = solanaVotingPeriodSeconds(body.voting_period_seconds, isMainnetCluster());
 
     const verb = actionKind === 'withdraw' ? 'Withdraw' : 'Deploy';
     const preposition = actionKind === 'withdraw' ? 'from' : 'to';
@@ -2982,7 +2977,7 @@ async function validateCoreActionState(
   }
   try {
     const [config, registry, agentSet] = await Promise.all([
-      (programs.core.account as any).globalConfig.fetch(pdas.globalConfig()),
+      (programs.core.account as any).naveGlobalConfig.fetch(pdas.globalConfig()),
       fetchDaoRegistryTolerant(programs, dao),
       (programs.core.account as any).agentSet.fetch(pdas.agentSet(dao)),
     ]);

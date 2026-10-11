@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nave — Still Water, Set in Motion (Concept A)</title>
+  <meta name="description" content="Nave turns idle treasury into working capital under rules the chain enforces." />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="_shared/demo-base.css" />
+  <style>
+    /* ───────────────────────────────────────────────────────────
+       Concept A — "Still Water, Set in Motion"
+       Same palette, same type, same ocean as nave.finance today. The
+       dither becomes the structure of the page: it wakes up in the hero,
+       fills the section headlines, edges every card, and runs as a
+       persistent waterline under the viewport with the boat as a
+       scroll-progress indicator from Treasury to Treasure.
+    ─────────────────────────────────────────────────────────── */
+    :root {
+      /* Cream paper instead of pure white; everything else is today's greyscale. */
+      --background: 40 23% 98.6%;
+      --surface-0: 40 23% 98.6%;
+      --surface-1: 40 14% 96%;
+      --surface-2: 40 10% 93%;
+      --card: 0 0% 100%;
+      /* Warm ink, used in the hero only. */
+      --ink-warm: 28 30% 20%;
+      --ink-warm-muted: 28 10% 44%;
+      /* Dither tiles (data URLs injected by JS). */
+      --dither-edge: none;
+      --waterline-h: 36px;
+    }
+    html { scroll-padding-top: 80px; }
+    body { padding-bottom: var(--waterline-h); }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: var(--nav-height);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 40px;
+      background: hsl(var(--background) / 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid hsl(var(--border));
+    }
+    .nav .brand { font-size: 22px; display: inline-flex; align-items: baseline; gap: 10px; }
+    .nav .brand .chart-note { font-size: 9px; display: none; }
+    .nav ul { display: flex; gap: 28px; }
+    .nav li a { font-size: 13.5px; color: hsl(var(--muted-foreground)); transition: color var(--duration-base); }
+    .nav li a:hover { color: hsl(var(--foreground)); }
+    .nav .right { display: flex; align-items: center; gap: 10px; }
+    .nav .nav-btn { font-size: 12.5px; padding: 7px 14px; }
+    .nav .burger { display: none; width: 34px; height: 34px; border-radius: 8px; color: hsl(var(--muted-foreground)); }
+    .nav .burger svg { width: 18px; height: 18px; margin: auto; }
+
+    /* ── Chart annotations (nautical chart mono) ── */
+    .chart-note {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+      letter-spacing: 0.12em; text-transform: uppercase; color: hsl(var(--muted-foreground));
+      white-space: nowrap;
+    }
+    .chart-note::before {
+      content: ''; flex: none; width: 7px; height: 7px; opacity: 0.9;
+      background:
+        linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat,
+        linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat;
+    }
+    .chart-note.plain::before { display: none; }
+    .chart-note .idx { opacity: 0.6; }
+    .chart-note .sep { opacity: 0.45; }
+    .chart-note .deg { font-variant-numeric: tabular-nums; }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative; min-height: 94vh; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      padding: 176px 24px 120px;
+      color: hsl(var(--ink-warm));
+    }
+    .hero-vignette {
+      position: absolute; inset: 0; z-index: 1; pointer-events: none;
+      background: radial-gradient(ellipse 60% 50% at 50% 45%, hsl(var(--background)) 30%, transparent 85%);
+    }
+    .hero > .z { position: relative; z-index: 10; }
+    .hero h1 { font-size: clamp(34px, 6.5vw, 76px); line-height: 1.05; letter-spacing: -0.02em; max-width: 820px; margin-bottom: 24px; color: hsl(var(--ink-warm)); }
+    .hero h1 .italic-muted { color: hsl(var(--ink-warm-muted)); }
+    .hero p.sub { font-size: 16.5px; line-height: 1.7; color: hsl(var(--ink-warm-muted)); max-width: 540px; }
+    .hero .ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 40px; }
+    .hero .nave-btn-primary { background-color: hsl(var(--ink-warm)); }
+    .hero .nave-btn-secondary { color: hsl(var(--ink-warm)); border-color: hsl(28 14% 76%); }
+    .hero .nave-btn svg { width: 13px; height: 13px; }
+    .hero .line { height: 1px; background: hsl(28 14% 76%); margin: 56px auto 0; }
+    .hero .stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 72px; margin-top: 40px; }
+    .hero .stat { min-width: 110px; text-align: center; }
+    .hero .stat .v { font-size: 28px; color: hsl(var(--ink-warm)); font-variant-numeric: tabular-nums; }
+    .hero .stat .l { margin-top: 6px; justify-content: center; color: hsl(var(--ink-warm-muted)); }
+    .hero .stat .l::before { display: none; }
+    .hero .stat .sounding {
+      display: block; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em; color: hsl(var(--ink-warm-muted)); opacity: 0.75; margin-bottom: 8px;
+    }
+    .hero .stat .sounding::before, .hero .stat .sounding::after { content: '— '; opacity: 0.6; }
+    .hero .stat .sounding::after { content: ' —'; }
+
+    /* Corner annotations (chart margin notes) */
+    .hero-notes { position: absolute; inset: calc(var(--nav-height) + 22px) 40px 26px; z-index: 10; pointer-events: none; }
+    .hero-notes .chart-note { position: absolute; color: hsl(var(--ink-warm-muted)); }
+    .hero-notes .tl { top: 0; left: 0; }
+    .hero-notes .tr { top: 0; right: 0; }
+    .hero-notes .bl { bottom: 0; left: 0; }
+    .hero-notes .br { bottom: 0; right: 0; }
+    .hero-notes .val { color: hsl(var(--ink-warm)); font-variant-numeric: tabular-nums; }
+    .hero-notes .state-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; margin-right: 2px; opacity: .5; }
+    .hero-notes.awake .state-dot { opacity: 1; animation: pulse-dot 1.8s ease-in-out infinite; }
+    .hero-notes .tl, .hero-notes .tr, .hero-notes .bl, .hero-notes .br { animation: fade-in 700ms var(--ease-ui) 1200ms both; }
+
+    /* ── Horizon dividers (dithered waterline between sections) ── */
+    .horizon { position: relative; height: 14px; }
+    .horizon::before { content: ''; position: absolute; inset: 0; background-image: var(--dither-edge); background-repeat: repeat-x; background-size: 16px 16px; opacity: 0.5; image-rendering: pixelated; }
+
+    /* ── Sections ── */
+    .section { padding: 112px 0; }
+    .section-alt { background: hsl(var(--surface-1)); --dh-bg: hsl(var(--surface-1)); }
+    .sec-head { text-align: center; margin-bottom: 64px; }
+    .sec-head .chart-note { margin-bottom: 18px; }
+    .sec-head h2, .h2 { font-size: clamp(28px, 4vw, 44px); letter-spacing: -0.02em; line-height: 1.1; }
+    .sec-head p, .sec-sub { color: hsl(var(--muted-foreground)); max-width: 540px; margin: 16px auto 0; font-size: 15.5px; line-height: 1.7; }
+    .sec-head.left { text-align: left; }
+    .sec-head.left p { margin-left: 0; }
+
+    /* Dither-masked headline: the live wave shader shows through the glyphs.
+       A canvas sits under the text; the text span paints the section colour and
+       blends with `lighten`, so only the black glyph pixels let the canvas through. */
+    .dh { position: relative; display: inline-block; isolation: isolate; vertical-align: top; }
+    .dh canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+    .dh-text { position: relative; z-index: 1; display: inline-block; color: #000; background: var(--dh-bg, hsl(var(--background))); mix-blend-mode: lighten; padding: 0.02em 0.06em; margin: -0.02em -0.06em; }
+    @supports not (mix-blend-mode: lighten) { .dh canvas { display: none; } .dh-text { color: hsl(var(--foreground)); } }
+    .dh.no-gl canvas { display: none; }
+    .dh.no-gl .dh-text { color: hsl(var(--foreground)); mix-blend-mode: normal; }
+
+    /* ── Cards: dithered top edge instead of a flat border ── */
+    .nave-card { position: relative; overflow: hidden; border-top-color: hsl(var(--border-strong)); }
+    .nave-card::before {
+      content: ''; position: absolute; left: 0; right: 0; top: 0; height: 16px; z-index: 1; pointer-events: none;
+      background-image: var(--dither-edge); background-repeat: repeat-x; background-size: 16px 16px; image-rendering: pixelated; opacity: 0.55;
+    }
+    .nave-card > * { position: relative; z-index: 2; }
+    .nave-card > .nave-dither-layer, .nave-card > .wash { position: absolute; z-index: 0; }
+
+    .icon-box { width: 36px; height: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: hsl(var(--surface-1)); border: 1px solid hsl(var(--border)); color: hsl(var(--foreground)); flex: none; }
+    .icon-box svg { width: 15px; height: 15px; }
+    .icon-box.dark { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); width: 40px; height: 40px; }
+    .icon-box.dark svg { width: 16px; height: 16px; }
+    .icon-box.sm { width: 32px; height: 32px; }
+    .icon-box.sm svg { width: 13px; height: 13px; }
+
+    /* Features */
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .feature { padding: 26px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
+    .feature .top { display: flex; align-items: flex-start; justify-content: space-between; }
+    .feature .t { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: hsl(var(--foreground)); }
+    .feature p { font-size: 13.5px; line-height: 1.65; color: hsl(var(--muted-foreground)); }
+
+    /* Agents */
+    .agent { padding: 26px 24px 24px; display: flex; gap: 16px; align-items: flex-start; }
+    .agent .role { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .agent .nave-tag { margin-bottom: 8px; }
+    .agent p { font-size: 13.5px; line-height: 1.65; color: hsl(var(--muted-foreground)); }
+    .agent .bearing { margin-left: auto; align-self: flex-start; }
+    .flow { margin-top: 48px; padding: 26px 24px 24px; }
+    .flow .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-top: 22px; }
+    .flow .step { display: flex; gap: 12px; align-items: flex-start; }
+    .flow .step .n { font-family: var(--font-display); font-size: 22px; color: hsl(var(--border-strong)); line-height: 1; flex: none; }
+    .flow .step .l { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+    .flow .step .d { font-size: 12.5px; color: hsl(var(--muted-foreground)); line-height: 1.5; }
+    .flow .route { position: relative; height: 10px; margin: 6px 0 2px; }
+    .flow .route::before { content: ''; position: absolute; left: 0; right: 0; top: 4px; border-top: 1px dashed hsl(var(--border-strong)); }
+    .flow .route i { position: absolute; top: 1px; width: 7px; height: 7px; border-radius: 50%; background: hsl(var(--card)); border: 1px solid hsl(var(--foreground)); }
+    .flow .route i:nth-child(1) { left: 0; } .flow .route i:nth-child(2) { left: calc(25% + 6px); } .flow .route i:nth-child(3) { left: calc(50% + 12px); } .flow .route i:nth-child(4) { left: calc(75% + 18px); }
+
+    /* Treasuries */
+    .treasuries-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 48px; }
+    .treasuries-head h2 { font-size: clamp(24px, 3.5vw, 36px); letter-spacing: -0.02em; line-height: 1.1; }
+    .treasuries-head p { font-size: 14px; color: hsl(var(--muted-foreground)); max-width: 340px; line-height: 1.6; }
+    .chips { display: flex; flex-wrap: wrap; gap: 12px; }
+    .chip-card { flex: 1 1 240px; display: flex; gap: 12px; align-items: flex-start; padding: 16px 16px 14px; border-radius: var(--radius-xl); }
+    .chip-card .t { font-size: 13.5px; font-weight: 500; margin-bottom: 3px; }
+    .chip-card .d { font-size: 12.5px; color: hsl(var(--muted-foreground)); line-height: 1.55; }
+
+    /* Constitution */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+    .split h2 { font-size: clamp(26px, 3.5vw, 40px); letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 20px; }
+    .split .lead { font-size: 15px; line-height: 1.7; color: hsl(var(--muted-foreground)); margin-bottom: 28px; }
+    .bullets { display: flex; flex-direction: column; gap: 12px; }
+    .bullets li { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
+    .bullets li svg { width: 12px; height: 12px; color: hsl(var(--muted-foreground)); flex: none; }
+    .sheet .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 14px; border-bottom: 1px solid hsl(var(--border)); }
+    .sheet .sheet-head .t { font-size: 13px; font-weight: 600; }
+    .sheet .rows { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .sheet .row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+    .sheet .row .k { display: flex; align-items: center; gap: 10px; }
+    .sheet .row .k .depth { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; color: hsl(var(--muted-foreground)); opacity: .8; width: 26px; }
+    .sheet .row .leader { flex: 1; border-bottom: 1px dotted hsl(var(--border-strong)); margin: 0 12px; transform: translateY(-3px); }
+    .sheet .approved { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* Tokenomics */
+    .supply { min-height: 320px; }
+    .supply .wash { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse 70% 60% at 50% 45%, hsl(var(--card)) 20%, transparent 90%); }
+    .supply .body { position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 56px 24px 44px; }
+    .supply .big { font-size: clamp(44px, 8vw, 72px); letter-spacing: -0.02em; line-height: 1; }
+    .supply .stats { display: flex; gap: 28px; margin-top: 26px; }
+    .supply .stats .v { font-family: var(--font-mono); font-size: 15px; }
+    .supply .stats .chart-note { font-size: 9px; margin-bottom: 4px; }
+    .supply .contract { white-space: nowrap; }
+    .supply .contract svg { width: 11px; height: 11px; flex: none; }
+    .supply .links { display: flex; gap: 14px; margin-top: 14px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+    .supply .links a:hover { color: hsl(var(--foreground)); }
+    .utilities { margin-top: 48px; }
+
+    /* Pricing */
+    .pricing .grid3 { max-width: 980px; margin: 0 auto; }
+    .price { padding: 26px 24px 24px; display: flex; flex-direction: column; }
+    .price .p { font-family: var(--font-display); font-size: 32px; margin-top: 14px; }
+    .price .period { margin: 6px 0 22px; }
+    .price ul { display: flex; flex-direction: column; gap: 8px; }
+    .price li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: hsl(var(--muted-foreground)); line-height: 1.5; }
+    .price li svg { width: 11px; height: 11px; flex: none; margin-top: 4px; }
+
+    /* Footer */
+    footer { padding: 56px 0 44px; border-top: 1px solid hsl(var(--border)); }
+    footer .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    footer .brand { font-size: 20px; }
+    footer p { font-size: 13px; color: hsl(var(--muted-foreground)); margin-top: 6px; max-width: 360px; line-height: 1.6; }
+    footer .social { display: flex; gap: 16px; margin-top: 20px; }
+    footer .social a { color: #000; display: inline-flex; transition: opacity var(--duration-base); }
+    footer .social a:hover { opacity: .7; }
+    footer .social svg { width: 18px; height: 18px; }
+    footer .end { display: flex; align-items: center; justify-content: space-between; margin-top: 40px; padding-top: 18px; border-top: 1px dashed hsl(var(--border-strong)); }
+    footer .end .chart-note { font-size: 9.5px; }
+
+    /* ── Persistent waterline + scroll boat ── */
+    .waterline {
+      position: fixed; left: 0; right: 0; bottom: 0; height: var(--waterline-h); z-index: 40;
+      background: hsl(var(--background)); border-top: 1px solid hsl(var(--border)); overflow: hidden;
+    }
+    .waterline .sea { position: absolute; inset: 0; opacity: 0.34; mix-blend-mode: multiply; }
+    .waterline .sea canvas { width: 100%; height: 100%; display: block; }
+    .wl-label { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: hsl(var(--muted-foreground)); display: inline-flex; align-items: center; gap: 8px; }
+    .wl-label.l { left: 20px; } .wl-label.r { right: 20px; }
+    .wl-label b { font-weight: 500; color: hsl(var(--foreground)); }
+    .wl-label .log { font-variant-numeric: tabular-nums; opacity: .8; }
+    .wl-track { position: absolute; left: 150px; right: 190px; top: 0; bottom: 0; z-index: 2; }
+    .wl-track .ticks { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: repeating-linear-gradient(90deg, hsl(var(--border-strong)) 0 1px, transparent 1px 12.5%); }
+    .wl-track .ticks::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: hsl(var(--border-strong)); }
+    .wl-track .boat { position: absolute; left: 0; top: 58%; width: 24px; height: 18px; transform: translate(-50%, -82%); color: hsl(var(--foreground)); will-change: left; }
+    .wl-track .boat svg { width: 100%; height: 100%; }
+    .wl-track .wake { position: absolute; top: 58%; height: 1px; left: 0; width: 0; background: linear-gradient(90deg, transparent, hsl(var(--foreground) / .45)); }
+
+    /* ── Responsive ── */
+    @media (max-width: 1023px) {
+      .grid3 { grid-template-columns: repeat(2, 1fr); }
+      .flow .grid4 { grid-template-columns: repeat(2, 1fr); }
+      .flow .route { display: none; }
+      .split { grid-template-columns: 1fr; gap: 40px; }
+    }
+    @media (max-width: 767px) {
+      .nav { padding: 0 20px; }
+      .nav ul, .nav .nav-btn { display: none; }
+      .nav .burger { display: inline-flex; }
+      .hero { padding: 140px 20px 110px; min-height: 86vh; }
+      .hero .stats { gap: 28px; }
+      .hero-notes { inset: calc(var(--nav-height) + 16px) 20px 20px; }
+      .hero-notes .tr, .hero-notes .br { display: none; }
+      .section { padding: 80px 0; }
+      .sec-head { margin-bottom: 40px; }
+      .grid3, .grid2 { grid-template-columns: 1fr; }
+      .flow .grid4 { grid-template-columns: 1fr; }
+      .treasuries-head { flex-direction: column; align-items: flex-start; }
+      .agent .bearing { display: none; }
+      footer .row { flex-direction: column; align-items: flex-start; }
+      .wl-label .log, .wl-label .lbl-x { display: none; }
+      .wl-track { left: 110px; right: 110px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hero-notes .tl, .hero-notes .tr, .hero-notes .bl, .hero-notes .br { animation: none; }
+      .hero-notes.awake .state-dot { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <a class="text-display brand" href="#top">Nave</a>
+    <ul id="nav"></ul>
+    <div class="right">
+      <a class="nave-btn nave-btn-secondary nav-btn" href="#">Connect wallet</a>
+      <button class="burger" aria-label="Toggle menu" id="burger"></button>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ── Hero: frozen water that wakes up ── -->
+    <section class="hero" id="hero">
+      <div class="nave-dither-layer" aria-hidden="true"><canvas id="hero-sea" class="nave-dither-canvas"></canvas></div>
+      <div class="hero-vignette" aria-hidden="true"></div>
+
+      <div class="hero-notes" id="hero-notes" aria-hidden="true">
+        <span class="chart-note tl plain"><span class="state-dot"></span>Sea state <span class="val" id="n-state">0 · stagnant</span></span>
+        <span class="chart-note tr plain">Chart A <span class="sep">·</span> Still water <span class="sep">·</span> <span class="deg">000°</span></span>
+        <span class="chart-note bl plain">px <span class="val" id="n-px">6</span> <span class="sep">·</span> levels <span class="val" id="n-lvl">2</span> <span class="sep">·</span> drift <span class="val" id="n-drift">0.00</span></span>
+        <span class="chart-note br plain">From treasury <span class="sep">→</span> treasure</span>
+      </div>
+
+      <h1 class="z text-display hero-h1">Stagnant water,<br><span class="italic-muted">set in motion.</span></h1>
+      <p class="z sub hero-sub">Nave turns idle treasury into working capital under rules the chain enforces.</p>
+      <div class="z ctas hero-cta">
+        <a class="nave-btn nave-btn-primary" href="#" id="cta-1"></a>
+        <a class="nave-btn nave-btn-secondary" href="#" id="cta-2"></a>
+      </div>
+      <div class="z line hero-line"></div>
+      <div class="z stats" id="hero-stats"></div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Product features ── -->
+    <section class="section" id="product">
+      <div class="nave-container">
+        <div class="sec-head sr-hidden">
+          <span class="chart-note"><span class="idx">01</span> <span id="f-label"></span></span>
+          <h2 class="text-display"><span class="dh"><span class="dh-text" id="f-h2"></span></span></h2>
+          <p id="f-sub"></p>
+        </div>
+        <div class="grid3 sr-hidden sr-stagger" id="features"></div>
+      </div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Protocol architecture ── -->
+    <section class="section section-alt" id="protocol">
+      <div class="nave-container">
+        <div class="sec-head sr-hidden">
+          <span class="chart-note"><span class="idx">02</span> <span id="a-label"></span></span>
+          <h2 class="text-display"><span class="dh"><span class="dh-text" id="a-h2"></span></span><br><span class="italic-muted" id="a-h2i"></span></h2>
+          <p id="a-sub"></p>
+        </div>
+        <div class="grid2 sr-hidden sr-stagger" id="agents"></div>
+        <div class="nave-card flow sr-hidden" data-reveal="scale">
+          <span class="chart-note"><span class="idx">02.1</span> <span id="flow-label"></span></span>
+          <div class="route" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="grid4" id="flow"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Supported treasuries ── -->
+    <section class="section" id="treasuries">
+      <div class="nave-container">
+        <div class="treasuries-head">
+          <div class="sr-hidden" data-reveal="left">
+            <span class="chart-note" style="margin-bottom: 14px;"><span class="idx">03</span> <span id="t-label"></span></span>
+            <h2 class="text-display"><span class="dh"><span class="dh-text" id="t-h2"></span></span><br><span class="italic-muted" id="t-h2i"></span></h2>
+          </div>
+          <p class="sr-hidden" data-reveal="right" id="t-sub"></p>
+        </div>
+        <div class="chips sr-hidden sr-stagger" id="dao-types"></div>
+      </div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Constitution showcase ── -->
+    <section class="section section-alt" id="governance">
+      <div class="nave-container split">
+        <div class="sr-hidden" data-reveal="left">
+          <span class="chart-note" style="margin-bottom: 16px;"><span class="idx">04</span> <span id="c-label"></span></span>
+          <h2 class="text-display"><span class="dh"><span class="dh-text" id="c-h2"></span></span><br><span class="italic-muted" id="c-h2i"></span></h2>
+          <p class="lead" id="c-sub"></p>
+          <ul class="bullets" id="c-bullets"></ul>
+        </div>
+        <div class="sr-hidden" data-reveal="right">
+          <div class="nave-card sheet">
+            <div class="sheet-head">
+              <span class="t" id="c-card-title"></span>
+              <span class="chart-note plain">Sheet 04 <span class="sep">·</span> Soundings in %</span>
+            </div>
+            <div class="rows" id="c-rows"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Tokenomics ── -->
+    <section class="section" id="tokenomics">
+      <div class="nave-container">
+        <div class="split">
+          <div class="sr-hidden" data-reveal="left">
+            <span class="chart-note" style="margin-bottom: 16px;"><span class="idx">05</span> <span id="k-label"></span></span>
+            <h2 class="text-display"><span class="dh"><span class="dh-text" id="k-h2"></span></span><br><span class="italic-muted" id="k-h2i"></span></h2>
+            <p class="lead" id="k-sub"></p>
+            <ul class="bullets" id="k-bullets"></ul>
+          </div>
+          <div class="sr-hidden" data-reveal="right">
+            <div class="nave-card supply">
+              <div class="nave-dither-layer" style="opacity: 0.36;" aria-hidden="true"><canvas id="card-sea" class="nave-dither-canvas"></canvas></div>
+              <div class="wash" aria-hidden="true"></div>
+              <div class="body">
+                <span class="chart-note" style="margin-bottom: 14px;" id="s-label"></span>
+                <div class="text-display big" id="s-supply"></div>
+                <div class="nave-chip" style="margin-top: 12px; font-size: 13px;" id="s-ticker"></div>
+                <div style="font-size: 12.5px; color: hsl(var(--muted-foreground)); margin-top: 12px; max-width: 260px; line-height: 1.6;" id="s-caption"></div>
+                <div class="stats" id="s-stats"></div>
+                <button class="nave-chip contract" type="button" style="margin-top: 20px; border-radius: 999px; font-size: 11.5px; font-weight: 400; color: hsl(var(--muted-foreground)); display: inline-flex; align-items: center; gap: 8px;" id="s-contract"></button>
+                <div class="links"><a id="s-dex" target="_blank" rel="noopener noreferrer">DexScreener</a><a id="s-gecko" target="_blank" rel="noopener noreferrer">GeckoTerminal</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="grid3 utilities sr-hidden sr-stagger" id="utilities"></div>
+      </div>
+    </section>
+
+    <div class="horizon" aria-hidden="true"></div>
+
+    <!-- ── Pricing ── -->
+    <section class="section pricing" id="pricing">
+      <div class="nave-container">
+        <div class="sec-head sr-hidden">
+          <span class="chart-note"><span class="idx">06</span> <span id="p-label"></span></span>
+          <h2 class="text-display"><span class="dh"><span class="dh-text" id="p-h2"></span></span></h2>
+          <p id="p-sub" style="max-width: 440px;"></p>
+        </div>
+        <div class="grid3 sr-hidden sr-stagger" id="pricing-cards"></div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="nave-container">
+        <div class="row">
+          <div>
+            <span class="text-display brand">Nave</span>
+            <p id="footer-text"></p>
+            <div class="social" id="footer-social"></div>
+          </div>
+          <a id="orynth" target="_blank" rel="noopener"><img id="orynth-img" width="260" height="80" alt="" loading="lazy" style="height: auto;" /></a>
+        </div>
+        <div class="end">
+          <span class="chart-note"><span class="idx">07</span> Treasure <span class="sep">·</span> end of line</span>
+          <span class="chart-note plain"><span class="deg">47°36′N 122°20′W</span> <span class="sep">·</span> © Nave</span>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ── Persistent waterline: dithered horizon strip + scroll-progress boat ── -->
+  <div class="waterline" id="waterline" aria-hidden="true">
+    <div class="sea"><canvas id="strip-sea"></canvas></div>
+    <span class="wl-label l"><b>Treasury</b></span>
+    <div class="wl-track" id="wl-track">
+      <div class="ticks"></div>
+      <div class="wake" id="wl-wake"></div>
+      <div class="boat" id="wl-boat">
+        <svg viewBox="0 0 24 18" fill="currentColor" aria-hidden="true">
+          <path d="M11.4 1.2h1.2v11.2h-1.2z"/>
+          <path d="M12.8 2.6 19.6 12.4H12.8Z"/>
+          <path d="M11 4.6 6.6 12.4H11Z" opacity=".55"/>
+          <path d="M2.8 13.2h18.4l-2.6 3.6H5.4Z"/>
+        </svg>
+      </div>
+    </div>
+    <span class="wl-label r"><span class="log" id="wl-log">0.00 nm</span> <span class="lbl-x">·</span> <b>Treasure</b></span>
+  </div>
+
+  <script src="_shared/copy.js"></script>
+  <script src="_shared/reveal.js"></script>
+  <script src="_shared/dither.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var C = NAVE_COPY, $ = function (id) { return document.getElementById(id); };
+      var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+      var reducedMQ = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+      var reduced = !!(reducedMQ && reducedMQ.matches);
+      var lerp = NaveScroll.lerp, remap = NaveScroll.remap, ease = NaveScroll.ease;
+
+      // ── Outline icon set (stands in for the FA Chisel icons on the live site) ──
+      var P = {
+        'book': '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+        'share-nodes': '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',
+        'desktop': '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+        'shield': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+        'database': '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>',
+        'layer-group': '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+        'crown': '<path d="M3 18h18"/><path d="m3 18-1-11 5.5 4L12 4l4.5 7L22 7l-1 11z"/>',
+        'money-bill-wave': '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/><path d="M6 12h.01M18 12h.01"/>',
+        'eye': '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+        'gear': '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+        'code': '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
+        'users': '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+        'gamepad': '<rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01"/>',
+        'landmark': '<path d="M3 22h18M6 18v-7M10 18v-7M14 18v-7M18 18v-7"/><path d="m12 2 8 5H4z"/>',
+        'globe': '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+        'coins': '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18"/><path d="M7 6h1v4"/><path d="m16.7 13.9.7.7-2.8 2.8"/>',
+        'wand-magic-sparkles': '<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M15 9h.01M17.8 6.2 19 5M3 21l9-9M12.2 6.2 11 5"/>',
+        'ship': '<path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.4 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.9 5.3 2.8 7.8"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 10v4M12 2v3"/>',
+        'signal': '<path d="M18 20V10M12 20V4M6 20v-6"/>',
+        'angle-right': '<path d="m9 18 6-6-6-6"/>',
+        'castle': '<path d="M22 20v-9H2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2Z"/><path d="M18 11V4H6v7"/><path d="M15 22v-4a3 3 0 0 0-6 0v4"/><path d="M22 11V9M2 11V9M6 4V2M18 4V2M10 4V2M14 4V2"/>',
+        'arrow-right-to-bracket': '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/>',
+        'copy': '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+        'check': '<path d="m20 6-11 11-5-5"/>',
+        'bars': '<path d="M3 6h18M3 12h18M3 18h18"/>',
+        'xmark': '<path d="M18 6 6 18M6 6l12 12"/>'
+      };
+      var icon = function (name, cls) {
+        return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (P[name] || P.shield) + '</svg>';
+      };
+      var box = function (name, cls) { return '<span class="icon-box ' + (cls || '') + '">' + icon(name) + '</span>'; };
+
+      // ── Dither tiles as CSS backgrounds (card edges + horizon dividers) ──
+      var BAYER = [
+        [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26], [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+        [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25], [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21]
+      ];
+      function ditherTile(px, color, density) {
+        var c = document.createElement('canvas'); c.width = 8 * px; c.height = 8 * px;
+        var ctx = c.getContext('2d'); if (!ctx) return 'none';
+        ctx.fillStyle = color;
+        for (var y = 0; y < 8; y++) for (var x = 0; x < 8; x++) {
+          if ((BAYER[y][x] + 0.5) / 64 < density(y / 7)) ctx.fillRect(x * px, y * px, px, px);
+        }
+        return 'url(' + c.toDataURL() + ')';
+      }
+      // Top row almost solid, fading to nothing over 8 rows: the "waterline" edge.
+      document.documentElement.style.setProperty('--dither-edge', ditherTile(2, 'hsl(0 0% 6%)', function (t) { return Math.pow(1 - t, 1.7) * 0.95; }));
+
+      // ── Fill copy ──
+      $('nav').innerHTML = C.nav.map(function (n) { return '<li><a href="' + n.href + '">' + esc(n.label) + '</a></li>'; }).join('');
+      $('burger').innerHTML = icon('bars');
+      $('cta-1').innerHTML = icon(C.hero.ctaPrimary.icon) + esc(C.hero.ctaPrimary.label);
+      $('cta-2').innerHTML = icon(C.hero.ctaSecondary.icon) + esc(C.hero.ctaSecondary.label);
+      var bearings = ['000°', '090°', '180°'];
+      $('hero-stats').innerHTML = C.hero.stats.map(function (s, i) {
+        return '<div class="stat hero-stat"><span class="sounding">' + bearings[i] + '</span><div class="text-display v">' + esc(s.value) + '</div>' +
+          '<span class="chart-note l"><span class="idx">0' + (i + 1) + '</span> ' + esc(s.label) + '</span></div>';
+      }).join('');
+
+      var F = C.features;
+      $('f-label').textContent = F.sectionLabel; $('f-h2').textContent = F.h2; $('f-sub').textContent = F.sub;
+      $('features').innerHTML = F.items.map(function (f) {
+        return '<div class="nave-card nave-card-hover feature"><div class="top">' + box(f.icon) + '<span class="nave-tag">' + esc(f.tag) + '</span></div>' +
+          '<div><div class="t">' + esc(f.title) + '</div><p>' + esc(f.desc) + '</p></div></div>';
+      }).join('');
+
+      var A = C.agents;
+      $('a-label').textContent = A.sectionLabel; $('a-h2').textContent = A.h2; $('a-h2i').textContent = A.h2Italic; $('a-sub').textContent = A.sub;
+      var agentBearings = ['N 000°', 'E 090°', 'S 180°', 'W 270°'];
+      $('agents').innerHTML = A.items.map(function (a, i) {
+        return '<div class="nave-card nave-card-hover agent">' + box(a.icon, 'dark') + '<div style="flex:1"><div class="role">' + esc(a.role) + '</div>' +
+          '<span class="nave-tag">' + esc(a.tag) + '</span><p>' + esc(a.desc) + '</p></div><span class="chart-note plain bearing"><span class="deg">' + agentBearings[i] + '</span></span></div>';
+      }).join('');
+      $('flow-label').textContent = A.executionFlow.label;
+      $('flow').innerHTML = A.executionFlow.steps.map(function (s) {
+        return '<div class="step"><span class="n">' + esc(s.step) + '</span><div><div class="l">' + esc(s.label) + '</div><div class="d">' + esc(s.desc) + '</div></div></div>';
+      }).join('');
+
+      var T = C.daoTypes;
+      $('t-label').textContent = T.sectionLabel; $('t-h2').textContent = T.h2; $('t-h2i').textContent = T.h2Italic; $('t-sub').textContent = T.sub;
+      $('dao-types').innerHTML = T.items.map(function (d) {
+        return '<div class="nave-card nave-card-hover chip-card">' + box(d.icon, 'sm') + '<div><div class="t">' + esc(d.title) + '</div><div class="d">' + esc(d.desc) + '</div></div></div>';
+      }).join('');
+
+      var G = C.constitution;
+      $('c-label').textContent = G.sectionLabel; $('c-h2').textContent = G.h2; $('c-h2i').textContent = G.h2Italic; $('c-sub').textContent = G.sub;
+      $('c-bullets').innerHTML = G.bullets.map(function (b) { return '<li>' + icon('angle-right') + '<span>' + esc(b) + '</span></li>'; }).join('');
+      $('c-card-title').textContent = G.card.title;
+      $('c-rows').innerHTML = G.card.rows.map(function (r, i) {
+        return '<div class="row"><span class="k"><span class="depth">' + (i + 1) + 'f</span>' + esc(r.label) + '</span><span class="leader"></span><span class="nave-chip">' + esc(r.value) + '</span></div>';
+      }).join('') + '<div class="nave-divider"></div><div><span class="chart-note" style="margin-bottom:10px">' + esc(G.card.approvedLabel) + '</span><div class="approved">' +
+        G.card.approvedProtocols.map(function (p) { return '<span class="nave-chip" style="font-size:11.5px;font-weight:400;padding:4px 10px;border-radius:6px">' + esc(p) + '</span>'; }).join('') + '</div></div>';
+
+      var K = C.tokenomics, S = K.supplyCard;
+      $('k-label').textContent = K.sectionLabel; $('k-h2').textContent = K.h2; $('k-h2i').textContent = K.h2Italic;
+      $('k-sub').innerHTML = '<span style="color:hsl(var(--foreground))">' + esc(K.subParts.lead) + '</span>' + esc(K.subParts.tickerPrefix) +
+        '<span class="text-mono" style="color:hsl(var(--foreground))">' + esc(K.subParts.ticker) + '</span>' + esc(K.subParts.rest);
+      $('k-bullets').innerHTML = K.bullets.map(function (b) { return '<li>' + icon('angle-right') + '<span>' + esc(b) + '</span></li>'; }).join('');
+      $('s-label').textContent = S.label; $('s-supply').textContent = S.supply; $('s-ticker').textContent = S.ticker; $('s-caption').textContent = S.caption;
+      $('s-stats').innerHTML = S.stats.map(function (s) {
+        return '<div><span class="chart-note plain">' + esc(s.label) + '</span><div class="v">' + esc(s.value) + '</div></div>';
+      }).join('');
+      var contractBtn = $('s-contract');
+      contractBtn.innerHTML = '<span>' + esc(S.contractButton) + '</span>' + icon('copy', 'ic');
+      contractBtn.title = S.contractAddress;
+      contractBtn.addEventListener('click', function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(S.contractAddress);
+        contractBtn.innerHTML = '<span>' + esc(S.contractCopied) + '</span>' + icon('check', 'ic');
+        setTimeout(function () { contractBtn.innerHTML = '<span>' + esc(S.contractButton) + '</span>' + icon('copy', 'ic'); }, 1800);
+      });
+      $('s-dex').href = S.links.dexscreener; $('s-gecko').href = S.links.geckoterminal;
+      $('utilities').innerHTML = K.utilities.map(function (u) {
+        return '<div class="nave-card nave-card-hover feature">' + box(u.icon) + '<div><div class="t">' + esc(u.title) + '</div><p>' + esc(u.desc) + '</p></div></div>';
+      }).join('');
+
+      var Pr = C.pricing;
+      $('p-label').textContent = Pr.sectionLabel; $('p-h2').textContent = Pr.h2; $('p-sub').textContent = Pr.sub;
+      $('pricing-cards').innerHTML = Pr.cards.map(function (c, i) {
+        return '<div class="nave-card nave-card-hover price"><span class="chart-note"><span class="idx">0' + (i + 1) + '</span> ' + esc(c.title) + '</span>' +
+          '<span class="p">' + esc(c.price) + '</span><span class="chart-note plain period">' + esc(c.period) + '</span>' +
+          '<ul>' + c.items.map(function (it) { return '<li>' + icon('angle-right') + '<span>' + esc(it) + '</span></li>'; }).join('') + '</ul></div>';
+      }).join('');
+
+      $('footer-text').textContent = C.footer.text;
+      $('footer-social').innerHTML = C.footer.social.map(function (s) {
+        return '<a href="' + s.href + '" target="_blank" rel="noopener noreferrer" aria-label="' + esc(s.label) + '"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + s.svgPath + '"/></svg></a>';
+      }).join('');
+      $('orynth').href = C.footer.orynth.href; $('orynth-img').src = C.footer.orynth.badge; $('orynth-img').alt = C.footer.orynth.alt;
+
+      // ── Scroll reveal ──
+      NaveReveal.init('.sr-hidden');
+
+      // ── Colours ──
+      var INK_WARM = NaveDither.hex('#423224'); // hsl(28 30% 20%)
+      var INK = NaveDither.hex('#0F0F0F');       // hsl(0 0% 6%)
+
+      // ── Hero sea: starts frozen and coarse, wakes up over ~2s ──
+      var SLEEP = { pixelSize: 6, colorNum: 2, timeScale: 0, boatOpacity: 0, boatX: -1.0, boatBob: 0 };
+      var AWAKE = { pixelSize: 2, colorNum: 5, timeScale: 1, boatOpacity: 1, boatX: -0.12 };
+      var hero = NaveDither.mount('#hero-sea', Object.assign({}, C.ditherPresets.hero, SLEEP, { autoWind: false, paletteA: INK_WARM }));
+      var notes = $('hero-notes');
+      var awake = false;
+      function readout(px, lvl, drift) {
+        $('n-px').textContent = px; $('n-lvl').textContent = lvl; $('n-drift').textContent = drift.toFixed(2);
+      }
+      function wakeDone() {
+        awake = true;
+        hero.set(Object.assign({}, AWAKE, { autoWind: true }));
+        readout(2, 5, 1);
+        $('n-state').textContent = '3 · under way';
+        notes.classList.add('awake');
+      }
+      if (reduced || !hero.supported || !window.requestAnimationFrame) {
+        // No tween: show the final state. Park the boat clear of the hero vignette, since
+        // the wind physics that would normally carry it out of the centre is frozen too.
+        AWAKE.boatX = 0.45; AWAKE.sailLean = 0.3;
+        wakeDone();
+      } else {
+        var WAKE_DELAY = 500, WAKE_DUR = 2000, t0 = null;
+        var wake = function (now) {
+          if (t0 === null) t0 = now;
+          var raw = (now - t0 - WAKE_DELAY) / WAKE_DUR;
+          if (raw < 0) { requestAnimationFrame(wake); return; }
+          var t = Math.min(1, raw), e = ease.inOut(t);
+          var px = Math.round(lerp(6, 2, e)), lvl = Math.round(lerp(2, 5, e));
+          hero.set({
+            pixelSize: px, colorNum: lvl, timeScale: e,
+            boatOpacity: remap(t, 0.2, 0.7, 0, 1),
+            boatX: lerp(SLEEP.boatX, AWAKE.boatX, ease.out(t)),
+            boatBob: Math.sin(now * 0.0011) * 0.012 * e,
+            sailLean: 0.35 * e
+          });
+          readout(px, lvl, e);
+          if (t > 0.5 && $('n-state').textContent.indexOf('under') < 0) { $('n-state').textContent = '2 · waking'; }
+          if (t < 1) requestAnimationFrame(wake); else wakeDone();
+        };
+        requestAnimationFrame(wake);
+      }
+
+      // ── Supply card: contained waves, same props as the live site ──
+      var card = NaveDither.mount('#card-sea', C.ditherPresets.tokenomics);
+
+      // ── Dither-masked headlines ──
+      var heads = [];
+      Array.prototype.forEach.call(document.querySelectorAll('.dh'), function (wrap, i) {
+        var text = wrap.querySelector('.dh-text');
+        var canvas = document.createElement('canvas');
+        wrap.insertBefore(canvas, text);
+        // paletteB stays well below the section colour so the brightest speckle inside a
+        // glyph is still a readable grey; outside the glyphs `lighten` resolves to the
+        // span's own (section-coloured) background, so the canvas never shows there.
+        var inst = NaveDither.mount(canvas, {
+          sceneMode: 'waves', pixelSize: 2, colorNum: 4, gain: 0.8, bias: 0.18,
+          waveSpeed: 0.05, waveAmplitude: 0.3, waveFrequency: 3,
+          paletteA: INK, paletteB: [0.64, 0.63, 0.62], trackPointer: false, autoWind: false
+        });
+        if (!inst.supported) { wrap.classList.add('no-gl'); return; }
+        // Offset each headline in noise space so they do not all show the same wave.
+        inst.time = i * 37.1;
+        heads.push(inst);
+      });
+
+      // ── Persistent waterline strip: horizon dither + boat as scroll progress ──
+      var strip = NaveDither.mount('#strip-sea', {
+        sceneMode: 'ocean', pixelSize: 2, colorNum: 5, gain: 0.86, bias: 0.2,
+        waveSpeed: 0.08, waterLine: -0.08, boatOpacity: 0, autoWind: false, trackPointer: false,
+        paletteA: INK, timeScale: reduced ? 0 : 0.8
+      });
+      var boat = $('wl-boat'), wakeEl = $('wl-wake'), log = $('wl-log'), heroEl = $('hero');
+      NaveScroll.onScroll(function () {
+        var p = NaveScroll.pageProgress();
+        boat.style.left = (p * 100) + '%';
+        wakeEl.style.width = (p * 100) + '%';
+        log.textContent = (p * 12).toFixed(2) + ' nm';
+        // Hero: pan the water and let the big boat sail out as you leave the hero.
+        var ph = NaveScroll.progress(heroEl, { start: 0, end: 0 });
+        if (awake) hero.set({ scroll: ph, boatOpacity: 1 - ph, scrollParallax: 0.25 });
+      });
+
+      // ── Mobile menu (minimal) ──
+      var burger = $('burger'), navList = $('nav'), open = false;
+      burger.addEventListener('click', function () {
+        open = !open; burger.innerHTML = icon(open ? 'xmark' : 'bars');
+        navList.style.cssText = open ? 'display:flex;flex-direction:column;gap:4px;position:fixed;top:56px;left:0;right:0;background:hsl(var(--surface-0));border-bottom:1px solid hsl(var(--border));padding:12px 20px 16px;box-shadow:var(--shadow-lg)' : '';
+      });
+
+      window.__nave = { hero: hero, card: card, heads: heads, strip: strip };
+    })();
+  </script>
+</body>
+</html>

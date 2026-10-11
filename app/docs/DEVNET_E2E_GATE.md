@@ -549,3 +549,144 @@ All conservation invariants held for this run:
 - `vault + escrow == current_nav`
 - `position.current_value == deployed_capital`
 - withdraw reversal restored pre-execute balances exactly
+
+## Public-beta live treasury dry run — 2026-10-10
+
+Live app `https://nave.finance` (Vercel `dpl_Bea6LwNPnFyG4YGDy5gt4RPeJvYA`). Testnet signer `https://nave-signer-testnet-production.up.railway.app`. New treasuries only. Review and vote windows were left at the 60 seconds the new treasuries stored. No timelock was shortened, no mainnet transaction was sent, and mainnet `nave-server` was not redeployed.
+
+The browser on this machine had no connected wallet. The create wizard at `/create-dao` was opened, Robinhood Chain (Testnet) was selected, and the name "Robinhood Dry Run" was entered. Review stayed disabled because the page requires a connected wallet, so no create, deposit, vote, or withdraw was clicked on the site. Every signature below was sent by a script using the funded test keys and the app's transaction builders (`app/scripts/public-beta-dry-run.mjs` for the EVM chains, `app/scripts/public-beta-solana-dry-run.mjs` for Solana). Those scripts are local dry-run helpers and are not part of the release.
+
+EVM agent keys were generated in the script and set on the new treasuries. They are not the signer-custodied keys. Solana agent pubkeys were returned by the live `generate-agent-keys` function, and the enable transaction went through `agent-admin` to the testnet signer.
+
+### Solana devnet — Jito deposit and withdraw passed
+
+New DAO id `98`, registry `FcjdEuzHRehpJk3vM9khTU8y3mDQ4KteEvTrfNLkwVW2`. Founder `EJ9qpuQosjwv8N1Rab7SK4zvVpEbvEBbCdum9KseADLn`. Guardians: founder, `FZzStkefXP2Up5B94D8kBiuVJyDDym8yxwa5BqwVWrT4`, `BXQVu1k2dQaHXs6aY1QUpE8Ep5rnXTCzdkRJAuL4B4RD`. Threshold 2, quorum 3500 bps. Stake `9_900_000` base units of NAVE at the built-in price `10_000_000` micro-USD ($10), not CoinGecko. Deposit `0.2` wSOL. Constitution approves Jito only. `init_strategy_escrow` was called before any execute attempt. After the path, the account read showed `agentsEnabled = true` and `reviewWindowSecs = 60`. NAV after revalue was `21_918_097` micro-USD, so the founder set the agent threshold to `$1` (`1_000_000` micro-USD) so the later pipeline could see the deposit. The review window was not changed.
+
+Signer-custodied agent pubkeys: executive `BC3Lf1LaLTEbh6xVVVBD2kHbCWFN9VV4oMXZHxoZwCrJ`, financial `4hDMg8gMRZWL1nRg7o7fc57dVMHLZPmsGyCQE5g2xqpf`, oversight `EgNMhkH8s5wtVHKcFN6hQmToQd11ZtNbCKKQRpPwfggR`, operational `D6eoaCofi5r1kbEgwsgYGo1n9yaVXjPToVtRPVwSWsu3`.
+
+| Step | Signature |
+|------|-----------|
+| initialize DAO | `2LQJHtAGwL61QTKmQUcHPaK8APSZd1hzfuqbmBAiT2yKFDraG1nfVD94BPgMHuXj8GjBqVdwJofoAUFwjx5W13tT` |
+| initialize extensions | `2oyVgKoGT4tSHU8oqFBKw1deTbX4tuVD9FHfnKfubNPqWDeuoEMFaau42S8mgqcpMG2BhJqFLSzunAr46oL6ern1` |
+| initialize governance | `3cEr26snaTLX52J4jHPZPo4C75Ee5Z2LMnyM7PhoCq8ukHjEdNug6b3jyvZSikGggjW7mQ2H6YABFwb5XmLj14cp` |
+| stake 9.9 NAVE at $10 | `4tqhEw6xLSfPH1NxJ7i9Mw3zTyq17U5UbBJh5uD62qHVVKQgeWhZdf5Bsbw7hKd6HxHpVWpbsJFv3fjbwiqLi6GH` |
+| enable agents (signer) | `3QHd1uHv5YjFzezFQq7RQeQ8jZXkAxucgb9mUNoyoWH2rqx9U2CzA2vheTV5TeAH5KMTkPNC5TtiBbqsqWV29uak` |
+| register wSOL | `2ty7dreN7JEEvFm339xnzuRsd97uCMMLkg4nd3PmvfWQj7fFQubEbE55YaPsyBsPnFYHZHtXyACE4XR3i6T6vqy8` |
+| deposit 0.2 wSOL | `fCEz1NVjW7YfS1Ydi35WdVtr17JRDsKBMQtAXAUxLWWWgnW9nKpD3owbsSdpnagXCHU3i252SudMahLsNEo5fu9` |
+| revalue | `48g6rc1xJRWaGdsqurceBvas4GNRbpW9zzN4hnD4gUxrYrQ1yh7qVb5V6RCdKX6aqtJLG9iam4cscZWTKLsgB1EM` |
+| Jito constitution | `3mTWkPYeT5oxQqn7Bn6c2QCuLrtwzsU93CqgewEKCUvcjrTYgwRJDzrfVHWUCrAizDzszTT5vqC1rSrzo2KbyQVE` |
+| init strategy position | `2C2a2EBTW9zWhWGtvwRXHGHu7TFPos3candYmQdkoo17JM76EiB41GBWqieBJdm9fQ8mYYSy98XRUWgLCej3u18t` |
+| init strategy escrow | `5MFstr8oMb2XDYmj49JNHYNPgMwtKABKVKuCA1L3ZExsNqwRTtohTaP83RpbGttmjizZvmnuXKgDSPziE3mVWZDF` |
+| configure Jito targets | `2uTs3LiMRyU7R881Lkfq5jJbV44xRjkD5ZL5kNSvWffwJv2r5BdbZQhMkWbysKqKNrosdV5tDXeWSKEVEq4Nohee` |
+| create 60s strategy proposal | `2NuZmE32MB3BmcQE21JQ9pcUABjkhZ4V9dSFYCh2Z2puSAkymGqL5WmjyQ7wcMuBsKiUAhmPz1V6ZUgvhPEdc5mj` |
+| first guardian vote | `2vv38h8BgK3YsBayWLCbckLPaNp7bdwXmZ1YKo5SnfxtQyB86GtVCtc8QLcJzKyArA7DcVnyMgc6f6UZuvAZJcaS` |
+| one-guardian finalize reverted | `Gj37pX1kcRSQrnxUn33kShPM1HCP7WaFdDdGSntNyeHSFgXwUn57Rkh4jWdMk7KDTQFQNCgT5N8oqvXCAiTzsEm` |
+| second guardian vote | `L1BuFm1MvnzpSyXvnK9VXxTS7PH6haQupFzG3UHUt84q8LwbBBzMMRZSMgrBP4DKVV1RBno47pPiwR7s4ZHwKFh` |
+| finalize (status Passed) | `5F42G45DKMp4ZDCg6kzaf9fj3fWFsNgnu9ZgBTpoRB3SfjckGCiYgo9pmkSqSpAUM6qwy7Xm6Mfy4MiYiaBsxrsY` |
+
+The one-guardian finalize landed as `InstructionError` custom `6011`, which is `VotingPeriodNotEnded`. Two votes then closed the proposal. Proposal account `B1BchX9SBDocvWeXinNDhmijt12JmynY4XUXUotttDsJ` is 1272 bytes and the governance client reads it as Passed.
+
+`create_execution_request` first failed with Anchor `AccountDidNotDeserialize` (`3003`) on that proposal. The dry-run script and IDL were already using the deployed instruction and the real proposal account: the newer payload logs `Instruction: CreateExecutionRequest` and then `3003`, and a mismatched payload logs `InstructionDidNotDeserialize` (`102`). The discriminator and owner matched. Governance deployed at slot `479137553` (2026-07-26, programdata `Gh3LfSQ5gdDHsQLTaf9PtjH2Eib547yKFypf78c18TnH`) still writes 1272-byte proposals, the size before `token_mint` was appended. Execution deployed at slot `509733429` was built against the current 1304-byte `Proposal`, so `Account<Proposal>` rejected every proposal that governance program creates. Upgrading governance would not resize this account. `nave_execution` `2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb` was upgraded on devnet to pad a missing trailing `token_mint` with zeros and still accept a 1304-byte proposal. The build did not enable the `mainnet` feature, so the devnet review window stays 60 seconds. Upgrade signature `4EKy84geJ2cAU88uU9yfiAy9BcBQHTXeBY7k11bgssyiGYC3xb6qEL3quuY2uw1zd8cVmBmiZzHnAn39DqQbUD3i`, slot `509828488`, binary sha256 `8497975a6106e7b8c30e3f55fa42fb6271c5285a39e2cfd33314c0a30fa436c9`. Governance and mainnet programs were left in place. Mainnet `nave-server` was not redeployed.
+
+After that upgrade, `create_execution_request` landed for execution request `DXPZjWku9HU4kJjqDDxAfCEgbxfPiCZxGJyhvCQmspSD`. The agent orchestrator returned `Agent inference failed — Claude output invalid` because the dispatcher Anthropic key is rejected (`401`). The three execution approvals were sent through the testnet signer instead, the stored 60-second review window elapsed, and `execute_strategy` moved `50_000_000` lamports (0.05 wSOL) into the Jito escrow. `jito_deposit` then failed in the testnet signer before broadcast: pre-sign validation called `globalConfig.fetch`, and the nave_core IDL account is `naveGlobalConfig`. That lookup was corrected and only `nave-signer-testnet` was redeployed. The operational agent then deposited the escrow into Jito (receipt `47_858_288` bSOL base units, escrow `0`) and withdrew the position (receipt `0`, escrow `49_850_001`). The executive `withdraw_from_strategy` returned that escrow balance to the vault. Escrow and bSOL receipt are both `0`. The stake pool kept `149_999` lamports of the `50_000_000` deployed. `NAVE_AUTO_WITHDRAW_ENABLED` was not changed.
+
+| Step | Signature |
+|------|-----------|
+| upgrade nave_execution | `4EKy84geJ2cAU88uU9yfiAy9BcBQHTXeBY7k11bgssyiGYC3xb6qEL3quuY2uw1zd8cVmBmiZzHnAn39DqQbUD3i` |
+| create execution request | `33Y7ySocw6XtDmmUB8Vgwaf1F3bWrSrrpyH1ch9XNM6xQaXCLm2Q6B6PHPEvZFevPEgdZ2YDhVwK66aY8MihCVju` |
+| executive approve | `5xW8P9jgWVxCP9Da7SGUHFg37h3nPG1YSJdEXZPUc48W1zeXsb3EYhXMK5X86qE6EdsrFyBbS75QY1RbRrjXkXMs` |
+| financial approve | `nqWDUZxAZNRfxH1VdMiQzhzE3MaU12pi8XwASBVeipGL1u45VdEAcr2jhemyUwLCLTVzq6e93nUTykGSChgLKDg` |
+| oversight approve | `3QDLa4E5XL8qkWhGE2vTN7eeiAYHCB7PicTf1wgRGiSWiwhgkcpM4ZKpMCMxwxkUdX3H8ePSJ568STE8J3BCV74m` |
+| revalue before execute | `3rA4TuLFmrbCh3MEhjhden1XCkgJwvC2EYEFJyDczQDGdtgHoJtGJVmC24DJQm7XhMrdjaJTLgnu5o2EBiHaYc5G` |
+| execute strategy | `4vwUTy17xCRNKxswBiadXmxayMAzx6M4u38WP9pzQ5VGKViz94oN6aoT7wJMQei5ntF7VGB2i2kT7V7ShFzHsN1k` |
+| Jito deposit | `46A2gcfhmuo5CdxXniVerfs8iWgPB8zHcZLDtXywWGwB2PvrYHxFtqdjJei6BGJRckaxtC4FgcLdmUNVErGaU4F9` |
+| Jito withdraw | `3WrMQZG7raA9L9tjy3FCve15j5vwaBzNPjyik1DNVYBF3BtXfRDVVEDM5PAm2Z8J9v5DqaS3TEarJLFv6jSWF31Y` |
+| withdraw to vault | `3sMnUUYiagQUZ9tnRr7GsFZNhLF1tFa425hC9srqGKNVBwTBmacJRPC3YAMgeQU2ozpjHrPyS8SPq5cqFKj8pDDP` |
+
+### Ethereum Sepolia — Compound pass
+
+New DAO id `6`. Treasury `0xF3d61E130A4A5CdBF5a9b9B85959CC155cE8bb0a`, governor `0xb126a7bB5A01B5A8144EFf2F9a49C59F2814dCa2`, execution `0x3948aC197a38CcAeCfbb17702DEEc301117bf41b`. Stored review window 60 seconds. Agents were enabled by the executive key before approvals. Venue is Compound `0xa675dC4A02304ce069D98760DcF64B0cf3530A80` (`compound-v3`). Sepolia Aave was not used. Deposit 4 USDC, deploy 900_000 base units, withdraw returned the claim to 0. About 1002 base units remain as the adapter's dead-share dust.
+
+| Step | Signature |
+|------|-----------|
+| create DAO | `0xe9e6302fa3ae20cea429e64f2687e3f09de3d28383aad118442c6657c823927a` |
+| stake approve | `0x73fa9cd5553bfef5ae1eb9fdc2da3bb4cc7e1fd5d883f4e85a2acfa9c40632d4` |
+| register USDC | `0x5e04f0b6c4b86c373fa87cf36297aaa3cc3604d8aa122ebe4a6f2718fba1bf06` |
+| enable agents | `0x0e0d23a2203ba0a72d014b81912d47ab0810b3ec3377cf48c87ec8131f533d6e` |
+| deposit | `0x28e6f3bf28fd14f52f33b909c778d9ad9eddf731f97029d05b56d45b914a5e1e` |
+| revalue | `0x38ebc3e1a0204de3381b8f5618e50d81bb40c53a3b119838aa17f76c21dc0e4a` |
+| Compound constitution | `0x4b89ca3a96e7f3baefe046f9a9ffe567139076817419b0b8a988227ad288674e` |
+| create 60s strategy proposal | `0xcded94b91569ec50aa2732f19f7276b429216fd2f45d2e33a8594483641debed` |
+| first guardian vote | `0x333d95bc7b63d7c75cf8227f8d7303634f1de8aa933c330f9dbac00ead199f03` |
+| one-guardian finalize reverted | `0x16c869d904e895da36e09d1cdf4efa6a9472266472dee58fabe1820a9d5d46bf` |
+| second guardian vote | `0xbacdf2d4df7e719feb442bf37b746ff920329c219cadaa7a6574f66fd27bc9ab` |
+| finalize | `0xc3dc762d86365f6c42d9518d0bc723768417c5af470b4d1d7a644fc24ed82a3f` |
+| create strategy request | `0x02552e9af0d415c75f0fad1e03bc238e58af51dca629df14ac7afdf4afc0dd09` |
+| executive approve | `0xae0322b959dd7209f188653651a1bdee2f3ff229fbc3f1991e858b71adc44e11` |
+| financial approve | `0x7a791038969ea586630cb4d45c54b45683a4e57a970f6352dd0e021620d79323` |
+| oversight approve | `0xaebe5d54c6267aee3edfc6fbb2e6181b10123873961562f1dd1099b0d8c15d8e` |
+| execute after 60s | `0xae46cc86d094cd0e1eebb1d6790bf1621176b4f622f539c936ef0d4acf9725d4` |
+| withdraw | `0xddf334624f85631b56d6f30e44f30d48122d535c540c0c093dd770babe578630` |
+
+### Base Sepolia — Aave pass
+
+New DAO id `4`. Treasury `0x1aB2fe3B147eDe7e9C30085A73C901164B8711d2`, governor `0xfA16c17A6C8B1bE426541556dAbAB1783572FcFc`, execution `0xD2BD6B2A07B7BD32Aa59792921847dCd35aD833B`. Stored review window 60 seconds. Venue is Aave `0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093` (`aave-v3`). A public-RPC lag made the first successful proposal look reusable as if it had not executed, so the script ran a second identical cycle on the same treasury. Both requests were withdrawn. The adapter claim is 0. About 1000 base units remain as dead-share dust. Idle after both deposits and both withdraws is `3_998_997` of `4_000_000` deposited.
+
+| Step | Signature |
+|------|-----------|
+| create DAO | `0xc3f356ea7262d3a0a0d5785705b69eaf7e3cb85934f4e4a9381aa501b5c2314b` |
+| enable agents | `0x1181635aca8ae4b9ebde5c74a1541029c421b076baa53b6087af678eedff7814` |
+| register USDC | `0xead9a05a75d57745967c6047b026061dfb777f968d36b4c57b77fce9d25cac3f` |
+| first deposit | `0xd2c492ceeef80c86a2d54e9a3ed79d1f7e1a061055c4b9afd10668ad4a5dedfc` |
+| Aave constitution | `0x9c087995ebbc394ca171ed2eb2677026adc128fe994815c990b7779a59f6e78b` |
+| proposal 0 create | `0x6b72255b8ad16a8afb3c70758066192a7cba39068d6c9e464b3ac28c84fcdf3d` |
+| proposal 0 first vote | `0x180993128d956ae2f2636f1934bed583b5284f1ec82a115414e15cc2977338d6` |
+| proposal 0 one-guardian revert | `0x8680e43f740df30d0f6224791af488f84f1cb20fd583b52aa4cde0f27c9cded3` |
+| proposal 0 second vote | `0xf4e8a5b7750278c33969572055fd5b70ea54fafef84f82149e114d9fffa3f09d` |
+| proposal 0 finalize | `0x7e57fed369352be29c3ffb1862517e24d8c883fc1a69a0e75e56b00a00236d22` |
+| request 0 create | `0xd82d717ae1393b1b6cd8741aa2735a66d84b5cf1f239499d7f7aa8f1849fa962` |
+| request 0 executive / financial / oversight | `0x6411aef5e1e0d2530aa1703a761447f674f57f6ba4bdacc9cb5da0c738feca12` / `0x719f5bb9fd25df570dc0c1671ac0866974ac0ad1b9aa84d008135d762bd9619c` / `0xd67f51f98ee461dd8e781e96b630e3fcd12b77edc1d4cf8a48681357f23bba23` |
+| request 0 execute | `0x76727e181830d116ad15a779760ea20d9ff2e66532cdebdc597a0d8eb89ab52b` |
+| request 0 withdraw 900_000 | `0xd9b8a228a1f67aa08a52a9b470e3341a46dd7e922b0ea1cb60e0cc019a95640e` |
+| extra deposit | `0x656c40e250ef4674feb6a2301e39a5210c149079f963e7d524e7bd2ec24d1c5c` |
+| proposal 1 create / finalize | `0xe1e607512df1b227772a5a93e83f34981c0c6f803825123909f245d6765314cc` / `0xb66da37c372928b70e2a28c6488845eb7692384d414af162bdf4714dc5fa791c` |
+| request 1 execute | `0xa6d74fd7831e15cf9172566924127a7b609e51538758a1a328433cdc55bbe28c` |
+| request 1 withdraw 898_997 | `0xa1e8ce160c37a6a3736eb93ec38b6ca3b26ded244e092bea32a79a1dcdc18377` |
+
+### Robinhood testnet — create, deposit, govern; no yield venue
+
+Chain id `46630`. New DAO id `3`. Treasury `0xb2E5eF4F53043962B2E76beD20B7B5F2CbC6894b`, governor `0x74d8d54E113Ec7b9765bFb7B12Ee4D763e7Daa5B`, execution `0x56024Cd6A8d5243750A58AD98ce519D72120784c`. Stored review window 60 seconds. Agents started disabled and were enabled by the executive. Deposit `0.001` WETH (`0x7943e237c7F95DA44E0301572D358911207852Fa`), treasury balance `1000000000000000` wei. Policy proposal (type 0, empty payload) passed only after the second guardian. `getApprovedAdapters()` returned length 0.
+
+The create wizard offers a venue only when `strategyReadinessData.mjs` marks that protocol `configured` on the chain. Robinhood Aave and Compound are `supported: false` and `configurableWithAdapter: false`. The constitution step then shows "No strategy adapters are configured on this chain." That list was not opened in the browser because the wallet gate blocked the wizard. The on-chain constitution has zero adapters.
+
+| Step | Signature |
+|------|-----------|
+| create DAO | `0x02cfbe4bc18bb7e498214784d5c1fdfcbeeebd7091c964e0bba510ea9b7a8da5` |
+| enable agents | `0xb203c1cb2d83cbc87d9ef4d6e4a9de08d417111eb744dc23cf4336ca8168466a` |
+| register WETH | `0xa7693776eb05b68986f340bec5dca3bdadc578b11ba9054836e092f4da26e75f` |
+| deposit | `0x21fa371f5cf5a2c2e03ca70028fe99aaf0a450743c1edddacad9cf2472800816` |
+| create 60s policy proposal | `0xff89d5b52e788b852ee89458e4fba86b29aa02a0c16527080e2025db389c60b6` |
+| first guardian vote | `0x275d48662202963c01e1dab6923c0762a7133911274cd5950fa914e5bc016b59` |
+| one-guardian finalize reverted | `0x6efa4e4a9d6d23b2a8cec4bfb838c519997b4b45117b0986f873962b052b1f00` |
+| second guardian vote | `0x92db0a2c6a6e3f54f4aa11d27ce8e7bd0f3bb080bed8acddfb70e211832eb19c` |
+| finalize | `0xe4353dc7431c84e8fe6eebdd7846a772954db5672488386dc045aee8530c8c33` |
+
+### Arc testnet — create, deposit, govern; no yield venue
+
+Chain id `5042002`. New DAO id `3`. Treasury `0xC2d62C23D7b0fD44455876D6c7887C9C27747d3B`, governor `0x6FDfeD898be1AF79E2C48751F4CFa0f5247749C3`, execution `0xC8B787aD8536193dF2E24381e395D1702F37b371`. Stored review window 60 seconds. Agents started disabled. The first executive funding of 0.001 native USDC was not enough to enable agents (`0x5b0c6bed2f5672784f017d68eb6206b681451df70affe7aee805e80971340874`); a 0.5 native USDC top-up then succeeded. Deposit `2_000_000` USDC (6 decimals) of `0x3600000000000000000000000000000000000000`. Treasury balance and NAV are both `2_000_000`. `getApprovedAdapters()` returned length 0. Arc Aave and Compound are `supported: false` and `configurableWithAdapter: false` in the same readiness file, so the wizard offers no venue. That list was not opened in the browser.
+
+| Step | Signature |
+|------|-----------|
+| create DAO | `0x8b8a16a243e828bfe4d3e611bfdca7429d541664ac922480e6242d4a5f00508e` |
+| enable agents | `0x707ef36709e5059d0df0d329504247ee3664dafa4a76f45278a9e560ed2ad5a3` |
+| register USDC | `0x30dc9f617f4299b6015f731495c9cb1bdfad1c4f41b791a33e0049ac3b4e65e5` |
+| deposit | `0x86d478428a462819c744ee6dc02e26a9c0f7697018bcfbacb0dc090207cbdd2a` |
+| create 60s policy proposal | `0xd26d566794c4e963fe0c56321abedd1a16ecfb66c50738d63529574d478ee772` |
+| first guardian vote | `0x8a771b537fa9b411bc82e56ede8b19e08667867076505dfa9fc8a93b99f3ef98` |
+| one-guardian finalize reverted | `0x97c2c0b3790d2c966ec9926e80598c428c3374ade8e10114ecf99be84e988be5` |
+| second guardian vote | `0x9156925db5067d683b8bdd0603e521fbd8db3bcc58a5c0144ebdd856c091b6ee` |
+| finalize | `0x5888febd002e99fe69159eae47055ebd14e01dbb8a9a7c4b02371cb21627af9b` |
+
+### Result
+
+Sepolia Compound, Base Sepolia Aave, Robinhood governance, and Arc governance passed on new treasuries. Solana create, stake, deposit, two-guardian close, Jito escrow init, Jito deposit, and full position withdraw passed on DAO 98. `jito_deposit` `46A2gcfhmuo5CdxXniVerfs8iWgPB8zHcZLDtXywWGwB2PvrYHxFtqdjJei6BGJRckaxtC4FgcLdmUNVErGaU4F9` and `jito_withdraw` `3WrMQZG7raA9L9tjy3FCve15j5vwaBzNPjyik1DNVYBF3BtXfRDVVEDM5PAm2Z8J9v5DqaS3TEarJLFv6jSWF31Y` both landed; the vault return is `3sMnUUYiagQUZ9tnRr7GsFZNhLF1tFa425hC9srqGKNVBwTBmacJRPC3YAMgeQU2ozpjHrPyS8SPq5cqFKj8pDDP`. Escrow and bSOL receipt are 0. The stake pool kept `149_999` lamports of the `50_000_000` deployed. This record does not check the production host list in [`BETA_LAUNCH.md`](BETA_LAUNCH.md) and does not fill Engineering or Ops sign-off.

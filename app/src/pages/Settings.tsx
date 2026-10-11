@@ -85,11 +85,20 @@ import { naveBaseUnitsToUi } from '../lib/naveStakeOracle';
 import { useConstitution } from '../hooks/useConstitution';
 import {
   SWITCH_VOTING_QUORUM_PCT,
-  MIN_REVIEW_WINDOW_SECONDS,
-  MIN_REVIEW_WINDOW_SECONDS_EVM,
   MAX_REVIEW_WINDOW_SECONDS,
   SOLANA_NAVE_MINT,
+  SOLANA_NETWORK,
+  EVM_DEPLOYMENT_MODE,
 } from '../lib/programConfig';
+import {
+  MAINNET_DEFAULT_VOTING_PERIOD_SECONDS,
+  MAINNET_MOONLIGHT_VOTING_PERIOD_SECONDS,
+  actionDelayContextFrom,
+  defaultReviewWindowFallback,
+  reviewWindowMinSeconds,
+  reviewWindowPresets,
+  votingPeriodForNetwork,
+} from '../lib/actionDelays';
 import { isMockDaoAddress } from '../lib/mockData';
 import { dispatchViaProxy, collectEvmGuardianFreezeSigs, withdrawStrategyViaProxyEvm, updateDaoPrivacy, type AgentRole } from '../lib/edgeFunctionClient';
 import { encodeEvmSwitchVotingPayload } from '../lib/constitutionPayload';
@@ -2641,18 +2650,11 @@ function VotingSystemSection({
 }
 
 /* ── Review window section ───────────────────────────────── */
-// Bounds mirror the on-chain MIN/MAX_REVIEW_WINDOW_SECONDS (nave_core, 60s floor)
-// and the EVM NaveTreasury.setReviewWindow clamp (3600s floor; reductions are
-// delayed via pendingReviewWindow) — sourced from programConfig so the UI and
-// the contract enforcement stay in lockstep.
+// Bounds mirror the on-chain review-window clamp. Mainnet EVM stays at a 1-hour
+// floor; testnet and devnet accept 60 seconds. Reductions on EVM are still
+// delayed via pendingReviewWindow. Saving here never rewrites a window the
+// founder did not choose.
 const REVIEW_WINDOW_MAX_SECS = MAX_REVIEW_WINDOW_SECONDS;
-const REVIEW_WINDOW_PRESETS: { label: string; secs: number }[] = [
-  { label: '1 hour', secs: 3600 },
-  { label: '6 hours', secs: 6 * 3600 },
-  { label: '24 hours', secs: 86400 },
-  { label: '3 days', secs: 3 * 86400 },
-  { label: '7 days', secs: 7 * 86400 },
-];
 
 function ReviewWindowCustomHours({
   target,
@@ -2713,12 +2715,19 @@ function ReviewWindowSection({ daoAddress }: { daoAddress: string | null }) {
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
   const { constitution, refetch } = useConstitution(daoAddress);
-  const current = constitution?.reviewWindowSecs ?? 86400;
+  const delayCtx = actionDelayContextFrom({
+    chainKind,
+    evmChainId,
+    solanaNetwork: SOLANA_NETWORK,
+    evmDeploymentMode: EVM_DEPLOYMENT_MODE,
+  });
+  const reviewPresets = reviewWindowPresets(delayCtx);
+  const current = constitution?.reviewWindowSecs ?? defaultReviewWindowFallback(delayCtx);
   const [target, setTarget] = useState<number>(current);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [pendingEvm, setPendingEvm] = useState<PendingReviewWindowEvm | null>(null);
-  const REVIEW_WINDOW_MIN_SECS = chainKind === 'evm' ? MIN_REVIEW_WINDOW_SECONDS_EVM : MIN_REVIEW_WINDOW_SECONDS;
+  const REVIEW_WINDOW_MIN_SECS = reviewWindowMinSeconds(chainKind, delayCtx);
 
   useEffect(() => {
     setTarget(current);
@@ -2818,7 +2827,7 @@ function ReviewWindowSection({ daoAddress }: { daoAddress: string | null }) {
         <div>
           <div className="nave-label mb-2">Set window to</div>
           <div className="flex flex-wrap gap-2">
-            {REVIEW_WINDOW_PRESETS.map(p => {
+            {reviewPresets.map(p => {
               const sel = target === p.secs;
               return (
                 <button
@@ -2887,7 +2896,6 @@ function ReviewWindowSection({ daoAddress }: { daoAddress: string | null }) {
 /* ── Moonlight Section ───────────────────────────────────── */
 const MOONLIGHT_REQUEST_TYPE = 9;
 const MOONLIGHT_DISTRIBUTION_TYPE = 10;
-const MOONLIGHT_VOTING_PERIOD_SECS = 3 * 86400;
 const ZERO_PUBKEY = '11111111111111111111111111111111';
 
 function nonZeroMoonlightKey(k: string | null | undefined): string | null {
@@ -3224,7 +3232,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
               description: `Wind down ${dao?.name ?? 'this DAO'}`,
               payload: '0x' as `0x${string}`,
               proposalType: 9,
-              votingPeriodSeconds: 7 * 24 * 60 * 60,
+              votingPeriodSeconds: votingPeriodForNetwork(MAINNET_DEFAULT_VOTING_PERIOD_SECONDS, { kind: 'evm', chainId: evmChainId }),
               votingMint: `0x${'0'.repeat(40)}` as Address,
             });
             const outcome = await tx.sendEvm(built, { successLabel: 'Moonlight request created' });
@@ -3282,7 +3290,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
                   description: `Distribute stake to ${recipient}`,
                   payload,
                   proposalType: 10,
-                  votingPeriodSeconds: 7 * 24 * 60 * 60,
+                  votingPeriodSeconds: votingPeriodForNetwork(MAINNET_DEFAULT_VOTING_PERIOD_SECONDS, { kind: 'evm', chainId: evmChainId }),
                   votingMint: `0x${'0'.repeat(40)}` as Address,
                 });
                 await tx.sendEvm(prop, { successLabel: 'Distribution proposal created' });
@@ -3466,7 +3474,7 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
       const daoTokenMint = await resolveDaoTokenMint(daoPubkey);
       const result = await buildCreateProposal(
         daoPubkey, nextProposalIndex, publicKey,
-        { title: 'Moonlight request', description: `Approve winding down ${dao?.name ?? 'this DAO'} (moonlight). Passing halts agents and unlocks the distribution wizard for the proposal creator.`, payload: [], proposalType: MOONLIGHT_REQUEST_TYPE, votingPeriodSeconds: MOONLIGHT_VOTING_PERIOD_SECS },
+        { title: 'Moonlight request', description: `Approve winding down ${dao?.name ?? 'this DAO'} (moonlight). Passing halts agents and unlocks the distribution wizard for the proposal creator.`, payload: [], proposalType: MOONLIGHT_REQUEST_TYPE, votingPeriodSeconds: votingPeriodForNetwork(MAINNET_MOONLIGHT_VOTING_PERIOD_SECONDS, { kind: 'solana', network: SOLANA_NETWORK }) },
         daoTokenMint,
       );
       const outcome = await tx.send(result, { successLabel: 'Moonlight request proposal created', quietMock: true });
@@ -3507,7 +3515,7 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
       const payload = Array.from(recipientKey.toBytes());
       const propResult = await buildCreateProposal(
         daoPubkey, nextProposalIndex, publicKey,
-        { title: 'Moonlight distribution', description: `Approve distributing all assets and the staked NAVE of ${dao?.name ?? 'this DAO'} to ${recipient.trim()}.`, payload, proposalType: MOONLIGHT_DISTRIBUTION_TYPE, votingPeriodSeconds: MOONLIGHT_VOTING_PERIOD_SECS },
+        { title: 'Moonlight distribution', description: `Approve distributing all assets and the staked NAVE of ${dao?.name ?? 'this DAO'} to ${recipient.trim()}.`, payload, proposalType: MOONLIGHT_DISTRIBUTION_TYPE, votingPeriodSeconds: votingPeriodForNetwork(MAINNET_MOONLIGHT_VOTING_PERIOD_SECONDS, { kind: 'solana', network: SOLANA_NETWORK }) },
         daoTokenMint,
       );
       const propOutcome = await tx.send(propResult, { successLabel: 'Distribution proposal created', quietMock: true });

@@ -18,6 +18,12 @@ import { ProposalType, type GovernanceType } from '../lib/onChainTypes';
 import { encodeEvmNftTransferProposalPayload, encodeEvmTransferProposalPayload } from '../lib/evm/writers';
 import type { TreasuryAssetRow } from '../hooks/useTreasuryAssets';
 import type { TreasuryNft } from '../hooks/useTreasuryNfts';
+import { EVM_DEPLOYMENT_MODE, SOLANA_NETWORK } from '../lib/programConfig';
+import {
+  MAINNET_DEFAULT_VOTING_PERIOD_SECONDS,
+  actionDelayContextFrom,
+  votingPeriodForNetwork,
+} from '../lib/actionDelays';
 
 export {
   DepositFlowModal,
@@ -243,6 +249,15 @@ export function CreateTransactionModal({
 
   async function handleSubmit() {
     setError(null);
+    const votingPeriodSeconds = votingPeriodForNetwork(
+      MAINNET_DEFAULT_VOTING_PERIOD_SECONDS,
+      actionDelayContextFrom({
+        chainKind,
+        evmChainId,
+        solanaNetwork: SOLANA_NETWORK,
+        evmDeploymentMode: EVM_DEPLOYMENT_MODE,
+      }),
+    );
 
     if (mode === 'nft') {
       if (chainKind === 'evm') {
@@ -266,7 +281,7 @@ export function CreateTransactionModal({
               description: `Transfer ERC-721 token ${tokenId.toString()} from ${evmCollection.trim()} to ${recipient.trim()}`,
               payload: payloadHex,
               proposalType: ProposalType.Transfer,
-              votingPeriodSeconds: 7 * 24 * 60 * 60,
+              votingPeriodSeconds,
               votingMint: (governanceType === 'token' && votingMint ? votingMint : EVM_ZERO_ADDRESS) as `0x${string}`,
             }),
             { successLabel: 'NFT transfer proposal created' },
@@ -324,7 +339,7 @@ export function CreateTransactionModal({
             description: `Transfer NFT ${selectedNft.name} (${selectedNft.mint}) to ${recipient.trim()}`,
             payload,
             proposalType: ProposalType.Transfer,
-            votingPeriodSeconds: 7 * 24 * 60 * 60,
+            votingPeriodSeconds,
           },
           daoTokenMint,
         );
@@ -366,7 +381,7 @@ export function CreateTransactionModal({
             description: `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`,
             payload: payloadHex,
             proposalType: ProposalType.Transfer,
-            votingPeriodSeconds: 7 * 24 * 60 * 60,
+            votingPeriodSeconds,
             votingMint: (governanceType === 'token' && votingMint ? votingMint : EVM_ZERO_ADDRESS) as `0x${string}`,
           }),
           { successLabel: 'Transaction proposal created' },
@@ -437,7 +452,7 @@ export function CreateTransactionModal({
           description: `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`,
           payload,
           proposalType: ProposalType.Transfer,
-          votingPeriodSeconds: 7 * 24 * 60 * 60,
+          votingPeriodSeconds,
         },
         daoTokenMint,
       );

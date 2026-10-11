@@ -2,7 +2,10 @@ pub mod authority;
 pub mod constants;
 pub mod errors;
 pub mod events;
+mod proposal_account;
 pub mod state;
+
+use std::ops::Deref;
 
 use anchor_lang::prelude::*;
 use solana_program::hash::hash;
@@ -26,16 +29,14 @@ use nave_core::{
     },
 };
 
-use nave_governance::{
-    constants::{ProposalStatus, ProposalType},
-    state::Proposal,
-};
+use nave_governance::constants::{ProposalStatus, ProposalType};
 
 use crate::constants::{
     ExecutionStatus, EXECUTION_REQUEST_SEED, NAV_MAX_STALENESS_SECS, REVIEW_WINDOW_SECONDS,
 };
 use crate::errors::ExecutionError;
 use crate::events::*;
+use crate::proposal_account::ReadableProposal;
 use crate::state::ExecutionRequest;
 
 declare_id!("2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb");
@@ -1482,7 +1483,7 @@ pub struct CreateExecutionRequest<'info> {
     #[account(
         constraint = proposal.dao == dao_registry.key() @ ExecutionError::ProposalDaoMismatch
     )]
-    pub proposal: Box<Account<'info, Proposal>>,
+    pub proposal: Box<Account<'info, ReadableProposal>>,
 
     #[account(
         seeds = [nave_core::constants::CONSTITUTION_SEED, dao_registry.key().as_ref()],

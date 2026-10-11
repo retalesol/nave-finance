@@ -23,13 +23,18 @@ export function formatVoteSubmissionError(rawErr: string): string {
   return rawErr;
 }
 
+/** Remaining vote time. Sub-day windows stay in hours or minutes so a 60s testnet vote is not shown as 1 day. */
+export function formatVotingTimeLeft(secsLeft: number): string {
+  if (!(secsLeft > 0)) return 'Ended';
+  if (secsLeft >= 86_400) return `${Math.ceil(secsLeft / 86_400)}d`;
+  if (secsLeft >= 3_600) return `${Math.ceil(secsLeft / 3_600)}h`;
+  if (secsLeft >= 60) return `${Math.ceil(secsLeft / 60)}m`;
+  return `${Math.ceil(secsLeft)}s`;
+}
+
 export function formatFinalizeWindowError(votingEndTimestamp: number): string {
   const secsLeft = votingEndTimestamp - Math.floor(Date.now() / 1000);
-  const label = secsLeft > 0
-    ? secsLeft > 86400
-      ? `${Math.ceil(secsLeft / 86400)}d`
-      : `${Math.ceil(secsLeft / 3600)}h`
-    : 'shortly';
+  const label = secsLeft > 0 ? formatVotingTimeLeft(secsLeft) : 'shortly';
   return `Not enough yes votes to close early. Another guardian can vote, or wait about ${label} for the voting window to end.`;
 }
 

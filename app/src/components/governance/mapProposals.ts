@@ -5,6 +5,7 @@ import {
   ProposalType as OnChainProposalType,
 } from '@/lib/onChainTypes';
 import type { Proposal, ProposalStatus, ProposalType } from './types';
+import { formatVotingTimeLeft } from './voteActionHelpers';
 
 export function mapLiveProposalsToUi(
   proposals: ProposalInfo[],
@@ -60,7 +61,7 @@ export function mapLiveProposalsToUi(
     author: p.proposer.slice(0, 4) + '\u2026' + p.proposer.slice(-4),
     created: new Date(p.createdAt * 1000).toLocaleDateString(),
     deadline: p.votingEnd > Date.now() / 1000
-      ? `${Math.ceil((p.votingEnd - Date.now() / 1000) / 86400)}d remaining`
+      ? `${formatVotingTimeLeft(p.votingEnd - Date.now() / 1000)} remaining`
       : 'Ended',
     votesFor: Number.isFinite(p.votesFor) ? p.votesFor : 0,
     votesAgainst: Number.isFinite(p.votesAgainst) ? p.votesAgainst : 0,

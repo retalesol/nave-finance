@@ -4,6 +4,7 @@ import type { Chain } from 'viem';
 import { loadEvmAccount, isEvmChainId, signEvmApproval, type EvmSignerRole } from './evmSigner.js';
 import { arcTestnet, robinhood, robinhoodTestnet } from './evmChains.js';
 import { fetchHermesUpdateData } from './evmPythKeeper.js';
+import { evmStrategyVotingPeriodSeconds } from './actionDelays.js';
 
 // Scope: Ethereum + Base + Robinhood (1/8453/4663 + testnets).
 
@@ -957,8 +958,6 @@ export async function relayEvmAgentAction(body: EvmRelayAgentActionRequest): Pro
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 const ZERO_FEED = `0x${'00'.repeat(32)}` as const;
-/** 7 days — inside NaveConstants MIN_VOTING_PERIOD (1h) and MAX (30d). */
-const EVM_STRATEGY_VOTING_PERIOD = 604_800n;
 
 const TREASURY_READ_ABI = [
   { type: 'function', name: 'governor', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
@@ -1103,7 +1102,7 @@ export async function relayEvmCreateProposal(body: EvmCreateProposalRequest): Pr
       description,
       payload,
       proposalType: 1,
-      votingPeriodSeconds: EVM_STRATEGY_VOTING_PERIOD,
+      votingPeriodSeconds: evmStrategyVotingPeriodSeconds(chain_id),
       votingMint: votingMint as `0x${string}`,
     }],
     account,

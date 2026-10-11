@@ -304,12 +304,12 @@ export const EVM_STRATEGIES = [
 /** Testnet-only fallback adapter addresses baked as defaults (env var always takes precedence). */
 export const EVM_TESTNET_ADAPTER_FALLBACKS = {
   11155111: {
-    aave: '0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426',
-    compound: '0x845d8310A861A95Ed1644643D1BAe086944B1AA0',
+    aave: '0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B',
+    compound: '0xa675dC4A02304ce069D98760DcF64B0cf3530A80',
     cctp: '0x222D1fb4a59c2b9759099802808fbb57bA5ff9db',
   },
   84532: {
-    aave: '0x33D19799EBac88FFDc4e5BF61c199c71963470A6',
+    aave: '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
   },
   5042002: {
     cctp: '0x1b591C6a976e75F65F54cE863C8d96b3289BBF80',

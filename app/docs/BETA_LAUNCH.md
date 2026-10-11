@@ -29,23 +29,10 @@ SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
 NAVE_SIGNER_URL=… npm run beta:go-no-go
 ```
 
-CI does not run `beta:go-no-go` today (there is no `preflight.yml`; an earlier
-version of this doc referenced one that was never added — corrected here
-rather than left dangling). What actually runs automatically:
-- `.github/workflows/app-ci.yml` — `npm run typecheck` (blocking) + `npm run
-  lint` (visible, not yet blocking — see the workflow's comment) on every
-  push/PR, plus `npm run eval:ci` and a Playwright smoke test.
-- `.github/workflows/beta-health-report.yml` — runs `npm run beta:health-report`
-  (a related but distinct script from `beta:go-no-go`) hourly via cron against
-  the live `SUPABASE_URL`/`NAVE_SIGNER_URL` secrets, posting results to the
-  job summary and failing the run if an endpoint is unhealthy.
-
-`beta:go-no-go` itself remains a manual, run-before-launch check (per the
-command above) — it is not wired into any workflow. If you want it gated in
-CI, add a job that supplies `SUPABASE_SERVICE_ROLE_KEY` (already available as
-a repo secret per `beta-health-report.yml`'s usage of sibling secrets) and
-runs it on a schedule or `workflow_dispatch`, not on every PR (it's a launch
-readiness probe, not a per-change gate).
+These checks are manual. This repo does not use GitHub Actions. Run
+`npm run typecheck` in `app/` before a deploy, and run `npm run beta:go-no-go`
+against the live hosts before inviting testers. `npm run beta:health-report`
+is the same kind of probe and is also run by hand.
 
 ## Repository & build defaults (verified in source)
 
@@ -71,7 +58,7 @@ frontend CDN/host. Do not check these off until values are confirmed live.
 - [ ] Three **distinct** `NAVE_*_SECRET` values set in Supabase + signer (see [`docs/SECRETS.md`](SECRETS.md))
 - [ ] `NAVE_ALLOWED_ORIGINS` set for the deployed app origin
 - [ ] `NAVE_SIGNER_URL` explicitly set (no implicit default host)
-- [ ] Helius webhook: **raw** devnet, header auth only (see [`supabase/functions/helius-webhook/SETUP.md`](../supabase/functions/helius-webhook/SETUP.md))
+- [x] Solana event delivery: QuickNode stream `nave-solana-devnet` (`d41f57ba-0909-417d-bbd3-81fcb6557b7a`) posts Solana devnet program logs to `helius-webhook` with header auth only. The Helius plan has ended and that webhook stays off.
 - [ ] Worker running (`signer-service` `npm run worker`) or founder-gated orchestrator proxy
 - [ ] `init_strategy_escrow` called per approved protocol before first execute
 - [ ] `npm run beta:go-no-go` passes against **this** deployment (no blockers)
@@ -79,9 +66,25 @@ frontend CDN/host. Do not check these off until values are confirmed live.
 
 ## Product copy
 
-- Devnet beta only — no mainnet funds
-- On-chain programs unaudited; treat all deployments as pre-mainnet hardening
-- Token-governance DAOs recommended for beta (wallet-mode quorum is under review)
+Tester-facing status. The production deployment checklist above is still open.
+Engineering and Ops sign-off below stays blank until that checklist is confirmed
+on the live hosts.
+
+- Public beta is Solana devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet. Unaudited. No mainnet funds.
+- Do not lock or redeem NAVE against the closed Solana bridge `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`. Mainnet create stays refused while that bridge cannot redeem.
+- Yield testers can use Solana Jito, Sepolia Compound, and Base Sepolia Aave. Sepolia Aave is over the pool supply cap. Robinhood and Arc can create a treasury, deposit, and govern. They have no lending venue.
+- Agents watch. `NAVE_AUTOPROPOSE_ENABLED` stays false. A second guardian is required to close a proposal. New treasuries use a one-minute review window. Treasuries created before the timelock upgrade still have 24-hour delays.
+- Four roles, in order: Executive, Financial, Operational (final signer; stored key oversight), Oversight (monitor, does not sign; stored key operational). Leave the stored key names as they are.
+- Devnet DAO creation uses the built-in $10 NAVE price (about 9.9 devnet NAVE). Ethereum and Base testnet stake is 0.1 wNAVE. Robinhood and Arc have no NAVE stake.
+- Testnet gas comes from the site banner. **Network** selects the chain. **Faucet** opens QuickNode for Solana, Sepolia, Base Sepolia, and Robinhood. Arc uses Circle’s faucet.
+
+### What testers can do
+
+Create a treasury on any of the five testnets, deposit testnet assets, and govern with a second guardian. Place yield only at Solana Jito, Sepolia Compound, or Base Sepolia Aave. This note does not mark the host checklist complete.
+
+## Public-beta dry run evidence (2026-10-10)
+
+Signatures and what each chain proved are in [`DEVNET_E2E_GATE.md`](DEVNET_E2E_GATE.md), section "Public-beta live treasury dry run — 2026-10-10". Sepolia Compound, Base Sepolia Aave, Robinhood, and Arc completed on new treasuries. Solana completed create, stake, deposit, and a two-guardian close, then stopped: the deployed execution program cannot deserialize the new proposal, so Jito deposit and withdraw did not run. That evidence does not check the production deployment list above and does not mark GO.
 
 ## Sign-off
 

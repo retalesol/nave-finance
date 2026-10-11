@@ -39,15 +39,15 @@ Operators retain break-glass controls including the ability to pause activity, a
 
 ## The bridge is a different trust model
 
-The cross-chain bridge between Solana and the EVM testnets is deliberately called out separately because it does not share the same on-chain-invariant guarantee as the rest of the system. It is a **testnet trusted-relayer MVP**: a single relayer independently re-verifies every lock/burn before minting or releasing funds (so it never simply trusts a caller's claim), but the relayer itself is a trusted, centralized component rather than something enforced purely by program logic. It moves only test-network value today and has not been extended to mainnet. See [Tokenomics & Bridge](/docs/tokenomics) for the mechanics.
+The cross-chain bridge between Solana and EVM is deliberately called out separately because it does not share the same on-chain-invariant guarantee as the rest of the system. The design is a **trusted relayer**: a single relayer re-verifies a lock or burn before minting or releasing funds, and that relayer is a centralized component. The Solana program that accepted locks, `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`, is closed. Do not lock or redeem against it. Mainnet redeem is not live. See [Tokenomics & Bridge](/docs/tokenomics).
 
 ## Honest limitations
 
 Trust requires candor about what is not yet done:
 
-- **No completed third-party audit.** The on-chain programs, the EVM contracts, and the bridge relayer are all unaudited; this is a devnet beta and not for mainnet funds.
-- **Hardening in progress.** Full fail-closed guardrail threading, CI coverage, and the multisig and alerting rollout are tracked toward mainnet.
-- **Bridge is testnet-only and centralized.** Unlike the treasury programs, the bridge relayer is a single trusted operator today, not a decentralized or program-enforced guarantee.
+- **No completed third-party audit.** The on-chain programs, the EVM contracts, and the bridge relayer are unaudited. Public beta is Solana devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet. No mainnet funds.
+- **Hardening in progress.** CI coverage and the multisig and alerting rollout are tracked toward mainnet. Capital moves already fail closed through the constitution verdict before the signer. That gate is not an audit. GenLayer stays off.
+- **Closed Solana bridge.** Do not lock or redeem NAVE against `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`. The relayer design is a single trusted operator, not a program-enforced guarantee, and redeem on that program is not available.
 
 These are stated openly because a security posture that hides its gaps is not a security posture. The full readiness picture is in [Product Maturity](/docs/product-maturity).
 

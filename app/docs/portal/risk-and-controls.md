@@ -33,7 +33,7 @@ Before any signing, a guardrail evaluation runs outside the model over the agent
 
 A transaction is signed only when the evaluation passes **and** the role is a signing role **and** the model intended to sign. Any single failure blocks signing.
 
-An optional GenLayer review sits in the same guardrail. It is off unless `NAVE_GENLAYER_GATE` is the literal `true`. When it is on, a signing role needs a finished pass for that action hash. A finished fail blocks. A finished pass does not approve the transfer. The review is not written back onto the treasury chain. The operator boundary is [`GENLAYER.md`](../GENLAYER.md).
+GenLayer stays off for this beta. The review runs only when `NAVE_GENLAYER_GATE` is the literal `true`, which it is not. A finished pass would not approve a transfer, and the review is not written back onto the treasury chain. The operator boundary is [`GENLAYER.md`](../GENLAYER.md).
 
 ## Layer 2 — Fail-closed posture
 
@@ -41,7 +41,9 @@ Guardrails can be configured to fail closed: if the context needed for a critica
 
 ## Layer 3 — Governance and the review window
 
-Proposals move through the DAO's governance model, including a review window during which they can be examined and, where applicable, halted. Proposing, approving, and executing are separated roles, so no single actor drives an action end-to-end.
+Proposals move through the DAO's governance model. A second guardian is required to close a proposal. New treasuries use a one-minute review window before execution. Treasuries created before the timelock upgrade still have 24-hour delays. During that window a proposal can be examined and, where applicable, halted.
+
+The four roles, in order, are Executive, Financial, Operational, and Oversight. Operational is the final signer. Its stored key is named oversight. Oversight monitors and does not sign. Its stored key is named operational. Leave those stored names as they are. `NAVE_AUTOPROPOSE_ENABLED` stays false, so agents watch and do not create proposals.
 
 ## Layer 4 — On-chain invariants
 
@@ -68,7 +70,7 @@ Every agent decision produces a deterministic reasoning hash that is committed o
 
 ## What is still open
 
-Nave is a devnet beta. The on-chain programs have not completed a formal third-party audit, and some hardening items (full fail-closed context threading end-to-end, multisig upgrade rollout, CI coverage) are tracked toward mainnet. Honest status is part of the control model; see [Product Maturity](/docs/product-maturity) and [Security & Trust](/docs/security-and-trust).
+Public beta is Solana devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet. The programs and contracts have no published third-party audit, and no mainnet funds are involved. Do not lock or redeem NAVE against the closed Solana bridge `Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6`. MarginFi, swaps, and autonomous proposing stay off. Multisig upgrade rollout and CI coverage are tracked toward mainnet. Honest status is part of the control model; see [Product Maturity](/docs/product-maturity) and [Security & Trust](/docs/security-and-trust).
 
 ## Where to go next
 
