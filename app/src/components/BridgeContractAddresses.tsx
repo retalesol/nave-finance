@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Fi from './Fi';
 import ChainIcon from './ChainIcon';
 import { useBridge } from '../hooks/useBridge';
-import { chainFamilyLabel, evmTarget, type EvmChainId } from '../lib/chain/types';
+import { chainFamilyLabel, evmTarget, type ChainFamily, type EvmChainId } from '../lib/chain/types';
 import {
   EVM_WRAPPED_NAVE_ADDRESSES,
   SOLANA_NAVE_MINT,
@@ -100,7 +100,7 @@ function AddressRow({
 }: {
   label: string;
   sublabel: string;
-  iconFamily: 'solana' | 'ethereum' | 'base' | 'robinhood';
+  iconFamily: ChainFamily;
   address: string | null;
   copied: boolean;
   onCopy: () => void;

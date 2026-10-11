@@ -34,6 +34,8 @@ export interface Proposal {
   eligibleTotal: number;
   myVote?: 'for' | 'against' | 'abstain' | null;
   summary?: string;
+  /** On-chain payload hash. Charter status is this action, not the treasury's latest review. */
+  actionHash: string;
 }
 
 /** Transfer payloads use 32 zero bytes for native SOL (vault lamports), not WSOL. */
@@ -58,27 +60,44 @@ export function eligibleVoterTotal(p: Proposal, guardianCount: number): number {
   return p.eligibleTotal > 0 ? p.eligibleTotal : guardianCount;
 }
 
-export function requiredParticipationVotes(p: Proposal, guardianCount: number): number {
+/** Solana floors quorum. EVM rounds up and never treats quorum as already met. */
+export type QuorumRounding = 'floor' | 'ceil';
+
+export function requiredParticipationVotes(
+  p: Proposal,
+  guardianCount: number,
+  rounding: QuorumRounding = 'floor',
+): number {
   const eligible = eligibleVoterTotal(p, guardianCount);
-  if (eligible <= 0 || p.votesQuorumBps <= 0) return 0;
-  return Math.floor((eligible * p.votesQuorumBps) / 10_000);
+  if (eligible <= 0 || p.votesQuorumBps <= 0) return rounding === 'ceil' ? 1 : 0;
+  const scaled = (eligible * p.votesQuorumBps) / 10_000;
+  const req = rounding === 'ceil' ? Math.ceil(scaled) : Math.floor(scaled);
+  return rounding === 'ceil' ? Math.max(1, req) : req;
 }
 
-export function hasParticipationQuorum(p: Proposal, guardianCount: number): boolean {
-  const req = requiredParticipationVotes(p, guardianCount);
+export function hasParticipationQuorum(
+  p: Proposal,
+  guardianCount: number,
+  rounding: QuorumRounding = 'floor',
+): boolean {
+  const req = requiredParticipationVotes(p, guardianCount, rounding);
   const cast = p.votesFor + p.votesAgainst;
   if (!Number.isFinite(cast)) return false;
-  // Integer division can yield 0 required votes (e.g. 1 guardian × low bps); on-chain
-  // then uses total_votes >= 0, i.e. quorum is trivially met.
+  // Solana floor division can yield 0 required votes, and the program then treats
+  // quorum as already met. EVM always requires at least one vote.
   if (req <= 0) return true;
   return cast >= req;
 }
 
-export function isUndefeatable(p: Proposal, guardianCount = 0): boolean {
+export function isUndefeatable(
+  p: Proposal,
+  guardianCount = 0,
+  rounding: QuorumRounding = 'floor',
+): boolean {
   if (p.status !== 'active') return false;
   const eligible = eligibleVoterTotal(p, guardianCount);
   if (eligible <= 0) return false;
-  if (!hasParticipationQuorum(p, guardianCount)) return false;
+  if (!hasParticipationQuorum(p, guardianCount, rounding)) return false;
   const totalVotes = p.votesFor + p.votesAgainst;
   const remaining = eligible - totalVotes;
   const lead = p.votesFor - p.votesAgainst;
@@ -97,6 +116,8 @@ export interface FinalizeOptions {
    * release their escrow). Solana `finalize_proposal` still requires quorum.
    */
   allowMissedQuorum?: boolean;
+  /** EVM rounds the participation requirement up. Solana floors it. */
+  quorumRounding?: QuorumRounding;
 }
 
 /**
@@ -112,9 +133,9 @@ export function canFinalize(p: Proposal, guardianCount?: number, opts?: Finalize
   if (votingWindowClosed(p)) {
     // Solana: on-chain finalize still requires participation quorum (QuorumNotMet otherwise).
     // EVM: finalize always settles (missed quorum ⇒ status Failed).
-    return opts?.allowMissedQuorum ? true : hasParticipationQuorum(p, gc);
+    return opts?.allowMissedQuorum ? true : hasParticipationQuorum(p, gc, opts?.quorumRounding);
   }
-  return isUndefeatable(p, gc);
+  return isUndefeatable(p, gc, opts?.quorumRounding);
 }
 
 export function getPipelineStage(p: Proposal, guardianCount: number, opts?: FinalizeOptions): ProposalPipelineStage {

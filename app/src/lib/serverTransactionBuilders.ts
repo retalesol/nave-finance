@@ -159,7 +159,7 @@ export async function buildUpdateAgentSet(
   return { instruction, programId: NAVE_CORE_PROGRAM_ID };
 }
 
-/** apply_agent_rotation(role) — founder, after the 48h delay. */
+/** apply_agent_rotation(role) — permissionless once the 48h delay has elapsed. */
 export async function buildApplyAgentRotation(
   daoPubkey: PublicKey,
   authority: PublicKey,
@@ -273,24 +273,31 @@ export async function buildNullifyAgent(
   return { instruction, programId: NAVE_CORE_PROGRAM_ID };
 }
 
-/** restore_agent(role) — executive agent. */
+/** restore_agent(role, action_nonce) — guardian M-of-N (action type 7).
+ *  All signers must use the same `actionNonce`. */
 export async function buildRestoreAgent(
   daoPubkey: PublicKey,
-  executiveAgent: PublicKey,
+  guardian: PublicKey,
   role: number,
+  actionNonce: number,
 ): Promise<TransactionBuildResult> {
   if (USE_MOCKS) return mock(NAVE_CORE_PROGRAM_ID);
   const { core } = getNavePrograms();
   const [globalConfig] = getNaveGlobalConfigPDA();
+  const [guardianConfig] = getGuardianConfigPDA(daoPubkey);
   const [agentSet] = getAgentSetPDA(daoPubkey);
+  const [guardianAction] = getGuardianActionPDA(daoPubkey, 7, actionNonce, [Buffer.from([role])]);
 
   const instruction = await core.methods
-    .restoreAgent(role)
+    .restoreAgent(role, toBN(actionNonce))
     .accountsPartial({
-      authority: executiveAgent,
+      guardian,
       globalConfig,
       daoRegistry: daoPubkey,
+      guardianConfig,
+      guardianAction,
       agentSet,
+      systemProgram: SystemProgram.programId,
     })
     .instruction();
 
@@ -479,11 +486,12 @@ export async function buildOperationalHalt(
   return { instruction, programId: NAVE_EXECUTION_PROGRAM_ID };
 }
 
-/** operational_clear — Operational agent. Halted -> InReview. */
+/** operational_clear(reason_hash) — Operational agent. Halted -> InReview. */
 export async function buildOperationalClear(
   daoPubkey: PublicKey,
   proposalPubkey: PublicKey,
   operationalAgent: PublicKey,
+  reasonHash: number[],
 ): Promise<TransactionBuildResult> {
   if (USE_MOCKS) return mock(NAVE_EXECUTION_PROGRAM_ID);
   const { execution } = getNavePrograms();
@@ -492,7 +500,7 @@ export async function buildOperationalClear(
   const [executionRequest] = getExecutionRequestPDA(proposalPubkey);
 
   const instruction = await execution.methods
-    .operationalClear()
+    .operationalClear(reasonHash)
     .accountsPartial({
       authority: operationalAgent,
       globalConfig,
@@ -534,7 +542,7 @@ export async function buildExecuteStrategy(
   return { instruction, programId: NAVE_EXECUTION_PROGRAM_ID };
 }
 
-/** execute_strategy_direct — Executive agent, only when DAO frozen OR agents disabled. */
+/** execute_strategy_direct — Executive agent, after the review window, only when the DAO is frozen or agents are guardian-locked off. */
 export async function buildExecuteStrategyDirect(
   daoPubkey: PublicKey,
   proposalPubkey: PublicKey,

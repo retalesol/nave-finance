@@ -28,7 +28,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains';
-import { robinhood, robinhoodTestnet } from './evmChains.js';
+import { arcTestnet, robinhood, robinhoodTestnet } from './evmChains.js';
 import { resolveSolanaRpcUrl } from './programs.js';
 import { refusesClosedMainnetBridge, wnaveMintWouldExceedCustody } from './bridgeSupplyGuard.js';
 import bs58 from 'bs58';
@@ -70,7 +70,7 @@ import {
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export type EvmNetwork = 'mainnet' | 'testnet';
-export type EvmChainFamily = 'ethereum' | 'base' | 'robinhood';
+export type EvmChainFamily = 'ethereum' | 'base' | 'robinhood' | 'arc';
 
 export interface BridgeEvmChainMeta {
   chain: Chain;
@@ -99,6 +99,7 @@ export const BRIDGE_EVM_CHAINS: Record<number, BridgeEvmChainMeta> = {
   11155111: { chain: sepolia, rpcEnv: 'EVM_SEPOLIA_RPC_URL', family: 'ethereum', network: 'testnet', defaultConfirmations: 12, blockTimeSeconds: 12 },
   84532: { chain: baseSepolia, rpcEnv: 'EVM_BASE_SEPOLIA_RPC_URL', family: 'base', network: 'testnet', defaultConfirmations: 30, blockTimeSeconds: 2 },
   46630: { chain: robinhoodTestnet, rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL', family: 'robinhood', network: 'testnet', defaultConfirmations: 60, blockTimeSeconds: 0.25 },
+  5042002: { chain: arcTestnet, rpcEnv: 'EVM_ARC_TESTNET_RPC_URL', family: 'arc', network: 'testnet', defaultConfirmations: 1, blockTimeSeconds: 1 },
   // Mainnets
   1: { chain: mainnet, rpcEnv: 'EVM_ETHEREUM_RPC_URL', family: 'ethereum', network: 'mainnet', defaultConfirmations: 12, blockTimeSeconds: 12 },
   8453: { chain: base, rpcEnv: 'EVM_BASE_RPC_URL', family: 'base', network: 'mainnet', defaultConfirmations: 30, blockTimeSeconds: 2 },
@@ -401,6 +402,7 @@ export function resolveEvmChainId(input: string | number, opts: ResolveEvmChainO
     sepolia: 11155111, 'ethereum-sepolia': 11155111, 'eth-sepolia': 11155111,
     'base-sepolia': 84532, basesepolia: 84532, base_sepolia: 84532,
     'robinhood-testnet': 46630, robinhoodtestnet: 46630, robinhood_testnet: 46630,
+    'arc-testnet': 5042002, arctestnet: 5042002, arc_testnet: 5042002,
     'ethereum-mainnet': 1, 'eth-mainnet': 1,
     'base-mainnet': 8453,
     'robinhood-mainnet': 4663, robinhoodmainnet: 4663, robinhood_mainnet: 4663,
@@ -413,7 +415,7 @@ export function resolveEvmChainId(input: string | number, opts: ResolveEvmChainO
 
   // Family names: resolved through the EXPLICIT EVM network only (fail closed).
   const family: EvmChainFamily | null =
-    s === 'ethereum' || s === 'eth' ? 'ethereum' : s === 'base' ? 'base' : s === 'robinhood' ? 'robinhood' : null;
+    s === 'ethereum' || s === 'eth' ? 'ethereum' : s === 'base' ? 'base' : s === 'robinhood' ? 'robinhood' : s === 'arc' ? 'arc' : null;
   if (!family) {
     throw new Error(
       `Unsupported EVM chain '${input}' (send the numeric chainId; supported: ${supportedChainIdList()})`,

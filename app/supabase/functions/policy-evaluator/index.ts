@@ -30,7 +30,12 @@ import {
   readEvmStrategyPositions,
   readEvmTreasuryVault,
 } from "../_shared/evmPolicy.ts";
-import { scanYieldOpportunities, withholdStoppedVenues } from "../_shared/yieldSources.ts";
+import {
+  applyLiveRates,
+  loadStrategyRates,
+  scanYieldOpportunities,
+  withholdStoppedVenues,
+} from "../_shared/yieldSources.ts";
 import { fetchVenueWatches } from "../_shared/genlayerStore.ts";
 import { NAVE_GENLAYER_VENUE_GATE, readGenlayerFlag } from "../_shared/genlayerCharter.ts";
 import {
@@ -123,6 +128,7 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: true, evaluated: 0, message: "No DAOs found" });
   }
 
+  const strategyRates = await loadStrategyRates(supabase);
   const nowSecs = Math.floor(Date.now() / 1000);
   const nowIso = new Date().toISOString();
   const results: Array<Record<string, unknown>> = [];
@@ -177,10 +183,16 @@ Deno.serve(async (req: Request) => {
           await listRegisteredMints(rpcUrl, daoAddr),
         );
 
-      const scanned = await scanYieldOpportunities(
-        approvedProtocols.map((p) => ({ protocolId: p.protocolId, programId: p.programId })),
-        undefined,
-        dao.chain ?? undefined,
+      const scanned = applyLiveRates(
+        await scanYieldOpportunities(
+          approvedProtocols.map((p) => ({ protocolId: p.protocolId, programId: p.programId })),
+          undefined,
+          dao.chain ?? undefined,
+          typeof dao.chain_id === "number" ? dao.chain_id : null,
+        ),
+        dao.chain ?? "solana",
+        typeof dao.chain_id === "number" ? dao.chain_id : null,
+        strategyRates,
       );
       const venueWatches = await fetchVenueWatches(supabase, daoAddr, dao.chain ?? "solana");
       const opportunities = withholdStoppedVenues(

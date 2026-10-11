@@ -7,6 +7,7 @@ import {
   EVM_CHAIN_IDS,
   USER_CHAINS,
   WALLET_CHAINS,
+  userChainsFor,
   CHAIN_COLORS,
   isEvmChainId,
   isEvmTestnet,
@@ -56,9 +57,13 @@ test('viem chain definitions: ids, ETH currency, Blockscout explorer URLs', () =
   }
 });
 
-test('testnet deployment activates 46630 (and never a mainnet id)', () => {
-  assert.deepEqual([...ACTIVE_EVM_CHAIN_IDS].sort((a, b) => a - b), [84532, 46630, 11155111].sort((a, b) => a - b));
+test('testnet deployment activates 46630 and Arc testnet (and never a mainnet id)', () => {
+  assert.deepEqual(
+    [...ACTIVE_EVM_CHAIN_IDS].sort((a, b) => a - b),
+    [84532, 46630, 11155111, 5042002].sort((a, b) => a - b),
+  );
   assert.equal(ACTIVE_EVM_CHAIN_IDS.includes(4663), false, 'mainnet Robinhood inactive on testnet');
+  assert.equal(ACTIVE_EVM_CHAIN_IDS.includes(5042), false, 'Arc mainnet is not a chain id');
 });
 
 test('config plumbing: robinhood address/RPC env slots exist in the closed maps', () => {
@@ -70,26 +75,35 @@ test('config plumbing: robinhood address/RPC env slots exist in the closed maps'
   assert.equal(EVM_WRAPPED_NAVE_ADDRESSES[4663], undefined);
 });
 
-test('wallet switcher: Bridge keeps all chains; app surfaces are Base+RH', () => {
-  // Bridge & Stake keep the full four-family switcher.
-  assert.deepEqual([...WALLET_CHAINS], ['solana', 'ethereum', 'base', 'robinhood']);
-  // Homepage / lobby / DAO app use APP_WALLET_CHAINS (= USER_CHAINS).
-  assert.deepEqual([...USER_CHAINS], ['base', 'robinhood']);
-  // Solana purple, Ethereum grey, Base blue, Robinhood green.
+test('wallet switcher includes Arc; testnet create offers five families', () => {
+  assert.deepEqual([...WALLET_CHAINS], ['solana', 'ethereum', 'base', 'robinhood', 'arc']);
+  assert.deepEqual([...USER_CHAINS], ['solana', 'ethereum', 'base', 'robinhood', 'arc']);
+  assert.deepEqual([...userChainsFor('testnet')], ['solana', 'ethereum', 'base', 'robinhood', 'arc']);
+  assert.deepEqual([...userChainsFor('mainnet')], ['base']);
+  assert.deepEqual([...userChainsFor('mixed')], ['base']);
   assert.equal(CHAIN_COLORS.solana, '#9945FF');
   assert.equal(CHAIN_COLORS.ethereum, '#8C8C8C');
   assert.equal(CHAIN_COLORS.base, '#0052FF');
   assert.equal(CHAIN_COLORS.robinhood, '#00C805');
+  assert.equal(CHAIN_COLORS.arc, '#0F766E');
 });
 
-test('DAO chains: robinhood is selectable for treasury creation', () => {
-  assert.equal(USER_CHAINS.includes('robinhood'), true, 'DAO creation offers robinhood');
-  assert.deepEqual([...USER_CHAINS], ['base', 'robinhood']);
-  assert.equal(USER_CHAINS.includes('solana'), false, 'Solana DAO create disabled');
-  assert.equal(USER_CHAINS.includes('ethereum'), false, 'Ethereum DAO create disabled');
+test('DAO chains: testnet includes five families; mainnet picker is Base only', () => {
+  assert.equal(USER_CHAINS.includes('robinhood'), true, 'testnet DAO creation offers robinhood');
+  assert.equal(USER_CHAINS.includes('solana'), true, 'testnet DAO creation offers solana');
+  assert.equal(USER_CHAINS.includes('ethereum'), true, 'testnet DAO creation offers ethereum');
+  assert.equal(USER_CHAINS.includes('arc'), true, 'testnet DAO creation offers arc');
+  assert.equal(userChainsFor('mainnet').includes('solana'), false);
+  assert.equal(userChainsFor('mainnet').includes('arc'), false);
+  assert.equal(userChainsFor('mixed').includes('robinhood'), false);
   assert.equal(chainFamilyLabel('robinhood'), 'Robinhood Chain');
+  assert.equal(chainFamilyLabel('arc'), 'Arc');
   assert.equal(chainFamilyLabelWithNetwork('robinhood', 'testnet'), 'Robinhood Chain (Testnet)');
   assert.equal(chainFamilyLabelWithNetwork('robinhood', 'mainnet'), 'Robinhood Chain (Mainnet)');
-  // The closed chain-id set now has exactly six entries.
-  assert.deepEqual([...EVM_CHAIN_IDS].sort((a, b) => a - b), [1, 4663, 8453, 46630, 84532, 11155111].sort((a, b) => a - b));
+  assert.equal(chainFamilyLabelWithNetwork('arc', 'testnet'), 'Arc (Testnet)');
+  assert.deepEqual(
+    [...EVM_CHAIN_IDS].sort((a, b) => a - b),
+    [1, 4663, 8453, 46630, 84532, 11155111, 5042002].sort((a, b) => a - b),
+  );
+  assert.equal(isEvmChainId(5042), false);
 });

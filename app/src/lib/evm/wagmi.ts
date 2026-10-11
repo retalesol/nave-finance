@@ -7,6 +7,7 @@ import { http, type Transport } from 'wagmi';
 import { mainnet, base, sepolia, baseSepolia } from 'wagmi/chains';
 import type { Chain } from 'viem';
 import { robinhood, robinhoodTestnet } from './robinhoodChains';
+import { arcTestnet } from './arcChains';
 import {
   EVM_DEPLOYMENT_MODE,
   EVM_RPC_URLS,
@@ -22,10 +23,11 @@ export const WAGMI_CHAIN_BY_ID: Record<EvmChainId, Chain> = {
   11155111: sepolia,
   84532: baseSepolia,
   46630: robinhoodTestnet,
+  5042002: arcTestnet,
 };
 
 const MAINNET_CHAINS: readonly [Chain, ...Chain[]] = [mainnet, base, robinhood];
-const TESTNET_CHAINS: readonly [Chain, ...Chain[]] = [sepolia, baseSepolia, robinhoodTestnet];
+const TESTNET_CHAINS: readonly [Chain, ...Chain[]] = [sepolia, baseSepolia, robinhoodTestnet, arcTestnet];
 /** Mixed cutover: Ethereum Sepolia + Base mainnet + Robinhood mainnet. */
 const MIXED_CHAINS: readonly [Chain, ...Chain[]] = [sepolia, base, robinhood];
 

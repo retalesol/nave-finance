@@ -34,6 +34,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { corsHeadersFor, jsonWithCors, requireSecret } from "../_shared/http.ts";
+import { signerSecretFor, solanaSignerRole } from "../_shared/signerAuth.ts";
 
 interface RecommendedAction {
   actionType: "deploy" | "withdraw" | "hold";
@@ -76,7 +77,7 @@ interface DaoChainRow {
 
 function isEvmDaoChain(chain: string | null | undefined): boolean {
   const c = (chain ?? "").toLowerCase();
-  return c === "base" || c === "robinhood" || c === "ethereum";
+  return c === "base" || c === "robinhood" || c === "ethereum" || c === "arc";
 }
 
 async function callSigner(payload: Record<string, unknown>): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string; status?: number }> {
@@ -89,7 +90,12 @@ async function callSigner(payload: Record<string, unknown>): Promise<{ ok: boole
   try {
     const resp = await fetch(`${signerUrl.replace(/\/$/, "")}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Signer-Secret": signerSecretFor(
+          evm ? "operational" : solanaSignerRole(typeof payload.agent_role === "string" ? payload.agent_role : undefined),
+        ) ?? signerSecret,
+      },
       body: JSON.stringify(payload),
     });
     const data = await resp.json().catch(() => ({}));

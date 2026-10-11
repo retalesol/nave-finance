@@ -16,6 +16,7 @@
 // that already landed on-chain, or it will double-submit them.
 
 import { readContract } from '@wagmi/core';
+import { constitutionCapsBps, findVenue, strategyChainForEvmId } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
 import {
   buildUpdateConstitutionEvm,
@@ -36,14 +37,14 @@ import { setAgentsEnabledViaProxyEvm } from './edgeFunctionClient';
 // is available at creation time.
 const ESTIMATED_ETH_USD_PRICE = 3_500;
 
-/** Default per-adapter allocation cap when no custom cap is specified. */
+/** Per-adapter allocation cap when the policy carries no max lending exposure. */
 const DEFAULT_ADAPTER_MAX_ALLOCATION_BPS = 5_000;
 
 export interface EvmActivationContext {
   daoAddress: string;
   chainId: EvmChainId;
-  /** Chain family label expected by agent-admin: 'ethereum' | 'base' | 'robinhood' */
-  chain: 'ethereum' | 'base' | 'robinhood';
+  /** Chain family label expected by agent-admin. */
+  chain: 'ethereum' | 'base' | 'robinhood' | 'arc';
   founderAddress: string;
   policy: PolicyState;
   seedAmount: string;
@@ -141,19 +142,31 @@ export async function runEvmActivation(
   // ── Tx 2: Update constitution + set policy parameters (idempotent) ────────
   onStep('Sign Tx 2 of 2 — Activate & Ratify');
 
-  // Build the approved adapter list from the wizard's policy.approvedProtocols.
-  const adapters: EvmConstitutionAdapter[] = Object.entries(policy.approvedProtocols)
+  // Build the approved adapter list from the wizard's policy.approvedProtocols,
+  // each capped at the preset's per-venue limit.
+  const maxAllocationBps = Number.isFinite(policy.maxLending) && policy.maxLending > 0
+    ? Math.round(policy.maxLending * 100)
+    : DEFAULT_ADAPTER_MAX_ALLOCATION_BPS;
+  const strategyChain = strategyChainForEvmId(chainId);
+  const enabledIds = Object.entries(policy.approvedProtocols)
     .filter(([, enabled]) => enabled)
-    .flatMap(([protocolId]) => {
-      const addr = getEvmAdapterAddress(chainId, protocolId as Parameters<typeof getEvmAdapterAddress>[1]);
-      if (!addr) return [];
-      return [{
-        adapter: addr,
-        maxAllocationBps: DEFAULT_ADAPTER_MAX_ALLOCATION_BPS,
-        approved: true,
-        protocolId,
-      }];
-    });
+    .map(([protocolId]) => protocolId);
+  // NaveProtocol holds each adapter's tier; the per-venue caps here keep every
+  // tier's approved total inside its on-chain ceiling.
+  const capsBps = constitutionCapsBps(
+    enabledIds.map((id) => ({ id, tier: (strategyChain && findVenue(strategyChain, id)?.tier) || 1 })),
+    maxAllocationBps / 100,
+  );
+  const adapters: EvmConstitutionAdapter[] = enabledIds.flatMap((protocolId) => {
+    const addr = getEvmAdapterAddress(chainId, protocolId as Parameters<typeof getEvmAdapterAddress>[1]);
+    if (!addr) return [];
+    return [{
+      adapter: addr,
+      maxAllocationBps: capsBps.get(protocolId) ?? maxAllocationBps,
+      approved: true,
+      protocolId,
+    }];
+  });
 
   // Estimate agentThresholdUsd from seed amount (ETH × price), or 0 if no seed.
   const seedNum = parseFloat(seedAmount);

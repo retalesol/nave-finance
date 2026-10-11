@@ -56,7 +56,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains';
-import { robinhood, robinhoodTestnet } from './evmChains.js';
+import { arcTestnet, robinhood, robinhoodTestnet } from './evmChains.js';
 import { DEVNET_DEFAULT_PROGRAM_IDS, isMainnetCluster, resolveSolanaRpcUrl } from './programs.js';
 import { confirmSolanaTransactionRobust, parseSolanaKeypair } from './solanaTxUtils.js';
 import { deriveCustody, NAVE_BRIDGE_LOCKBOX_ABI } from './bridgePrograms.js';
@@ -93,6 +93,7 @@ export const STAKING_EVM_CHAINS: Record<number, { chain: Chain; rpcEnv: string; 
   11155111: { chain: sepolia, rpcEnv: 'EVM_SEPOLIA_RPC_URL', name: 'ethereum' },
   84532: { chain: baseSepolia, rpcEnv: 'EVM_BASE_SEPOLIA_RPC_URL', name: 'base' },
   46630: { chain: robinhoodTestnet, rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL', name: 'robinhood' },
+  5042002: { chain: arcTestnet, rpcEnv: 'EVM_ARC_TESTNET_RPC_URL', name: 'arc' },
   // Mainnets
   1: { chain: mainnet, rpcEnv: 'EVM_ETHEREUM_RPC_URL', name: 'ethereum' },
   8453: { chain: base, rpcEnv: 'EVM_BASE_RPC_URL', name: 'base' },

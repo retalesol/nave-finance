@@ -1,4 +1,6 @@
 import { SUPABASE_FUNCTIONS_URL, SUPABASE_ANON_KEY } from './programConfig';
+import type { ChainFamily, EvmChainFamily } from './chain/types';
+import { counterevidenceError } from '../../supabase/functions/_shared/genlayerCharter.ts';
 
 // ─── Edge function client ────────────────────────────────────────────────────
 // Typed wrappers for calling Nave Supabase edge functions from the frontend.
@@ -150,7 +152,7 @@ export async function generateEvmAgentKeys(
   daoRef: string,
   founder: string,
   chainId: number,
-  chain: 'ethereum' | 'base' | 'robinhood' | 'robinhood',
+  chain: EvmChainFamily,
   message: string,
   creatorSignature: string,
 ): Promise<{ data: GenerateEvmAgentKeysResponse | null; error: string | null }> {
@@ -175,7 +177,7 @@ export async function bindEvmAgentKeys(
   treasury: string,
   founder: string,
   chainId: number,
-  chain: 'ethereum' | 'base' | 'robinhood' | 'robinhood',
+  chain: EvmChainFamily,
   message: string,
   creatorSignature: string,
 ): Promise<{ data: BindEvmAgentKeysResponse | null; error: string | null }> {
@@ -211,9 +213,14 @@ export interface RegisterDaoPayload {
   dao_id?: number;
   slug?: string;
   /** Chain family the DAO lives on (defaults server-side to 'solana'). */
-  chain?: 'solana' | 'ethereum' | 'base' | 'robinhood';
-  /** EVM numeric chain id (1/8453/4663/11155111/84532/46630); omitted for Solana. */
+  chain?: ChainFamily;
+  /** EVM numeric chain id (1/8453/4663/11155111/84532/46630/5042002); omitted for Solana. */
   chain_id?: number;
+  /**
+   * Solana cluster tag. `devnet` is stored even when the edge function's RPC
+   * looks like mainnet. EVM registrations ignore this and use `chain_id`.
+   */
+  network?: 'mainnet' | 'testnet' | 'devnet';
 }
 
 export interface RegisterDaoResponse {
@@ -809,7 +816,7 @@ export interface GuardianActionTypedData {
  * Typed data for a guardian DISABLE_AGENTS vote (the M-of-N pause). Pass the
  * result straight to wagmi's `signTypedDataAsync`. All guardians — the founder
  * in-browser and the custodied signer server-side — must sign the SAME
- * nonce/deadline for `guardianDisableAgents(nonce, deadline, sigs)` to verify.
+ * nonce/deadline for `guardianAction(DISABLE_AGENTS, sigs)` to verify.
  */
 export function buildGuardianDisableAgentsTypedData(
   chainId: number,
@@ -850,7 +857,7 @@ export function defaultGuardianDisableAgentsWindow(): { nonce: bigint; deadline:
  * viem `verifyMessage`, confirms the founder, and forwards to the signer's
  * `/relay-evm`, which BROADCASTS the on-chain tx from a custodied agent/guardian
  * EOA — resume → Executive `toggleAgents(true)`, pause → guardian M-of-N
- * `guardianDisableAgents(nonce, deadline, signatures)`.
+ * `guardianAction(DISABLE_AGENTS, signatures)`.
  *
  * Pause: the founder wallet is itself a guardian (CreateDAO sets guardians
  * `[founder, custodiedGuardian]` with threshold ≥ 2), so pass
@@ -866,7 +873,7 @@ export async function setAgentsEnabledViaProxyEvm(
   signMessageHex: (message: string) => Promise<string>,
   enabled: boolean,
   chainId: number,
-  chain: 'ethereum' | 'base' | 'robinhood',
+  chain: EvmChainFamily,
   opts?: {
     /** Founder-as-guardian EIP-712 signer (wagmi `signTypedDataAsync`); pause only. */
     signGuardianAction?: (typedData: GuardianActionTypedData) => Promise<string>;
@@ -930,7 +937,7 @@ export async function collectEvmGuardianFreezeSigs(
   signMessageHex: (message: string) => Promise<string>,
   freeze: boolean,
   chainId: number,
-  chain: 'ethereum' | 'base' | 'robinhood',
+  chain: EvmChainFamily,
   opts?: { nonce?: bigint; deadline?: bigint; guardianCount?: number },
 ): Promise<{ data: EvmGuardianFreezeResponse | null; error: string | null }> {
   const message = `nave-admin|${daoAddress}|emergency_freeze|${freeze ? '1' : '0'}|${Date.now()}`;
@@ -975,7 +982,7 @@ export async function withdrawStrategyViaProxyEvm(
   signMessageHex: (message: string) => Promise<string>,
   opts: {
     chainId: number;
-    chain: 'ethereum' | 'base' | 'robinhood';
+    chain: EvmChainFamily;
     executionAddress: string;
     index: number;
     amount: string;
@@ -1016,7 +1023,7 @@ export async function dispatchViaProxyEvm(
   signMessageHex: (message: string) => Promise<string>,
   executionRequest: string,
   chainId: number,
-  chain: 'ethereum' | 'base' | 'robinhood',
+  chain: EvmChainFamily,
   index: number,
 ): Promise<{ data: OrchestratorResponse | null; error: string | null }> {
   const target = executionRequest || String(index);
@@ -1040,14 +1047,18 @@ export async function dispatchViaProxyEvm(
   });
 }
 
-/** Ask for another independent check. Sends the case id and the pause reason, never a verdict. */
+/** Ask for another independent check. Sends the case id, the pause reason, and new evidence. Never a verdict, and never a blank appeal. */
 export async function askForAnotherCheck(input: {
-  chain_family: 'solana' | 'ethereum' | 'base' | 'robinhood';
+  chain_family: ChainFamily;
   network: 'mainnet' | 'testnet' | 'devnet';
   treasury: string;
   action_hash: string;
   pause_reason?: string;
+  counterevidence: string;
 }): Promise<{ data: { success?: boolean } | null; error: string | null }> {
+  const counterevidence = input.counterevidence.trim();
+  const rejected = counterevidenceError(counterevidence);
+  if (rejected) return { data: null, error: rejected };
   return callEdgeFunction('genlayer-adjudicator', {
     mode: 'appeal',
     chain_family: input.chain_family,
@@ -1055,6 +1066,7 @@ export async function askForAnotherCheck(input: {
     treasury: input.treasury,
     action_hash: input.action_hash,
     pause_reason: input.pause_reason,
+    counterevidence,
     venue: 'move',
     amount: '0',
     asset: 'asset',

@@ -110,9 +110,8 @@ export function getNavePrograms(connection?: Connection): NavePrograms {
 
 /**
  * Resolve an adapter Program by protocol id (jito | kamino | marginfi).
- * Returns null for `jupiter` — Jupiter uses the direct nave_core CPI path
- * (`jupiter_deposit` / `jupiter_withdraw`) not the execute_strategy adapter pipeline.
- * Use `isDirectCpiProtocol('jupiter')` to branch routing before calling this.
+ * Returns null for `jupiter`, which has no Nave adapter program (see
+ * `isDirectCpiProtocol`).
  */
 export function getAdapterProgram(
   protocolId: string,

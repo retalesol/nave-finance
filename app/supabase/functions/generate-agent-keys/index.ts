@@ -3,7 +3,7 @@ import nacl from "npm:tweetnacl@1.0.3";
 import bs58 from "npm:bs58@5.0.0";
 import { corsHeadersFor, jsonWithCors, secretsMatch } from "../_shared/http.ts";
 import { clientKey, rateLimit } from "../_shared/rateLimit.ts";
-import { wrapDek } from "../_shared/kek.ts";
+import { wrapDekBound } from "../_shared/kek.ts";
 import { daoRegistryPda, readDaoFounder } from "../_shared/onchain.ts";
 import {
   checkChallengeTimestamp,
@@ -284,6 +284,8 @@ Deno.serve(async (req: Request) => {
       wrapped_dek: string;
       dek_wrap_iv: string;
       dek_wrap_tag: string;
+      dek_wrap_version: number;
+      dek_kek_ref: string;
     }> = [];
 
     for (const role of rolesToGenerate) {
@@ -300,9 +302,14 @@ Deno.serve(async (req: Request) => {
         aesKey,
       );
 
-      // Export the DEK and wrap it under the master KEK for persistence.
+      // Export the DEK and wrap it (per-role KEK when configured), bound to
+      // this DAO, role and chain.
       const decryptKeyBase64 = await exportKeyToBase64(aesKey);
-      const wrapped = await wrapDek(decryptKeyBase64);
+      const wrapped = await wrapDekBound("solana", decryptKeyBase64, {
+        dao: dao_address,
+        role,
+        chain: "solana",
+      });
 
       dbRows.push({
         dao_onchain_address: dao_address,
@@ -314,6 +321,8 @@ Deno.serve(async (req: Request) => {
         wrapped_dek: wrapped.wrapped_dek,
         dek_wrap_iv: wrapped.dek_wrap_iv,
         dek_wrap_tag: wrapped.dek_wrap_tag,
+        dek_wrap_version: wrapped.dek_wrap_version,
+        dek_kek_ref: wrapped.dek_kek_ref,
       });
 
       // The wrapped DEK is persisted, so normal operation NEVER needs the raw

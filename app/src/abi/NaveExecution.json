@@ -154,34 +154,6 @@
   },
   {
     "type": "function",
-    "name": "createTransferRequestBootstrap",
-    "inputs": [
-      {
-        "name": "proposalIndex",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "asset",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "currentImplementation",
     "inputs": [],
     "outputs": [
@@ -466,6 +438,11 @@
         "name": "index",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -575,6 +552,49 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "requestStrategyExit",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "readyAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "syncPositionValue",
+    "inputs": [
+      {
+        "name": "adapter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "applied",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -840,6 +860,12 @@
         "type": "uint64",
         "indexed": true,
         "internalType": "uint64"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -890,6 +916,31 @@
   },
   {
     "type": "event",
+    "name": "PositionSynced",
+    "inputs": [
+      {
+        "name": "adapter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "observed",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "applied",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "StrategyExecuted",
     "inputs": [
       {
@@ -900,6 +951,31 @@
       },
       {
         "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StrategyExitRequested",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint64",
+        "indexed": true,
+        "internalType": "uint64"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "readyAt",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -966,6 +1042,11 @@
   },
   {
     "type": "error",
+    "name": "AdapterNotProtocolApproved",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AddressEmptyCode",
     "inputs": [
       {
@@ -1018,6 +1099,11 @@
   {
     "type": "error",
     "name": "DeploymentCapExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DepositSlippageExceeded",
     "inputs": []
   },
   {
@@ -1139,6 +1225,11 @@
   {
     "type": "error",
     "name": "ReviewWindowActive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SlippageBoundRequired",
     "inputs": []
   },
   {

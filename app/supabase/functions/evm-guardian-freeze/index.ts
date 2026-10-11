@@ -20,6 +20,7 @@ import { type ChainKind, isEvmChain, normalizeChain, normalizeEvmAddress } from 
 import { hasEvmRpc, readEvmTreasuryFounder } from "../_shared/evmFounder.ts";
 import { checkChallengeTimestamp, verifyWalletSignature } from "../_shared/walletAuth.ts";
 import { consumeChallenge, replayChainLabel } from "../_shared/replay.ts";
+import { signerSecretFor } from "../_shared/signerAuth.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = corsHeadersFor(req, { allowBrowserFallback: true });
@@ -136,7 +137,7 @@ Deno.serve(async (req) => {
   for (let i = 0; i < guardianCount; i++) {
     const resp = await fetch(`${signerUrl.replace(/\/$/, "")}/sign-evm`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecretFor("guardian") ?? signerSecret },
       body: JSON.stringify({
         chain: chainSel.chain,
         chain_id: chainSel.chain_id,

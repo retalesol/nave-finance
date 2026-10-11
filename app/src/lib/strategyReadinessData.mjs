@@ -108,8 +108,20 @@ export const EVM_STRATEGIES = [
       },
       84532: {
         supported: true,
-        reason: 'Official Aave V3 Base Sepolia Pool exists in the Aave address book.',
+        reason: 'Official Aave V3 Base Sepolia Pool exists in the Aave address book. The deployed adapter must be bound to the current protocol; the older adapter is not a fallback.',
         envVar: 'VITE_EVM_BASE_SEPOLIA_AAVE_ADAPTER_ADDRESS',
+      },
+      46630: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Robinhood Testnet has no Aave V3 pool in the Nave address registry.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_AAVE_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Arc Testnet yield is CCTP domain 26 to Sepolia Aave V3. Official Aave on Arc is V4, and Nave does not ship a V4 adapter.',
+        envVar: 'VITE_EVM_ARC_TESTNET_AAVE_ADAPTER_ADDRESS',
       },
     },
   },
@@ -139,6 +151,18 @@ export const EVM_STRATEGIES = [
         configurableWithAdapter: false,
         reason: 'Compound III has no official Base Sepolia deployment artifact in the Comet deployments registry.',
         envVar: 'VITE_EVM_BASE_SEPOLIA_COMPOUND_ADAPTER_ADDRESS',
+      },
+      46630: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Robinhood Testnet has no Compound III Comet in the Nave address registry.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_COMPOUND_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Arc Testnet has no Compound III market. Yield is CCTP to Sepolia Aave V3.',
+        envVar: 'VITE_EVM_ARC_TESTNET_COMPOUND_ADAPTER_ADDRESS',
       },
     },
   },
@@ -172,6 +196,18 @@ export const EVM_STRATEGIES = [
           'No official Balancer Base Sepolia deployment registry entry was found. Configure a deployed compatible adapter only after validating a concrete pool tuple.',
         envVar: 'VITE_EVM_BASE_SEPOLIA_BALANCER_ADAPTER_ADDRESS',
       },
+      46630: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Balancer stays at the zero address on Robinhood Testnet.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_BALANCER_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Balancer stays at the zero address on Arc Testnet.',
+        envVar: 'VITE_EVM_ARC_TESTNET_BALANCER_ADAPTER_ADDRESS',
+      },
     },
   },
   {
@@ -189,6 +225,12 @@ export const EVM_STRATEGIES = [
         supported: true,
         reason: 'Robinhood Testnet Arbitrum-style gateway for WETH bridge-out testing.',
         envVar: 'VITE_EVM_ROBINHOOD_TESTNET_ARBITRUM_BRIDGE_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Arc Testnet is not an Arbitrum Nitro chain. USDC yield uses CCTP to Sepolia.',
+        envVar: 'VITE_EVM_ARC_TESTNET_ARBITRUM_BRIDGE_ADAPTER_ADDRESS',
       },
     },
   },
@@ -214,6 +256,17 @@ export const EVM_STRATEGIES = [
         reason: 'Robinhood USDC/CCTP domain not configured in NaveAddressRegistry yet (ROBINHOOD_USDC=0).',
         envVar: 'VITE_EVM_ROBINHOOD_CCTP_BRIDGE_ADAPTER_ADDRESS',
       },
+      46630: {
+        supported: false,
+        configurableWithAdapter: true,
+        reason: 'Robinhood Testnet USDC is unpublished. CCTP stays off until a USDC address is confirmed. USDG is not a substitute.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_CCTP_BRIDGE_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: true,
+        reason: 'Arc Testnet CCTP domain 26 burns USDC to Sepolia (domain 0), then the existing Sepolia Aave V3 adapter supplies it.',
+        envVar: 'VITE_EVM_ARC_TESTNET_CCTP_BRIDGE_ADAPTER_ADDRESS',
+      },
     },
   },
   {
@@ -232,6 +285,18 @@ export const EVM_STRATEGIES = [
         reason: 'L2 StandardBridge for ETH/WETH between Base and Ethereum.',
         envVar: 'VITE_EVM_BASE_OP_BRIDGE_ADAPTER_ADDRESS',
       },
+      46630: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Robinhood Testnet does not use the OP Standard Bridge.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_OP_BRIDGE_ADAPTER_ADDRESS',
+      },
+      5042002: {
+        supported: false,
+        configurableWithAdapter: false,
+        reason: 'Arc Testnet does not use the OP Standard Bridge.',
+        envVar: 'VITE_EVM_ARC_TESTNET_OP_BRIDGE_ADAPTER_ADDRESS',
+      },
     },
   },
 ];
@@ -239,15 +304,19 @@ export const EVM_STRATEGIES = [
 /** Testnet-only fallback adapter addresses baked as defaults (env var always takes precedence). */
 export const EVM_TESTNET_ADAPTER_FALLBACKS = {
   11155111: {
-    aave: '0x9a0a3d31e31e2eade3249844095f1a64af818e78',
-    compound: '0x55be4a830d41fa527cd4ef4bc8bfc01c8c592c4e',
+    aave: '0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426',
+    compound: '0x845d8310A861A95Ed1644643D1BAe086944B1AA0',
+    cctp: '0x222D1fb4a59c2b9759099802808fbb57bA5ff9db',
   },
   84532: {
-    aave: '0x9Fe38D5fe9804c07823B36B4Ab16a0E5a7118EBf',
+    aave: '0x33D19799EBac88FFDc4e5BF61c199c71963470A6',
+  },
+  5042002: {
+    cctp: '0x1b591C6a976e75F65F54cE863C8d96b3289BBF80',
   },
 };
 
 /** Chain ids considered "mainnet" for readiness-checklist purposes. */
 export const EVM_MAINNET_CHAIN_IDS = [1, 8453, 4663];
 /** Chain ids considered "testnet" for readiness-checklist purposes. */
-export const EVM_TESTNET_CHAIN_IDS = [11155111, 84532, 46630];
+export const EVM_TESTNET_CHAIN_IDS = [11155111, 84532, 46630, 5042002];

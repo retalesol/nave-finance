@@ -1,7 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 import {
   EVM_CHAIN_IDS,
-  EVM_CHAIN_ID_BY_FAMILY,
+  evmChainIdFor,
   type EvmChainFamily,
   type EvmChainId,
   type EvmDeploymentMode,
@@ -475,14 +475,19 @@ export const REVIEW_WINDOW_SECONDS = 48 * 3600; // 48-hour operational review wi
 /**
  * Default guardian M-of-N threshold for a freshly created DAO.
  *
- * Must be ≥ 2 whenever there are ≥ 2 guardians: CreateDAO always seeds the set
- * with `[founder, Nave-custodied guardian]` (EVM) — with `ceil(n/2)` alone the
- * custodied guardian could freeze or disable agents single-handedly. We use
+ * `custodiedGuardians` counts Nave-held guardian keys in the set (EVM DAOs seed
+ * one). The threshold is at least the number of human guardians, so the
+ * custodied guardian can only add to a quorum the humans are already close to;
+ * with one human it is 2-of-2. Without custodied guardians the threshold is
  * `max(2, ceil(n/2))`, capped at `n` (a single-guardian DAO keeps threshold 1).
  */
-export function defaultGuardianThreshold(guardianCount: number): number {
+export function defaultGuardianThreshold(guardianCount: number, custodiedGuardians = 0): number {
   const n = Math.max(1, Math.floor(guardianCount));
   if (n <= 1) return 1;
+  const custodied = Math.min(Math.max(0, Math.floor(custodiedGuardians)), n - 1);
+  if (custodied > 0) {
+    return Math.min(n, Math.max(2, n - custodied));
+  }
   return Math.min(n, Math.max(2, Math.ceil(n / 2)));
 }
 
@@ -580,10 +585,10 @@ export const EVM_DEPLOYMENT_MODE: EvmDeploymentMode = CONFIGURED_EVM_DEPLOYMENT_
 /** Per-family mainnet/testnet resolution for the active deployment profile. */
 export const EVM_NETWORK_BY_FAMILY: Record<EvmChainFamily, EvmNetwork> =
   EVM_DEPLOYMENT_MODE === 'mainnet'
-    ? { ethereum: 'mainnet', base: 'mainnet', robinhood: 'mainnet' }
+    ? { ethereum: 'mainnet', base: 'mainnet', robinhood: 'mainnet', arc: 'testnet' }
     : EVM_DEPLOYMENT_MODE === 'mixed'
-      ? { ethereum: 'testnet', base: 'mainnet', robinhood: 'mainnet' }
-      : { ethereum: 'testnet', base: 'testnet', robinhood: 'testnet' };
+      ? { ethereum: 'testnet', base: 'mainnet', robinhood: 'mainnet', arc: 'testnet' }
+      : { ethereum: 'testnet', base: 'testnet', robinhood: 'testnet', arc: 'testnet' };
 
 /**
  * Legacy uniform network flag. Prefer `EVM_NETWORK_BY_FAMILY` / `activeEvmChainId`.
@@ -599,7 +604,7 @@ export const EVM_HAS_MAINNET_CHAINS: boolean =
 
 /** Resolve the active chain id for an EVM family under this deployment. */
 export function activeEvmChainId(family: EvmChainFamily): EvmChainId {
-  return EVM_CHAIN_ID_BY_FAMILY[family][EVM_NETWORK_BY_FAMILY[family]];
+  return evmChainIdFor(family, EVM_NETWORK_BY_FAMILY[family]);
 }
 
 /** Build the ChainTarget for a family under this deployment (incl. Solana). */
@@ -628,6 +633,7 @@ export const EVM_RPC_URLS: Partial<Record<EvmChainId, string>> = {
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_RPC_URL'),
   84532: optionalEnvString('VITE_EVM_BASE_SEPOLIA_RPC_URL'),
   46630: optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_RPC_URL'),
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_RPC_URL'),
 };
 
 /** Wrapped NAVE token contracts, populated after NTT mint/burn deployments. */
@@ -638,6 +644,7 @@ export const EVM_WRAPPED_NAVE_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_WRAPPED_NAVE_ADDRESS'),
   84532: optionalEnvString('VITE_EVM_BASE_SEPOLIA_WRAPPED_NAVE_ADDRESS'),
   46630: optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_WRAPPED_NAVE_ADDRESS'),
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_WRAPPED_NAVE_ADDRESS'),
 };
 
 /**
@@ -653,6 +660,7 @@ export const EVM_BRIDGE_LOCKBOX_ADDRESSES: Partial<Record<EvmChainId, string>> =
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_BRIDGE_LOCKBOX_ADDRESS'),
   84532: optionalEnvString('VITE_EVM_BASE_SEPOLIA_BRIDGE_LOCKBOX_ADDRESS'),
   46630: optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_BRIDGE_LOCKBOX_ADDRESS'),
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_BRIDGE_LOCKBOX_ADDRESS'),
 };
 
 /** Legacy immutable lockboxes (still live for burns/exit; mint until minter rotation). */
@@ -669,6 +677,7 @@ export const EVM_STAKING_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_STAKING_ADDRESS'),
   84532: optionalEnvString('VITE_EVM_BASE_SEPOLIA_STAKING_ADDRESS'),
   46630: optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_STAKING_ADDRESS'),
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_STAKING_ADDRESS'),
 };
 
 /**
@@ -749,12 +758,16 @@ export const EVM_PROTOCOL_REVENUE_WALLET: string | undefined = optionalEnvString
 // Matches contracts/evm deployments/11155111.json and deployments/84532.json.
 // Env vars always take precedence.
 const TESTNET_PROTOCOL_FALLBACKS: Partial<Record<EvmChainId, string>> = {
-  11155111: '0x678e69c53E53904ca6D060040E14DFc56003BC11',
-  84532:    '0x9BdE2F925fb71bDfC3EA0F0F9617786b5a642F02',
+  11155111: '0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1',
+  84532: '0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6',
+  46630: '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
+  5042002: '0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255',
 };
 const TESTNET_FACTORY_FALLBACKS: Partial<Record<EvmChainId, string>> = {
-  11155111: '0x4C8dBdEaa7f5B043dB9A8831023b67994Dc2cb36',
-  84532:    '0x50693cB4DcF581b1FbfAA3138A21e81579d192C9',
+  11155111: '0x4F01c9616A48F14009EC083Ff4bb6e47EdDE0890',
+  84532: '0xF53dE95ae1Fed92FFd9C9305E1716FD48EFcB776',
+  46630: '0x303cE551De723cad43e1575C4D981C0E2b662b7F',
+  5042002: '0xa7bd919a5249DD1Da6E02a6716D2Db2B2e0A99f0',
 };
 
 /** Per-chain NaveProtocol singleton addresses. Env var overrides the fallback. */
@@ -764,7 +777,8 @@ export const EVM_PROTOCOL_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   4663:     optionalEnvString('VITE_EVM_ROBINHOOD_PROTOCOL_ADDRESS'),
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_PROTOCOL_ADDRESS')   ?? TESTNET_PROTOCOL_FALLBACKS[11155111],
   84532:    optionalEnvString('VITE_EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[84532],
-  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS'),
+  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[46630],
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[5042002],
 };
 
 /** Per-chain NaveDAOFactory singleton addresses. Env var overrides the fallback. */
@@ -774,7 +788,8 @@ export const EVM_FACTORY_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   4663:     optionalEnvString('VITE_EVM_ROBINHOOD_FACTORY_ADDRESS'),
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_FACTORY_ADDRESS')   ?? TESTNET_FACTORY_FALLBACKS[11155111],
   84532:    optionalEnvString('VITE_EVM_BASE_SEPOLIA_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[84532],
-  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_FACTORY_ADDRESS'),
+  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[46630],
+  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[5042002],
 };
 
 // EVM adapter type/status re-exports (see strategyReadiness.ts for the source
@@ -795,6 +810,7 @@ export const ACTIVE_EVM_CHAIN_IDS: EvmChainId[] = [
   activeEvmChainId('ethereum'),
   activeEvmChainId('base'),
   activeEvmChainId('robinhood'),
+  ...(EVM_DEPLOYMENT_MODE === 'testnet' ? [activeEvmChainId('arc')] : []),
 ];
 
 /**
@@ -873,22 +889,18 @@ export const ADAPTER_PROGRAM_IDS: Record<string, PublicKey> = {
   jito: NAVE_JITO_ADAPTER_ID,
   kamino: NAVE_KAMINO_ADAPTER_ID,
   marginfi: NAVE_MARGINFI_ADAPTER_ID,
+  // No Nave adapter: requests and the constitution bind the Jupiter Lend program.
+  jupiter: new PublicKey(JUPITER_LENDING_PROGRAM_ID),
 };
 
 /**
- * Protocols that use the direct `nave_core` CPI path instead of the
- * governance adapter path (`execute_strategy` → `nave_*_adapter`).
- * These protocols must NOT be sent to execute_strategy.
- *
- * - jupiter: uses nave_core::jupiter_deposit / jupiter_withdraw (Operational agent).
- *   The on-chain instruction verifies `strategy_position` + founder-bound targets.
+ * Protocols with no Nave adapter program. `execute_strategy` moves the funds
+ * into the strategy escrow, then the Operational agent places them with
+ * nave_core::jupiter_deposit (and redeems with jupiter_withdraw).
  */
 export const DIRECT_CPI_PROTOCOLS: ReadonlySet<string> = new Set(['jupiter']);
 
-/**
- * Returns true if the protocol routes through the direct nave_core CPI path
- * rather than the execute_strategy adapter pipeline.
- */
+/** True if the protocol has no Nave adapter and is placed by a direct nave_core CPI. */
 export function isDirectCpiProtocol(protocolId: string): boolean {
   return DIRECT_CPI_PROTOCOLS.has(protocolId.toLowerCase());
 }

@@ -11,6 +11,7 @@ import ConstitutionStep, {
   PROTOCOLS_EVM,
   PROTOCOLS_SOLANA,
   formatConstitutionBps,
+  tierBoundedCaps,
 } from '../components/ConstitutionStep';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useConstitution } from '../hooks/useConstitution';
@@ -159,7 +160,7 @@ export default function PolicyEngine() {
     // All supported protocols for the active chain go into the governance
     // proposal payload. EVM adapter addresses are not configured in this app
     // yet, so EVM ratification will require those addresses before submitting.
-    const maxAllocationBps = Math.round(policy.maxLending * 100);
+    const capFor = tierBoundedCaps(chainKind === 'evm' ? 'evm' : 'solana', evmChainId, policy);
     let protocols: ConstitutionPayloadProtocol[];
     if (chainKind === 'evm') {
       if (!evmChainId) {
@@ -179,7 +180,7 @@ export default function PolicyEngine() {
       protocols = configuredAdapters.map((adapter) => ({
         id: adapter.protocolId,
         approved: !!policy.approvedProtocols[adapter.protocolId],
-        maxAllocationBps,
+        maxAllocationBps: capFor(adapter.protocolId),
         adapter: adapter.address,
       }));
     } else {
@@ -187,10 +188,10 @@ export default function PolicyEngine() {
             ...SELECTABLE_SOLANA_PROTOCOLS
               .map((id): ConstitutionPayloadProtocol | null => {
                 if (!getAdapterProgramId(id)) return null;
-                return { id, approved: !!policy.approvedProtocols[id], maxAllocationBps };
+                return { id, approved: !!policy.approvedProtocols[id], maxAllocationBps: capFor(id) };
               })
               .filter((p): p is ConstitutionPayloadProtocol => p !== null),
-            { id: 'jupiter', approved: !!policy.approvedProtocols['jupiter'], maxAllocationBps },
+            { id: 'jupiter', approved: !!policy.approvedProtocols['jupiter'], maxAllocationBps: capFor('jupiter') },
           ];
     }
     const confidenceThreshold = SYSTEM_CONFIDENCE_THRESHOLD;

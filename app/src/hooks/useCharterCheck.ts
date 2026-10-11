@@ -7,7 +7,9 @@ import { isEvmChainId, isEvmTestnet, evmTarget, type ChainFamily } from '../lib/
 import { SOLANA_NETWORK } from '../lib/programConfig';
 import { askForAnotherCheck } from '../lib/edgeFunctionClient';
 import {
+  counterevidenceError,
   isActionHash,
+  normalizeActionHash,
   screenStatus,
   type CustomerStatus,
   type GenNetwork,
@@ -39,20 +41,26 @@ function familyFor(
   return walletFamily;
 }
 
-export function useCharterCheck(treasury: string | null | undefined, daoChainId?: number | null) {
+export function useCharterCheck(
+  treasury: string | null | undefined,
+  daoChainId?: number | null,
+  actionHash?: string | null,
+) {
   const { chainFamily: walletFamily, evmChainId } = useChain();
   const queryClient = useQueryClient();
   const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
   const treasuryKey = normalizeDaoOnchainAddressForQuery(treasury);
   const chainFamily = familyFor(treasuryKey, daoChainId, walletFamily);
   const network = reviewNetwork(
     chainFamily,
     chainFamily === 'solana' ? null : (typeof daoChainId === 'number' && isEvmChainId(daoChainId) ? daoChainId : evmChainId),
   );
+  const boundHash = isActionHash(actionHash) ? normalizeActionHash(actionHash ?? '') : '';
 
   const query = useQuery({
-    queryKey: ['genlayer-charter', treasuryKey, chainFamily, network],
-    enabled: treasuryKey.length > 0,
+    queryKey: ['genlayer-charter', treasuryKey, chainFamily, network, boundHash],
+    enabled: treasuryKey.length > 0 && boundHash.length > 0,
     staleTime: 15_000,
     queryFn: async (): Promise<ReviewRow | null> => {
       const { data, error } = await supabase
@@ -62,30 +70,40 @@ export function useCharterCheck(treasury: string | null | undefined, daoChainId?
         .eq('chain_family', chainFamily)
         .eq('network', network)
         .eq('kind', 'charter')
-        .order('updated_at', { ascending: false })
-        .limit(1)
+        .eq('action_hash', boundHash)
         .maybeSingle();
       if (error) return null;
-      return (data as ReviewRow | null) ?? null;
+      const row = (data as ReviewRow | null) ?? null;
+      if (row && !isActionHash(row.action_hash)) return null;
+      if (row?.action_hash && normalizeActionHash(row.action_hash) !== boundHash) return null;
+      return row;
     },
   });
 
   const row = query.data ?? null;
   const status: CustomerStatus | null = screenStatus(row);
-  const canAsk = isActionHash(row?.action_hash);
+  const canAsk = isActionHash(row?.action_hash) && normalizeActionHash(row?.action_hash ?? '') === boundHash;
 
-  async function askAnother() {
+  async function askAnother(counterevidence: string) {
     if (!treasuryKey || asking || !canAsk || !row?.action_hash) return;
+    const rejected = counterevidenceError(counterevidence);
+    if (rejected) {
+      setAskError(rejected);
+      return;
+    }
     setAsking(true);
+    setAskError(null);
     try {
-      await askForAnotherCheck({
+      const result = await askForAnotherCheck({
         chain_family: chainFamily,
         network,
         treasury: treasuryKey,
-        action_hash: row.action_hash,
+        action_hash: normalizeActionHash(row.action_hash),
         pause_reason: 'Reviewers asked for another look at this move.',
+        counterevidence: counterevidence.trim(),
       });
-      await queryClient.invalidateQueries({ queryKey: ['genlayer-charter', treasuryKey, chainFamily, network] });
+      if (result.error) setAskError(result.error);
+      await queryClient.invalidateQueries({ queryKey: ['genlayer-charter', treasuryKey, chainFamily, network, boundHash] });
     } finally {
       setAsking(false);
     }
@@ -96,6 +114,7 @@ export function useCharterCheck(treasury: string | null | undefined, daoChainId?
     summary: row?.summary ?? '',
     txId: row?.tx_id ?? '',
     asking,
+    askError,
     canAsk,
     askAnother,
   };

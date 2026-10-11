@@ -559,7 +559,7 @@ Deno.serve(async (req: Request) => {
         `agent-dispatcher: EVM DAO ${dao_address} dispatched without chain/chain_id (got chain=${String(body.chain)}, chain_id=${String(body.chain_id)}) — refusing to default to Solana`,
       );
       return jsonResponse(
-        { error: "EVM DAO address requires chain (ethereum|base|robinhood) and chain_id" },
+        { error: "EVM DAO address requires chain (ethereum|base|robinhood|arc) and chain_id" },
         400,
       );
     }
@@ -1255,9 +1255,9 @@ Based on this context, perform your analysis and produce your structured JSON re
     // fail-closed verdict reflects genuinely missing data, not a wiring gap.
     const failClosed =
       (Deno.env.get("NAVE_GUARDRAILS_FAIL_CLOSED") ?? "true").toLowerCase() !== "false";
-    // NAV freshness window for executable deploys. 0/unset disables the gate even
-    // once last_revalued_at is exposed on-chain (staged rollout; cutover sets it).
-    const maxNavAgeSeconds = Number(Deno.env.get("NAVE_MAX_NAV_AGE_SECONDS") ?? 0) || undefined;
+    // NAV freshness window for executable deploys, default 900s. Set
+    // NAVE_MAX_NAV_AGE_SECONDS=0 to disable it.
+    const maxNavAgeSeconds = Number(Deno.env.get("NAVE_MAX_NAV_AGE_SECONDS") ?? 900) || undefined;
     const verdict = evaluateGuardrails(
       agent_role as AgentRole,
       guardrailContext,
@@ -1373,9 +1373,11 @@ Based on this context, perform your analysis and produce your structured JSON re
         agent_role === "operational"
           ? (parsedOutput as OperationalAgentOutput).should_halt
           : null,
+      // A halt is only lifted with green guardrails; the orchestrator also
+      // requires every recorded halt cause to pass (operationalGate).
       should_clear_halt:
         agent_role === "operational"
-          ? (parsedOutput as OperationalAgentOutput).should_clear_halt
+          ? (parsedOutput as OperationalAgentOutput).should_clear_halt && guardrailFailures.length === 0
           : null,
       guardrail_failures: guardrailFailures,
       guardrail_checks: verdict.checks,

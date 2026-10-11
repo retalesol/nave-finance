@@ -13,13 +13,47 @@ const NAV_ABI = [
     inputs: [],
     outputs: [{ type: "uint256", name: "nav" }],
   },
+  {
+    type: "function",
+    name: "getApprovedAdapters",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { type: "address[]", name: "adapters" },
+      { type: "uint16[]", name: "maxAllocationBps" },
+      { type: "bool[]", name: "approved" },
+      { type: "string[]", name: "protocolIds" },
+    ],
+  },
+  {
+    type: "function",
+    name: "position",
+    stateMutability: "view",
+    inputs: [{ type: "address", name: "adapter" }],
+    outputs: [
+      { type: "address", name: "asset" },
+      { type: "uint256", name: "depositedAmount" },
+      { type: "uint256", name: "currentValue" },
+    ],
+  },
 ] as const;
+
+/** Same keys as the Solana snapshot rows, so the dashboard reads both alike. */
+export interface EvmPositionSnapshot {
+  protocol_id: string;
+  adapter: string;
+  mint: string;
+  current_value_base_units: string;
+  deposited_base_units: string;
+}
 
 export interface EvmTreasurySnapshotMetrics {
   /** On-chain `currentNav` converted from micro-USD to USD. */
   navUsd: number;
   /** Native ETH balance held by the treasury contract (ETH units). */
   nativeEth: number;
+  /** Open adapter positions with their current marks. */
+  positions: EvmPositionSnapshot[];
 }
 
 /**
@@ -44,7 +78,33 @@ export async function readEvmTreasurySnapshotMetrics(
     const navUsd = Number(navMicro) / 1_000_000;
     const wei = await client.getBalance({ address: treasury });
     const nativeEth = Number(wei) / 1e18;
-    return { navUsd, nativeEth };
+    const positions: EvmPositionSnapshot[] = [];
+    try {
+      const [adapters, , , protocolIds] = (await client.readContract({
+        address: treasury,
+        abi: NAV_ABI,
+        functionName: "getApprovedAdapters",
+      })) as readonly [readonly `0x${string}`[], readonly number[], readonly boolean[], readonly string[]];
+      for (let i = 0; i < adapters.length; i++) {
+        const [asset, deposited, current] = (await client.readContract({
+          address: treasury,
+          abi: NAV_ABI,
+          functionName: "position",
+          args: [adapters[i]],
+        })) as readonly [`0x${string}`, bigint, bigint];
+        if (deposited === 0n && current === 0n) continue;
+        positions.push({
+          protocol_id: protocolIds[i] ?? adapters[i],
+          adapter: adapters[i],
+          mint: asset,
+          current_value_base_units: current.toString(),
+          deposited_base_units: deposited.toString(),
+        });
+      }
+    } catch (e) {
+      console.warn("[evmTreasuryNav] position read failed", treasury, e instanceof Error ? e.message : e);
+    }
+    return { navUsd, nativeEth, positions };
   } catch (e) {
     console.error(
       "[evmTreasuryNav] read failed",

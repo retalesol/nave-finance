@@ -6,7 +6,7 @@ import type { Chain } from 'viem';
 // their testnets). There is NO other EVM network in scope (no BSC / Polygon).
 // This is the worker-side mirror of supabase/functions/_shared/chain.ts.
 
-export type ChainKind = 'ethereum' | 'base' | 'robinhood';
+export type ChainKind = 'ethereum' | 'base' | 'robinhood' | 'arc';
 
 // Robinhood Chain (Arbitrum Nitro L2, currency ETH) has no viem built-in.
 // Default RPCs are the public endpoints; keyed provider URLs (Alchemy) come in
@@ -19,6 +19,17 @@ export const robinhood: Chain = defineChain({
   blockExplorers: {
     default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' },
   },
+});
+
+export const arcTestnet: Chain = defineChain({
+  id: 5042002,
+  name: 'Arc Testnet',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.testnet.arc.network'] } },
+  blockExplorers: {
+    default: { name: 'Arc Explorer', url: 'https://explorer.testnet.arc.io' },
+  },
+  testnet: true,
 });
 
 export const robinhoodTestnet: Chain = defineChain({
@@ -101,6 +112,15 @@ export const EVM_CHAINS: EvmChainConfig[] = [
     rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL',
     startBlockEnv: 'NAVE_EVM_START_BLOCK_46630',
     watchAddressesEnv: 'NAVE_EVM_WATCH_ADDRESSES_46630',
+  },
+  {
+    chainId: 5042002,
+    chain: 'arc',
+    label: 'Arc Testnet',
+    viemChain: arcTestnet,
+    rpcEnv: 'EVM_ARC_TESTNET_RPC_URL',
+    startBlockEnv: 'NAVE_EVM_START_BLOCK_5042002',
+    watchAddressesEnv: 'NAVE_EVM_WATCH_ADDRESSES_5042002',
   },
 ];
 

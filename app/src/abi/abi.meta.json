@@ -1,6 +1,6 @@
 {
-  "syncedAt": "2026-09-05T21:02:12.277Z",
-  "source": "contracts/evm/out",
+  "syncedAt": "2026-10-11T00:45:08.916Z",
+  "source": "/Users/development/Desktop/Desktop - Retale's MacBook Pro/nave-finance/contracts/evm/out",
   "contracts": [
     "NaveProtocol",
     "NaveDAOFactory",

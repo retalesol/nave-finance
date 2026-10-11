@@ -9,6 +9,7 @@ import { chainKindFromAddress, type EvmChainId } from '../lib/chain/types';
 import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
 import { fetchStrategyPositionsEvm } from '../lib/evm/readers';
 import { ACTIVE_EVM_CHAIN_IDS, isEvmChainConfigured } from '../lib/programConfig';
+import { adapterKey, blendedApy, marksFromSnapshots, measuredApy, positionKey } from '../lib/positionYield';
 
 function resolveEvmChainIdForDao(_daoAddress: string): EvmChainId | null {
   // Prefer a configured active chain; multi-chain DAOs store chain on the registry
@@ -34,7 +35,10 @@ export interface StrategyInfo {
   protocol: string;
   allocation: number;
   currentValueUsd: number;
-  apy: number;
+  /** Marked value minus principal, in USD. */
+  earnedUsd: number;
+  /** Realized APY (percent) from snapshot marks; null until a day of marks exists. */
+  apy: number | null;
 }
 
 export interface AssetInfo {
@@ -121,6 +125,8 @@ async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryD
 
   // Live strategy positions: Solana via program PDAs; EVM via NaveTreasury.position.
   let strategies: StrategyInfo[] = [];
+  const marks = marksFromSnapshots(history);
+  const evmMarks = marksFromSnapshots(history, adapterKey);
   const kind = chainKindFromAddress(daoAddress);
   if (isProgramConfigured() && kind === 'solana') {
     try {
@@ -140,29 +146,51 @@ async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryD
         pairs.map(({ protocol, mint }) => ({ protocolId: protocol.protocolId, mint })),
       );
 
-      const deployedTotal = positions.reduce(
-        (sum, pos) => sum + (pos?.currentValueUsd ?? 0),
-        0,
-      );
-
-      // Aggregate by protocol — sum currentValueUsd across all mints.
-      const byProtocol = new Map<string, number>();
+      // USD per base unit: exact for stablecoins, else the last revalue's price
+      // (revalue covers vault plus marked positions for the mint).
+      const markedByMint = new Map<string, number>();
       positions.forEach((pos, i) => {
-        if (pos && pos.currentValueUsd > 0) {
-          const protocolId = pairs[i].protocol.protocolId;
-          byProtocol.set(protocolId, (byProtocol.get(protocolId) ?? 0) + pos.currentValueUsd);
-        }
+        const mint = pairs[i].mint.toBase58();
+        if (pos) markedByMint.set(mint, (markedByMint.get(mint) ?? 0) + pos.currentValueUsd);
       });
+      const usdPerUnit = new Map<string, number>();
+      for (const a of registeredAssets) {
+        if (a.isStablecoin) {
+          usdPerUnit.set(a.mint, 1 / 10 ** a.decimals);
+        } else {
+          const units = a.vaultBalanceBaseUnits + (markedByMint.get(a.mint) ?? 0);
+          usdPerUnit.set(a.mint, units > 0 ? a.lastValuedUsd / 1e6 / units : 0);
+        }
+      }
 
-      strategies = Array.from(byProtocol.entries()).map(
-        ([protocolId, currentValueUsd]) => ({
-          name: protocolId,
-          protocol: protocolId,
-          allocation: deployedTotal > 0 ? (currentValueUsd / deployedTotal) * 100 : 0,
-          currentValueUsd,
-          apy: 0,
-        }),
-      );
+      const byProtocol = new Map<string, { valueUsd: number; earnedUsd: number; apyRows: Array<{ value: number; apy: number | null }> }>();
+      positions.forEach((pos, i) => {
+        if (!pos || pos.currentValueUsd <= 0) return;
+        const protocolId = pairs[i].protocol.protocolId;
+        const mint = pairs[i].mint.toBase58();
+        const rate = usdPerUnit.get(mint) ?? 0;
+        const valueUsd = pos.currentValueUsd * rate;
+        const apy = measuredApy(marks.get(positionKey(protocolId, mint)) ?? [], {
+          atSecs: Math.floor(Date.now() / 1000),
+          deposited: pos.depositedAmount,
+          current: pos.currentValueUsd,
+        });
+        const agg = byProtocol.get(protocolId) ?? { valueUsd: 0, earnedUsd: 0, apyRows: [] };
+        agg.valueUsd += valueUsd;
+        agg.earnedUsd += (pos.currentValueUsd - pos.depositedAmount) * rate;
+        agg.apyRows.push({ value: valueUsd, apy });
+        byProtocol.set(protocolId, agg);
+      });
+      const deployedTotal = Array.from(byProtocol.values()).reduce((sum, a) => sum + a.valueUsd, 0);
+
+      strategies = Array.from(byProtocol.entries()).map(([protocolId, agg]) => ({
+        name: protocolId,
+        protocol: protocolId,
+        allocation: deployedTotal > 0 ? (agg.valueUsd / deployedTotal) * 100 : 0,
+        currentValueUsd: agg.valueUsd,
+        earnedUsd: agg.earnedUsd,
+        apy: blendedApy(agg.apyRows),
+      }));
     } catch (stratErr) {
       console.warn('Failed to load live strategy positions:', stratErr);
       strategies = [];
@@ -181,7 +209,12 @@ async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryD
             protocol: p.adapter,
             allocation: deployedTotal > 0 ? (valueUsd / deployedTotal) * 100 : 0,
             currentValueUsd: valueUsd,
-            apy: 0,
+            earnedUsd: (Number(p.currentValue) - Number(p.depositedAmount)) / 1e6,
+            apy: measuredApy(evmMarks.get(p.adapter.toLowerCase()) ?? [], {
+              atSecs: Math.floor(Date.now() / 1000),
+              deposited: Number(p.depositedAmount),
+              current: Number(p.currentValue),
+            }),
           };
         });
       }

@@ -1,7 +1,7 @@
 // Shared GenLayer charter / venue / halt judgment.
 //
-// One case shape for Solana, Ethereum, Base, and Robinhood. Custody stays on
-// the treasury chain. This module never talks to a signer and never treats an
+// One case shape for Solana, Ethereum, Base, Robinhood, and Arc. Custody stays
+// on the treasury chain. This module never talks to a signer and never treats an
 // assistant paragraph as the verdict.
 //
 // Flags (all default off):
@@ -10,7 +10,7 @@
 //   NAVE_GENLAYER_HALT_GATE  — keep_pause blocks clear_halt
 // When a flag is unset or not "true", the check is recorded and does not block.
 
-export type ChainFamily = "solana" | "ethereum" | "base" | "robinhood";
+export type ChainFamily = "solana" | "ethereum" | "base" | "robinhood" | "arc";
 export type GenNetwork = "mainnet" | "testnet" | "devnet";
 export type CustomerStatus = "checked" | "needs_closer_look" | "still_checking";
 export type CharterDecision = "pass" | "fail";
@@ -18,7 +18,7 @@ export type VenueStatus = "fine" | "watch" | "stop";
 export type HaltDecision = "keep_pause" | "lift_pause";
 export type ReviewKind = "charter" | "venue" | "halt";
 
-export const CHAIN_FAMILIES: readonly ChainFamily[] = ["solana", "ethereum", "base", "robinhood"];
+export const CHAIN_FAMILIES: readonly ChainFamily[] = ["solana", "ethereum", "base", "robinhood", "arc"];
 export const GEN_NETWORKS: readonly GenNetwork[] = ["mainnet", "testnet", "devnet"];
 
 export const NAVE_GENLAYER_GATE = "NAVE_GENLAYER_GATE";
@@ -147,6 +147,7 @@ export function chainFamilyFrom(chain?: string | null, chainId?: number | null):
   if (chainId === 1 || chainId === 11155111) return "ethereum";
   if (chainId === 8453 || chainId === 84532) return "base";
   if (chainId === 4663 || chainId === 46630) return "robinhood";
+  if (chainId === 5042002) return "arc";
   return "solana";
 }
 
@@ -158,6 +159,8 @@ export function networkForSigner(args: {
   if (args.chainFamily === "solana") {
     return (args.solanaRpcUrl ?? "").toLowerCase().includes("mainnet") ? "mainnet" : "devnet";
   }
+  // Arc has a testnet id only. Chain id 5042 is not a Nave network.
+  if (args.chainFamily === "arc") return "testnet";
   const id = args.chainId;
   if (id === 1 || id === 8453 || id === 4663) return "mainnet";
   return "testnet";
@@ -191,6 +194,89 @@ export function isActionHash(value: string | null | undefined): boolean {
 
 export function normalizeActionHash(value: string): string {
   return value.trim().toLowerCase().replace(/^0x/, "");
+}
+
+const COUNTEREVIDENCE_VERDICTS = new Set([
+  "keep_pause",
+  "lift_pause",
+  "pass",
+  "fail",
+  "checked",
+  "finalized",
+  "lift",
+  "keep",
+]);
+
+/**
+ * Blank counterevidence is not a second check. HaltAppeal stores keep_pause
+ * for a blank appeal, so the app must not send one.
+ */
+export function counterevidenceError(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim();
+  const token = text.toLowerCase().replace(/[\s-]+/g, "_");
+  if (token !== "" && COUNTEREVIDENCE_VERDICTS.has(token)) return "A prewritten decision is not evidence";
+  if (text.length < 12) return "counterevidence is missing";
+  return null;
+}
+
+/**
+ * Status pages for the venues this testing environment actually uses.
+ * Balancer is omitted. status.kamino.finance and status.compound.finance do
+ * not resolve. status.getcompound.ai is a different product.
+ */
+export const VENUE_STATUS_TARGETS: readonly {
+  venue: "kamino" | "aave-v3" | "compound-v3";
+  families: readonly ChainFamily[];
+  statusUrl: string;
+}[] = [
+  {
+    venue: "kamino",
+    families: ["solana"],
+    statusUrl: "https://kamino.com/docs/security.md",
+  },
+  {
+    venue: "aave-v3",
+    families: ["ethereum", "base"],
+    statusUrl: "https://status.aave.com/api/v2/summary.json",
+  },
+  {
+    venue: "compound-v3",
+    families: ["ethereum"],
+    statusUrl: "https://docs.compound.xyz/",
+  },
+];
+
+export interface VenueWatchJob {
+  chain_family: ChainFamily;
+  network: GenNetwork;
+  treasury: string;
+  venue: string;
+  status_url: string;
+}
+
+/** One venue review per testing-environment treasury. Mainnet and Balancer are left out. */
+export function venueWatchJobs(
+  daos: ReadonlyArray<{ treasury: string; chain: string; network: string }>,
+): VenueWatchJob[] {
+  const jobs: VenueWatchJob[] = [];
+  for (const dao of daos) {
+    const family = dao.chain.trim().toLowerCase();
+    const network = dao.network.trim().toLowerCase();
+    if (!isChainFamily(family) || !isGenNetwork(network) || network === "mainnet") continue;
+    for (const target of VENUE_STATUS_TARGETS) {
+      if (!(target.families as readonly string[]).includes(family)) continue;
+      const treasury = treasuryKey(family, dao.treasury);
+      if (!treasury) continue;
+      jobs.push({
+        chain_family: family,
+        network,
+        treasury,
+        venue: target.venue,
+        status_url: target.statusUrl,
+      });
+    }
+  }
+  return jobs;
 }
 
 /** RPC and contract inputs. No verdict, essay, or assistant text. */
@@ -259,7 +345,7 @@ export function parsePublicCase(body: Record<string, unknown>): { ok: true; inpu
   const network = String(body.network ?? "").toLowerCase();
   const treasury = String(body.treasury ?? "").trim();
   const actionHash = String(body.action_hash ?? "").trim();
-  if (!isChainFamily(family)) return { ok: false, error: "chain_family must be solana, ethereum, base, or robinhood." };
+  if (!isChainFamily(family)) return { ok: false, error: "chain_family must be solana, ethereum, base, robinhood, or arc." };
   if (!isGenNetwork(network)) return { ok: false, error: "network must be mainnet, testnet, or devnet." };
   if (!treasury) return { ok: false, error: "treasury is required." };
   if (!actionHash) return { ok: false, error: "action_hash is required." };
@@ -833,6 +919,8 @@ export function buildHaltArgs(input: PublicCharterInput): ContractCall {
   if (!isActionHash(input.action_hash)) throw new Error("action_hash must be 64 hex characters");
   const reason = (input.pause_reason ?? "").trim();
   if (reason.length < 12) throw new Error("pause_reason is missing");
+  const evidenceError = counterevidenceError(input.counterevidence);
+  if (evidenceError) throw new Error(evidenceError);
   return {
     method: "open_appeal",
     args: [
@@ -871,23 +959,49 @@ export function observationFinished(obs: ChainObservation | null | undefined): b
   return status === "finalized" && (result === "finishedwithreturn" || result === "1");
 }
 
+/**
+ * One recorded review. `decision` is only a charter pass/fail.
+ * Venue status stays on `venue_status`. Halt keep/lift stays on `halt_decision`.
+ */
+export interface RecordedReview {
+  kind: ReviewKind;
+  decision: CharterDecision | "";
+  halt_decision: HaltDecision | "";
+  venue_status: VenueStatus | null;
+  rule_ids: string[];
+  summary: string;
+  finished: boolean;
+  provisional: boolean;
+  action_hash: string;
+  tx_id: string;
+  customer_status: CustomerStatus;
+}
+
+/** Column value for `genlayer_reviews.decision`. Halt uses its own verdict; venue does not. */
+export function storedDecision(review: Pick<RecordedReview, "kind" | "decision" | "halt_decision">): string {
+  return review.kind === "halt" ? review.halt_decision : review.decision;
+}
+
 export function reviewFromRecord(args: {
   kind: ReviewKind;
   record: unknown;
   observation: ChainObservation | null;
   actionHash: string;
   txId: string;
-}): InterpretedCharter & { venue_status: VenueStatus | null } {
+}): RecordedReview {
   const finished = observationFinished(args.observation);
   const obj = args.record && typeof args.record === "object" ? args.record as Record<string, unknown> : {};
   if (args.kind === "venue") {
     const status = obj.status === "fine" || obj.status === "watch" || obj.status === "stop" ? obj.status : null;
+    const done = finished && status != null;
     return {
-      decision: status ?? "",
+      kind: "venue",
+      decision: "",
+      halt_decision: "",
       rule_ids: [],
       summary: typeof obj.summary === "string" ? obj.summary : "",
-      finished: finished && status != null,
-      provisional: !(finished && status != null),
+      finished: done,
+      provisional: !done,
       action_hash: args.actionHash,
       tx_id: args.txId,
       customer_status: "still_checking",
@@ -895,18 +1009,16 @@ export function reviewFromRecord(args: {
     };
   }
   if (args.kind === "halt") {
-    const decision = obj.decision === "keep_pause" || obj.decision === "lift_pause" ? obj.decision : "";
-    const view = {
-      decision,
-      finished: finished && decision !== "",
-      provisional: !(finished && decision !== ""),
-    };
+    const haltDecision = obj.decision === "keep_pause" || obj.decision === "lift_pause" ? obj.decision : "";
+    const done = finished && haltDecision !== "";
     return {
-      decision,
+      kind: "halt",
+      decision: "",
+      halt_decision: haltDecision,
       rule_ids: [],
       summary: typeof obj.summary === "string" ? obj.summary : "",
-      finished: view.finished,
-      provisional: view.provisional,
+      finished: done,
+      provisional: !done,
       action_hash: args.actionHash,
       tx_id: args.txId,
       customer_status: "still_checking",
@@ -926,5 +1038,17 @@ export function reviewFromRecord(args: {
     },
     args.actionHash,
   );
-  return { ...interpreted, venue_status: null };
+  return {
+    kind: "charter",
+    decision: interpreted.decision,
+    halt_decision: "",
+    venue_status: null,
+    rule_ids: interpreted.rule_ids,
+    summary: interpreted.summary,
+    finished: interpreted.finished,
+    provisional: interpreted.provisional,
+    action_hash: interpreted.action_hash,
+    tx_id: interpreted.tx_id,
+    customer_status: interpreted.customer_status,
+  };
 }

@@ -11,42 +11,7 @@ import {
 } from "../_shared/evmFounder.ts";
 import { checkChallengeTimestamp, verifyWalletSignature } from "../_shared/walletAuth.ts";
 import { consumeChallenge, replayChainLabel } from "../_shared/replay.ts";
-
-// EVM KEK selection MUST mirror the signer-service (signer-service/src/kek.ts
-// unwrapEvmDek): prefer a dedicated NAVE_EVM_MASTER_KEK, else NAVE_MASTER_KEK.
-// We wrap the per-key DEK under that exact key so the signer can unwrap it.
-function evmKekBase64(): string {
-  const k = Deno.env.get("NAVE_EVM_MASTER_KEK") || Deno.env.get("NAVE_MASTER_KEK");
-  if (!k) throw new Error("No EVM KEK configured (NAVE_EVM_MASTER_KEK or NAVE_MASTER_KEK)");
-  return k;
-}
-
-// ArrayBuffer-backed so the result satisfies WebCrypto's BufferSource type.
-function b64ToBytes(b64: string) {
-  const bin = atob(b64);
-  const out = new Uint8Array(new ArrayBuffer(bin.length));
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-function bytesToB64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-/** Wrap a raw DEK (base64) under the EVM master KEK (AES-256-GCM envelope). */
-async function wrapEvmDek(dekBase64: string): Promise<{ wrapped_dek: string; dek_wrap_iv: string; dek_wrap_tag: string }> {
-  const keyBytes = b64ToBytes(evmKekBase64());
-  if (keyBytes.length !== 32) throw new Error("EVM KEK must decode to 32 bytes (256-bit)");
-  const kek = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv, tagLength: 128 }, kek, b64ToBytes(dekBase64)),
-  );
-  const ct = encrypted.slice(0, encrypted.length - 16);
-  const tag = encrypted.slice(encrypted.length - 16);
-  return { wrapped_dek: bytesToB64(ct), dek_wrap_iv: bytesToB64(iv), dek_wrap_tag: bytesToB64(tag) };
-}
+import { type BoundWrappedDek, type DekBinding, unwrapDekBound, wrapDekBound } from "../_shared/kek.ts";
 
 // ─── EVM counterpart to generate-agent-keys (secp256k1 + guardian) ────────────
 //
@@ -94,6 +59,14 @@ const MAX_CHALLENGE_AGE_MS = 10 * 60 * 1000;
 
 function pendingAddress(daoRef: string): string {
   return `pending:${daoRef.toLowerCase()}`;
+}
+
+function keyBinding(dao: string, role: string, guardianIndex: number | null, chainId: number): DekBinding {
+  return {
+    dao,
+    role: guardianIndex === null ? role : `guardian#${guardianIndex}`,
+    chain: `evm:${chainId}`,
+  };
 }
 
 async function encryptKey(
@@ -149,7 +122,7 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: e instanceof Error ? e.message : "Invalid chain" }, 400);
   }
   if (!isEvmChain(chainSel.chain) || chainSel.chain_id === null) {
-    return jsonResponse({ error: "generate-evm-agent-keys is EVM-only (chain ethereum|base|robinhood + chain_id)" }, 400);
+    return jsonResponse({ error: "generate-evm-agent-keys is EVM-only (chain ethereum|base|robinhood|arc + chain_id)" }, 400);
   }
   try {
     founder = normalizeEvmAddress(founder);
@@ -231,15 +204,40 @@ Deno.serve(async (req: Request) => {
     });
     if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
 
-    const { data: updated, error: updErr } = await supabase
+    // The wrapped DEKs are bound to the pending ref; re-wrap each one for the
+    // treasury address as it is rebound.
+    const { data: pendingRows, error: selErr } = await supabase
       .from("encrypted_evm_keys")
-      .update({ dao_onchain_address: treasury })
+      .select("id, signer_role, evm_address, guardian_index, wrapped_dek, dek_wrap_iv, dek_wrap_tag, dek_wrap_version, dek_kek_ref")
       .eq("dao_onchain_address", pendingAddress(dao_ref))
       .eq("chain_id", chainId)
-      .eq("is_active", true)
-      .select("signer_role, evm_address, guardian_index");
-    if (updErr) {
-      console.error("evm key bind failed:", updErr);
+      .eq("is_active", true);
+    if (selErr) {
+      console.error("evm key bind lookup failed:", selErr);
+      return jsonResponse({ error: "Failed to bind EVM keys" }, 500);
+    }
+    const updated: Array<{ signer_role: string; evm_address: string; guardian_index: number | null }> = [];
+    try {
+      const rewrapped = [];
+      for (const r of pendingRows ?? []) {
+        const guardianIndex = r.guardian_index === null ? null : Number(r.guardian_index);
+        let envelope: Partial<BoundWrappedDek> = {};
+        if (Number(r.dek_wrap_version) === 2) {
+          const dek = await unwrapDekBound("evm", r, keyBinding(pendingAddress(dao_ref), r.signer_role, guardianIndex, chainId));
+          envelope = await wrapDekBound("evm", dek, keyBinding(treasury, r.signer_role, guardianIndex, chainId));
+        }
+        rewrapped.push({ r, envelope });
+      }
+      for (const { r, envelope } of rewrapped) {
+        const { error: updErr } = await supabase
+          .from("encrypted_evm_keys")
+          .update({ dao_onchain_address: treasury, ...envelope })
+          .eq("id", r.id);
+        if (updErr) throw updErr;
+        updated.push({ signer_role: r.signer_role, evm_address: r.evm_address, guardian_index: r.guardian_index });
+      }
+    } catch (err) {
+      console.error("evm key bind failed:", err);
       return jsonResponse({ error: "Failed to bind EVM keys" }, 500);
     }
     return jsonResponse({ success: true, dao_address: treasury, chain: chainKind, chain_id: chainId, bound: updated?.length ?? 0 });
@@ -295,7 +293,11 @@ Deno.serve(async (req: Request) => {
     const address = account.address.toLowerCase();
     // Persist the 0x-hex private key string (the signer accepts hex or 32 raw bytes).
     const { ciphertext, iv, tag, dek } = await encryptKey(new TextEncoder().encode(privKey));
-    const wrapped = await wrapEvmDek(dek);
+    const wrapped = await wrapDekBound(
+      "evm",
+      dek,
+      keyBinding(daoAddr, role, role === "guardian" ? 0 : null, chainId),
+    );
     rows.push({
       dao_onchain_address: daoAddr,
       chain: chainKind,
@@ -309,6 +311,8 @@ Deno.serve(async (req: Request) => {
       wrapped_dek: wrapped.wrapped_dek,
       dek_wrap_iv: wrapped.dek_wrap_iv,
       dek_wrap_tag: wrapped.dek_wrap_tag,
+      dek_wrap_version: wrapped.dek_wrap_version,
+      dek_kek_ref: wrapped.dek_kek_ref,
       is_active: true,
     });
     if (role === "guardian") continue;

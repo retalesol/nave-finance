@@ -282,7 +282,9 @@ async function fetchTreasuryAssetsData(
 
         const wrappedNative = allowed.find((asset) => asset.symbol.toUpperCase() === 'WETH');
 
-        if (nativeBalance && nativeBalance.value > 0n) {
+        // Arc native balance is 18-decimal gas USDC, not a treasury asset.
+        // Treasury USDC is the 6-decimal ERC-20 at 0x3600…0000.
+        if (chainId !== 5042002 && nativeBalance && nativeBalance.value > 0n) {
           const uiBalance = toUiAmount(nativeBalance.value, nativeBalance.decimals);
           rows.unshift({
             mint: 'ETH',

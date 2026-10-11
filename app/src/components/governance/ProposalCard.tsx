@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { findVenue, packSolanaAllocation } from '../../../supabase/functions/_shared/strategyCatalog.ts';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { getAssociatedTokenAddressSync, NATIVE_MINT } from '@solana/spl-token';
@@ -130,7 +131,7 @@ export default function ProposalCard({
   const { publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
   const { chainKind, evmChainId, chainFamily } = useChain();
-  const charter = useCharterCheck(daoAddress, chainId);
+  const charter = useCharterCheck(daoAddress, chainId, proposal.actionHash);
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const navigate = useNavigate();
@@ -521,7 +522,7 @@ export default function ProposalCard({
           return {
             protocolId: p.id,
             programId,
-            maxAllocationBps: p.maxAllocationBps,
+            maxAllocationBps: packSolanaAllocation(p.maxAllocationBps, findVenue('solana', p.id)?.tier ?? 1),
             approved: p.approved,
           };
         })
@@ -586,9 +587,10 @@ export default function ProposalCard({
   const pctAgainst = totalCast > 0 ? Math.round((va / totalCast) * 100) : 0;
   const gc = guardianCount ?? 0;
   // EVM finalizeProposal settles a missed quorum as `Failed` instead of reverting.
-  const finalizeOpts = { allowMissedQuorum: chainKind === 'evm' };
+  const quorumRounding = chainKind === 'evm' ? 'ceil' as const : 'floor' as const;
+  const finalizeOpts = { allowMissedQuorum: chainKind === 'evm', quorumRounding };
   const finalizable = canFinalize(proposal, gc, finalizeOpts);
-  const reqParticipation = requiredParticipationVotes(proposal, gc);
+  const reqParticipation = requiredParticipationVotes(proposal, gc, quorumRounding);
   const quorumPct =
     reqParticipation > 0 && Number.isFinite(totalCast)
       ? Math.min(100, Math.round((totalCast / reqParticipation) * 100))
@@ -756,8 +758,8 @@ export default function ProposalCard({
       if (finalizing || !daoAddress) return;
       setVoteError(null);
       if (!evmChainId) { setVoteError('Select an Ethereum or Base network.'); return; }
-      if (!canFinalize(proposal, guardianCount, { allowMissedQuorum: true })) {
-        setVoteError('Voting window is still open — finalize unlocks once voting ends.');
+      if (!canFinalize(proposal, guardianCount, { allowMissedQuorum: true, quorumRounding: 'ceil' })) {
+        setVoteError('Not enough yes votes to close early. Another guardian can vote, or wait until the voting window ends.');
         return;
       }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
@@ -1420,7 +1422,8 @@ export default function ProposalCard({
           summary={charter.summary}
           txId={charter.txId}
           asking={charter.asking}
-          onAskAnother={charter.canAsk ? () => { void charter.askAnother(); } : undefined}
+          askError={charter.askError}
+          onAskAnother={charter.canAsk ? (evidence) => { void charter.askAnother(evidence); } : undefined}
         />
       </div>
       )}
@@ -1556,7 +1559,7 @@ export default function ProposalCard({
 
               {/* Finalize — tallies votes once the window has closed (or outcome is certain). */}
               <div className="mt-3 pt-3 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                {isUndefeatable(proposal, guardianCount) && !votingWindowClosed(proposal) && (
+                {isUndefeatable(proposal, guardianCount, quorumRounding) && !votingWindowClosed(proposal) && (
                   <div
                     className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-lg"
                     style={{ backgroundColor: 'hsl(var(--success-muted))', fontSize: '11.5px', color: 'hsl(152 50% 28%)' }}

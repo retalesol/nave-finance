@@ -40,7 +40,7 @@ export function getFactoryAddress(chainId: EvmChainId): Address | null {
 export function assertSupportedChain(chainId: number): asserts chainId is EvmChainId {
   if (!isEvmChainId(chainId)) {
     throw new Error(
-      `Unsupported EVM chain id ${chainId}; Nave supports Ethereum, Base, and Robinhood (1, 8453, 4663, 11155111, 84532, 46630).`,
+      `Unsupported EVM chain id ${chainId}; Nave supports Ethereum, Base, Robinhood, and Arc Testnet (1, 8453, 4663, 11155111, 84532, 46630, 5042002).`,
     );
   }
 }

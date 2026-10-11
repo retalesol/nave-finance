@@ -445,7 +445,9 @@ export async function fetchTreasuryHasBalanceEvm(chainId: EvmChainId, daoAddress
   if (!treasury || !isEvmChainConfigured(chainId)) return false;
   const [nav, nativeBalance, registeredAssets] = await Promise.all([
     fetchNavEvm(chainId, daoAddress),
-    getBalance(wagmiConfig, { address: treasury, chainId }).catch(() => null),
+    chainId === 5042002
+      ? Promise.resolve(null)
+      : getBalance(wagmiConfig, { address: treasury, chainId }).catch(() => null),
     fetchRegisteredAssetsEvm(chainId, daoAddress),
   ]);
   if ((nav ?? 0) > 0) return true;

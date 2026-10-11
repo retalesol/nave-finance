@@ -79,6 +79,19 @@
   },
   {
     "type": "function",
+    "name": "agentsGuardianLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "applyAgentRotation",
     "inputs": [
       {
@@ -190,6 +203,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cancelAgentRotation",
+    "inputs": [
+      {
+        "name": "role",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -332,52 +358,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "emergencyFreeze",
-    "inputs": [
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "emergencyUnfreeze",
-    "inputs": [
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -627,6 +607,56 @@
   },
   {
     "type": "function",
+    "name": "guardianAction",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "internalType": "struct TreasuryGuardianLib.GuardianActionParams",
+        "components": [
+          {
+            "name": "actionType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "slot",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "newStatus",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "newKey",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "nonce",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "deadline",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      },
+      {
+        "name": "signatures",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "guardianCount",
     "inputs": [],
     "outputs": [
@@ -637,29 +667,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "guardianDisableAgents",
-    "inputs": [
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -696,29 +703,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "guardianVetoRecovery",
-    "inputs": [
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1148,34 +1132,6 @@
   },
   {
     "type": "function",
-    "name": "nullifyAgent",
-    "inputs": [
-      {
-        "name": "role",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "onERC1155BatchReceived",
     "inputs": [
       {
@@ -1295,6 +1251,30 @@
         "name": "",
         "type": "address",
         "internalType": "contract IOracle"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingAgentRotation",
+    "inputs": [
+      {
+        "name": "role",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "pendingAuthority",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "effectiveAt",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1670,19 +1650,6 @@
   },
   {
     "type": "function",
-    "name": "restoreAgent",
-    "inputs": [
-      {
-        "name": "role",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "revalueTreasury",
     "inputs": [],
     "outputs": [],
@@ -1709,39 +1676,6 @@
         "name": "mint",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rotateAgentKey",
-    "inputs": [
-      {
-        "name": "slot",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "newKey",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
       }
     ],
     "outputs": [],
@@ -1877,6 +1811,30 @@
   },
   {
     "type": "function",
+    "name": "syncPositionValue",
+    "inputs": [
+      {
+        "name": "adapter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "observed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "applied",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "toggleAgents",
     "inputs": [
       {
@@ -1984,39 +1942,6 @@
   },
   {
     "type": "function",
-    "name": "updateAgentStatus",
-    "inputs": [
-      {
-        "name": "slot",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "newStatus",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "nonce",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "deadline",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "updateConstitution",
     "inputs": [
       {
@@ -2066,24 +1991,6 @@
         "name": "threshold",
         "type": "uint8",
         "internalType": "uint8"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "updateStrategyPositionValue",
-    "inputs": [
-      {
-        "name": "adapter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "newValue",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -3001,12 +2908,12 @@
   },
   {
     "type": "error",
-    "name": "AgentNullified",
+    "name": "AgentsDisableRequiresGuardians",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "AgentsDisableRequiresGuardians",
+    "name": "AgentsLockedByGuardians",
     "inputs": []
   },
   {

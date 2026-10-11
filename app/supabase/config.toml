@@ -85,3 +85,11 @@ verify_jwt = false
 [functions.genlayer-adjudicator]
 # Appeal is browser-reachable. Submit requires X-Agent-Secret. No Nave mainnet txs.
 verify_jwt = false
+
+[functions.genlayer-venue-watch]
+# Cron posts kind "venue" to genlayer-adjudicator. Auth is the service role or X-Agent-Secret.
+verify_jwt = false
+
+[functions.refresh-strategy-rates]
+# Hourly cron upserts live venue APYs into strategy_rates. Auth is the service role or X-Agent-Secret.
+verify_jwt = false

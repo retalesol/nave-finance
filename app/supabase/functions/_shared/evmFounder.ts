@@ -26,6 +26,15 @@ const robinhood = defineChain({
   rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
 });
 
+const arcTestnet = defineChain({
+  id: EVM_CHAIN_IDS.arc.testnet,
+  name: "Arc Testnet",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } },
+  blockExplorers: { default: { name: "Arc Explorer", url: "https://explorer.testnet.arc.io" } },
+  testnet: true,
+});
+
 const robinhoodTestnet = defineChain({
   id: EVM_CHAIN_IDS.robinhood.testnet,
   name: "Robinhood Testnet",
@@ -61,6 +70,12 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_ROBINHOOD_TESTNET_RPC_URL",
     fallbackUrl: "https://rpc.testnet.chain.robinhood.com",
     protocolEnv: "EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS",
+  },
+  5042002: {
+    chain: arcTestnet,
+    rpcEnv: "EVM_ARC_TESTNET_RPC_URL",
+    fallbackUrl: "https://rpc.testnet.arc.network",
+    protocolEnv: "EVM_ARC_TESTNET_PROTOCOL_ADDRESS",
   },
 };
 

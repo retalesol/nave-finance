@@ -25,9 +25,11 @@ import {
   type EvmOnChainRequest,
 } from "../_shared/evmExecution.ts";
 import { type AgentRole, postReviewAction } from "../_shared/agentContracts.ts";
-import { evmChainKindFor, SUPPORTED_EVM_CHAIN_IDS } from "../_shared/chain.ts";
+import { evmChainKindFor, SUPPORTED_EVM_CHAIN_IDS, type ChainKind } from "../_shared/chain.ts";
 import { assessSignerPayload } from "../_shared/constitutionVerdict.ts";
 import { persistedConstitutionCheck } from "../_shared/constitutionLog.ts";
+import { evmRelaySignerRole, signerSecretFor, solanaSignerRole } from "../_shared/signerAuth.ts";
+import { haltCausesFrom, operationalGate, type OperationalGateResult } from "../_shared/operationalGate.ts";
 
 /** Zero EVM address — non-strategy requests (e.g. Transfer) carry no adapter. */
 const ZERO_EVM_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -409,6 +411,8 @@ interface PositionAccounting {
   depositedBaseUnits: number;
   /** Latest oracle-refreshed position value (base units). */
   currentValueBaseUnits: number;
+  /** The founder bound a venue (ext_market / ext_reserve) to the position. */
+  venueBound: boolean;
 }
 
 /**
@@ -442,9 +446,11 @@ async function readPositionAccounting(
     const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     if (raw.length < 202) return null;
     const dv = new DataView(raw.buffer, raw.byteOffset);
+    // ext_market @105, ext_reserve @137 (32 bytes each).
     return {
       depositedBaseUnits: Number(dv.getBigUint64(186, true)),
       currentValueBaseUnits: Number(dv.getBigUint64(194, true)),
+      venueBound: raw.subarray(105, 169).some((b) => b !== 0),
     };
   } catch {
     return null;
@@ -490,11 +496,21 @@ function protocolIdForProgram(programId: string): string | null {
 }
 
 /**
- * Returns true for protocols that route through the direct nave_core CPI path
- * (not execute_strategy → adapter). Currently only Jupiter.
+ * Venue deposit that places a Solana request's escrowed funds after
+ * `execute_strategy`. MarginFi needs founder-provisioned accounts and stays in
+ * escrow until placed manually.
  */
-function isDirectCpiProtocol(protocolId: string): boolean {
-  return protocolId === "jupiter";
+function venueDepositAction(protocolId: string): string | null {
+  switch (protocolId) {
+    case "kamino":
+      return "kamino_deposit";
+    case "jito":
+      return "jito_deposit";
+    case "jupiter":
+      return "jupiter_deposit";
+    default:
+      return null;
+  }
 }
 
 interface OrchestratorRequest {
@@ -590,13 +606,13 @@ const EVM_RELAY_ACTIONS = new Set<string>([
   "bridge_outbound",
 ]);
 
-function evmChainLabel(chainId: number): "ethereum" | "base" | "robinhood" {
+function evmChainLabel(chainId: number): Exclude<ChainKind, "solana"> {
   return evmChainKindFor(chainId) ?? "ethereum";
 }
 
 function isEvmTarget(p: { chain?: string; chain_id?: number }): boolean {
   const c = (p.chain ?? "").toLowerCase();
-  if (c === "ethereum" || c === "base" || c === "robinhood") return true;
+  if (c === "ethereum" || c === "base" || c === "robinhood" || c === "arc") return true;
   if (typeof p.chain_id === "number" && EVM_CHAIN_IDS.has(p.chain_id)) return true;
   return false;
 }
@@ -623,8 +639,8 @@ async function callSigner(payload: {
   agent_role: AgentRole;
   reasoning_hash?: string;
   protocol_id?: string;
-  amount?: number;
-  /** Asset mint for direct-CPI actions (e.g. jupiter_deposit/withdraw). */
+  amount?: number | "max";
+  /** Asset mint for venue CPIs (kamino/jito/jupiter deposit and withdraw). */
   mint?: string;
   /** ATA / Lookup Table for large direct-CPI transactions. */
   lookup_table_address?: string;
@@ -641,6 +657,9 @@ async function callSigner(payload: {
     confidence?: number;
     expected_payload_hash?: string;
     payload_hash?: string;
+    /** execute_strategy ops: the request being executed. */
+    execution_request_address?: string;
+    purpose?: "venue_placement";
   }>;
   jito_tip_lamports?: number;
   // ── EVM-only routing fields (ignored by the Solana /sign path) ──────────────
@@ -657,9 +676,9 @@ async function callSigner(payload: {
   /** uint256 slippage floor for execute_strategy / *_direct / withdraw. */
   min_out?: number | string;
   /**
-   * EVM-only: adapter address for `update_strategy_position_value`, which
-   * targets the TREASURY (dao_address) directly rather than execution_address.
-   * Also used as the bridge adapter for `create_bridge_request`.
+   * EVM-only: adapter address for `update_strategy_position_value`
+   * (NaveExecution.syncPositionValue). Also the bridge adapter for
+   * `create_bridge_request`.
    */
   adapter?: string;
   /** EVM create_bridge_request: ERC-20 (or WETH) being bridged. */
@@ -674,7 +693,7 @@ async function callSigner(payload: {
   confidence?: number;
   expected_payload_hash?: string;
   payload_hash?: string;
-  purpose?: "compound" | "auto_withdraw";
+  purpose?: "compound" | "auto_withdraw" | "venue_placement" | "venue_recall";
   policy_intent?: "rebalance" | "deploy_idle" | "reduce_exposure" | "hold";
 }): Promise<{ ok: boolean; signature?: string; bundle_id?: string; atomic?: boolean; error?: string; constitution_check: Record<string, unknown> }> {
   const verdict = await assessSignerPayload(payload);
@@ -706,12 +725,17 @@ async function callSigner(payload: {
     ) {
       return deny("NAVE_BRIDGE_OUTBOUND_ENABLED is false — capital bridge relay refused");
     }
-    // update_strategy_position_value targets the TREASURY (dao_address)
-    // directly — it has no execution_address/index (those key NaveExecution,
-    // not NaveTreasury).
+    // update_strategy_position_value → NaveExecution.syncPositionValue(adapter)
+    // (no request index; the value is read from the adapter on-chain).
+    // revalue_treasury targets the treasury directly.
     if (payload.action === "update_strategy_position_value" || payload.action === "revalue_treasury") {
-      if (payload.action === "update_strategy_position_value" && !payload.adapter) {
-        return deny("EVM update_strategy_position_value requires adapter (NaveTreasury position key)");
+      if (payload.action === "update_strategy_position_value") {
+        if (!payload.adapter) {
+          return deny("EVM update_strategy_position_value requires adapter (NaveTreasury position key)");
+        }
+        if (!payload.execution_address) {
+          return deny("EVM update_strategy_position_value requires execution_address (NaveExecution contract)");
+        }
       }
     } else if (payload.action === "create_bridge_request") {
       if (!payload.execution_address) {
@@ -731,7 +755,10 @@ async function callSigner(payload: {
     try {
       const resp = await fetch(`${base}/relay-evm`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Signer-Secret": signerSecretFor(evmRelaySignerRole(payload.action)) ?? signerSecret,
+        },
         body: JSON.stringify({
           action: payload.action,
           chain_id: payload.chain_id,
@@ -766,7 +793,7 @@ async function callSigner(payload: {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Signer-Secret": signerSecret,
+        "X-Signer-Secret": signerSecretFor(solanaSignerRole(payload.agent_role)) ?? signerSecret,
       },
       body: JSON.stringify(signerRequestBody(payload)),
     });
@@ -852,16 +879,15 @@ async function triggerRevalue(
  * configured window, trigger a revalue and re-read. Fail-closed: returns
  * `ok:false` (caller PARKs the deploy) whenever freshness cannot be confirmed.
  *
- * Backward-compatible during staged rollout: when no off-chain freshness window
- * is configured (`NAVE_MAX_NAV_AGE_SECONDS`) or the on-chain field is not yet
- * exposed (`NAVE_VAULT_LAST_REVALUED_OFF` unset → `navLastRevaluedAt` undefined),
- * the gate is treated as not-applicable and the deploy proceeds (the on-chain
- * StaleNav check remains the ultimate guard).
+ * The window is `NAVE_MAX_NAV_AGE_SECONDS` (default 900; 0 disables it). When
+ * the on-chain field is not exposed (`NAVE_VAULT_LAST_REVALUED_OFF` unset →
+ * `navLastRevaluedAt` undefined) the gate is not applicable and the deploy
+ * proceeds (the on-chain StaleNav check remains the ultimate guard).
  */
 async function ensureNavFreshForDeploy(
   daoAddress: string,
 ): Promise<{ ok: boolean; reason: string }> {
-  const maxNavAge = Number(Deno.env.get("NAVE_MAX_NAV_AGE_SECONDS") ?? 0) || 0;
+  const maxNavAge = Number(Deno.env.get("NAVE_MAX_NAV_AGE_SECONDS") ?? 900) || 0;
   if (maxNavAge <= 0) return { ok: true, reason: "NAV freshness window unset (n/a)" };
 
   const rpcUrl = Deno.env.get("SOLANA_RPC_URL");
@@ -908,6 +934,9 @@ async function callSignerBundle(
     confidence?: number;
     expected_payload_hash?: string;
     payload_hash?: string;
+    /** execute_strategy ops: the request being executed. */
+    execution_request_address?: string;
+    purpose?: "venue_placement";
   }>,
 ): Promise<{ ok: boolean; bundle_id?: string; atomic?: boolean; error?: string; constitution_check: Record<string, unknown> }> {
   return callSigner({
@@ -995,25 +1024,24 @@ Deno.serve(async (req: Request) => {
       dao: string;
       er: string;
       action: string;
-      state: GateState;
+      state: GateState | "operational_gate";
       reason: string;
     }> = [];
     // DAOs that resumed (gate now open) after recently being parked — surfaced so
     // operators can see the backlog was reconciled rather than silently dropped.
     const reconciled: Array<{ dao: string; requeued: number; note: string }> = [];
 
-    // ── Atomic rebalance batching (Jito bundle) ───────────────────────────
-    // Direct-CPI executions (e.g. jupiter_deposit) that become ready in the SAME
-    // poll cycle for the SAME DAO are collected here and, when the existing
-    // JITO_BUNDLE_REBALANCE_ENABLED flag is on, submitted atomically via one
-    // callSignerBundle (≤4 ops) instead of N sequential signer calls. A single
-    // collected op (or the flag being off) falls back to the normal sequential
-    // execute path, so this never changes behavior for the common single-op case.
+    // ── Execute-then-place batching (Jito bundle) ─────────────────────────
+    // Solana executions that become ready in the same poll cycle for the same
+    // DAO are collected here. With JITO_BUNDLE_REBALANCE_ENABLED each one is
+    // submitted as an atomic [execute_strategy, <venue>_deposit] pair (two pairs
+    // per ≤4-op bundle); otherwise, or if the bundle fails, each runs
+    // sequentially: execute, then place the escrowed funds in the venue.
     interface PendingDirectOp {
       er: string;
       action: string;
       mint: string;
-      amount: number;
+      amount: number | "max";
       protocolId: string;
       payloadHash: string;
       confidence: number;
@@ -1088,6 +1116,144 @@ Deno.serve(async (req: Request) => {
         risk_flags: [`agent_gate_${gate.state}`],
         decision: "skipped",
         claude_model: null,
+        raw_claude_response: null,
+        retry_count: 0,
+      });
+    };
+
+    /** Deterministic causes recorded with the request's latest successful halt; null if none. */
+    const latestHaltCauses = async (erAddr: string): Promise<string[] | null> => {
+      const { data } = await supabase
+        .from("agent_action_logs")
+        .select("constitution_check")
+        .eq("execution_request_address", erAddr)
+        .eq("action_type", "halt")
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!data) return null;
+      const causes = (data.constitution_check as Record<string, unknown> | null)?.halt_causes;
+      return Array.isArray(causes) ? causes.filter((c): c is string => typeof c === "string") : [];
+    };
+
+    /** Place an executed request's escrowed funds in its venue (`op.action` = venue deposit). */
+    const placeInVenue = async (daoAddr: string, op: PendingDirectOp) => {
+      const placeRes = await callSigner({
+        action: op.action,
+        dao_address: daoAddr,
+        execution_request_address: op.er,
+        agent_role: "operational",
+        protocol_id: op.protocolId,
+        mint: op.mint,
+        amount: op.amount,
+        purpose: "venue_placement",
+      });
+      await supabase.from("agent_action_logs").insert({
+        dao_onchain_address: daoAddr,
+        agent_role: "operational",
+        action_type: op.action,
+        reasoning: placeRes.ok
+          ? `Orchestrator: placed the executed request's escrowed funds in ${op.protocolId} (sig ${placeRes.signature}).`
+          : `Orchestrator: ${op.action} after execute failed: ${placeRes.error}. Funds stay in the strategy escrow.`,
+        constitution_check: persistedConstitutionCheck(op.action, placeRes.constitution_check),
+        payload_hash: op.payloadHash,
+        tx_signature: placeRes.signature || "",
+        execution_request_address: op.er,
+        status: placeRes.ok ? "completed" : "failed",
+        error_message: placeRes.error || "",
+        confidence_score: op.confidence,
+        risk_flags: op.riskFlags,
+        decision: "execute",
+        claude_model: op.model,
+        raw_claude_response: null,
+        retry_count: 0,
+      });
+      if (!placeRes.ok) {
+        errors.push({ dao: daoAddr, er: op.er, error: `${op.action} failed: ${placeRes.error}` });
+      }
+    };
+
+    /**
+     * Recall a venue-placed position into the strategy escrow so
+     * withdraw_from_strategy can pay it out. No-op for escrow-only positions.
+     */
+    const recallFromVenue = async (
+      daoAddr: string,
+      er: string,
+      protocolId: string,
+      mint: string,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const placeAction = venueDepositAction(protocolId);
+      if (!placeAction) return { ok: true };
+      const pos = await readPositionAccounting(daoAddr, protocolId, mint);
+      if (!pos?.venueBound) return { ok: true };
+      const recallAction = placeAction.replace(/_deposit$/, "_withdraw");
+      const recallRes = await callSigner({
+        action: recallAction,
+        dao_address: daoAddr,
+        execution_request_address: er,
+        agent_role: "operational",
+        protocol_id: protocolId,
+        mint,
+        amount: "max",
+        purpose: "venue_recall",
+      });
+      if (!recallRes.ok && /nothing to move/.test(recallRes.error ?? "")) return { ok: true };
+      await supabase.from("agent_action_logs").insert({
+        dao_onchain_address: daoAddr,
+        agent_role: "operational",
+        action_type: recallAction,
+        reasoning: recallRes.ok
+          ? `Orchestrator: recalled the ${protocolId} position into the strategy escrow ahead of a withdraw (sig ${recallRes.signature}).`
+          : `Orchestrator: ${recallAction} recall failed: ${recallRes.error}`,
+        constitution_check: persistedConstitutionCheck(recallAction, recallRes.constitution_check),
+        payload_hash: "",
+        tx_signature: recallRes.signature || "",
+        execution_request_address: er,
+        status: recallRes.ok ? "completed" : "failed",
+        error_message: recallRes.error || "",
+        confidence_score: null,
+        risk_flags: [],
+        decision: "withdraw",
+        claude_model: null,
+        raw_claude_response: null,
+        retry_count: 0,
+      });
+      return recallRes.ok ? { ok: true } : { ok: false, error: recallRes.error };
+    };
+
+    /** Record an Operational continue/clear_halt that the deterministic gate refused. */
+    const logOperationalGateBlock = async (
+      item: WorkItem,
+      actionType: "clear_halt" | "execute_strategy",
+      decision: OperationalGateResult,
+      result: DispatchResult,
+      model: string | null | undefined,
+      checks?: unknown,
+    ) => {
+      gated.push({
+        dao: item.dao_address,
+        er: item.execution_request_address,
+        action: actionType,
+        state: "operational_gate",
+        reason: decision.blockers.join("; "),
+      });
+      await supabase.from("agent_action_logs").insert({
+        dao_onchain_address: item.dao_address,
+        agent_role: "operational",
+        action_type: actionType,
+        reasoning: `Orchestrator: Operational ${actionType} refused by the deterministic gate: ${decision.blockers.join("; ")}.`,
+        constitution_check: { operational_gate: decision, checks: Array.isArray(checks) ? checks : [] },
+        payload_hash: "",
+        tx_signature: "",
+        execution_request_address: item.execution_request_address,
+        status: "skipped",
+        error_message: "",
+        confidence_score: result.confidence,
+        risk_flags: [...result.risk_flags, "operational_gate_blocked"],
+        decision: "skipped",
+        claude_model: model ?? null,
         raw_claude_response: null,
         retry_count: 0,
       });
@@ -1480,7 +1646,7 @@ Deno.serve(async (req: Request) => {
               execution_request_address: item.execution_request_address,
               agent_role: "operational",
               adapter,
-              amount: fresh.amount,
+              execution_address: executionAddress,
               chain: item.chain,
               chain_id: chainId,
             });
@@ -1706,6 +1872,7 @@ Deno.serve(async (req: Request) => {
             execution_request_address: item.execution_request_address,
             agent_role: "operational",
             protocol_id: protocolId,
+            mint: fresh.mint,
             amount: fresh.amount,
           });
           await supabase.from("agent_action_logs").insert({
@@ -1795,6 +1962,11 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
+          const recall = await recallFromVenue(item.dao_address, item.execution_request_address, protocolId, fresh.mint);
+          if (!recall.ok) {
+            errors.push({ dao: item.dao_address, er: item.execution_request_address, error: `compound recall failed: ${recall.error}` });
+            continue;
+          }
           const gainPct = ((realizedGain / pos.depositedBaseUnits) * 100).toFixed(2);
           const compoundRes = await callSigner({
             action: "withdraw_from_strategy",
@@ -1839,6 +2011,21 @@ Deno.serve(async (req: Request) => {
               dao: item.dao_address,
               er: item.execution_request_address,
               error: `compound harvest failed: ${compoundRes.error}`,
+            });
+          }
+          // The principal stays deployed: put what remains in escrow back in the venue.
+          const replaceAction = pos.venueBound ? venueDepositAction(protocolId) : null;
+          if (replaceAction) {
+            await placeInVenue(item.dao_address, {
+              er: item.execution_request_address,
+              action: replaceAction,
+              mint: fresh.mint,
+              amount: "max",
+              protocolId,
+              payloadHash: fresh.payloadHash,
+              confidence: 0,
+              riskFlags: [],
+              model: null,
             });
           }
           continue;
@@ -1895,6 +2082,11 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
+        const recall = await recallFromVenue(item.dao_address, item.execution_request_address, protocolId, fresh.mint);
+        if (!recall.ok) {
+          errors.push({ dao: item.dao_address, er: item.execution_request_address, error: `withdraw recall failed: ${recall.error}` });
+          continue;
+        }
         const withdrawRes = await callSigner({
           action: "withdraw_from_strategy",
           dao_address: item.dao_address,
@@ -2077,7 +2269,9 @@ Deno.serve(async (req: Request) => {
             reasoning: signRes.ok
               ? `Orchestrator: Operational agent halted execution on-chain (sig ${signRes.signature}). Reason: ${dispatchData.halt_reason}`
               : `Orchestrator: Operational halt failed to sign: ${signRes.error}`,
-            constitution_check: persistedConstitutionCheck("halt", signRes.constitution_check),
+            constitution_check: persistedConstitutionCheck("halt", signRes.constitution_check, {
+              halt_causes: haltCausesFrom(dispatchData.guardrail_checks),
+            }),
             payload_hash: "",
             tx_signature: signRes.signature || "",
             execution_request_address: item.execution_request_address,
@@ -2098,13 +2292,27 @@ Deno.serve(async (req: Request) => {
         // operational_clear on-chain to move Halted → InReview. The cleared
         // request is then re-queued so the same run can proceed to the
         // execution/expiry evaluation below.
+        let clearDecision: OperationalGateResult | null = null;
         if (
           agentRole === "operational" &&
           fresh.status === "Halted" &&
           dispatchData.should_clear_halt &&
-          dispatchData.decision === "clear_halt" &&
-          (dispatchData.guardrail_failures?.length ?? 0) === 0
+          dispatchData.decision === "clear_halt"
         ) {
+          clearDecision = operationalGate({
+            action: "clear_halt",
+            status: fresh.status,
+            nowSecs: Math.floor(Date.now() / 1000),
+            reviewEndSecs: fresh.reviewEnd,
+            checks: dispatchData.guardrail_checks,
+            guardrailFailures: dispatchData.guardrail_failures,
+            openHaltCauses: await latestHaltCauses(item.execution_request_address),
+          });
+          if (!clearDecision.ok) {
+            await logOperationalGateBlock(item, "clear_halt", clearDecision, result, dispatchData.model, dispatchData.guardrail_checks);
+          }
+        }
+        if (clearDecision?.ok) {
           // Clearing a halt re-arms the request for execution → capital movement.
           // Park it (don't clear) when the gate blocks capital movement.
           // Gate freshness: re-read immediately before acting.
@@ -2129,7 +2337,9 @@ Deno.serve(async (req: Request) => {
             reasoning: clearRes.ok
               ? `Orchestrator: Operational agent cleared a prior halt on-chain (sig ${clearRes.signature}); request returned to InReview.`
               : `Orchestrator: operational_clear failed to sign: ${clearRes.error}`,
-            constitution_check: persistedConstitutionCheck("clear_halt", clearRes.constitution_check),
+            constitution_check: persistedConstitutionCheck("clear_halt", clearRes.constitution_check, {
+              operational_gate: clearDecision,
+            }),
             payload_hash: "",
             tx_signature: clearRes.signature || "",
             execution_request_address: item.execution_request_address,
@@ -2221,6 +2431,26 @@ Deno.serve(async (req: Request) => {
                 retry_count: 0,
               });
             } else if (action === "execute") {
+              const continueDecision = operationalGate({
+                action: "continue",
+                status: onchain.status,
+                nowSecs: now,
+                reviewEndSecs: onchain.reviewEnd,
+                checks: dispatchData.guardrail_checks,
+                guardrailFailures: dispatchData.guardrail_failures,
+                openHaltCauses: await latestHaltCauses(item.execution_request_address),
+              });
+              if (!continueDecision.ok) {
+                await logOperationalGateBlock(
+                  item,
+                  "execute_strategy",
+                  continueDecision,
+                  result,
+                  dispatchData.model,
+                  dispatchData.guardrail_checks,
+                );
+                continue;
+              }
               const isEvmExec = item.chain_id != null;
               const execProtocolId = isEvmExec
                 ? (onchain.protocolProgram || "evm")
@@ -2300,16 +2530,12 @@ Deno.serve(async (req: Request) => {
                   continue;
                 }
 
-                // Jupiter uses the direct nave_core CPI path (jupiter_deposit) rather
-                // than the execute_strategy → adapter pipeline.
-                const usesDirectCpi = !isEvmExec && isDirectCpiProtocol(execProtocolId);
-                const execAction = usesDirectCpi ? "jupiter_deposit" : "execute_strategy";
+                // Every venue goes through execute_strategy; on Solana the escrowed
+                // funds are then placed with the venue deposit.
+                const execAction = "execute_strategy";
+                const placeAction = isEvmExec ? null : venueDepositAction(execProtocolId);
 
-                // Atomic-rebalance batching: collect ready direct-CPI deposits and
-                // flush them as one Jito bundle after the loop (≤4 ops). Only
-                // direct-CPI ops are bundleable; execute_strategy (adapter) ops are
-                // ER-bound and run sequentially as before.
-                if (usesDirectCpi && JITO_BUNDLE_REBALANCE_ENABLED) {
+                if (!isEvmExec && JITO_BUNDLE_REBALANCE_ENABLED) {
                   const list = pendingDirectCpiOps.get(item.dao_address) ?? [];
                   list.push({
                     er: item.execution_request_address,
@@ -2331,7 +2557,9 @@ Deno.serve(async (req: Request) => {
                   action: execAction,
                   dao_address: item.dao_address,
                   execution_request_address: item.execution_request_address,
-                  agent_role: "operational",
+                  // EVM `execute` is Executive-only on-chain (the relayer signs
+                  // with the Executive key regardless of this field).
+                  agent_role: isEvmExec ? "executive" : "operational",
                   protocol_id: execProtocolId,
                   mint: onchain.mint,
                   amount: onchain.amount,
@@ -2368,6 +2596,18 @@ Deno.serve(async (req: Request) => {
                     dao: item.dao_address,
                     er: item.execution_request_address,
                     error: `execute_strategy failed: ${execRes.error}`,
+                  });
+                } else if (placeAction) {
+                  await placeInVenue(item.dao_address, {
+                    er: item.execution_request_address,
+                    action: placeAction,
+                    mint: onchain.mint,
+                    amount: onchain.amount,
+                    protocolId: execProtocolId,
+                    payloadHash: dispatchData.payload_hash || "",
+                    confidence: result.confidence,
+                    riskFlags: result.risk_flags,
+                    model: dispatchData.model ?? null,
                   });
                 }
               }
@@ -2456,11 +2696,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Flush atomic rebalances (Jito bundle) ─────────────────────────────
-    // For each DAO with ≥2 ready direct-CPI ops collected this cycle, submit them
-    // atomically as one bundle (capped at 4). A single collected op runs through
-    // the normal sequential execute path so the common case is unchanged. The
-    // signer falls back to sequential submission on devnet automatically.
+    // ── Flush execute-then-place pairs (Jito bundle) ──────────────────────
+    // Each collected execution is bundled with its venue deposit (two pairs per
+    // ≤4-op bundle). Executions without a venue deposit (MarginFi) and bundle
+    // failures run sequentially. The signer falls back to sequential
+    // submission on devnet automatically.
     let bundledRebalances = 0;
     for (const [daoAddr, ops] of pendingDirectCpiOps) {
       if (ops.length === 0) continue;
@@ -2512,31 +2752,42 @@ Deno.serve(async (req: Request) => {
         });
         if (!execRes.ok) {
           errors.push({ dao: daoAddr, er: op.er, error: `${op.action} failed: ${execRes.error}` });
+          return;
         }
+        const placeAction = venueDepositAction(op.protocolId);
+        if (placeAction) await placeInVenue(daoAddr, { ...op, action: placeAction });
       };
 
-      // Only batch when there is genuine multi-op atomicity to gain. Respect the
-      // ≤4 op limit (1 bundle slot reserved for the Jito tip); any overflow runs
-      // sequentially so nothing is dropped.
-      if (ops.length < 2) {
-        await runSequential(ops[0]);
-        continue;
-      }
+      // ≤4 ops per bundle (1 slot reserved for the Jito tip) = two
+      // [execute, deposit] pairs; overflow runs sequentially so nothing is dropped.
+      const pairable = ops.filter((op) => venueDepositAction(op.protocolId));
+      for (const op of ops.filter((o) => !venueDepositAction(o.protocolId))) await runSequential(op);
+      if (pairable.length === 0) continue;
 
-      const batch = ops.slice(0, 4);
-      const overflow = ops.slice(4);
+      const batch = pairable.slice(0, 2);
+      const overflow = pairable.slice(2);
 
       const bundleRes = await callSignerBundle(
         daoAddr,
-        batch.map((op) => ({
-          action: op.action,
-          mint: op.mint,
-          amount: op.amount,
-          protocol_id: op.protocolId,
-          confidence: op.confidence,
-          expected_payload_hash: op.payloadHash,
-          payload_hash: op.payloadHash,
-        })),
+        batch.flatMap((op) => [
+          {
+            action: "execute_strategy",
+            execution_request_address: op.er,
+            mint: op.mint,
+            amount: op.amount,
+            protocol_id: op.protocolId,
+            confidence: op.confidence,
+            expected_payload_hash: op.payloadHash,
+            payload_hash: op.payloadHash,
+          },
+          {
+            action: venueDepositAction(op.protocolId)!,
+            mint: op.mint,
+            amount: op.amount,
+            protocol_id: op.protocolId,
+            purpose: "venue_placement" as const,
+          },
+        ]),
       );
 
       if (bundleRes.ok) {
@@ -2547,10 +2798,10 @@ Deno.serve(async (req: Request) => {
             agent_role: "operational",
             action_type: "bundle_rebalance",
             reasoning:
-              `Orchestrator: atomic rebalance — ${op.action} (${op.protocolId}) executed in a ${batch.length}-op Jito bundle (bundle_id ${bundleRes.bundle_id ?? "n/a"}, atomic=${bundleRes.atomic ?? false}).`,
+              `Orchestrator: executed the request and placed it in ${op.protocolId} in a ${batch.length * 2}-op Jito bundle (bundle_id ${bundleRes.bundle_id ?? "n/a"}, atomic=${bundleRes.atomic ?? false}).`,
             constitution_check: persistedConstitutionCheck("bundle_rebalance", bundleRes.constitution_check, {
               atomic_rebalance: true,
-              bundle_ops: batch.length,
+              bundle_ops: batch.length * 2,
             }),
             payload_hash: op.payloadHash,
             tx_signature: bundleRes.bundle_id || "",

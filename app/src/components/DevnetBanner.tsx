@@ -3,7 +3,7 @@ import { toast } from '../hooks/use-toast';
 import Fi from './Fi';
 import { useChain } from '../hooks/useChain';
 import type { ChainFamily } from '../lib/chain/types';
-import { EVM_RPC_URLS } from '../lib/programConfig';
+import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
 
 type EthProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -66,56 +66,120 @@ async function addOrSwitchChain(chainId: string, addParams: {
   }
 }
 
-const NETWORKS: { label: string; family: ChainFamily; action: () => Promise<void> | void; tooltip: string }[] = [
-  {
-    label: 'Solana (Devnet)',
-    family: 'solana',
-    action: () => { window.open('https://help.phantom.com/hc/en-us/articles/5997313271699-Turn-on-devnet-or-testnet-mode-in-Phantom', '_blank'); },
-    tooltip: 'How to enable Devnet in Phantom wallet',
-  },
-  {
-    label: 'Ethereum (Sepolia)',
-    family: 'ethereum',
-    action: () => addOrSwitchChain('0xaa36a7', {
-      chainName: 'Ethereum Sepolia',
-      rpcUrls: [EVM_RPC_URLS[11155111] ?? 'https://ethereum-sepolia-rpc.publicnode.com'],
-      blockExplorerUrls: ['https://sepolia.etherscan.io'],
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    }),
-    tooltip: 'Add / switch to Ethereum Sepolia in your EVM wallet',
-  },
-  {
-    label: 'Base (Mainnet)',
-    family: 'base',
-    action: () => addOrSwitchChain('0x2105', {
-      chainName: 'Base',
-      rpcUrls: [EVM_RPC_URLS[8453] ?? 'https://mainnet.base.org'],
-      blockExplorerUrls: ['https://basescan.org'],
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    }),
-    tooltip: 'Add / switch to Base mainnet in your EVM wallet',
-  },
-  {
-    label: 'Robinhood (Mainnet)',
-    family: 'robinhood',
-    // 4663 = 0x1237 — Robinhood Chain mainnet (Arbitrum Nitro L2, bridge/stake only).
-    action: () => addOrSwitchChain('0x1237', {
-      chainName: 'Robinhood Chain',
-      rpcUrls: [EVM_RPC_URLS[4663] ?? 'https://rpc.mainnet.chain.robinhood.com'],
-      blockExplorerUrls: ['https://explorer.mainnet.chain.robinhood.com'],
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    }),
-    tooltip: 'Add / switch to Robinhood Chain mainnet in your EVM wallet',
-  },
-];
+type NetworkChip = { label: string; family: ChainFamily; action: () => Promise<void> | void; tooltip: string };
 
-const LINKS = [
-  { label: 'Sepolia ETH (PoW Faucet)', url: 'https://sepolia-faucet.pk910.de/' },
-  { label: 'Bridge ETH to Base', url: 'https://bridge.base.org/' },
-  { label: 'Solana Devnet Faucets', url: 'https://solana.com/developers/guides/getstarted/solana-token-airdrop-and-faucets' },
-];
+const SOLANA_DEVNET: NetworkChip = {
+  label: 'Solana (Devnet)',
+  family: 'solana',
+  action: () => { window.open('https://help.phantom.com/hc/en-us/articles/5997313271699-Turn-on-devnet-or-testnet-mode-in-Phantom', '_blank'); },
+  tooltip: 'How to enable Devnet in Phantom wallet',
+};
 
-const PERSIST_KEY = 'nave_network_banner_hidden_v4';
+const ETHEREUM_SEPOLIA: NetworkChip = {
+  label: 'Ethereum (Sepolia)',
+  family: 'ethereum',
+  action: () => addOrSwitchChain('0xaa36a7', {
+    chainName: 'Ethereum Sepolia',
+    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Ethereum Sepolia in your EVM wallet',
+};
+
+const BASE_MAINNET: NetworkChip = {
+  label: 'Base (Mainnet)',
+  family: 'base',
+  action: () => addOrSwitchChain('0x2105', {
+    chainName: 'Base',
+    rpcUrls: ['https://mainnet.base.org'],
+    blockExplorerUrls: ['https://basescan.org'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Base mainnet in your EVM wallet',
+};
+
+const BASE_SEPOLIA: NetworkChip = {
+  label: 'Base (Base Sepolia)',
+  family: 'base',
+  action: () => addOrSwitchChain('0x14a34', {
+    chainName: 'Base Sepolia',
+    rpcUrls: ['https://sepolia.base.org'],
+    blockExplorerUrls: ['https://sepolia.basescan.org'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Base Sepolia in your EVM wallet',
+};
+
+const ROBINHOOD_MAINNET: NetworkChip = {
+  label: 'Robinhood (Mainnet)',
+  family: 'robinhood',
+  // 4663 = 0x1237 — Robinhood Chain mainnet (Arbitrum Nitro L2).
+  action: () => addOrSwitchChain('0x1237', {
+    chainName: 'Robinhood Chain',
+    rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+    blockExplorerUrls: ['https://explorer.mainnet.chain.robinhood.com'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Robinhood Chain mainnet in your EVM wallet',
+};
+
+const ROBINHOOD_TESTNET: NetworkChip = {
+  label: 'Robinhood (Testnet)',
+  family: 'robinhood',
+  // 46630 = 0xb626.
+  action: () => addOrSwitchChain('0xb626', {
+    chainName: 'Robinhood Chain Testnet',
+    rpcUrls: ['https://rpc.testnet.chain.robinhood.com'],
+    blockExplorerUrls: ['https://explorer.testnet.chain.robinhood.com'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Robinhood Chain Testnet in your EVM wallet',
+};
+
+const ARC_TESTNET: NetworkChip = {
+  label: 'Arc (Testnet)',
+  family: 'arc',
+  // 5042002 = 0x4cef52. Native gas is 18-decimal USDC, not ETH.
+  action: () => addOrSwitchChain('0x4cef52', {
+    chainName: 'Arc Testnet',
+    rpcUrls: ['https://rpc.testnet.arc.network'],
+    blockExplorerUrls: ['https://explorer.testnet.arc.io'],
+    nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  }),
+  tooltip: 'Add / switch to Arc Testnet. Gas is native USDC (18 decimals), not ETH.',
+};
+
+const NETWORKS: NetworkChip[] = EVM_DEPLOYMENT_MODE === 'testnet'
+  ? [SOLANA_DEVNET, ETHEREUM_SEPOLIA, BASE_SEPOLIA, ROBINHOOD_TESTNET, ARC_TESTNET]
+  : EVM_DEPLOYMENT_MODE === 'mainnet'
+    ? [BASE_MAINNET, ROBINHOOD_MAINNET]
+    : [SOLANA_DEVNET, ETHEREUM_SEPOLIA, BASE_MAINNET, ROBINHOOD_MAINNET, ARC_TESTNET];
+
+const BANNER_BADGE = EVM_DEPLOYMENT_MODE === 'testnet'
+  ? 'TESTNET'
+  : EVM_DEPLOYMENT_MODE === 'mainnet'
+    ? 'MAINNET'
+    : 'MIXED NETWORKS';
+
+const BANNER_SUMMARY = EVM_DEPLOYMENT_MODE === 'testnet'
+  ? 'Solana Devnet · Ethereum Sepolia · Base Sepolia · Robinhood & Arc Testnet —'
+  : EVM_DEPLOYMENT_MODE === 'mainnet'
+    ? 'Base & Robinhood mainnet —'
+    : 'Solana Devnet · Ethereum Sepolia · Base & Robinhood Mainnet —';
+
+const LINKS = EVM_DEPLOYMENT_MODE === 'mainnet'
+  ? []
+  : [
+      { label: 'Sepolia ETH (PoW Faucet)', url: 'https://sepolia-faucet.pk910.de/' },
+      {
+        label: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Bridge ETH to Base Sepolia' : 'Bridge ETH to Base',
+        url: 'https://bridge.base.org/',
+      },
+      { label: 'Solana Devnet Faucets', url: 'https://solana.com/developers/guides/getstarted/solana-token-airdrop-and-faucets' },
+    ];
+
+const PERSIST_KEY = 'nave_network_banner_hidden_v5';
 
 export default function DevnetBanner() {
   const { setChainFamily, chainFamily } = useChain();
@@ -157,9 +221,9 @@ export default function DevnetBanner() {
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 flex-shrink-0" style={{ color: '#92400e', fontWeight: 500 }}>
             <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', backgroundColor: '#d97706', color: 'white', padding: '2px 5px', borderRadius: '3px' }}>
-              MIXED NETWORKS
+              {BANNER_BADGE}
             </span>
-            <span className="hidden xs:inline">Solana Devnet · Ethereum Sepolia · Base &amp; Robinhood Mainnet —</span>
+            <span className="hidden xs:inline">{BANNER_SUMMARY}</span>
             <span className="xs:hidden">Mixed nets —</span>
           </span>
           <div className="flex items-center gap-2 flex-shrink-0">

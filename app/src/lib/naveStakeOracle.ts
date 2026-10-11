@@ -165,6 +165,18 @@ export async function fetchNaveStakeQuote(
       }
       return { ok: false, quote: null, attestation: null, fallback: false, error };
     }
+    // Off mainnet, a live quote whose dollar target disagrees with the
+    // configured stake (the deployed oracle often quotes mainnet) is replaced
+    // by the fixed devnet price so creation can quote.
+    if (
+      !isMainnetNetwork()
+      && Math.round(data.quote.stakeUsd * 100) !== Math.round(stakeUsd * 100)
+    ) {
+      const fallback = localFallbackQuote(stakeUsd);
+      if (fallback) {
+        return { ok: true, quote: fallback, attestation: null, fallback: true, error: null };
+      }
+    }
     return {
       ok: true,
       quote: data.quote,

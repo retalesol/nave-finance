@@ -105,11 +105,202 @@ export type NaveCore = {
               }
             ]
           }
+        },
+        {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
         }
       ],
       "args": [
         {
           "name": "role",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "applyGuardianAgentChange",
+      "discriminator": [
+        60,
+        127,
+        203,
+        43,
+        134,
+        78,
+        58,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agentSet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "agentSlot",
           "type": "u8"
         }
       ]
@@ -220,6 +411,133 @@ export type NaveCore = {
         {
           "name": "proposal",
           "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "applyReviewWindow",
+      "discriminator": [
+        196,
+        165,
+        199,
+        198,
+        154,
+        226,
+        119,
+        31
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "constitution",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  115,
+                  116,
+                  105,
+                  116,
+                  117,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -441,6 +759,107 @@ export type NaveCore = {
       ]
     },
     {
+      "name": "cancelAgentRotation",
+      "discriminator": [
+        48,
+        124,
+        140,
+        77,
+        6,
+        88,
+        138,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agentSet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "role",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "cancelGuardianAction",
       "docs": [
         "Founder-callable: close a finished or stale `GuardianAction` PDA and",
@@ -524,6 +943,109 @@ export type NaveCore = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "cancelGuardianAgentChange",
+      "discriminator": [
+        197,
+        137,
+        57,
+        228,
+        42,
+        254,
+        115,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "agentSlot",
+          "type": "u8"
+        }
+      ]
     },
     {
       "name": "collectManagementFee",
@@ -3000,6 +3522,151 @@ export type NaveCore = {
       "args": []
     },
     {
+      "name": "guardianCancelAgentRotation",
+      "discriminator": [
+        228,
+        150,
+        236,
+        100,
+        43,
+        15,
+        114,
+        171
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianAction",
+          "writable": true
+        },
+        {
+          "name": "agentSet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "role",
+          "type": "u8"
+        },
+        {
+          "name": "actionNonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "guardianDisableAgents",
       "discriminator": [
         55,
@@ -3120,6 +3787,204 @@ export type NaveCore = {
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "actionNonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "guardianEnableAgents",
+      "discriminator": [
+        137,
+        11,
+        156,
+        101,
+        231,
+        189,
+        142,
+        2
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "globalConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoRegistry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.founder",
+                "account": "daoRegistry"
+              },
+              {
+                "kind": "account",
+                "path": "dao_registry.dao_id",
+                "account": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianAction",
+          "writable": true
+        },
+        {
+          "name": "agentSet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -4078,6 +4943,31 @@ export type NaveCore = {
                   116,
                   114,
                   121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "agentSet",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
                 ]
               },
               {
@@ -5150,6 +6040,54 @@ export type NaveCore = {
           }
         },
         {
+          "name": "strategyEscrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  112,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "depositorTokenAccount",
           "docs": [
             "Vault-owned underlying ATA (deposit source)."
@@ -5940,6 +6878,54 @@ export type NaveCore = {
                   105,
                   111,
                   110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  112,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strategyEscrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
                 ]
               },
               {
@@ -8841,7 +9827,11 @@ export type NaveCore = {
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "Writable for the optional `initial_supply` mint_to."
+          ],
+          "writable": true
         },
         {
           "name": "tokenProgram",
@@ -9134,7 +10124,8 @@ export type NaveCore = {
       ],
       "accounts": [
         {
-          "name": "authority",
+          "name": "guardian",
+          "writable": true,
           "signer": true
         },
         {
@@ -9188,6 +10179,41 @@ export type NaveCore = {
           }
         },
         {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianAction",
+          "writable": true
+        },
+        {
           "name": "agentSet",
           "writable": true,
           "pda": {
@@ -9212,12 +10238,20 @@ export type NaveCore = {
               }
             ]
           }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
           "name": "role",
           "type": "u8"
+        },
+        {
+          "name": "actionNonce",
+          "type": "u64"
         }
       ]
     },
@@ -9828,6 +10862,34 @@ export type NaveCore = {
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -10677,6 +11739,7 @@ export type NaveCore = {
       "accounts": [
         {
           "name": "authority",
+          "writable": true,
           "signer": true
         },
         {
@@ -10757,6 +11820,38 @@ export type NaveCore = {
               }
             ]
           }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -11179,6 +12274,36 @@ export type NaveCore = {
               }
             ]
           }
+        },
+        {
+          "name": "daoControl",
+          "docs": [
+            "(never guardian-locked). Decoded by `DaoControl::is_guardian_locked`."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -11272,6 +12397,37 @@ export type NaveCore = {
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardianConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
                 ]
               },
               {
@@ -11411,6 +12567,34 @@ export type NaveCore = {
                   115,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "daoControl",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
                 ]
               },
               {
@@ -11878,16 +13062,97 @@ export type NaveCore = {
               }
             ]
           }
+        },
+        {
+          "name": "vaultAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strategyEscrow",
+          "docs": [
+            "Escrowed principal not yet supplied to the venue."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  97,
+                  116,
+                  101,
+                  103,
+                  121,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              },
+              {
+                "kind": "arg",
+                "path": "protocolId"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "venueState",
+          "docs": [
+            "key, owner and embedded mints are verified in the handler."
+          ]
+        },
+        {
+          "name": "receiptTokenAccount",
+          "docs": [
+            "in the handler."
+          ]
         }
       ],
       "args": [
         {
           "name": "protocolId",
           "type": "string"
-        },
-        {
-          "name": "newValue",
-          "type": "u64"
         }
       ]
     },
@@ -12182,6 +13447,19 @@ export type NaveCore = {
       ]
     },
     {
+      "name": "daoControl",
+      "discriminator": [
+        178,
+        15,
+        140,
+        155,
+        194,
+        53,
+        116,
+        116
+      ]
+    },
+    {
       "name": "daoLifecycle",
       "discriminator": [
         42,
@@ -12444,6 +13722,19 @@ export type NaveCore = {
       ]
     },
     {
+      "name": "agentRotationCancelled",
+      "discriminator": [
+        152,
+        151,
+        113,
+        22,
+        108,
+        142,
+        117,
+        233
+      ]
+    },
+    {
       "name": "agentRotationScheduled",
       "discriminator": [
         62,
@@ -12691,6 +13982,32 @@ export type NaveCore = {
       ]
     },
     {
+      "name": "guardianAgentChangeCancelled",
+      "discriminator": [
+        110,
+        95,
+        125,
+        208,
+        237,
+        106,
+        125,
+        39
+      ]
+    },
+    {
+      "name": "guardianAgentChangeQueued",
+      "discriminator": [
+        7,
+        243,
+        164,
+        250,
+        130,
+        57,
+        89,
+        4
+      ]
+    },
+    {
       "name": "guardianConfigUpdated",
       "discriminator": [
         57,
@@ -12886,6 +14203,19 @@ export type NaveCore = {
       ]
     },
     {
+      "name": "positionMarked",
+      "discriminator": [
+        163,
+        113,
+        109,
+        161,
+        103,
+        185,
+        43,
+        12
+      ]
+    },
+    {
       "name": "proposalCountRecorded",
       "discriminator": [
         121,
@@ -12909,6 +14239,19 @@ export type NaveCore = {
         78,
         129,
         188
+      ]
+    },
+    {
+      "name": "reviewWindowChangeQueued",
+      "discriminator": [
+        196,
+        133,
+        181,
+        169,
+        27,
+        160,
+        36,
+        222
       ]
     },
     {
@@ -13571,6 +14914,51 @@ export type NaveCore = {
       "code": 6110,
       "name": "guardianConfigLayoutInvalid",
       "msg": "GuardianConfig account has an unexpected data length"
+    },
+    {
+      "code": 6111,
+      "name": "agentsLockedByGuardians",
+      "msg": "Agents were disabled by guardian quorum; only guardians can re-enable them"
+    },
+    {
+      "code": 6112,
+      "name": "agentKeyConflict",
+      "msg": "Agent keys must be nonzero, distinct, and differ from the founder and every guardian"
+    },
+    {
+      "code": 6113,
+      "name": "noPendingGuardianChange",
+      "msg": "No queued guardian agent change for this slot"
+    },
+    {
+      "code": 6114,
+      "name": "guardianChangeNotReady",
+      "msg": "Queued guardian agent change has not reached its effective time"
+    },
+    {
+      "code": 6115,
+      "name": "noPendingReviewWindow",
+      "msg": "No queued review-window change"
+    },
+    {
+      "code": 6116,
+      "name": "reviewWindowChangeNotReady",
+      "msg": "Queued review-window change has not reached its effective time"
+    },
+    {
+      "code": 6117,
+      "name": "positionMarkSourceMismatch",
+      "msg": "Position mark source account does not match the configured venue"
+    },
+    {
+      "code": 6118,
+      "name": "venueDepositRequiresEscrow",
+      "msg": "Strategy funds must be escrowed by an executed request before a venue deposit"
+    },
+    {
+      "code": 6119,
+      "name": "riskTierCapExceeded",
+      "msg": "Approved Tier 2 caps may total at most 30% and Tier 3 caps at most 15%"
     }
   ],
   "types": [
@@ -13658,6 +15046,22 @@ export type NaveCore = {
           {
             "name": "newAuthority",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "agentRotationCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "role",
+            "type": "u8"
           }
         ]
       }
@@ -13954,6 +15358,68 @@ export type NaveCore = {
           {
             "name": "founder",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "daoControl",
+      "docs": [
+        "Per-DAO agent-safety state. Companion PDA to `DaoRegistry`/`AgentSet`",
+        "(seeds `[\"dao_control\", dao]`), created lazily so existing account layouts",
+        "stay frozen across the program upgrade. A missing account reads as default."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardianLocked",
+            "docs": [
+              "Set by a guardian-quorum `guardian_disable_agents`; cleared only by",
+              "`guardian_enable_agents`. While set, `toggle_agents(true)` reverts."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "pendingReviewWindowSecs",
+            "docs": [
+              "Queued review-window reduction (0 = none)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reviewWindowEffectiveAt",
+            "type": "i64"
+          },
+          {
+            "name": "pendingAgentChanges",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "pendingGuardianAgentChange"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
           }
         ]
       }
@@ -14820,6 +16286,58 @@ export type NaveCore = {
       }
     },
     {
+      "name": "guardianAgentChangeCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "agentSlot",
+            "type": "u8"
+          },
+          {
+            "name": "cancelledBy",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "guardianAgentChangeQueued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "agentSlot",
+            "type": "u8"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "newAuthority",
+            "type": "pubkey"
+          },
+          {
+            "name": "newStatus",
+            "type": "u8"
+          },
+          {
+            "name": "effectiveAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "guardianConfig",
       "docs": [
         "Guardian multisig configuration for a DAO."
@@ -15462,6 +16980,42 @@ export type NaveCore = {
       }
     },
     {
+      "name": "pendingGuardianAgentChange",
+      "docs": [
+        "A guardian-quorum agent change waiting out `GUARDIAN_AGENT_CHANGE_DELAY_SECS`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "docs": [
+              "`GUARDIAN_CHANGE_*`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "newAuthority",
+            "docs": [
+              "New authority for `ROTATE_KEY`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "newStatus",
+            "docs": [
+              "New status for `SET_STATUS`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "effectiveAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "performanceFeeSkimmed",
       "docs": [
         "Emitted on every strategy withdrawal that realizes yield: `fee` base units of",
@@ -15530,6 +17084,30 @@ export type NaveCore = {
           {
             "name": "rebalanceFrequencySecs",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "positionMarked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "observed",
+            "type": "u64"
+          },
+          {
+            "name": "applied",
+            "type": "u64"
           }
         ]
       }
@@ -15607,7 +17185,8 @@ export type NaveCore = {
           {
             "name": "maxAllocationBps",
             "docs": [
-              "Maximum allocation in basis points."
+              "Maximum allocation in basis points, with the venue risk tier packed into",
+              "the two high bits. Read through `allocation_bps` / `risk_tier`."
             ],
             "type": "u16"
           },
@@ -15676,6 +17255,26 @@ export type NaveCore = {
           {
             "name": "approved",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewWindowChangeQueued",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dao",
+            "type": "pubkey"
+          },
+          {
+            "name": "reviewWindowSecs",
+            "type": "i64"
+          },
+          {
+            "name": "effectiveAt",
+            "type": "i64"
           }
         ]
       }

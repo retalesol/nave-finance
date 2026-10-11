@@ -2,7 +2,7 @@ import { createPublicClient, createWalletClient, encodeAbiParameters, http, kecc
 import { mainnet, base, sepolia, baseSepolia } from 'viem/chains';
 import type { Chain } from 'viem';
 import { loadEvmAccount, isEvmChainId, signEvmApproval, type EvmSignerRole } from './evmSigner.js';
-import { robinhood, robinhoodTestnet } from './evmChains.js';
+import { arcTestnet, robinhood, robinhoodTestnet } from './evmChains.js';
 import { fetchHermesUpdateData } from './evmPythKeeper.js';
 
 // Scope: Ethereum + Base + Robinhood (1/8453/4663 + testnets).
@@ -15,48 +15,59 @@ const CHAIN_CONFIG: Record<number, { chain: Chain; rpcEnv: string }> = {
   84532: { chain: baseSepolia, rpcEnv: 'EVM_BASE_SEPOLIA_RPC_URL' },
   4663: { chain: robinhood, rpcEnv: 'EVM_ROBINHOOD_RPC_URL' },
   46630: { chain: robinhoodTestnet, rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL' },
+  5042002: { chain: arcTestnet, rpcEnv: 'EVM_ARC_TESTNET_RPC_URL' },
 };
 
 /** Mainnet chain ids — a positive `minOut` slippage floor is REQUIRED here. */
 const MAINNET_CHAIN_IDS = new Set<number>([1, 8453, 4663]);
 
 // Minimal NaveTreasury ABI for the agent toggle path. Resume is the Executive
-// agent's msg.sender-gated `toggleAgents(true)`; pause is the guardian M-of-N
-// EIP-712 `guardianDisableAgents` (the single-actor `emergencyPauseAgents` was
-// removed from the contracts — it let one custodied key open the
-// `executeDirect` review-window bypass).
+// agent's msg.sender-gated `toggleAgents(true)` (refused on-chain once
+// guardians have disabled the pipeline); pause is the guardian M-of-N
+// `guardianAction(DISABLE_AGENTS)`, which also locks out Executive re-enable.
 const TREASURY_TOGGLE_ABI = [
   { type: 'function', name: 'toggleAgents', stateMutability: 'nonpayable', inputs: [{ name: 'enabled', type: 'bool' }], outputs: [] },
   {
     type: 'function',
-    name: 'guardianDisableAgents',
+    name: 'guardianAction',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'nonce', type: 'uint64' },
-      { name: 'deadline', type: 'uint64' },
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'actionType', type: 'uint8' },
+          { name: 'agentSlot', type: 'uint8' },
+          { name: 'newStatus', type: 'uint8' },
+          { name: 'newKey', type: 'address' },
+          { name: 'nonce', type: 'uint64' },
+          { name: 'deadline', type: 'uint64' },
+        ],
+      },
       { name: 'signatures', type: 'bytes[]' },
     ],
     outputs: [],
   },
 ] as const;
 
+/** `GuardianActionType.DISABLE_AGENTS` (contracts/evm/src/libraries/NaveEnums.sol). */
+const GUARDIAN_ACTION_DISABLE_AGENTS = 4;
+
 /** Upper bound on custodied guardian slots probed for the pause quorum. */
 const MAX_CUSTODIED_GUARDIANS = 10;
 /** Default validity of a pause digest (contract stale bound is 7 days). */
 const DISABLE_AGENTS_DEADLINE_SECS = 3600;
 
-// Minimal NaveTreasury ABI for the position-oracle tick (mirrors Solana's
-// `update_strategy_position_value`). `updateStrategyPositionValue` is gated
-// on-chain to `founder || Operational agent` (see NaveTreasury.sol); the
-// relayer always uses the custodied Operational agent EOA, matching the
-// Solana signer's requirement that this action be signed by `operational`.
-const TREASURY_POSITION_ABI = [
+// Position-oracle tick. The mark is read on-chain from the adapter by
+// `NaveExecution.syncPositionValue(adapter)` (founder or Operational agent);
+// the relayer never supplies a value, and the treasury caps upward drift.
+const EXECUTION_POSITION_ABI = [
   {
     type: 'function',
-    name: 'updateStrategyPositionValue',
+    name: 'syncPositionValue',
     stateMutability: 'nonpayable',
-    inputs: [{ name: 'adapter', type: 'address' }, { name: 'newValue', type: 'uint256' }],
-    outputs: [],
+    inputs: [{ name: 'adapter', type: 'address' }],
+    outputs: [{ name: 'applied', type: 'uint256' }],
   },
 ] as const;
 
@@ -68,7 +79,7 @@ const EXECUTION_ABI = [
   { type: 'function', name: 'financialApprove', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'txPayloadHash', type: 'bytes32' }, { name: 'reasoningHash', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'oversightApprove', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'txPayloadHash', type: 'bytes32' }, { name: 'reasoningHash', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'operationalHalt', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'reasonHash', type: 'bytes32' }], outputs: [] },
-  { type: 'function', name: 'operationalClear', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }], outputs: [] },
+  { type: 'function', name: 'operationalClear', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'reasonHash', type: 'bytes32' }], outputs: [] },
   { type: 'function', name: 'expireRequest', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }], outputs: [] },
   { type: 'function', name: 'execute', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'minOut', type: 'uint256' }], outputs: [] },
   { type: 'function', name: 'executeDirect', stateMutability: 'nonpayable', inputs: [{ name: 'index', type: 'uint64' }, { name: 'minOut', type: 'uint256' }], outputs: [] },
@@ -140,7 +151,7 @@ export interface EvmRelayToggleRequest {
    * signatures produced outside the signer (e.g. the founder's wallet in the
    * browser). They MUST be over the same `nonce` + `deadline` supplied here;
    * the relayer adds every custodied guardian signature it holds and submits
-   * the union to `guardianDisableAgents`.
+   * the union to `guardianAction(DISABLE_AGENTS)`.
    */
   guardian_signatures?: string[];
   /** GuardianAction.nonce (uint64). Defaults to the current unix time. */
@@ -152,12 +163,18 @@ export interface EvmRelayToggleRequest {
 /** Position-oracle tick request (mirrors Solana's `update_strategy_position_value`). */
 export interface EvmRelayUpdatePositionValueRequest {
   chain_id: number;
-  /** NaveTreasury (DAO) address — also the tx TARGET for this action. */
+  /** NaveTreasury (DAO) address — used to load the custodied Operational key. */
   dao_address: string;
+  /** NaveExecution contract — the tx TARGET. Accepts `target_address` alias. */
+  execution_address?: string;
+  target_address?: string;
   /** Adapter address the position is keyed by (NaveTreasury.position(adapter)). */
   adapter: string;
-  /** New marked value (base units) for `TreasuryStrategyLib.Position.currentValue`. */
-  new_value: number | string;
+  /**
+   * Ignored: the value is read on-chain from the adapter. Kept so older
+   * callers that still send it are not rejected.
+   */
+  new_value?: number | string;
 }
 
 /** Agent-pipeline relay action names (1:1 with the orchestrator action vocab). */
@@ -189,7 +206,11 @@ export interface EvmRelayAgentActionRequest {
   index: number | string;
   /** bytes32 reasoning/halt-reason hash (approvals + operational_halt). */
   reasoning_hash?: string;
-  /** bytes32 tx payload hash bound at request creation (financial/oversight). */
+  /**
+   * Optional bytes32 payload hash the caller reviewed (financial/oversight).
+   * The relayer recomputes the hash from the on-chain request and signs that;
+   * a supplied value must match it.
+   */
   tx_payload_hash?: string;
   /** uint256 base-unit amount to unwind (withdraw_from_strategy). */
   amount?: number | string;
@@ -215,11 +236,11 @@ export interface EvmRelayResult {
   gas_used?: string;
   /** Receipt status ('success' | 'reverted'); always 'success' on resolve. */
   status: 'success';
-  /** guardianDisableAgents only: custodied guardian addresses that signed. */
+  /** Guardian pause only: custodied guardian addresses that signed. */
   guardian_signers?: string[];
-  /** guardianDisableAgents only: total signatures submitted (custodied + external). */
+  /** Guardian pause only: total signatures submitted (custodied + external). */
   guardian_signature_count?: number;
-  /** guardianDisableAgents only: GuardianAction nonce / deadline used. */
+  /** Guardian pause only: GuardianAction nonce / deadline used. */
   nonce?: string;
   deadline?: string;
 }
@@ -362,7 +383,7 @@ async function collectCustodiedDisableSignatures(
   }
   if (!broadcaster) {
     throw new Error(
-      `No custodied guardian key bound for ${treasury} (chain ${chainId}); cannot assemble the guardianDisableAgents quorum`,
+      `No custodied guardian key bound for ${treasury} (chain ${chainId}); cannot assemble the DISABLE_AGENTS guardian quorum`,
     );
   }
   return { signatures, signers, broadcaster };
@@ -371,7 +392,7 @@ async function collectCustodiedDisableSignatures(
 /**
  * Submit the agent pause/resume toggle on-chain from the appropriate custodied
  * EOA. Resume → Executive agent calls `toggleAgents(true)` (msg.sender-gated).
- * Pause → guardian M-of-N `guardianDisableAgents(nonce, deadline, sigs)`: the
+ * Pause → guardian M-of-N `guardianAction(DISABLE_AGENTS, sigs)`: the
  * relayer signs with every custodied guardian it holds, appends any externally
  * supplied guardian signatures (founder wallet), and broadcasts from the
  * custodied guardian EOA. If the on-chain threshold is not met the call
@@ -381,7 +402,7 @@ async function collectCustodiedDisableSignatures(
 export async function relayEvmAgentToggle(body: EvmRelayToggleRequest): Promise<EvmRelayResult> {
   const { chain_id, enabled } = body;
   if (!isEvmChainId(chain_id)) {
-    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood: 1, 8453, 4663, 11155111, 84532, 46630)`);
+    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood, Arc Testnet: 1, 8453, 4663, 11155111, 84532, 46630, 5042002)`);
   }
   const treasury = body.dao_address;
   if (!EVM_ADDRESS_RE.test(treasury)) {
@@ -443,8 +464,18 @@ export async function relayEvmAgentToggle(body: EvmRelayToggleRequest): Promise<
     chainId: chain_id,
     target: treasury as `0x${string}`,
     abi: TREASURY_TOGGLE_ABI,
-    functionName: 'guardianDisableAgents',
-    args: [nonce, deadline, signatures],
+    functionName: 'guardianAction',
+    args: [
+      {
+        actionType: GUARDIAN_ACTION_DISABLE_AGENTS,
+        agentSlot: 0,
+        newStatus: 0,
+        newKey: ZERO_ADDRESS,
+        nonce,
+        deadline,
+      },
+      signatures,
+    ],
     account: custodied.broadcaster,
   });
 
@@ -452,7 +483,7 @@ export async function relayEvmAgentToggle(body: EvmRelayToggleRequest): Promise<
     tx_hash: txHash,
     signer: custodied.broadcaster.address,
     signer_role: 'guardian',
-    function_name: 'guardianDisableAgents',
+    function_name: 'guardianAction',
     chain_id,
     block_number: blockNumber?.toString(),
     gas_used: gasUsed?.toString(),
@@ -465,18 +496,16 @@ export async function relayEvmAgentToggle(body: EvmRelayToggleRequest): Promise<
 }
 
 /**
- * Submit a position-oracle tick on-chain: `NaveTreasury.updateStrategyPositionValue`
- * from the custodied Operational agent EOA. Unlike the NaveExecution pipeline
- * relay below, the tx TARGET is the treasury itself (`dao_address`), not a
- * `NaveExecution` clone — mirrors Solana's `update_strategy_position_value`,
- * which is also signed by the operational agent.
+ * Submit a position-oracle tick on-chain: `NaveExecution.syncPositionValue(adapter)`
+ * from the custodied Operational agent EOA. The contract reads the value from
+ * the adapter itself, so the relayer cannot inject a mark.
  */
 export async function relayEvmUpdateStrategyPositionValue(
   body: EvmRelayUpdatePositionValueRequest,
 ): Promise<EvmRelayResult> {
   const { chain_id, dao_address, adapter } = body;
   if (!isEvmChainId(chain_id)) {
-    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood: 1, 8453, 4663, 11155111, 84532, 46630)`);
+    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood, Arc Testnet: 1, 8453, 4663, 11155111, 84532, 46630, 5042002)`);
   }
   if (!EVM_ADDRESS_RE.test(dao_address)) {
     throw new Error('dao_address must be a 20-byte EVM treasury address');
@@ -484,16 +513,19 @@ export async function relayEvmUpdateStrategyPositionValue(
   if (!EVM_ADDRESS_RE.test(adapter)) {
     throw new Error('adapter must be a 20-byte EVM address');
   }
-  const newValue = asUint(body.new_value, 'new_value');
+  const target = body.execution_address ?? body.target_address;
+  if (!target || !EVM_ADDRESS_RE.test(target)) {
+    throw new Error('execution_address (NaveExecution contract) must be a 20-byte EVM address');
+  }
 
   const account = await loadEvmAccount(dao_address, chain_id, 'operational');
 
   const { txHash, blockNumber, gasUsed } = await broadcastCall({
     chainId: chain_id,
-    target: dao_address as `0x${string}`,
-    abi: TREASURY_POSITION_ABI,
-    functionName: 'updateStrategyPositionValue',
-    args: [adapter as `0x${string}`, newValue],
+    target: target as `0x${string}`,
+    abi: EXECUTION_POSITION_ABI,
+    functionName: 'syncPositionValue',
+    args: [adapter as `0x${string}`],
     account,
   });
 
@@ -501,7 +533,7 @@ export async function relayEvmUpdateStrategyPositionValue(
     tx_hash: txHash,
     signer: account.address,
     signer_role: 'operational',
-    function_name: 'updateStrategyPositionValue',
+    function_name: 'syncPositionValue',
     chain_id,
     block_number: blockNumber?.toString(),
     gas_used: gasUsed?.toString(),
@@ -517,7 +549,7 @@ interface ActionSpec {
   /** Custodied agent role whose EOA must originate the tx (msg.sender gate). */
   role: Exclude<EvmSignerRole, 'guardian'>;
   /** Build the positional args from the (validated) request. */
-  buildArgs: (req: EvmRelayAgentActionRequest, chainId: number) => readonly unknown[];
+  buildArgs: (req: EvmRelayAgentActionRequest, chainId: number, request: OnChainRequest | null) => readonly unknown[];
 }
 
 function asIndex(v: number | string | undefined): bigint {
@@ -543,25 +575,225 @@ function requireHash32(v: string | undefined, label: string): `0x${string}` {
   return clean as `0x${string}`;
 }
 
+/** Mirrors NaveConstants.DEPOSIT_SLIPPAGE_BPS. */
+const DEFAULT_SLIPPAGE_BPS = 50n;
+
 /**
- * Resolve `minOut`. On mainnet a positive slippage floor is REQUIRED (an
- * unbounded minOut=0 join/exit invites sandwiching); testnets may pass 0.
+ * Resolve `minOut`. NaveExecution rejects a zero floor on every strategy
+ * deposit/withdraw; on mainnet the caller must quote it explicitly, on
+ * testnets `withDefaultMinOut` fills it from the on-chain request amount.
  */
 function resolveMinOut(req: EvmRelayAgentActionRequest, chainId: number): bigint {
   const provided = req.min_out;
-  if (MAINNET_CHAIN_IDS.has(chainId)) {
-    if (provided === undefined || provided === null || provided === '') {
+  if (provided === undefined || provided === null || provided === '') {
+    if (MAINNET_CHAIN_IDS.has(chainId)) {
       throw new Error(`min_out is required (> 0) on mainnet chain ${chainId}`);
     }
-    const n = BigInt(provided);
-    if (n <= 0n) throw new Error(`min_out must be positive on mainnet chain ${chainId}`);
-    return n;
+    // Bridge executes ignore minOut on-chain.
+    if (req.action === 'bridge_outbound') return 0n;
+    throw new Error('min_out is required (> 0)');
   }
-  // Testnet: default to 0 when omitted.
-  if (provided === undefined || provided === null || provided === '') return 0n;
   const n = BigInt(provided);
+  if (n <= 0n && req.action !== 'bridge_outbound') throw new Error('min_out must be positive');
   if (n < 0n) throw new Error('min_out must be non-negative');
   return n;
+}
+
+const EXECUTION_REQUEST_ABI = [
+  {
+    type: 'function',
+    name: 'getRequest',
+    stateMutability: 'view',
+    inputs: [{ name: 'index', type: 'uint64' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'exists', type: 'bool' },
+          { name: 'kind', type: 'uint8' },
+          { name: 'status', type: 'uint8' },
+          { name: 'bootstrap', type: 'bool' },
+          { name: 'proposalIndex', type: 'uint64' },
+          { name: 'adapter', type: 'address' },
+          { name: 'asset', type: 'address' },
+          { name: 'recipient', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+          { name: 'reviewEnd', type: 'uint256' },
+          { name: 'reviewWindow', type: 'int64' },
+          { name: 'withdrawnAmount', type: 'uint256' },
+          { name: 'txPayloadHash', type: 'bytes32' },
+          { name: 'executiveReasoningHash', type: 'bytes32' },
+          { name: 'financialReasoningHash', type: 'bytes32' },
+          { name: 'oversightReasoningHash', type: 'bytes32' },
+          { name: 'operationalHaltReasonHash', type: 'bytes32' },
+          { name: 'createdAt', type: 'uint256' },
+          { name: 'updatedAt', type: 'uint256' },
+          { name: 'executedAt', type: 'uint256' },
+          { name: 'destChainId', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+] as const;
+
+const TREASURY_EXECUTION_ABI = [
+  { type: 'function', name: 'execution', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  {
+    type: 'function',
+    name: 'agent',
+    stateMutability: 'view',
+    inputs: [{ name: 'role', type: 'uint8' }],
+    outputs: [{ name: 'authority', type: 'address' }, { name: 'operational', type: 'bool' }],
+  },
+] as const;
+
+const AGENT_ROLE_INDEX: Record<Exclude<EvmSignerRole, 'guardian'>, number> = {
+  executive: 0, financial: 1, oversight: 2, operational: 3,
+};
+
+/** The custodied EOA must be the treasury's current, operational agent for `role`. */
+async function assertOnChainAgent(
+  chainId: number,
+  treasury: `0x${string}`,
+  role: Exclude<EvmSignerRole, 'guardian'>,
+  signer: `0x${string}`,
+): Promise<void> {
+  const [authority, operational] = await evmPublicClient(chainId).readContract({
+    address: treasury,
+    abi: TREASURY_EXECUTION_ABI,
+    functionName: 'agent',
+    args: [AGENT_ROLE_INDEX[role]],
+  });
+  if (authority.toLowerCase() !== signer.toLowerCase()) {
+    throw new Error(`custodied ${role} key ${signer} is not the treasury's ${role} agent (${authority})`);
+  }
+  if (!operational) throw new Error(`treasury ${role} agent is not operational`);
+}
+
+interface OnChainRequest {
+  kind: number;
+  status: number;
+  amount: bigint;
+  txPayloadHash: string;
+}
+
+type RequestPayloadFields = {
+  kind: number;
+  adapter: `0x${string}`;
+  asset: `0x${string}`;
+  recipient: `0x${string}`;
+  amount: bigint;
+  destChainId: bigint;
+};
+
+/** Mirrors PayloadHash.sol: the hash a request of each ExecutionKind must carry. */
+export function expectedRequestPayloadHash(r: RequestPayloadFields): `0x${string}` {
+  switch (r.kind) {
+    case 0:
+      return keccak256(encodeAbiParameters(
+        [{ type: 'address' }, { type: 'uint256' }, { type: 'address' }],
+        [r.adapter, r.amount, r.asset],
+      ));
+    case 1:
+      return keccak256(encodeAbiParameters(
+        [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }],
+        [r.asset, r.recipient, r.amount],
+      ));
+    case 2:
+      return keccak256(encodeAbiParameters(
+        [{ type: 'address' }, { type: 'uint256' }, { type: 'address' }, { type: 'uint256' }, { type: 'address' }],
+        [r.adapter, r.amount, r.asset, r.destChainId, r.recipient],
+      ));
+    default:
+      throw new Error(`Unknown execution kind ${r.kind}`);
+  }
+}
+
+/** ExecutionStatus values each action may start from, plus the required ExecutionKind. */
+const ACTION_PRECONDITIONS: Partial<Record<EvmRelayAgentAction, { from: number[]; kind?: number }>> = {
+  executive_approve: { from: [0] },
+  financial_approve: { from: [1] },
+  oversight_approve: { from: [2] },
+  operational_halt: { from: [3, 4] },
+  operational_clear: { from: [6] },
+  expire_request: { from: [4] },
+  execute_strategy: { from: [3, 4], kind: 0 },
+  execute_strategy_direct: { from: [3, 4], kind: 0 },
+  withdraw_from_strategy: { from: [5], kind: 0 },
+  bridge_outbound: { from: [3, 4], kind: 2 },
+};
+
+/**
+ * Refuse to sign unless the target is the treasury's own NaveExecution and the
+ * request is in a state the action can legally leave. Catches a misrouted or
+ * replayed relay before a custodied key is loaded.
+ */
+async function preflightEvmAgentAction(
+  body: EvmRelayAgentActionRequest,
+  target: `0x${string}`,
+): Promise<OnChainRequest | null> {
+  const client = evmPublicClient(body.chain_id);
+  const execution = await client.readContract({
+    address: body.dao_address as `0x${string}`,
+    abi: TREASURY_EXECUTION_ABI,
+    functionName: 'execution',
+  });
+  if (execution.toLowerCase() !== target.toLowerCase()) {
+    throw new Error(`execution_address ${target} is not this treasury's NaveExecution (${execution})`);
+  }
+  const pre = ACTION_PRECONDITIONS[body.action];
+  if (!pre) return null;
+  const r = await client.readContract({
+    address: target,
+    abi: EXECUTION_REQUEST_ABI,
+    functionName: 'getRequest',
+    args: [asIndex(body.index)],
+  });
+  if (!r.exists) throw new Error(`execution request ${body.index} does not exist`);
+  if (!pre.from.includes(r.status)) {
+    throw new Error(`${body.action} cannot run from request status ${r.status}`);
+  }
+  if (pre.kind !== undefined && r.kind !== pre.kind) {
+    throw new Error(`${body.action} requires request kind ${pre.kind}, found ${r.kind}`);
+  }
+  if (body.action === 'financial_approve' || body.action === 'oversight_approve') {
+    const recomputed = expectedRequestPayloadHash(r);
+    if (recomputed.toLowerCase() !== r.txPayloadHash.toLowerCase()) {
+      throw new Error('on-chain request payload hash does not match its (adapter, asset, amount, recipient) fields');
+    }
+    if (body.tx_payload_hash && body.tx_payload_hash.toLowerCase() !== recomputed.toLowerCase()) {
+      throw new Error('tx_payload_hash does not match the on-chain request payload');
+    }
+    if (body.adapter && body.adapter.toLowerCase() !== r.adapter.toLowerCase()) {
+      throw new Error('adapter does not match the on-chain request');
+    }
+    if (body.asset && body.asset.toLowerCase() !== r.asset.toLowerCase()) {
+      throw new Error('asset does not match the on-chain request');
+    }
+    if (body.amount !== undefined && body.amount !== null && body.amount !== '' && BigInt(body.amount) !== r.amount) {
+      throw new Error('amount does not match the on-chain request');
+    }
+    return { kind: r.kind, status: r.status, amount: r.amount, txPayloadHash: recomputed };
+  }
+  return { kind: r.kind, status: r.status, amount: r.amount, txPayloadHash: r.txPayloadHash };
+}
+
+/** Testnet default: floor = amount × (1 − DEPOSIT_SLIPPAGE_BPS). */
+function withDefaultMinOut(
+  body: EvmRelayAgentActionRequest,
+  request: OnChainRequest | null,
+): EvmRelayAgentActionRequest {
+  const omitted = body.min_out === undefined || body.min_out === null || body.min_out === '';
+  if (!omitted || MAINNET_CHAIN_IDS.has(body.chain_id)) return body;
+  let base: bigint | null = null;
+  if (body.action === 'execute_strategy' || body.action === 'execute_strategy_direct') {
+    base = request?.amount ?? null;
+  } else if (body.action === 'withdraw_from_strategy' && body.amount !== undefined) {
+    base = BigInt(body.amount);
+  }
+  if (base === null || base <= 0n) return body;
+  const floor = (base * (10_000n - DEFAULT_SLIPPAGE_BPS)) / 10_000n;
+  return { ...body, min_out: (floor > 0n ? floor : 1n).toString() };
 }
 
 const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
@@ -573,18 +805,18 @@ const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
   financial_approve: {
     functionName: 'financialApprove',
     role: 'financial',
-    buildArgs: (r) => [
+    buildArgs: (r, _chainId, request) => [
       asIndex(r.index),
-      requireHash32(r.tx_payload_hash, 'tx_payload_hash'),
+      requireHash32(request?.txPayloadHash, 'tx_payload_hash'),
       requireHash32(r.reasoning_hash, 'reasoning_hash'),
     ],
   },
   oversight_approve: {
     functionName: 'oversightApprove',
     role: 'oversight',
-    buildArgs: (r) => [
+    buildArgs: (r, _chainId, request) => [
       asIndex(r.index),
-      requireHash32(r.tx_payload_hash, 'tx_payload_hash'),
+      requireHash32(request?.txPayloadHash, 'tx_payload_hash'),
       requireHash32(r.reasoning_hash, 'reasoning_hash'),
     ],
   },
@@ -596,19 +828,17 @@ const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
   operational_clear: {
     functionName: 'operationalClear',
     role: 'operational',
-    buildArgs: (r) => [asIndex(r.index)],
+    buildArgs: (r) => [asIndex(r.index), requireHash32(r.reasoning_hash, 'reasoning_hash')],
   },
   expire_request: {
     functionName: 'expireRequest',
     role: 'operational',
     buildArgs: (r) => [asIndex(r.index)],
   },
-  // `execute` is permissionless on-chain, but it still needs a funded EOA to
-  // originate + pay; we relay it from the Operational agent (matches the Solana
-  // orchestrator, which drives post-review execution from the operational role).
+  // Post-review `execute` is Executive-only on-chain.
   execute_strategy: {
     functionName: 'execute',
-    role: 'operational',
+    role: 'executive',
     buildArgs: (r, chainId) => [asIndex(r.index), resolveMinOut(r, chainId)],
   },
   // Break-glass direct execute is Executive-gated on-chain.
@@ -650,13 +880,25 @@ const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
       ];
     },
   },
-  // Post-review bridge execution (same NaveExecution.execute as strategy).
+  // Post-review bridge execution (same Executive-only NaveExecution.execute).
   bridge_outbound: {
     functionName: 'execute',
-    role: 'operational',
+    role: 'executive',
     buildArgs: (r, chainId) => [asIndex(r.index), resolveMinOut(r, chainId)],
   },
 };
+
+/**
+ * Signing role behind each /relay-evm action (the custodied EOA or guardian
+ * that will sign), used to pick the caller credential. Null = unknown action.
+ */
+export function evmRelaySignerRole(action: string): EvmSignerRole | null {
+  if (action === 'toggle_agents') return 'guardian';
+  if (action === 'update_strategy_position_value' || action === 'revalue_treasury' || action === 'create_proposal') {
+    return 'operational';
+  }
+  return ACTION_SPECS[action as EvmRelayAgentAction]?.role ?? null;
+}
 
 /**
  * Relay a four-agent NaveExecution pipeline action as a transaction from the
@@ -668,7 +910,7 @@ const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
 export async function relayEvmAgentAction(body: EvmRelayAgentActionRequest): Promise<EvmRelayResult> {
   const { chain_id, action } = body;
   if (!isEvmChainId(chain_id)) {
-    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood: 1, 8453, 4663, 11155111, 84532, 46630)`);
+    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood, Arc Testnet: 1, 8453, 4663, 11155111, 84532, 46630, 5042002)`);
   }
   const spec = ACTION_SPECS[action];
   if (!spec) {
@@ -682,12 +924,15 @@ export async function relayEvmAgentAction(body: EvmRelayAgentActionRequest): Pro
     throw new Error('execution_address (NaveExecution contract) must be a 20-byte EVM address');
   }
 
+  const request = await preflightEvmAgentAction(body, target as `0x${string}`);
+
   // Build + validate args BEFORE loading the key, so a malformed request fails
   // fast without touching the KEK / database.
-  const args = spec.buildArgs(body, chain_id);
+  const args = spec.buildArgs(withDefaultMinOut(body, request), chain_id, request);
 
   // The EOA is custodied per (dao, chain, role); agents are never guardians.
   const account = await loadEvmAccount(body.dao_address, chain_id, spec.role);
+  await assertOnChainAgent(chain_id, body.dao_address as `0x${string}`, spec.role, account.address);
 
   const { txHash, blockNumber, gasUsed } = await broadcastCall({
     chainId: chain_id,

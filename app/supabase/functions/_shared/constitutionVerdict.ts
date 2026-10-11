@@ -66,6 +66,8 @@ export interface SignerVerdictInput {
     expected_payload_hash?: string;
     payload_hash?: string;
     confidence?: number;
+    execution_request_address?: string;
+    purpose?: "venue_placement";
   }>;
   chain?: string;
   chain_id?: number;
@@ -73,7 +75,7 @@ export interface SignerVerdictInput {
   confidence?: number;
   expected_payload_hash?: string;
   payload_hash?: string;
-  purpose?: "compound" | "auto_withdraw";
+  purpose?: "compound" | "auto_withdraw" | "venue_placement" | "venue_recall";
   policy_intent?: "rebalance" | "deploy_idle" | "reduce_exposure" | "hold";
   /** Stored charter / venue / halt review. Loaded when omitted. */
   genlayer?: GenlayerView;
@@ -101,9 +103,9 @@ function envFlag(name: string): boolean {
   }
 }
 
-function envNum(name: string): number {
+function envNum(name: string, fallback = 0): number {
   try {
-    const n = Number(Deno.env.get(name) ?? "0");
+    const n = Number(Deno.env.get(name) ?? String(fallback));
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0;
@@ -353,7 +355,7 @@ function evaluateSlice(
     {
       failClosedOnUnknown: true,
       requireCompleteConstitution: true,
-      maxNavAgeSeconds: envNum("NAVE_MAX_NAV_AGE_SECONDS"),
+      maxNavAgeSeconds: envNum("NAVE_MAX_NAV_AGE_SECONDS", 900),
       genlayerGate: readGenlayerFlag(NAVE_GENLAYER_GATE),
       genlayerVenueGate: readGenlayerFlag(NAVE_GENLAYER_VENUE_GATE),
       genlayerHaltGate: readGenlayerFlag(NAVE_GENLAYER_HALT_GATE),
@@ -443,15 +445,30 @@ async function assessCapital(input: SignerVerdictInput): Promise<SignerVerdict> 
     }
   }
 
+  const bundleOps = input.bundle_operations ?? [];
+  if (input.action === "bundle_rebalance") {
+    // A placement op only moves the escrow of the execute_strategy op right
+    // before it (same venue and mint) into the venue.
+    bundleOps.forEach((op, i) => {
+      if (op.purpose !== "venue_placement") return;
+      const prev = bundleOps[i - 1];
+      if (
+        !/_deposit$/.test(op.action) || prev?.action !== "execute_strategy"
+        || prev.protocol_id !== op.protocol_id || prev.mint !== op.mint
+      ) {
+        extraFailures.push(`bundle op[${i}] venue placement must follow its execute_strategy op`);
+      }
+    });
+  }
   const slices: EvalSlice[] = input.action === "bundle_rebalance"
-    ? (input.bundle_operations ?? []).map((op) => ({
+    ? bundleOps.filter((op) => op.purpose !== "venue_placement").map((op) => ({
       action: op.action,
       protocolId: op.protocol_id,
       amount: asFinite(op.amount),
       deployed: state.vault?.deployedBaseUnits ?? null,
       payloadHash: op.payload_hash ?? op.expected_payload_hash,
       confidence: confidenceFor(input, state.constitution, op.confidence),
-      policyIntent: "rebalance" as const,
+      policyIntent: op.action === "execute_strategy" ? undefined : "rebalance" as const,
     }))
     : [{
       action: input.action,
@@ -634,6 +651,24 @@ export async function assessSignerPayload(raw: SignerVerdictInput): Promise<Sign
     }
     if (klass !== "capital") {
       return allowRecord(input.action, "other", "not a capital movement");
+    }
+    if (input.purpose === "venue_placement" || input.purpose === "venue_recall") {
+      // Moves funds between the strategy escrow and the venue the founder bound
+      // to the position (placement after execute, recall before a withdraw).
+      // Deployed capital and NAV exposure are unchanged.
+      const placement = input.purpose === "venue_placement";
+      if (!(placement ? /_deposit$/ : /_withdraw$/).test(input.action)) {
+        const reason = placement ? "venue_placement is only for venue deposits" : "venue_recall is only for venue withdraws";
+        return { allow: false, reason, record: failureRecord(input.action, reason) };
+      }
+      return allowRecord(
+        input.action,
+        "capital",
+        placement
+          ? "venue placement of escrowed funds from an executed request (deployed capital unchanged)"
+          : "venue recall into the strategy escrow ahead of a withdraw (deployed capital unchanged)",
+        { [input.purpose]: true },
+      );
     }
     return await assessCapital(input);
   } catch (err) {

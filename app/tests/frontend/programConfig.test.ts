@@ -13,6 +13,7 @@ import {
   NAVE_BRIDGE_ENABLED,
   NAVE_BRIDGE_EVM_CONFIRMATIONS,
   NAVE_DECIMALS,
+  defaultGuardianThreshold,
 } from '../../src/lib/programConfig';
 
 test('config constants: 2.5% fee split 1% / 1% / 0.5%, 6-decimal NAVE, bridge enabled', () => {
@@ -70,4 +71,16 @@ test('computeBridgeFee: zero amount yields a zero quote', () => {
 
 test('computeBridgeFee: rejects a negative amount', () => {
   assert.throws(() => computeBridgeFee(-1n), /non-negative/);
+});
+
+test('defaultGuardianThreshold: a custodied guardian never completes a quorum of a human minority', () => {
+  // EVM: humans + one Nave-custodied guardian.
+  assert.equal(defaultGuardianThreshold(2, 1), 2); // founder + custodied: both required
+  assert.equal(defaultGuardianThreshold(3, 1), 2); // 2 humans: both humans suffice
+  assert.equal(defaultGuardianThreshold(4, 1), 3); // 3 humans: custodied + 1 human is not enough
+  assert.equal(defaultGuardianThreshold(6, 1), 5);
+  // Solana: no custodied guardian.
+  assert.equal(defaultGuardianThreshold(1), 1);
+  assert.equal(defaultGuardianThreshold(2), 2);
+  assert.equal(defaultGuardianThreshold(5), 3);
 });

@@ -715,7 +715,7 @@ export async function buildUpdateGuardianConfig(
  *
  * NOTE: the EVM treasury has NO single-actor pause any more —
  * `NaveTreasury.emergencyPauseAgents()` was removed in favour of guardian
- * M-of-N `guardianDisableAgents(nonce, deadline, sigs)`; see
+ * M-of-N `guardianAction(DISABLE_AGENTS, sigs)`; see
  * `buildGuardianDisableAgentsEvm` (evm/writers.ts) and
  * `setAgentsEnabledViaProxyEvm` (edgeFunctionClient.ts).
  */
@@ -1239,7 +1239,8 @@ export interface RevalueAsset {
 
 /** revalue_treasury — operational agent. Recomputes the DAO's USD NAV (micro-USD)
  *  from every registered asset. Each asset contributes a 4-account group passed as
- *  remaining accounts: [assetConfig, treasuryAsset(w), assetVault, priceUpdate].
+ *  remaining accounts: [assetConfig, treasuryAsset(w), assetVault, priceUpdate],
+ *  followed by the DAO's StrategyPositions that hold principal.
  *  Stablecoins ignore the 4th slot, so the assetVault is passed as a placeholder.
  *
  *  NOTE: this builds the raw instruction only. Non-stable assets require a FRESH
@@ -1270,6 +1271,17 @@ export async function buildRevalueTreasury(
       { pubkey: a.priceUpdate ?? assetVault, isWritable: false, isSigner: false },
     ];
   });
+  // Every position holding principal follows the asset groups; NAV counts
+  // their marked value.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const positions: any[] = await (core.account as any).strategyPosition.all([
+    { memcmp: { offset: 9, bytes: daoPubkey.toBase58() } },
+  ]);
+  for (const p of positions) {
+    if (BigInt(p.account.depositedAmount.toString()) > 0n) {
+      remainingAccounts.push({ pubkey: p.publicKey, isWritable: false, isSigner: false });
+    }
+  }
 
   const [agentSet] = getAgentSetPDA(daoPubkey);
   const instruction = await core.methods

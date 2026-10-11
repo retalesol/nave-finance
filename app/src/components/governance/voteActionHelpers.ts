@@ -30,7 +30,7 @@ export function formatFinalizeWindowError(votingEndTimestamp: number): string {
       ? `${Math.ceil(secsLeft / 86400)}d`
       : `${Math.ceil(secsLeft / 3600)}h`
     : 'shortly';
-  return `Voting window is still open (closes in ${label}). The finalize button unlocks automatically once voting ends.`;
+  return `Not enough yes votes to close early. Another guardian can vote, or wait about ${label} for the voting window to end.`;
 }
 
 export function classifyFinalizeSimulationError(errorLine: string): string | null {
@@ -48,7 +48,7 @@ export function classifyFinalizeSimulationError(errorLine: string): string | nul
 
 export function formatFinalizeSubmissionError(err: string): string {
   if (err.includes('VotingPeriodNotEnded') || err.includes('VotingStillOpen') || err.toLowerCase().includes('still open')) {
-    return 'Voting window is still open. Wait for it to close before finalizing.';
+    return 'Not enough yes votes to close early. Another guardian can vote, or wait until the voting window ends.';
   }
   if (err.includes('ProposalNotActive') || err.toLowerCase().includes('not active')) {
     return 'This proposal has already been finalized.';

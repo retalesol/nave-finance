@@ -465,7 +465,7 @@ export default function CreateProposalModal({
             >
               <Fi icon="circle-info" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '2px' }} />
               <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                Submitting this transaction creates a governance vote. Once the voting period ends and quorum is reached, the founder can ratify the result on-chain to activate the changes.
+                Submitting this transaction opens a guardian vote. It can be finalized immediately once the yes votes cannot be overturned. Otherwise anyone can finalize it after the voting window closes.
               </p>
             </div>
 

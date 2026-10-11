@@ -40,7 +40,7 @@ function withEnv(env: { cluster?: string; evmNetwork?: string }, fn: () => void)
 const withCluster = (cluster: string | undefined, fn: () => void) => withEnv({ cluster }, fn);
 
 test('resolveEvmChainId: accepts all supported testnet ids as numbers and numeric strings', () => {
-  for (const id of [11155111, 84532, 46630]) {
+  for (const id of [11155111, 84532, 46630, 5042002]) {
     assert.equal(resolveEvmChainId(id), id);
     assert.equal(resolveEvmChainId(String(id)), id);
   }
@@ -58,6 +58,7 @@ test('resolveEvmChainId: explicit testnet aliases always pin testnets', () => {
     assert.equal(resolveEvmChainId('sepolia'), 11155111);
     assert.equal(resolveEvmChainId('base-sepolia'), 84532);
     assert.equal(resolveEvmChainId('robinhood-testnet'), 46630);
+    assert.equal(resolveEvmChainId('arc-testnet'), 5042002);
   });
 });
 
@@ -77,6 +78,7 @@ test('resolveEvmChainId: family names resolve to testnets when NAVE_EVM_NETWORK=
     assert.equal(resolveEvmChainId('base'), 84532);
     assert.equal(resolveEvmChainId('robinhood'), 46630);
     assert.equal(resolveEvmChainId('ROBINHOOD'), 46630);
+    assert.equal(resolveEvmChainId('arc'), 5042002);
   });
 });
 
@@ -86,6 +88,7 @@ test('resolveEvmChainId: family names resolve to mainnets when NAVE_EVM_NETWORK=
     assert.equal(resolveEvmChainId('eth'), 1);
     assert.equal(resolveEvmChainId('base'), 8453);
     assert.equal(resolveEvmChainId('robinhood'), 4663);
+    assert.throws(() => resolveEvmChainId('arc'), /No mainnet chain configured for family 'arc'/);
   });
 });
 
@@ -103,6 +106,7 @@ test('resolveEvmChainId: family names fail closed when NAVE_EVM_NETWORK is unset
 
 test('resolveEvmChainId: rejects unknown names and unsupported ids', () => {
   assert.throws(() => resolveEvmChainId(56), /Unsupported EVM chain/);
+  assert.throws(() => resolveEvmChainId(5042), /Unsupported EVM chain/);
   assert.throws(() => resolveEvmChainId('polygon'), /Unsupported EVM chain/);
 });
 
@@ -119,13 +123,14 @@ function withGlobalConfirmations(value: string | undefined, fn: () => void): voi
 
 test('evmConfirmationsForChain: chain-aware safe defaults (Ethereum 12, Base 30, Robinhood 60)', () => {
   withGlobalConfirmations(undefined, () => {
-    for (const id of [1, 8453, 4663, 11155111, 84532, 46630]) delete process.env[`BRIDGE_EVM_CONFIRMATIONS_${id}`];
+    for (const id of [1, 8453, 4663, 11155111, 84532, 46630, 5042002]) delete process.env[`BRIDGE_EVM_CONFIRMATIONS_${id}`];
     assert.equal(evmConfirmationsForChain(1), 12);
     assert.equal(evmConfirmationsForChain(11155111), 12);
     assert.equal(evmConfirmationsForChain(8453), 30);
     assert.equal(evmConfirmationsForChain(84532), 30);
     assert.equal(evmConfirmationsForChain(4663), 60);
     assert.equal(evmConfirmationsForChain(46630), 60);
+    assert.equal(evmConfirmationsForChain(5042002), 1);
     // Unknown chain: legacy global default.
     assert.equal(evmConfirmationsForChain(999999), DEFAULT_EVM_CONFIRMATIONS);
   });
@@ -171,7 +176,7 @@ test('bridge relayer and staking mirror support the same EVM chain ids', () => {
   );
   assert.deepEqual(
     Object.keys(BRIDGE_EVM_CHAINS).map(Number).sort((a, b) => a - b),
-    [1, 8453, 4663, 84532, 46630, 11155111].sort((a, b) => a - b),
+    [1, 8453, 4663, 84532, 46630, 11155111, 5042002].sort((a, b) => a - b),
   );
 });
 
@@ -180,6 +185,10 @@ test('staking mirror labels Robinhood events with the robinhood source_chain nam
   assert.equal(STAKING_EVM_CHAINS[46630].rpcEnv, 'EVM_ROBINHOOD_TESTNET_RPC_URL');
   assert.equal(STAKING_EVM_CHAINS[4663].name, 'robinhood');
   assert.equal(STAKING_EVM_CHAINS[4663].rpcEnv, 'EVM_ROBINHOOD_RPC_URL');
+  assert.equal(STAKING_EVM_CHAINS[5042002].name, 'arc');
+  assert.equal(STAKING_EVM_CHAINS[5042002].rpcEnv, 'EVM_ARC_TESTNET_RPC_URL');
+  assert.equal(BRIDGE_EVM_CHAINS[5042002].family, 'arc');
+  assert.equal(BRIDGE_EVM_CHAINS[5042002].network, 'testnet');
 });
 
 test('robinhood viem chain definitions carry the right ids and explorers', () => {

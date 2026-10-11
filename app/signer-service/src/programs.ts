@@ -285,6 +285,10 @@ export function adapterProgramId(protocolId: string): PublicKey | null {
       return PROGRAM_IDS.kamino;
     case 'marginfi':
       return PROGRAM_IDS.marginfi;
+    case 'jupiter':
+      // No Nave adapter: the request binds the Jupiter Lend program and
+      // jupiter_deposit places the escrow after execute_strategy.
+      return EXTERNAL_PROGRAM_IDS.jupiterLending;
     default:
       return null;
   }

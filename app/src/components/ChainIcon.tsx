@@ -59,6 +59,15 @@ export default function ChainIcon({ family, size = 16, className }: ChainIconPro
     );
   }
 
+  if (family === 'arc') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" {...common}>
+        <circle cx="12" cy="12" r="8.5" stroke={CHAIN_COLORS.arc} strokeWidth="2.2" />
+        <path d="M7.2 14.6c1.7-3.8 7.9-3.8 9.6 0" stroke={CHAIN_COLORS.arc} strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
   if (family === 'robinhood') {
     // Robinhood — stylized feather mark in brand green.
     return (

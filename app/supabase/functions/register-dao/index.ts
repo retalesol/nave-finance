@@ -4,8 +4,8 @@ import { clientKey, rateLimit } from "../_shared/rateLimit.ts";
 import { readDaoFounder } from "../_shared/onchain.ts";
 import {
   type ChainKind,
-  daoNetworkFor,
   isEvmChain,
+  registryNetworkFor,
   normalizeChain,
   normalizeEvmAddress,
 } from "../_shared/chain.ts";
@@ -39,8 +39,10 @@ interface RequestPayload {
   /** Signature over `creator_message` (Solana base58/base64 ed25519; EVM 0x-hex EIP-191). */
   creator_signature: string;
   // Multi-chain discriminator. Defaults to 'solana' when omitted.
-  chain?: string; // 'solana' | 'ethereum' | 'base' | 'robinhood'
-  chain_id?: number; // EVM numeric id (1 | 8453 | 4663 | 11155111 | 84532 | 46630)
+  chain?: string; // 'solana' | 'ethereum' | 'base' | 'robinhood' | 'arc'
+  chain_id?: number; // EVM numeric id (1 | 8453 | 4663 | 11155111 | 84532 | 46630 | 5042002)
+  /** Solana only. `devnet` wins over a mainnet-looking edge RPC. EVM ignores this. */
+  network?: string;
   name: string;
   description?: string;
   logo_url?: string;
@@ -265,7 +267,7 @@ Deno.serve(async (req: Request) => {
       dao_onchain_address: dao_address,
       chain: selector.chain,
       chain_id: selector.chain_id,
-      network: daoNetworkFor(selector, isMainnetCluster()),
+      network: registryNetworkFor(selector, body.network, isMainnetCluster()),
       name: name || "",
       slug,
       description: body.description ?? "",

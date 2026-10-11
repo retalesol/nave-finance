@@ -25,6 +25,7 @@ import { readDaoFounder } from "../_shared/onchain.ts";
 import { hasEvmRpc, readEvmTreasuryFounder } from "../_shared/evmFounder.ts";
 import { checkChallengeTimestamp, verifyWalletSignature } from "../_shared/walletAuth.ts";
 import { consumeChallenge, replayChainLabel } from "../_shared/replay.ts";
+import { signerSecretFor } from "../_shared/signerAuth.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = corsHeadersFor(req, { allowBrowserFallback: true });
@@ -165,7 +166,7 @@ Deno.serve(async (req) => {
   // ── Forward to the signer with the server-held secret ──
   // EVM: the toggle is an on-chain tx broadcast by the EVM relayer from a
   // custodied agent/guardian EOA. Resume → Executive toggleAgents(true). Pause →
-  // guardian M-of-N `guardianDisableAgents(nonce, deadline, sigs)`: the relayer
+  // guardian M-of-N `guardianAction(DISABLE_AGENTS, sigs)`: the relayer
   // signs with every custodied guardian and appends the optional
   // `guardian_signatures` the founder produced in-browser (EIP-712
   // GuardianAction DISABLE_AGENTS over the SAME `guardian_nonce` /
@@ -207,7 +208,10 @@ Deno.serve(async (req) => {
       };
   const resp = await fetch(`${signerUrl.replace(/\/$/, "")}${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Signer-Secret": signerSecretFor(evm ? "guardian" : "executive") ?? signerSecret,
+    },
     body: JSON.stringify(forwardBody),
   });
 

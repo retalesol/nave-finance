@@ -10,6 +10,7 @@ import ActivationHub from '../components/ActivationHub';
 import { staggerContainer } from '../components/PageTransition';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useTreasuryData, type AssetInfo } from '../hooks/useTreasuryData';
+import { blendedApy } from '../lib/positionYield';
 import { useTreasuryAssets } from '../hooks/useTreasuryAssets';
 import { useTreasuryNfts } from '../hooks/useTreasuryNfts';
 import { useAgentStatus } from '../hooks/useAgentStatus';
@@ -29,6 +30,7 @@ import {
 import { DepositAddressPanel } from '../components/DepositFlow';
 import { useAgentHealth, timeAgo } from '../hooks/useAgentHealth';
 import { useCharterCheck } from '../hooks/useCharterCheck';
+import { isActionHash } from '../../supabase/functions/_shared/genlayerCharter.ts';
 import CharterCheckStatus from '../components/governance/CharterCheckStatus';
 import { computeAgentStatus, summarizeAgentStatuses } from '../lib/agentStatus';
 import {
@@ -827,7 +829,8 @@ export default function Dashboard() {
   const tokenRegistry = useTokenRegistry(daoAddress);
   const { chainKind } = useChain();
   const daoChainId = daoRegistry.dao?.chainId ?? null;
-  const charter = useCharterCheck(daoAddress, daoChainId);
+  const charterActionHash = agentStatus.actionLogs.find((log) => isActionHash(log.payloadHash))?.payloadHash;
+  const charter = useCharterCheck(daoAddress, daoChainId, charterActionHash);
   // Label from dao_registry.chain_id so a Base or Robinhood treasury is not
   // called "Solana Devnet" when the connected wallet is on another chain.
   const networkLabel = daoChainId != null
@@ -846,7 +849,7 @@ export default function Dashboard() {
         label: s.name,
         asset: s.protocol,
         allocated: s.currentValueUsd,
-        earned: s.currentValueUsd * (s.apy / 100 / 12), // rough monthly estimate
+        earned: s.earnedUsd,
         apy: s.apy,
       }));
     }
@@ -944,7 +947,7 @@ export default function Dashboard() {
       const byAsset: Record<string, number> = {};
       treasury.strategies.forEach(s => {
         const key = s.protocol;
-        byAsset[key] = (byAsset[key] || 0) + s.currentValueUsd * (s.apy / 100 / 12);
+        byAsset[key] = (byAsset[key] || 0) + s.earnedUsd;
       });
       const colors = ['hsl(var(--foreground))', 'hsl(var(--muted-foreground))', 'hsl(var(--border-strong))'];
       return Object.entries(byAsset).map(([asset, earned], i) => ({
@@ -958,7 +961,8 @@ export default function Dashboard() {
 
   const totalYield    = liveStrategies.reduce((s, r) => s + r.earned, 0);
   const totalDeployed = liveStrategies.reduce((s, r) => s + r.allocated, 0);
-  const blendedAPY    = totalDeployed > 0 ? ((totalYield / totalDeployed) * 100).toFixed(2) : '0.00';
+  const blendedRate   = blendedApy(liveStrategies.map((r) => ({ value: r.allocated, apy: r.apy })));
+  const blendedAPY    = blendedRate != null ? blendedRate.toFixed(2) : null;
 
   // ─── Multi-asset on-chain treasury (preferred over legacy SOL/USDC) ────
   // When the DAO has registered assets, the on-chain AssetConfig/TreasuryAsset
@@ -1067,7 +1071,8 @@ export default function Dashboard() {
               summary={charter.summary}
               txId={charter.txId}
               asking={charter.asking}
-              onAskAnother={charter.canAsk ? () => { void charter.askAnother(); } : undefined}
+              askError={charter.askError}
+              onAskAnother={charter.canAsk ? (evidence) => { void charter.askAnother(evidence); } : undefined}
             />
           </div>
           )}
@@ -1228,7 +1233,7 @@ export default function Dashboard() {
       >
         <MetricCard label="Total Treasury Value"  value={`$${displayCurrentValue.toLocaleString()}`} trend={treasuryTrend} sub={treasuryTrend ? '7-day' : (hasOnchainAssets ? 'On-chain USD NAV' : 'No history yet')} up={!!treasuryTrend} />
         <MetricCard label="Total Yield Earned"    value={`$${totalYield.toLocaleString()}`} trend={yieldTrend}  sub={latestMonthYield > 0 ? `$${latestMonthYield.toLocaleString()} this month` : 'Across all strategies'} up={!!yieldTrend && !yieldTrend.startsWith('-')} />
-        <MetricCard label="Blended APY"           value={`${blendedAPY}%`}                 sub="Weighted average"                           />
+        <MetricCard label="Blended APY"           value={blendedAPY != null ? `${blendedAPY}%` : '—'} sub={blendedAPY != null ? 'Measured from on-chain marks' : 'Needs a day of position marks'}                           />
         <MetricCard label="Agent Efficiency"      value={agentEfficiency}                    sub="Policy compliance rate"             up={agentEfficiency !== '—'} />
       </motion.div>
       )}
@@ -1450,8 +1455,12 @@ export default function Dashboard() {
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="flex items-center gap-1" style={{ fontSize: '13px', color: 'hsl(var(--success))' }}>
-                      <Fi icon="arrow-trend-up" style={{ fontSize: '11px' }} />
-                      {s.apy}%
+                      {s.apy != null ? (
+                        <>
+                          <Fi icon="arrow-trend-up" style={{ fontSize: '11px' }} />
+                          {s.apy.toFixed(2)}%
+                        </>
+                      ) : '—'}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
@@ -1495,15 +1504,17 @@ export default function Dashboard() {
                 Projected Annual Yield
               </div>
               <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-                Based on current {blendedAPY}% blended APY across ${totalDeployed.toLocaleString()} deployed
+                {blendedAPY != null
+                  ? `Based on the measured ${blendedAPY}% blended APY across $${totalDeployed.toLocaleString()} deployed`
+                  : 'Appears once positions have a day of on-chain marks'}
               </div>
             </div>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-6 sm:gap-8 flex-shrink-0">
             {[
-              { label: 'Monthly', value: `${Math.round(totalDeployed * (parseFloat(blendedAPY) / 100) / 12).toLocaleString()}` },
-              { label: 'Weekly',  value: `${Math.round(totalDeployed * (parseFloat(blendedAPY) / 100) / 52).toLocaleString()}` },
-              { label: 'Annual',  value: `${Math.round(totalDeployed * (parseFloat(blendedAPY) / 100)).toLocaleString()}` },
+              { label: 'Monthly', value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100) / 12).toLocaleString()}` : '—' },
+              { label: 'Weekly',  value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100) / 52).toLocaleString()}` : '—' },
+              { label: 'Annual',  value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100)).toLocaleString()}` : '—' },
             ].map(p => (
               <div key={p.label} className="text-left sm:text-right">
                 <div className="nave-label" style={{ fontSize: '9.5px', marginBottom: '3px' }}>{p.label}</div>

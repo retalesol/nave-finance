@@ -38,6 +38,7 @@ import type {
   ProtocolEntry,
   TokenSlot,
 } from './onChainTypes';
+import { unpackSolanaAllocation } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import {
   AgentRole,
   AgentStatus,
@@ -316,12 +317,16 @@ export async function fetchConstitution(
       approved: boolean;
     }>)
       .slice(0, acc.protocolCount)
-      .map((p) => ({
-        protocolId: bytesToString(p.protocolId, p.protocolIdLen),
-        programId: pk(p.programId),
-        maxAllocationBps: p.maxAllocationBps,
-        approved: p.approved,
-      }));
+      .map((p) => {
+        const { bps, riskTier } = unpackSolanaAllocation(p.maxAllocationBps);
+        return {
+          protocolId: bytesToString(p.protocolId, p.protocolIdLen),
+          programId: pk(p.programId),
+          maxAllocationBps: bps,
+          riskTier,
+          approved: p.approved,
+        };
+      });
 
     // Continuous-policy fields were appended to the on-chain constitution
     // after the original IDL type was generated. Read them via a localized

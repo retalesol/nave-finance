@@ -17,8 +17,10 @@ import {
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
 import BN from 'bn.js';
+import { jitoAccountsFromStakePool, kaminoAccountsFromReserve } from './venueAccounts.js';
 import { adapterProgramId, checkJupiterProgramIds, devnetProgramIdWarnings, EXTERNAL_PROGRAM_IDS, fetchDaoRegistryTolerant, fetchExecutionRequestTolerant, getConnection, isMainnetCluster, pdas, PROGRAM_IDS, programsForAgent, resolveSolanaRpcUrl, type AgentPrograms } from './programs.js';
-import { assertEvmKekPolicy, isKekConfigured, unwrapDek } from './kek.js';
+import { assertEvmKekPolicy, isKekConfigured, unwrapStoredDek } from './kek.js';
+import { assertRoleSecretPolicy, authorizeRole, isSignerRole, type SignerRole } from './roleAuth.js';
 import { circuitStatus, enforceLimits, recordSignerOutcome, releaseLimit } from './rateLimit.js';
 import { feedBytesToHex, isZeroFeed, postPriceFeeds } from './pythPoster.js';
 import { type EvmGuardianSignRequest, signEvmApproval } from './evmSigner.js';
@@ -32,6 +34,7 @@ import {
   relayEvmUpdateStrategyPositionValue,
   relayEvmCreateProposal,
   relayEvmRevalueTreasury,
+  evmRelaySignerRole,
 } from './evmRelayer.js';
 import {
   type BridgeRelayBody,
@@ -68,6 +71,19 @@ const PROPOSAL_TYPE_STRATEGY = 1;
 const SIGNER_SECRET = process.env.NAVE_SIGNER_SECRET || '';
 if (!SIGNER_SECRET) {
   console.error('[signer] FATAL: NAVE_SIGNER_SECRET is not set. Refusing to start.');
+  process.exit(1);
+}
+function skipSimulationRequested(): boolean {
+  return (process.env.NAVE_SIGNER_SKIP_SIMULATION || '').toLowerCase() === 'true';
+}
+if (skipSimulationRequested() && (isMainnetCluster() || process.env.NODE_ENV === 'production')) {
+  console.error('[signer] FATAL: NAVE_SIGNER_SKIP_SIMULATION is refused on mainnet / NODE_ENV=production');
+  process.exit(1);
+}
+try {
+  assertRoleSecretPolicy(SIGNER_SECRET);
+} catch (err) {
+  console.error(`[signer] FATAL: ${err instanceof Error ? err.message : err}`);
   process.exit(1);
 }
 
@@ -162,6 +178,40 @@ const ACTION_REQUIRED_STATUS: Partial<Record<SignAction, number[]>> = {
   withdraw_from_strategy: [5], // Executed
   expire_request: [4], // InReview only (after review window)
 };
+
+/** The only agent role allowed to drive each Solana action; it is also the
+ *  role whose caller credential must authorize the request. Actions absent
+ *  here (permissionless executors, proposal creation) accept the claimed role. */
+const ACTION_SIGNER_ROLE: Partial<Record<SignAction, SignerRole>> = {
+  executive_approve: 'executive',
+  financial_approve: 'financial',
+  oversight_approve: 'oversight',
+  operational_halt: 'operational',
+  operational_clear: 'operational',
+  withdraw_from_strategy: 'executive',
+  toggle_agents: 'executive',
+  update_strategy_position_value: 'operational',
+  revalue_treasury: 'operational',
+  kamino_deposit: 'operational',
+  kamino_withdraw: 'operational',
+  jito_deposit: 'operational',
+  jito_withdraw: 'operational',
+  jupiter_deposit: 'operational',
+  jupiter_withdraw: 'operational',
+  marginfi_deposit: 'operational',
+  marginfi_withdraw: 'operational',
+  jupiter_swap: 'operational',
+  bundle_rebalance: 'operational',
+  replenish_agents: 'operational',
+};
+
+/** Credential role for a /sign request; the planner proposes under Operational. */
+function solanaCredentialRole(action: SignAction | undefined, claimed: string | undefined): SignerRole | null {
+  const fixed = action ? ACTION_SIGNER_ROLE[action] : undefined;
+  if (fixed) return claimed === fixed ? fixed : null;
+  if (claimed === 'planner') return 'operational';
+  return isSignerRole(claimed) && claimed !== 'guardian' ? claimed : null;
+}
 
 const STATUS_NAMES = [
   'Pending', 'ExecutiveApproved', 'FinancialApproved', 'OversightApproved',
@@ -340,6 +390,8 @@ interface SignRequest {
     jupiter?: SignRequest['jupiter'];
     marginfi?: SignRequest['marginfi'];
     lookup_table_address?: string;
+    execution_request_address?: string;
+    purpose?: 'venue_placement';
   }>;
   /** Tip in lamports for Jito bundle (bundle_rebalance only). Defaults to JITO_TIP_LAMPORTS env. */
   jito_tip_lamports?: number;
@@ -444,6 +496,8 @@ interface EncryptedAgentKeyRow {
   wrapped_dek: string | null;
   dek_wrap_iv: string | null;
   dek_wrap_tag: string | null;
+  dek_wrap_version: number | null;
+  dek_kek_ref: string | null;
 }
 
 async function loadAgentKeypair(
@@ -457,7 +511,7 @@ async function loadAgentKeypair(
   const { data, error } = await getSupabase()
     .from('encrypted_agent_keys')
     .select(
-      'encrypted_private_key, encryption_iv, encryption_tag, public_key, wrapped_dek, dek_wrap_iv, dek_wrap_tag',
+      'encrypted_private_key, encryption_iv, encryption_tag, public_key, wrapped_dek, dek_wrap_iv, dek_wrap_tag, dek_wrap_version, dek_kek_ref',
     )
     .eq('dao_onchain_address', daoAddress)
     .eq('agent_role', role)
@@ -472,11 +526,17 @@ async function loadAgentKeypair(
   // master KEK. The legacy plaintext-DEK path has been removed.
   let dek: string;
   if (data.wrapped_dek && data.dek_wrap_iv && data.dek_wrap_tag) {
-    dek = unwrapDek({
-      wrapped_dek: data.wrapped_dek,
-      dek_wrap_iv: data.dek_wrap_iv,
-      dek_wrap_tag: data.dek_wrap_tag,
-    });
+    dek = unwrapStoredDek(
+      'solana',
+      {
+        wrapped_dek: data.wrapped_dek,
+        dek_wrap_iv: data.dek_wrap_iv,
+        dek_wrap_tag: data.dek_wrap_tag,
+        dek_wrap_version: data.dek_wrap_version,
+        dek_kek_ref: data.dek_kek_ref,
+      },
+      { dao: daoAddress, role, chain: 'solana' },
+    );
   } else {
     throw new Error(`No wrapped DEK available for ${role}@${daoAddress} (envelope decrypt required).`);
   }
@@ -1470,8 +1530,27 @@ async function handleBundleRebalance(
       let ix: TransactionInstruction | null = null;
       const amount = typeof op.amount === 'string' ? Number(op.amount) : (op.amount ?? 0);
 
-      if (op.action === 'kamino_deposit' || op.action === 'kamino_withdraw') {
-        const k = op.kamino;
+      if (op.action === 'execute_strategy') {
+        if (!op.execution_request_address || !op.protocol_id) {
+          return res.status(400).json({ error: `bundle op[${i}] execute_strategy requires execution_request_address + protocol_id` });
+        }
+        const check = await validateOnChainState(programs, {
+          ...opBody,
+          execution_request_address: op.execution_request_address,
+        });
+        if (!check.ok) {
+          return res.status(409).json({ error: `bundle op[${i}] ${check.error}`, on_chain_status: check.status });
+        }
+        ix = await buildExecuteStrategyIx(
+          programs, agent.publicKey, dao, new PublicKey(op.execution_request_address), op.protocol_id,
+        );
+      } else if (op.action === 'kamino_deposit' || op.action === 'kamino_withdraw') {
+        let k = op.kamino;
+        if (!k && op.mint) {
+          const reserve = await boundVenueTarget(dao, 'kamino', new PublicKey(op.mint), 'extReserve');
+          const info = reserve ? await conn.getAccountInfo(reserve) : null;
+          if (reserve && info) k = kaminoAccountsFromReserve(reserve, info.data, EXTERNAL_PROGRAM_IDS.klend);
+        }
         if (!k || !op.mint) { return res.status(400).json({ error: `bundle op[${i}] kamino requires kamino + mint` }); }
         const mint = new PublicKey(op.mint!);
         const positionTokenAccount = pdas.positionToken(dao, 'kamino', mint);
@@ -1494,7 +1573,12 @@ async function handleBundleRebalance(
           : programs.core.methods.kaminoWithdraw(new BN(amount));
         ix = await method.accountsPartial(accounts).remainingAccounts(remaining).instruction();
       } else if (op.action === 'jito_deposit' || op.action === 'jito_withdraw') {
-        const j = op.jito;
+        let j = op.jito;
+        if (!j && op.mint) {
+          const pool = await boundVenueTarget(dao, 'jito', new PublicKey(op.mint), 'extMarket');
+          const info = pool ? await conn.getAccountInfo(pool) : null;
+          if (pool && info) j = jitoAccountsFromStakePool(pool, info.data, EXTERNAL_PROGRAM_IDS.splStakePool);
+        }
         if (!j || !op.mint) { return res.status(400).json({ error: `bundle op[${i}] jito requires jito + mint` }); }
         const mint = new PublicKey(op.mint!);
         const positionTokenAccount = pdas.positionToken(dao, 'jito', mint);
@@ -1624,7 +1708,7 @@ async function handleBundleRebalance(
       const vtx = new VersionedTransaction(msg);
       vtx.sign([agent]);
 
-      const skipSim = (process.env.NAVE_SIGNER_SKIP_SIMULATION || '').toLowerCase() === 'true';
+      const skipSim = skipSimulationRequested();
       if (!skipSim) {
         const sim = await conn.simulateTransaction(vtx, {
           sigVerify: false,
@@ -1823,7 +1907,7 @@ async function sendAgentV0(
   // the on-chain program would reject (or the accounts are wrong); abort rather
   // than spend fees and risk a partial/incorrect fund move. Opt-out only for
   // controlled non-mainnet runs via NAVE_SIGNER_SKIP_SIMULATION=true.
-  const skipSim = (process.env.NAVE_SIGNER_SKIP_SIMULATION || '').toLowerCase() === 'true';
+  const skipSim = skipSimulationRequested();
   if (!skipSim) {
     const sim = await conn.simulateTransaction(tx, {
       sigVerify: false,
@@ -1844,12 +1928,70 @@ async function sendAgentV0(
 /** A generous CU ceiling for the multi-CPI protocol transactions. */
 const PROTOCOL_CU_LIMIT = 600_000;
 
+/** Jupiter Lend `Lending` account: f_token_mint at byte offset 40. */
+const JUPITER_LENDING_FTOKEN_MINT_OFFSET = 40;
+
+/**
+ * Accounts `update_strategy_position_value` reads the mark from: the venue
+ * state (klend reserve / Jupiter lending / SPL stake pool) recorded on the
+ * StrategyPosition and the vault-owned receipt token account.
+ */
+async function resolvePositionMarkSources(
+  dao: PublicKey,
+  protocolId: string,
+  mint: PublicKey,
+): Promise<{ venueState: PublicKey; receiptTokenAccount: PublicKey } | { error: string }> {
+  const readPrograms = programsForAgent(Keypair.generate(), getConnection());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sp: any = await (readPrograms.core.account as any).strategyPosition
+    .fetch(pdas.strategyPosition(dao, protocolId, mint))
+    .catch(() => null);
+  if (!sp) return { error: `no strategy position for ${protocolId}/${mint.toBase58()}` };
+  if (sp.extMarket.equals(PublicKey.default) && sp.extReserve.equals(PublicKey.default)) {
+    // Unbound position: the program values it from escrow alone.
+    const escrow = pdas.strategyEscrow(dao, protocolId, mint);
+    return { venueState: escrow, receiptTokenAccount: escrow };
+  }
+  if (protocolId === 'kamino') {
+    return { venueState: sp.extReserve, receiptTokenAccount: sp.positionTokenAccount };
+  }
+  if (protocolId === 'jito') {
+    return { venueState: sp.extMarket, receiptTokenAccount: sp.positionTokenAccount };
+  }
+  if (protocolId === 'jupiter') {
+    const lending = await getConnection().getAccountInfo(sp.extMarket);
+    if (!lending || lending.data.length < JUPITER_LENDING_FTOKEN_MINT_OFFSET + 32) {
+      return { error: 'jupiter lending account not found for position' };
+    }
+    const fTokenMint = new PublicKey(
+      lending.data.subarray(JUPITER_LENDING_FTOKEN_MINT_OFFSET, JUPITER_LENDING_FTOKEN_MINT_OFFSET + 32),
+    );
+    return {
+      venueState: sp.extMarket,
+      receiptTokenAccount: getAssociatedTokenAddressSync(fTokenMint, pdas.vaultAuthority(dao), true),
+    };
+  }
+  return { error: `on-chain marks are not supported for protocol ${protocolId}` };
+}
+
+/** The DAO's StrategyPosition accounts that hold principal (dao at offset 9). */
+async function principalPositions(programs: AgentPrograms, dao: PublicKey): Promise<PublicKey[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = await (programs.core.account as any).strategyPosition.all([
+    { memcmp: { offset: 9, bytes: dao.toBase58() } },
+  ]);
+  return rows
+    .filter((r) => BigInt(r.account.depositedAmount?.toString?.() ?? '0') > 0n)
+    .map((r) => r.publicKey as PublicKey);
+}
+
 /**
  * Revalue the treasury's USD NAV from every registered asset. Caller supplies
  * the asset list (mints + posted Pyth update for non-stables); the program
  * recomputes NAV/deployed in micro-USD and reseeds the high-water-mark. Each
  * asset contributes a 4-account remaining-accounts group:
- *   [assetConfig, treasuryAsset, assetVault, priceUpdate].
+ *   [assetConfig, treasuryAsset, assetVault, priceUpdate],
+ * followed by the StrategyPosition accounts that hold principal.
  */
 async function handleRevalueTreasury(
   res: express.Response,
@@ -1910,6 +2052,11 @@ async function handleRevalueTreasury(
         { pubkey: priceUpdate, isWritable: false, isSigner: false },
       ];
     });
+    // NAV counts each asset's marked position value; the program requires every
+    // position that holds principal to be supplied after the asset groups.
+    for (const pubkey of await principalPositions(programs, dao)) {
+      remaining.push({ pubkey, isWritable: false, isSigner: false });
+    }
 
     const ix = await programs.core.methods
       .revalueTreasury()
@@ -1947,6 +2094,33 @@ async function handleRevalueTreasury(
  * the klend market/reserve coordinates (provided by the orchestrator from the
  * approved market config).
  */
+const U64_MAX = new BN('18446744073709551615');
+
+/**
+ * Venue CPI amount. `amount: "max"` on a deposit places the whole strategy
+ * escrow; on a withdraw it recalls the whole position into the escrow: the
+ * receipt-token balance for Kamino (cTokens) and Jito (pool tokens),
+ * u64::MAX for Jupiter Lend.
+ */
+async function venueAmount(body: SignRequest, dao: PublicKey, protocol: 'kamino' | 'jito' | 'jupiter'): Promise<BN | string> {
+  if (body.amount === 'max') {
+    const mint = new PublicKey(body.mint!);
+    const deposit = body.action.endsWith('_deposit');
+    if (!deposit && protocol === 'jupiter') return U64_MAX;
+    const account = deposit
+      ? pdas.strategyEscrowForMint(dao, protocol, mint)
+      : pdas.positionToken(dao, protocol, mint);
+    const bal = await getConnection().getTokenAccountBalance(account).catch(() => null);
+    const units = new BN(bal?.value.amount ?? '0');
+    return units.isZero() ? `${body.action}: nothing to move for ${protocol}` : units;
+  }
+  const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
+  if (!Number.isFinite(amount as number) || (amount as number) <= 0 || !Number.isInteger(amount as number)) {
+    return `${body.action} requires a positive integer amount (base units)`;
+  }
+  return new BN(amount as number);
+}
+
 async function handleKaminoCpi(
   res: express.Response,
   body: SignRequest,
@@ -1957,17 +2131,26 @@ async function handleKaminoCpi(
     return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint` });
-  const k = body.kamino;
+  let k = body.kamino;
+  if (!k) {
+    // Resolve from the reserve the founder bound to this position.
+    try {
+      const reserve = await boundVenueTarget(dao, 'kamino', new PublicKey(body.mint), 'extReserve');
+      const info = reserve ? await getConnection().getAccountInfo(reserve) : null;
+      if (reserve && info) k = kaminoAccountsFromReserve(reserve, info.data, EXTERNAL_PROGRAM_IDS.klend);
+    } catch (err) {
+      return res.status(400).json({ error: `${body.action}: could not resolve the bound reserve: ${err instanceof Error ? err.message : err}` });
+    }
+  }
   if (!k || !k.reserve || !k.lending_market || !k.lending_market_authority
     || !k.reserve_liquidity_supply || !k.reserve_collateral_mint) {
     return res.status(400).json({
       error: `${body.action} requires kamino { reserve, lending_market, lending_market_authority, reserve_liquidity_supply, reserve_collateral_mint }`,
     });
   }
-  const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
-  if (!Number.isFinite(amount as number) || (amount as number) <= 0 || !Number.isInteger(amount as number)) {
-    return res.status(400).json({ error: `${body.action} requires a positive integer amount (base units)` });
-  }
+  const amountOrError = await venueAmount(body, dao, 'kamino');
+  if (typeof amountOrError === 'string') return res.status(400).json({ error: amountOrError });
+  const amountBn = amountOrError;
 
   try {
     const agent = await loadAgentKeypair(dao.toBase58(), 'operational', effectiveAesKey);
@@ -1996,8 +2179,8 @@ async function handleKaminoCpi(
     }));
 
     const method = body.action === 'kamino_deposit'
-      ? programs.core.methods.kaminoDeposit(new BN(amount as number))
-      : programs.core.methods.kaminoWithdraw(new BN(amount as number));
+      ? programs.core.methods.kaminoDeposit(amountBn)
+      : programs.core.methods.kaminoWithdraw(amountBn);
 
     const ix = await method.accountsPartial(accounts).remainingAccounts(remaining).instruction();
     const sig = await sendAgentV0(
@@ -2011,6 +2194,68 @@ async function handleKaminoCpi(
     console.error(`[signer] ${body.action} error:`, err);
     return res.status(500).json({ error: err instanceof Error ? err.message : `${body.action} failed` });
   }
+}
+
+/** The venue target (ext_market / ext_reserve) the DAO's founder bound to a position. */
+/** `nave_execution::execute_strategy` for a request; the asset mint is read from the request. */
+async function buildExecuteStrategyIx(
+  programs: AgentPrograms,
+  executor: PublicKey,
+  dao: PublicKey,
+  executionRequest: PublicKey,
+  protocolId: string,
+  priceUpdateAddress?: string,
+): Promise<TransactionInstruction> {
+  const adapter = adapterProgramId(protocolId);
+  if (!adapter) throw new Error(`Unknown protocol_id: ${protocolId}`);
+  const erAcc = await fetchExecutionRequestTolerant(programs, executionRequest);
+  const assetMint = new PublicKey(erAcc.mint);
+  const vaultTokenAccount = pdas.assetVault(dao, assetMint);
+  const escrowPdaEnabled = (process.env.NAVE_ESCROW_PDA_ENABLED ?? 'true').toLowerCase() === 'true';
+  return programs.execution.methods
+    .executeStrategy()
+    .accountsPartial({
+      executor,
+      globalConfig: pdas.globalConfig(),
+      daoRegistry: dao,
+      daoLifecycle: pdas.daoLifecycle(dao),
+      constitution: pdas.constitution(dao),
+      vaultAuthority: pdas.vaultAuthority(dao),
+      treasuryVault: pdas.treasuryVault(dao),
+      mint: assetMint,
+      assetConfig: pdas.assetConfig(dao, assetMint),
+      treasuryAsset: pdas.treasuryAsset(dao, assetMint),
+      // Stablecoins are valued at parity and ignore this account.
+      priceUpdate: priceUpdateAddress ? new PublicKey(priceUpdateAddress) : assetMint,
+      vaultTokenAccount,
+      executionAuthority: pdas.executionAuthority(dao),
+      adapterProgram: adapter,
+      executionRequest,
+      strategyEscrow: escrowPdaEnabled
+        ? pdas.strategyEscrowForMint(dao, protocolId, assetMint)
+        : vaultTokenAccount,
+      strategyPosition: pdas.strategyPositionForMint(dao, protocolId, assetMint),
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+      naveCoreProgram: PROGRAM_IDS.core,
+    })
+    .instruction();
+}
+
+async function boundVenueTarget(
+  dao: PublicKey,
+  protocolId: string,
+  mint: PublicKey,
+  field: 'extMarket' | 'extReserve',
+): Promise<PublicKey | null> {
+  const programs = programsForAgent(Keypair.generate(), getConnection());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pos = await (programs.core.account as any).strategyPosition
+    .fetchNullable(pdas.strategyPositionForMint(dao, protocolId, mint));
+  const key = pos ? new PublicKey(pos[field]) : null;
+  return key && !key.equals(PublicKey.default) ? key : null;
 }
 
 /**
@@ -2138,17 +2383,26 @@ async function handleJitoCpi(
     return res.status(400).json({ error: `${body.action} must be signed by the operational agent` });
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint (wSOL)` });
-  const j = body.jito;
+  let j = body.jito;
+  if (!j) {
+    // Resolve from the stake pool the founder bound to this position.
+    try {
+      const pool = await boundVenueTarget(dao, 'jito', new PublicKey(body.mint), 'extMarket');
+      const info = pool ? await getConnection().getAccountInfo(pool) : null;
+      if (pool && info) j = jitoAccountsFromStakePool(pool, info.data, EXTERNAL_PROGRAM_IDS.splStakePool);
+    } catch (err) {
+      return res.status(400).json({ error: `${body.action}: could not resolve the bound stake pool: ${err instanceof Error ? err.message : err}` });
+    }
+  }
   if (!j || !j.stake_pool || !j.stake_pool_withdraw_authority || !j.reserve_stake
     || !j.manager_fee_account || !j.pool_mint) {
     return res.status(400).json({
       error: `${body.action} requires jito { stake_pool, stake_pool_withdraw_authority, reserve_stake, manager_fee_account, pool_mint }`,
     });
   }
-  const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
-  if (!Number.isFinite(amount as number) || (amount as number) <= 0 || !Number.isInteger(amount as number)) {
-    return res.status(400).json({ error: `${body.action} requires a positive integer amount (base units)` });
-  }
+  const amountOrError = await venueAmount(body, dao, 'jito');
+  if (typeof amountOrError === 'string') return res.status(400).json({ error: amountOrError });
+  const amountBn = amountOrError;
 
   try {
     const agent = await loadAgentKeypair(dao.toBase58(), 'operational', effectiveAesKey);
@@ -2174,12 +2428,12 @@ async function handleJitoCpi(
     let ix: TransactionInstruction;
     if (body.action === 'jito_deposit') {
       ix = await programs.core.methods
-        .jitoDeposit(new BN(amount as number))
+        .jitoDeposit(amountBn)
         .accountsPartial(baseAccounts)
         .instruction();
     } else {
       ix = await programs.core.methods
-        .jitoWithdraw(new BN(amount as number))
+        .jitoWithdraw(amountBn)
         .accountsPartial({
           ...baseAccounts,
           stakeProgram: EXTERNAL_PROGRAM_IDS.stake,
@@ -2201,11 +2455,11 @@ async function handleJitoCpi(
 }
 
 /**
- * Jupiter Lend (Earn) deposit / withdraw via the nave_core direct CPI path.
- *
- * Unlike Kamino/Jito/MarginFi which route through execute_strategy → adapter,
- * Jupiter uses nave_core::jupiter_deposit / jupiter_withdraw directly (Operational
- * agent). The vault_authority PDA is the Jupiter `signer`; it signs via invoke_signed.
+ * Jupiter Lend (Earn) deposit / withdraw via nave_core::jupiter_deposit /
+ * jupiter_withdraw (Operational agent). Jupiter has no Nave adapter:
+ * execute_strategy moves the request's funds into the strategy escrow and
+ * jupiter_deposit places them from there. The vault_authority PDA is the
+ * Jupiter `signer`; it signs via invoke_signed.
  *
  * Account resolution strategy:
  *   1. If the caller supplies `body.jupiter` accounts (pre-resolved), use them directly.
@@ -2224,10 +2478,9 @@ async function handleJupiterCpi(
   }
   if (!body.mint) return res.status(400).json({ error: `${body.action} requires mint` });
 
-  const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
-  if (!Number.isFinite(amount as number) || (amount as number) <= 0 || !Number.isInteger(amount as number)) {
-    return res.status(400).json({ error: `${body.action} requires a positive integer amount (base units)` });
-  }
+  const amountOrError = await venueAmount(body, dao, 'jupiter');
+  if (typeof amountOrError === 'string') return res.status(400).json({ error: amountOrError });
+  const amountBn = amountOrError;
 
   // ── Resolve Jupiter account context ────────────────────────────────────────
   let j = body.jupiter;
@@ -2248,7 +2501,7 @@ async function handleJupiterCpi(
       const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-        body: JSON.stringify({ asset: body.mint, amount: String(amount), signer: dao.toBase58() }),
+        body: JSON.stringify({ asset: body.mint, amount: amountBn.eq(U64_MAX) ? '1' : amountBn.toString(), signer: dao.toBase58() }),
       });
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
@@ -2336,12 +2589,12 @@ async function handleJupiterCpi(
     let ix: TransactionInstruction;
     if (body.action === 'jupiter_deposit') {
       ix = await programs.core.methods
-        .jupiterDeposit(new BN(amount as number))
+        .jupiterDeposit(amountBn)
         .accountsPartial(baseAccounts)
         .instruction();
     } else {
       ix = await programs.core.methods
-        .jupiterWithdraw(new BN(amount as number))
+        .jupiterWithdraw(amountBn)
         .accountsPartial({
           ...baseAccounts,
           claimAccount: new PublicKey(j.claim_account!),
@@ -2680,6 +2933,74 @@ async function validateOnChainState(
   return { ok: true, status: er.status };
 }
 
+const CORE_AGENT_ACTIONS = new Set<SignAction>([
+  'revalue_treasury',
+  'update_strategy_position_value',
+  'kamino_deposit', 'kamino_withdraw',
+  'jito_deposit', 'jito_withdraw',
+  'jupiter_deposit', 'jupiter_withdraw',
+  'marginfi_deposit', 'marginfi_withdraw',
+  'jupiter_swap',
+  'bundle_rebalance',
+]);
+
+/** Actions that only record a value; the program allows them while the DAO is frozen. */
+const FROZEN_OK_ACTIONS = new Set<SignAction>(['revalue_treasury', 'update_strategy_position_value']);
+
+const BUNDLE_OP_ACTIONS = new Set<string>([
+  'execute_strategy',
+  'kamino_deposit', 'kamino_withdraw',
+  'jito_deposit', 'jito_withdraw',
+  'jupiter_deposit', 'jupiter_withdraw',
+  'marginfi_deposit', 'marginfi_withdraw',
+]);
+
+const ROLE_INDEX: Record<'executive' | 'financial' | 'oversight' | 'operational', number> = {
+  executive: 0, financial: 1, oversight: 2, operational: 3,
+};
+
+/**
+ * Pre-sign check for nave_core agent actions that have no ExecutionRequest
+ * (venue CPIs, swaps, bundles, marks, revalue). Mirrors the program's guards so
+ * a stolen caller credential can't make the signer decrypt a key for an action
+ * the chain would reject: protocol not paused, DAO not frozen (except marks),
+ * agents enabled, and the signing slot Active and not nullified.
+ */
+async function validateCoreActionState(
+  programs: AgentPrograms,
+  body: SignRequest,
+  dao: PublicKey,
+  role: keyof typeof ROLE_INDEX,
+): Promise<OnChainCheck> {
+  const action = body.action as SignAction;
+  if (action === 'bundle_rebalance') {
+    for (const [i, op] of (body.bundle_operations ?? []).entries()) {
+      if (!BUNDLE_OP_ACTIONS.has(op.action)) {
+        return { ok: false, status: -1, error: `bundle op[${i}] action '${op.action}' is not execute_strategy or a venue deposit/withdraw` };
+      }
+    }
+  }
+  try {
+    const [config, registry, agentSet] = await Promise.all([
+      (programs.core.account as any).globalConfig.fetch(pdas.globalConfig()),
+      fetchDaoRegistryTolerant(programs, dao),
+      (programs.core.account as any).agentSet.fetch(pdas.agentSet(dao)),
+    ]);
+    if (config.paused) return { ok: false, status: -1, error: 'protocol is paused' };
+    if (registry.frozen && !FROZEN_OK_ACTIONS.has(action)) {
+      return { ok: false, status: -1, error: 'DAO is frozen' };
+    }
+    if (!agentSet.agentsEnabled) return { ok: false, status: -1, error: 'agents are disabled for this DAO' };
+    const slot = agentSet.agents[ROLE_INDEX[role]];
+    if (!slot || !slot.active || slot.nullified || Number(slot.status) !== 0) {
+      return { ok: false, status: -1, error: `${role} agent slot is not active` };
+    }
+    return { ok: true, status: -1 };
+  } catch (e) {
+    return { ok: false, status: -1, error: `Could not read DAO state: ${e instanceof Error ? e.message : 'unknown'}` };
+  }
+}
+
 /**
  * EVM (secp256k1 + EIP-712) GUARDIAN signing for Ethereum + Base. Separate from
  * the Solana `/sign` path so existing flows are untouched. Produces an EIP-712
@@ -2692,8 +3013,9 @@ async function validateOnChainState(
  */
 app.post('/sign-evm', async (req, res) => {
   try {
-    if (!secretMatches(req.header('X-Signer-Secret'), SIGNER_SECRET)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const guardianAuth = authorizeRole(req.header('X-Signer-Secret'), 'guardian', SIGNER_SECRET);
+    if (!guardianAuth.ok) {
+      return res.status(guardianAuth.status).json({ error: guardianAuth.error });
     }
 
     const body = req.body as EvmGuardianSignRequest;
@@ -2730,15 +3052,14 @@ app.post('/sign-evm', async (req, res) => {
  * `msg.sender`. Two action families:
  *
  *  - toggle_agents: resume → NaveTreasury.toggleAgents(true) from the Executive
- *    EOA; pause → guardian M-of-N NaveTreasury.guardianDisableAgents(nonce,
- *    deadline, sigs) assembled from every custodied guardian plus optional
- *    external `guardian_signatures` (founder wallet) over the same nonce/deadline.
+ *    EOA; pause → guardian M-of-N NaveTreasury.guardianAction(DISABLE_AGENTS)
+ *    assembled from every custodied guardian plus optional external
+ *    `guardian_signatures` (founder wallet) over the same nonce/deadline.
  *    Requires { chain_id, dao_address, enabled }.
  *
- *  - update_strategy_position_value: NaveTreasury.updateStrategyPositionValue
- *    (Operational-agent-signed position-oracle tick; parity with Solana's
- *    `update_strategy_position_value`). Requires { chain_id, dao_address,
- *    adapter, amount (new value) }. Targets the TREASURY directly.
+ *  - update_strategy_position_value: NaveExecution.syncPositionValue(adapter)
+ *    from the Operational agent; the value is read on-chain from the adapter.
+ *    Requires { chain_id, dao_address, execution_address, adapter }.
  *
  *  - the four-agent pipeline on NaveExecution: executive_approve,
  *    financial_approve, oversight_approve, operational_halt, operational_clear,
@@ -2764,8 +3085,13 @@ const EVM_RELAY_AGENT_ACTIONS = new Set<EvmRelayAgentAction>([
 
 app.post('/relay-evm', async (req, res) => {
   try {
-    if (!secretMatches(req.header('X-Signer-Secret'), SIGNER_SECRET)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const relayAuth = authorizeRole(
+      req.header('X-Signer-Secret'),
+      evmRelaySignerRole(String(req.body?.action ?? 'toggle_agents')),
+      SIGNER_SECRET,
+    );
+    if (!relayAuth.ok) {
+      return res.status(relayAuth.status).json({ error: relayAuth.error });
     }
 
     const body = req.body as (
@@ -2807,16 +3133,18 @@ app.post('/relay-evm', async (req, res) => {
     }
 
     // ── Position-oracle tick (mirrors Solana's update_strategy_position_value) ──
-    // Targets the TREASURY directly (dao_address), not a NaveExecution clone.
+    // NaveExecution reads the mark from the adapter; no caller-supplied value.
     if (action === 'update_strategy_position_value') {
-      const { adapter, amount } = body as Partial<EvmRelayUpdatePositionValueRequest> & { amount?: number | string };
+      const { adapter, execution_address, target_address } = body as Partial<EvmRelayUpdatePositionValueRequest>;
       if (!adapter) {
         return res.status(400).json({ error: "update_strategy_position_value requires 'adapter' (NaveTreasury position key)" });
       }
-      if (amount === undefined || amount === null || amount === '') {
-        return res.status(400).json({ error: "update_strategy_position_value requires 'amount' (new value, base units)" });
-      }
-      const result = await relayEvmUpdateStrategyPositionValue({ chain_id, dao_address, adapter, new_value: amount });
+      const result = await relayEvmUpdateStrategyPositionValue({
+        chain_id,
+        dao_address,
+        adapter,
+        execution_address: execution_address ?? target_address,
+      });
       return res.json({ success: true, signature: result.tx_hash, ...result });
     }
 
@@ -3365,12 +3693,22 @@ app.post('/faucet-claim-sol', publicCorsMiddleware, async (req, res) => {
 
 app.post('/sign', async (req, res) => {
   try {
-    // Fail-closed: SIGNER_SECRET is guaranteed set (boot check above).
-    if (!secretMatches(req.header('X-Signer-Secret'), SIGNER_SECRET)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const body = req.body as SignRequest;
+    // Fail-closed: SIGNER_SECRET is guaranteed set (boot check above). The
+    // credential must belong to the one role allowed to drive this action.
+    const signAuth = authorizeRole(
+      req.header('X-Signer-Secret'),
+      solanaCredentialRole(body?.action, body?.agent_role),
+      SIGNER_SECRET,
+    );
+    if (!signAuth.ok) {
+      return res.status(signAuth.status).json({
+        error: signAuth.status === 400
+          ? `agent_role '${body?.agent_role}' may not perform '${body?.action}'`
+          : signAuth.error,
+      });
     }
 
-    const body = req.body as SignRequest;
     const { action, dao_address, execution_request_address, agent_role, aes_decrypt_key } = body;
 
     // This endpoint is Solana-only (Anchor programs / PDAs). EVM DAOs sign
@@ -3496,6 +3834,17 @@ app.post('/sign', async (req, res) => {
 
     // ── multi-asset / real-protocol CPI actions (operate on nave_core, not an
     //    ExecutionRequest) ──────────────────────────────────────────────────
+    if (CORE_AGENT_ACTIONS.has(action)) {
+      const coreCheck = await validateCoreActionState(
+        programsForAgent(Keypair.generate(), getConnection()),
+        body,
+        dao,
+        'operational',
+      );
+      if (!coreCheck.ok) {
+        return res.status(409).json({ error: `Pre-sign validation failed: ${coreCheck.error}` });
+      }
+    }
     if (action === 'revalue_treasury') {
       return await handleRevalueTreasury(res, body, dao, effectiveAesKey);
     }
@@ -3546,15 +3895,17 @@ app.post('/sign', async (req, res) => {
       if (body.agent_role !== 'operational') {
         return res.status(400).json({ error: 'update_strategy_position_value must be signed by the operational agent' });
       }
-      const nextValue = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
-      if (!Number.isFinite(nextValue as number) || (nextValue as number) < 0 || !Number.isInteger(nextValue as number)) {
-        return res.status(400).json({ error: 'update_strategy_position_value requires a non-negative integer amount (base units)' });
+      // The mark is read on-chain from the venue's exchange rate; the caller
+      // only supplies which accounts hold the position.
+      const markSources = await resolvePositionMarkSources(dao, body.protocol_id, positionMint);
+      if ('error' in markSources) {
+        return res.status(400).json({ error: markSources.error });
       }
       const operational = await loadAgentKeypair(dao_address, 'operational', effectiveAesKey);
       await ensureFundedFromOpsWallet(operational.publicKey);
       const opPrograms = programsForAgent(operational, getConnection());
       const signature = await opPrograms.core.methods
-        .updateStrategyPositionValue(body.protocol_id, new BN(nextValue as number))
+        .updateStrategyPositionValue(body.protocol_id)
         .accountsPartial({
           authority: operational.publicKey,
           globalConfig: pdas.globalConfig(),
@@ -3562,6 +3913,10 @@ app.post('/sign', async (req, res) => {
           agentSet: pdas.agentSet(dao),
           mint: positionMint,
           strategyPosition: pdas.strategyPosition(dao, body.protocol_id, positionMint),
+          vaultAuthority: pdas.vaultAuthority(dao),
+          strategyEscrow: pdas.strategyEscrow(dao, body.protocol_id, positionMint),
+          venueState: markSources.venueState,
+          receiptTokenAccount: markSources.receiptTokenAccount,
         })
         .rpc();
       return res.json({ success: true, signature, agent: operational.publicKey.toBase58() });
@@ -3623,8 +3978,11 @@ app.post('/sign', async (req, res) => {
         break;
       }
       case 'operational_clear': {
+        if (reasoningHash.every((b) => b === 0)) {
+          return res.status(400).json({ error: 'operational_clear requires a non-zero reasoning_hash (the clear reason)' });
+        }
         signature = await programs.execution.methods
-          .operationalClear()
+          .operationalClear(reasoningHash)
           .accountsPartial(approvalAccounts)
           .rpc();
         break;
@@ -3739,33 +4097,9 @@ app.post('/sign', async (req, res) => {
         // M14: same treatment as withdraw_from_strategy above — build the
         // instruction and route through sendAgentV0 rather than .rpc().
         {
-          const ix = await programs.execution.methods
-            .executeStrategy()
-            .accountsPartial({
-              executor: agent.publicKey,
-              globalConfig,
-              daoRegistry: dao,
-              daoLifecycle: pdas.daoLifecycle(dao),
-              constitution: pdas.constitution(dao),
-              vaultAuthority: pdas.vaultAuthority(dao),
-              treasuryVault: pdas.treasuryVault(dao),
-              mint: assetMint,
-              assetConfig,
-              treasuryAsset,
-              priceUpdate,
-              vaultTokenAccount,
-              executionAuthority: pdas.executionAuthority(dao),
-              adapterProgram: adapter,
-              executionRequest,
-              strategyEscrow,
-              strategyPosition,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId,
-              instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
-              naveCoreProgram: PROGRAM_IDS.core,
-            })
-            .instruction();
+          const ix = await buildExecuteStrategyIx(
+            programs, agent.publicKey, dao, executionRequest, body.protocol_id, body.price_update_address,
+          );
           signature = await sendAgentV0(
             programs,
             agent,

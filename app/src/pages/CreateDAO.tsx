@@ -36,8 +36,8 @@ import { buildCreateDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTo
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, Erc20Abi } from '../lib/evm/contracts';
 import { fetchFormationFeeEvm, fetchFactoryAddressEvm, fetchNaveStakeConfigEvm, fetchErc20BalanceEvm, type EvmNaveStakeConfig } from '../lib/evm/readers';
 import { toAddress } from '../lib/evm/addresses';
-import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, SOLANA_NAVE_MINT, activeEvmChainId, chainDisplayLabel, NAVE_DAO_CREATION_STAKE_USD, SYSTEM_CONFIDENCE_THRESHOLD, bridgeCanRedeemNave } from '../lib/programConfig';
-import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, isEvmTestnet, chainFamilyLabel, evmActivationChainFamily } from '../lib/chain/types';
+import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, SOLANA_NAVE_MINT, activeEvmChainId, chainDisplayLabel, NAVE_DAO_CREATION_STAKE_USD, SYSTEM_CONFIDENCE_THRESHOLD, bridgeCanRedeemNave, EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
+import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, isEvmTestnet, chainFamilyLabel, evmActivationChainFamily, USER_CHAINS } from '../lib/chain/types';
 import {
   buildInitializeDao,
   buildInitializeDaoExtensions,
@@ -159,6 +159,12 @@ const SOLANA_SUB_STEP_LABELS: Record<string, string> = {
 const ZERO_EVM_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 type SetupMode = 'quick' | 'advanced';
+
+function treasuryNativeLabel(chain: ChainFamily): string {
+  if (chain === 'solana') return 'SOL';
+  if (chain === 'arc') return 'USDC';
+  return 'ETH';
+}
 
 function displayStepIndex(step: number, setupMode: SetupMode): number {
   if (setupMode === 'quick') {
@@ -405,6 +411,10 @@ function Step1({
 
   useEffect(() => {
     const slug = config.slug;
+    if (!slug.trim()) {
+      onSlugReadyChange(false, null);
+      return;
+    }
     const validation = validateDaoSlug(slug);
     if (!validation.valid) {
       onSlugReadyChange(false, validation.error ?? 'Invalid DAO name');
@@ -497,12 +507,16 @@ function Step1({
 
       <Field
         label="Treasury network"
-        hint="Treasuries launch on Base."
+        hint={
+          EVM_DEPLOYMENT_MODE === 'testnet'
+            ? 'Testnet treasuries can launch on Solana, Ethereum, Base, Robinhood, or Arc.'
+            : 'Mainnet treasuries stay on Base.'
+        }
       >
         <ChainSelector
           value={config.chain}
-          onChange={() => setConfig({ chain: 'base' })}
-          chains={['base']}
+          onChange={(chain) => setConfig({ chain })}
+          chains={USER_CHAINS}
           label=""
         />
       </Field>
@@ -541,7 +555,9 @@ function Step1({
                   ? 'e.g. Robinhood Builders Collective'
                   : config.chain === 'ethereum'
                     ? 'e.g. Ethereum Builders Collective'
-                    : 'e.g. Solana Builders Collective'
+                    : config.chain === 'arc'
+                      ? 'e.g. Arc Builders Collective'
+                      : 'e.g. Solana Builders Collective'
             }
             className="w-full px-4 rounded-lg border outline-none transition-colors"
             style={{
@@ -693,9 +709,9 @@ function Step1({
         >
           <Field label="Authorized Wallets" hint="Wallets that can vote on proposals. Your connected wallet is added automatically; you can add or remove others. Manage these anytime in Settings.">
             <p className="mb-3" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-              These wallets also act as treasury guardians. Emergency actions (freeze, disabling the agents) need{' '}
-              <strong>{defaultGuardianThreshold(previewGuardianCount(config))} of {previewGuardianCount(config)}</strong> guardian approvals
-              {config.chain !== 'solana' && ' (including the Nave-custodied guardian, which can never act alone)'}.
+              These wallets vote on proposals and approve emergency actions. A proposal closes immediately once the yes votes cannot lose; otherwise it stays open until the voting window ends. Emergency actions need{' '}
+              <strong>{defaultGuardianThreshold(previewGuardianCount(config), config.chain === 'solana' ? 0 : 1)} of {previewGuardianCount(config)}</strong> guardian approvals
+              {config.chain !== 'solana' && ' (one is Nave-custodied; with two or more guardians of your own, they can reach this without it)'}.
             </p>
             <div className="flex gap-2">
               <input
@@ -950,7 +966,10 @@ function SeedReviewStep({
   const chainLabel = chainDisplayLabel(config.chain);
   const isTokenGov = config.governanceType === 'token';
   const isNewToken = config.tokenMode === 'new';
-  const nativeUnit = isSolana ? 'SOL' : 'ETH';
+  const nativeUnit = treasuryNativeLabel(config.chain);
+  const seedDepositCopy = config.chain === 'arc'
+    ? 'Deposited into your Arc vault as native gas USDC (18 decimals). This is not the 6-decimal USDC ERC-20 the treasury holds, and it is not a protocol fee.'
+    : `Deposited into your ${chainLabel} vault as native ${nativeUnit} — not a protocol fee.`;
 
   const seedNum = parseFloat(seedAmount);
   const validSeed = !isNaN(seedNum) && seedNum >= 0;
@@ -991,7 +1010,7 @@ function SeedReviewStep({
       : []),
     {
       label: 'Guardian approvals',
-      value: `${defaultGuardianThreshold(previewGuardianCount(config))} of ${previewGuardianCount(config)}${isSolana ? '' : ' (incl. Nave-custodied guardian)'}`,
+      value: `${defaultGuardianThreshold(previewGuardianCount(config), isSolana ? 0 : 1)} of ${previewGuardianCount(config)}${isSolana ? '' : ' (incl. one Nave-custodied guardian)'}`,
     },
   ];
 
@@ -1014,7 +1033,7 @@ function SeedReviewStep({
         <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}>
           {isSolana
             ? 'Deposited into your vault as wSOL — not a protocol fee. Agents use this as initial deployable capital.'
-            : `Deposited into your ${chainLabel} vault as native ETH — not a protocol fee.`}
+            : seedDepositCopy}
           {' '}Enter 0 to start with an empty treasury.
         </p>
         <div className="flex items-center rounded-lg border overflow-hidden"
@@ -1206,8 +1225,8 @@ function SeedReviewStep({
                 {evmFormationFeeLoading
                   ? 'Loading…'
                   : evmFormationFeeWei != null && evmFormationFeeWei > 0n
-                    ? `~${parseFloat(formatUnits(evmFormationFeeWei, 18)).toFixed(4)} ETH + gas`
-                    : '~0.003 ETH (variable)'}
+                    ? `~${parseFloat(formatUnits(evmFormationFeeWei, 18)).toFixed(4)} ${nativeUnit} + gas`
+                    : `~0.003 ${nativeUnit} (variable)`}
               </span>
             </div>
             <div className="flex items-center justify-between py-2 px-3 rounded-lg"
@@ -1221,7 +1240,7 @@ function SeedReviewStep({
                 </span>
               </div>
               <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
-                {validSeed ? `${seedNum.toFixed(4)} ETH` : '—'}
+                {validSeed ? `${seedNum.toFixed(4)} ${nativeUnit}` : '—'}
               </span>
             </div>
           </div>
@@ -1347,7 +1366,7 @@ function useStakeGate(params: {
   const [evmError, setEvmError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || !connectedWallet) {
+    if (!enabled) {
       setBalance(null);
       setEvmStake(null);
       setBalanceLoading(false);
@@ -1365,7 +1384,11 @@ function useStakeGate(params: {
       try {
         if (chain === 'solana') {
           setEvmStake(null);
-          const owner = new PublicKey(connectedWallet!);
+          if (!connectedWallet) {
+            if (!cancelled) setBalance(null);
+            return;
+          }
+          const owner = new PublicKey(connectedWallet);
           const ata = getAssociatedTokenAddressSync(SOLANA_NAVE_MINT, owner, false);
           try {
             const bal = await connection.getTokenAccountBalance(ata);
@@ -1379,11 +1402,11 @@ function useStakeGate(params: {
           const cfg = await fetchNaveStakeConfigEvm(chainId);
           if (cancelled) return;
           setEvmStake(cfg);
-          if (cfg?.active && cfg.token) {
-            const bal = await fetchErc20BalanceEvm(chainId, cfg.token, connectedWallet!);
+          if (cfg?.active && cfg.token && connectedWallet) {
+            const bal = await fetchErc20BalanceEvm(chainId, cfg.token, connectedWallet);
             if (!cancelled) setBalance(bal ?? 0n);
-          } else {
-            if (!cancelled) setBalance(null);
+          } else if (!cancelled) {
+            setBalance(null);
           }
         }
       } catch (err) {
@@ -1494,9 +1517,10 @@ function useStakeGate(params: {
     };
   }
   const required = evmStake.amount;
-  const quoteMismatch = quote != null && creationStakeSourcesDisagree(quote, required, NAVE_DAO_CREATION_STAKE_USD);
-  const quoteMissing = !quoteLoading && quote == null;
-  const canCover = !quoteMismatch && !quoteMissing && balance != null && balance >= required;
+  // Testnet stake is the on-chain amount (faucet-scale). The $19 production
+  // quote is a mainnet guard and must not block Sepolia or Base Sepolia.
+  const quoteMismatch = isMainnet && quote != null && creationStakeSourcesDisagree(quote, required, NAVE_DAO_CREATION_STAKE_USD);
+  const canCover = !quoteMismatch && balance != null && balance >= required;
   return {
     active: true,
     loading: quoteLoading || balanceLoading,
@@ -1549,7 +1573,20 @@ function StakeGateNotice({ gate, chain, onBridge }: { gate: StakeGateState; chai
   }
 
   if (!gate.active) {
-    // No stake required on this chain yet (EVM testnet bridge/stake not wired).
+    if (gate.loading) {
+      return (
+        <div
+          className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y"
+          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
+        >
+          <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
+          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+            Checking whether this network requires a recoverable NAVE stake.
+          </p>
+        </div>
+      );
+    }
+    // No stake required on this chain (Robinhood and Arc testnets).
     return (
       <div
         className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y"
@@ -1557,15 +1594,17 @@ function StakeGateNotice({ gate, chain, onBridge }: { gate: StakeGateState; chai
       >
         <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
         <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-          DAO creation is fee-free on this testnet. Any native ETH attached at create is a
-          treasury-seed carve-out (not protocol profit). The recoverable ${NAVE_DAO_CREATION_STAKE_USD} NAVE
-          stake activates once the NAVE bridge/stake path is live on this chain.
+          DAO creation is fee-free here, and this network does not require a NAVE stake.
+          {chain === 'arc'
+            ? ' Arc gas is 18-decimal USDC. Treasury USDC is the separate 6-decimal token.'
+            : ` Any ${treasuryNativeLabel(chain)} sent with creation is a treasury seed, not a fee.`}
         </p>
       </div>
     );
   }
 
-  const insufficient = !gate.loading && !gate.canCover;
+  const awaitingWallet = !gate.loading && gate.balance == null;
+  const insufficient = !gate.loading && gate.balance != null && !gate.canCover;
 
   return (
     <div
@@ -1591,10 +1630,14 @@ function StakeGateNotice({ gate, chain, onBridge }: { gate: StakeGateState; chai
             style={{ fontSize: '13px', color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--accent-muted-foreground))', marginBottom: '3px' }}
           >
             {gate.loading
-              ? 'Checking the NAVE stake quote…'
-              : stakeUsdLabel
-                ? `Creating a DAO requires staking ${stakeUsdLabel} of NAVE — recoverable, not a fee`
-                : 'Creating a DAO requires a quoted NAVE stake — recoverable, not a fee.'}
+              ? 'Checking the NAVE stake on this network…'
+              : awaitingWallet
+                ? `Connect a wallet holding ${gate.requiredUi ?? 'the required'} ${unit}. The stake is locked until the treasury winds down.`
+                : stakeUsdLabel && gate.requiredUi != null
+                  ? `Creating a DAO stakes ${gate.requiredUi} ${unit} (about ${stakeUsdLabel}). It comes back when the treasury winds down.`
+                  : gate.requiredUi != null
+                    ? `Creating a DAO stakes ${gate.requiredUi} ${unit}. It comes back when the treasury winds down.`
+                    : 'Creating a DAO requires a recoverable NAVE stake.'}
           </p>
           <p style={{ fontSize: '12.5px', color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6, opacity: 0.9 }}>
             Your stake is locked in a per-DAO escrow and returned in full when the DAO winds down (moonlights)
@@ -1746,6 +1789,10 @@ export default function CreateDAO() {
   }, [config.chain, setChainFamily, evmConnected, connectedEvmChainId, switchChainAsync]);
 
   useEffect(() => {
+    setPolicyState((prev) => policyForChain(config.chain, prev.riskPreset));
+  }, [config.chain]);
+
+  useEffect(() => {
     if (step !== 2 || config.chain === 'solana') return;
     let cancelled = false;
     setEvmFormationFeeLoading(true);
@@ -1829,7 +1876,11 @@ export default function CreateDAO() {
       };
       if (draft.setupMode === 'quick' || draft.setupMode === 'advanced') setSetupMode(draft.setupMode);
       if (typeof draft.step === 'number') setStep(draft.step);
-      if (draft.config) setConfigState((prev) => ({ ...prev, ...draft.config, chain: 'base' }));
+      if (draft.config) {
+        const restored = draft.config.chain;
+        const chain = restored && (USER_CHAINS as readonly string[]).includes(restored) ? restored : 'base';
+        setConfigState((prev) => ({ ...prev, ...draft.config, chain }));
+      }
       if (draft.policy) setPolicyState(draft.policy);
       if (typeof draft.seedAmount === 'string') setSeedAmount(draft.seedAmount);
     } catch {
@@ -1932,7 +1983,6 @@ export default function CreateDAO() {
     let currentSubStep: 'create' | 'bind-keys' | 'token-registration' | 'register-metadata' | 'activate' = 'create';
 
     try {
-      // DAO creation is Base + Robinhood only (USER_CHAINS).
       const family = config.chain as DaoEvmChainFamily;
       const chainId = activeEvmChainId(family);
       const founder = evmAddress as Address;
@@ -1979,12 +2029,13 @@ export default function CreateDAO() {
       if (!guardianWallets.some((w) => w.toLowerCase() === founder.toLowerCase())) {
         guardianWallets.unshift(founder);
       }
+      const custodiedGuardians = keyData.guardian?.address ? 1 : 0;
 
       const params: EvmCreateDaoParams = {
         name: config.name,
         privacyMode: 0,
         guardianWallets,
-        guardianThreshold: defaultGuardianThreshold(guardianWallets.length),
+        guardianThreshold: defaultGuardianThreshold(guardianWallets.length, custodiedGuardians),
         agentAuthorities,
         managementFeeBps: MANAGEMENT_FEE_BPS_NORMAL,
         performanceFeeBps: 0,
@@ -2009,8 +2060,7 @@ export default function CreateDAO() {
       if (!resolvedFactory) {
         throw new Error(
           `NaveDAOFactory is not deployed on this network yet (chain ${chainId}). ` +
-          `Ensure VITE_EVM_SEPOLIA_PROTOCOL_ADDRESS or VITE_EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS ` +
-          `is set, or add VITE_EVM_SEPOLIA_FACTORY_ADDRESS / VITE_EVM_BASE_SEPOLIA_FACTORY_ADDRESS.`,
+          `Testnet factories fall back to the deployed Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet stacks.`,
         );
       }
       // 2b. Recoverable NAVE stake (formation is fee-free as protocol profit;
@@ -2035,7 +2085,7 @@ export default function CreateDAO() {
               : 'Could not fetch the NAVE creation-stake quote. Refresh and retry.',
           );
         }
-        if (creationStakeSourcesDisagree(quote, stakeConfig.amount, NAVE_DAO_CREATION_STAKE_USD)) {
+        if (!isEvmTestnet(chainId) && creationStakeSourcesDisagree(quote, stakeConfig.amount, NAVE_DAO_CREATION_STAKE_USD)) {
           throw new Error(CREATION_STAKE_MISMATCH_SENTENCE);
         }
         const naveBalance = await fetchErc20BalanceEvm(chainId, stakeConfig.token, founder);
@@ -2192,7 +2242,7 @@ export default function CreateDAO() {
           }
         }
 
-        const evmGuardianThreshold = defaultGuardianThreshold(guardianWallets.length);
+        const evmGuardianThreshold = defaultGuardianThreshold(guardianWallets.length, custodiedGuardians);
 
         // 5. Persist the resolved chain id for this DAO address so future loads
         //    reconcile to the right chain (Ethereum vs Base) instead of
@@ -2327,8 +2377,8 @@ export default function CreateDAO() {
   }
 
   async function handleDeploy() {
-    if (config.chain !== 'base') {
-      setTxError('DAO creation is on Base. Solana and Ethereum create stay paused.');
+    if (!(USER_CHAINS as readonly string[]).includes(config.chain)) {
+      setTxError('This network is not open for treasury creation.');
       return;
     }
     if (stakeGate.quoteMismatch) {
@@ -2348,11 +2398,14 @@ export default function CreateDAO() {
       );
       return;
     }
-    // Base / Robinhood only (USER_CHAINS) — EVM factory path.
+    if (config.chain === 'solana') {
+      await handleDeploySolana();
+      return;
+    }
     await handleDeployEvm();
   }
 
-  /** Solana create path — paused while USER_CHAINS is Base+Robinhood only. Kept for resume tooling / re-enable. */
+  /** Solana create path. Open on testnet, where Solana is in USER_CHAINS. */
   async function handleDeploySolana() {
     if (!connected || !publicKey) {
       setWalletError(true);
@@ -2806,6 +2859,7 @@ export default function CreateDAO() {
             .filter(([, v]) => v)
             .map(([id]) => ({ id })),
           policyParams: {
+            maxAllocationBps: Math.round(policy.maxLending * 100),
             minStablecoinReserveBps: Math.round(policy.minStablecoin * 100),
             maxTotalDeployedBps: Math.round(policy.maxDeployment * 100),
             minLiquidityBps: Math.round(policy.liquidityReserve * 100),
@@ -2871,6 +2925,8 @@ export default function CreateDAO() {
           social_twitter: config.twitter,
           social_discord: config.discord,
           dao_id: daoId,
+          chain: 'solana',
+          network: SOLANA_NETWORK === 'mainnet' ? 'mainnet' : 'devnet',
         }, solanaAccessSigner(signMessage));
         if (registerError) {
           setTxError(
@@ -3068,7 +3124,7 @@ export default function CreateDAO() {
       logoUrl: record.logoUrl,
       governanceType: record.governanceType,
       guardianCount: record.guardianWallets.length,
-      guardianThreshold: defaultGuardianThreshold(record.guardianWallets.length),
+      guardianThreshold: defaultGuardianThreshold(record.guardianWallets.length, 1),
       votingToken: votingTokenMint ?? null,
       chainId,
       agentError: evmActivationResult.agentError,
@@ -3226,6 +3282,7 @@ export default function CreateDAO() {
         .filter(([, v]) => v)
         .map(([id]) => ({ id })),
       policyParams: {
+        maxAllocationBps: Math.round(record.policy.maxLending * 100),
         minStablecoinReserveBps: Math.round(record.policy.minStablecoin * 100),
         maxTotalDeployedBps: Math.round(record.policy.maxDeployment * 100),
         minLiquidityBps: Math.round(record.policy.liquidityReserve * 100),
@@ -3261,6 +3318,8 @@ export default function CreateDAO() {
       social_twitter: record.twitter,
       social_discord: record.discord,
       dao_id: record.daoId,
+      chain: 'solana',
+      network: SOLANA_NETWORK === 'mainnet' ? 'mainnet' : 'devnet',
     }, solanaAccessSigner(signMessage));
     if (registerError) {
       setDaoAddress(daoRegistry.toBase58());
@@ -3461,7 +3520,7 @@ export default function CreateDAO() {
                 ? activeEvmChainId(config.chain as Exclude<ChainFamily, 'solana'>)
                 : undefined
             }
-            offeredPresets={['conservative', 'balanced']}
+            offeredPresets={['conservative', 'balanced', 'yield6']}
           />
         )}
         {step === 2 && (
@@ -3506,7 +3565,7 @@ export default function CreateDAO() {
                 <Fi icon="arrow-right" style={{ fontSize: '12px' }} />
               </button>
             </div>
-            {slugMessage && (
+            {slugMessage && config.slug.trim() && (
               <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', marginTop: '8px', textAlign: 'right' }}>
                 {slugMessage}
               </p>

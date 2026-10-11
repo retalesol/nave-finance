@@ -20,6 +20,7 @@ const EVM_EXPLORER_TX_BASE: Record<EvmChainId, string> = {
   11155111: 'https://sepolia.etherscan.io/tx',
   84532: 'https://sepolia.basescan.org/tx',
   46630: 'https://explorer.testnet.chain.robinhood.com/tx',
+  5042002: 'https://explorer.testnet.arc.io/tx',
 };
 
 interface SendState {
@@ -159,7 +160,7 @@ function summarizeSolanaLogs(logs: string[] | null | undefined, fallback: string
   ) ?? logs[logs.length - 1];
 
   if (errorLine.includes('VotingPeriodNotEnded') || errorLine.includes('VotingStillOpen')) {
-    return 'Voting window is still open — finalize becomes available when voting ends or the outcome is certain.';
+    return 'Not enough yes votes to close early. Another guardian can vote, or wait until the voting window ends.';
   }
   if (errorLine.includes('VotingPeriodEnded')) {
     return 'The voting window is closed — you can no longer cast a vote.';
@@ -733,10 +734,10 @@ export function useSendTransaction() {
 
       if (inFlightRef.current) return rejectConcurrent();
       inFlightRef.current = true;
+      let lastChainId: EvmChainId = list[0].request!.chainId;
       try {
         setState({ status: 'signing', txHash: null, error: null });
         let lastHash = '';
-        let lastChainId: EvmChainId = list[0].request!.chainId;
 
         for (let i = 0; i < list.length; i++) {
           onProgress?.(i + 1, list.length);
@@ -814,6 +815,9 @@ export function useSendTransaction() {
         return success;
       } catch (err: unknown) {
         let msg = walletErrorMessage(err);
+        if (lastChainId === 5042002 && /insufficient funds/i.test(msg)) {
+          msg = 'Insufficient USDC for gas. Arc charges gas in native USDC (18 decimals), not ETH. Treasury balances use the 6-decimal ERC-20.';
+        }
         const isRejection = isWalletRejection(err, msg);
         if (msg.length > 200) msg = msg.slice(0, 200) + '…';
 
@@ -868,7 +872,9 @@ function evmExplorerAction(hash: string, chainId: EvmChainId) {
       ? 'View on Basescan'
       : chainId === 4663 || chainId === 46630
         ? 'View on Blockscout'
-        : 'View on Etherscan';
+        : chainId === 5042002
+          ? 'View on Arc Explorer'
+          : 'View on Etherscan';
   return (
     <a
       href={url}

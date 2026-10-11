@@ -87,6 +87,23 @@ const TREASURY_POLICY_ABI = [
       { name: "currentValue", type: "uint256" },
     ],
   },
+  {
+    type: "function",
+    name: "protocol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+] as const;
+
+const PROTOCOL_TIER_ABI = [
+  {
+    type: "function",
+    name: "riskTierOf",
+    stateMutability: "view",
+    inputs: [{ name: "adapter", type: "address" }],
+    outputs: [{ type: "uint8" }],
+  },
 ] as const;
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -110,7 +127,34 @@ function clientFor(chainId: number) {
 /** True for DAO rows whose constitution lives on an EVM treasury clone. */
 export function isEvmPolicyChain(chain: string | null | undefined): boolean {
   const c = (chain ?? "").toLowerCase();
-  return c === "base" || c === "robinhood" || c === "ethereum";
+  return c === "base" || c === "robinhood" || c === "ethereum" || c === "arc";
+}
+
+/** Tier per adapter from NaveProtocol.riskTierOf; 1 where the protocol predates tiers. */
+async function readRiskTiers(
+  client: NonNullable<ReturnType<typeof clientFor>>,
+  treasury: Address,
+  adapters: readonly Address[],
+): Promise<number[]> {
+  let protocol: Address;
+  try {
+    protocol = await client.readContract({ address: treasury, abi: TREASURY_POLICY_ABI, functionName: "protocol" });
+  } catch {
+    return adapters.map(() => 1);
+  }
+  return Promise.all(adapters.map(async (adapter) => {
+    try {
+      const tier = Number(await client.readContract({
+        address: protocol,
+        abi: PROTOCOL_TIER_ABI,
+        functionName: "riskTierOf",
+        args: [adapter],
+      }));
+      return tier >= 1 && tier <= 3 ? tier : 1;
+    } catch {
+      return 1;
+    }
+  }));
 }
 
 export async function readEvmConstitution(
@@ -129,11 +173,13 @@ export async function readEvmConstitution(
       client.readContract({ address: treasury, abi: TREASURY_POLICY_ABI, functionName: "getApprovedAdapters" }),
     ]);
     const [adapterAddrs, maxBps, approved, protocolIds] = adapters;
+    const tiers = await readRiskTiers(client, treasury, adapterAddrs);
     const approvedProtocols: ApprovedProtocol[] = adapterAddrs
       .map((adapter, i) => ({
         protocolId: protocolIds[i] || adapter,
         programId: adapter,
         maxAllocationBps: Number(maxBps[i] ?? 0),
+        riskTier: tiers[i],
         approved: Boolean(approved[i]),
       }))
       .filter((p) => p.programId.toLowerCase() !== ZERO);

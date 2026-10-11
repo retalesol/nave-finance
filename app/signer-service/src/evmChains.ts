@@ -59,3 +59,23 @@ export const robinhoodTestnet = defineChain({
   },
   testnet: true,
 });
+
+/**
+ * Arc Testnet (chainId 5042002). Native gas is USDC at 18 decimals.
+ * Arc mainnet 5042 is not defined here.
+ */
+export const arcTestnet = defineChain({
+  id: 5042002,
+  name: 'Arc Testnet',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.testnet.arc.network'] },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Arc Explorer',
+      url: 'https://explorer.testnet.arc.io',
+    },
+  },
+  testnet: true,
+});

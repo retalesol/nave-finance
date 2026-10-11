@@ -11,7 +11,7 @@ import WalletNetworkMenu from '../components/WalletNetworkMenu';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS } from '../lib/chain/types';
-import { NAVE_DAO_CREATION_STAKE_USD } from '../lib/programConfig';
+import { EVM_DEPLOYMENT_MODE, NAVE_DAO_CREATION_STAKE_USD } from '../lib/programConfig';
 import { usePlatformTreasuryStats, formatHeroProtocolUsd } from '../hooks/usePlatformTreasuryStats';
 import { useNaveTokenStats, formatNavePrice, formatNaveMarketCap, formatNaveHolders } from '../hooks/useNaveTokenStats';
 
@@ -310,7 +310,10 @@ function Hero() {
         }}
       >
         Nave enables internet-native organizations to govern, grow, and deploy capital
-        through soulbound policy-driven AI agents — create a treasury on Base or Robinhood.
+        through soulbound policy-driven AI agents
+        {EVM_DEPLOYMENT_MODE === 'testnet'
+          ? ' — launch a testnet treasury on Solana, Ethereum, Base, Robinhood, or Arc.'
+          : ' — create a treasury on Base or Robinhood.'}
       </p>
 
       {/* CTAs */}
@@ -431,7 +434,9 @@ const FEATURES = [
   {
     icon: 'database',
     title: 'Yield Routing',
-    desc: 'Yield follows the treasury chain. Base and Robinhood use configured lending adapters such as Aave and Compound. Solana staking stays on Bridge and Stake.',
+    desc: EVM_DEPLOYMENT_MODE === 'testnet'
+      ? 'Yield follows the treasury chain. Ethereum testnet supplies Compound, Base Sepolia supplies Aave, and Solana Devnet supplies Jito. Robinhood and Arc treasuries can govern and move funds without a lending venue.'
+      : 'Yield follows the treasury chain. Base and Robinhood use configured lending adapters such as Aave and Compound. Solana staking stays on Bridge and Stake.',
     tag: 'Yield',
   },
   {
@@ -908,7 +913,9 @@ const TOKEN_UTILITIES = [
   {
     icon: 'wand-magic-sparkles',
     title: 'Form DAOs',
-    desc: `Stake $${NAVE_DAO_CREATION_STAKE_USD} NAVE to form a DAO and activate its treasury infrastructure. The stake is recoverable — it replaces the old SOL creation fee, not a cost.`,
+    desc: EVM_DEPLOYMENT_MODE === 'testnet'
+      ? 'Stake follows the chain. Solana uses the quoted NAVE amount, Ethereum and Base lock 0.1 wNAVE, and Robinhood and Arc require none. Staked tokens come back when the treasury winds down.'
+      : `Stake $${NAVE_DAO_CREATION_STAKE_USD} NAVE to form a DAO and activate its treasury infrastructure. The stake is recoverable — it replaces the old SOL creation fee, not a cost.`,
   },
   {
     icon: 'shield',
@@ -967,7 +974,9 @@ function Tokenomics() {
             <div className="space-y-3">
               {[
                 'Fixed maximum supply of 500,000 $NAVE',
-                `Recoverable $${NAVE_DAO_CREATION_STAKE_USD} NAVE staked to form a DAO`,
+                EVM_DEPLOYMENT_MODE === 'testnet'
+                  ? 'Recoverable stake follows the chain: quoted NAVE on Solana, 0.1 wNAVE on Ethereum and Base, none on Robinhood or Arc'
+                  : `Recoverable $${NAVE_DAO_CREATION_STAKE_USD} NAVE staked to form a DAO`,
                 'Governance over DAO votes and treasury decisions',
                 'Fully fair launched — no team allocation or supply',
               ].map(item => (
@@ -1160,7 +1169,7 @@ function Pricing() {
           {
             title: 'DAO Formation',
             titleIcon: 'wand-magic-sparkles',
-            price: `$${NAVE_DAO_CREATION_STAKE_USD} NAVE staked`,
+            price: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Stake set by the chain' : `$${NAVE_DAO_CREATION_STAKE_USD} NAVE staked`,
             altPrice: null,
             altLabel: null,
             period: 'recoverable — not a fee',
@@ -1261,7 +1270,10 @@ function Footer() {
             Nave
           </span>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '6px', maxWidth: '340px', lineHeight: 1.6 }}>
-            Autonomous institutional infrastructure for internet-native capital. Create a treasury on Base or Robinhood. Bridge and Stake still cover Solana and Ethereum.
+            Autonomous institutional infrastructure for internet-native capital.
+            {EVM_DEPLOYMENT_MODE === 'testnet'
+              ? ' Testnet treasuries run on Solana Devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet.'
+              : ' Create a treasury on Base or Robinhood. Bridge and Stake still cover Solana and Ethereum.'}
           </p>
           <div className="flex items-center gap-4 mt-5">
             <FooterSocialIcon href="https://x.com/navedotfinance" label="Nave on X">

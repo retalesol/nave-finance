@@ -84,7 +84,7 @@ async function main() {
   const { data: rows, error } = await supabase
     .from('encrypted_agent_keys')
     .select(
-      'id, dao_onchain_address, agent_role, public_key, encrypted_private_key, encryption_iv, encryption_tag, wrapped_dek, dek_wrap_iv, dek_wrap_tag, is_active',
+      'id, dao_onchain_address, agent_role, public_key, encrypted_private_key, encryption_iv, encryption_tag, wrapped_dek, dek_wrap_iv, dek_wrap_tag, dek_wrap_version, is_active',
     )
     .eq('is_active', true);
 
@@ -113,6 +113,11 @@ async function main() {
     const tag = `${row.agent_role}@${row.dao_onchain_address}`;
     if (!row.wrapped_dek || !row.dek_wrap_iv || !row.dek_wrap_tag) {
       console.log(`  · ${tag}: no wrapped DEK — skipped (legacy row)`);
+      skipped += 1;
+      continue;
+    }
+    if (Number(row.dek_wrap_version ?? 1) !== 1) {
+      console.log(`  · ${tag}: v2 envelope — rotate with scripts/rewrap-role-keks.mjs`);
       skipped += 1;
       continue;
     }

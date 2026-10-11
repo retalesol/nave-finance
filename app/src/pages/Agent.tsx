@@ -1091,7 +1091,7 @@ export default function Agent() {
     // ── EVM: guardian M-of-N pause via the founder-signed agent-admin →
     // /relay-evm path. The founder wallet is itself a guardian, so it signs the
     // EIP-712 GuardianAction(DISABLE_AGENTS) here; the signer adds the custodied
-    // guardian signature(s) and broadcasts guardianDisableAgents(nonce, deadline, sigs). ──
+    // guardian signature(s) and broadcasts guardianAction(DISABLE_AGENTS, sigs). ──
     if (chainKind === 'evm') {
       if (!daoAddress) { setToggleError('Select a treasury to pause the agents.'); return; }
       if (!evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {

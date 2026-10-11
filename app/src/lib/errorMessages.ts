@@ -114,7 +114,7 @@ const EVM_ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
 ];
 
 /** Resolve a common EVM (viem/wagmi) revert reason to a human-readable message, or null. */
-export function getEvmErrorMessage(error: unknown): string | null {
+export function getEvmErrorMessage(error: unknown, chainId?: number): string | null {
   const shortMessage = (error as { shortMessage?: unknown } | null | undefined)?.shortMessage;
   const reason = (error as { reason?: unknown } | null | undefined)?.reason;
   const candidate = typeof shortMessage === 'string' ? shortMessage : typeof reason === 'string' ? reason : null;
@@ -124,7 +124,12 @@ export function getEvmErrorMessage(error: unknown): string | null {
 
   const text = errorToSearchableString(error);
   for (const { pattern, message } of EVM_ERROR_PATTERNS) {
-    if (pattern.test(text)) return message;
+    if (pattern.test(text)) {
+      if (chainId === 5042002 && pattern.source === 'insufficient funds') {
+        return 'Insufficient USDC for gas. Arc charges gas in native USDC (18 decimals), not ETH. Treasury balances use the 6-decimal ERC-20.';
+      }
+      return message;
+    }
   }
   return null;
 }
@@ -139,12 +144,12 @@ export function getEvmErrorMessage(error: unknown): string | null {
  */
 export function describeTransactionError(
   error: unknown,
-  opts?: { programHint?: NaveProgramName; fallback?: string },
+  opts?: { programHint?: NaveProgramName; fallback?: string; chainId?: number },
 ): string {
   const anchorMessage = getAnchorErrorMessage(error, opts?.programHint);
   if (anchorMessage) return anchorMessage;
 
-  const evmMessage = getEvmErrorMessage(error);
+  const evmMessage = getEvmErrorMessage(error, opts?.chainId);
   if (evmMessage) return evmMessage;
 
   if (typeof error === 'string' && error) return error;

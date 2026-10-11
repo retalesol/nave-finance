@@ -4,6 +4,7 @@ import { corsHeadersFor, jsonWithCors, secretsMatch } from "../_shared/http.ts";
 import { ALL_EVM_CHAIN_IDS, SUPPORTED_EVM_CHAIN_IDS } from "../_shared/chain.ts";
 import { evmRpcUrlFor } from "../_shared/evmFounder.ts";
 import { readEvmTreasurySnapshotMetrics } from "../_shared/evmTreasuryNav.ts";
+import { signerSecretFor } from "../_shared/signerAuth.ts";
 
 // ─── Solana RPC helpers ───────────────────────────────────────────────────
 
@@ -198,6 +199,11 @@ function decodeStrategyPositionValue(data: Uint8Array): bigint | null {
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
   return u64At(dv, STRATEGY_POSITION_CURRENT_VALUE_OFF);
 }
+function decodeStrategyPositionDeposited(data: Uint8Array): bigint | null {
+  if (data.length < STRATEGY_POSITION_CURRENT_VALUE_OFF) return null;
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return u64At(dv, STRATEGY_POSITION_CURRENT_VALUE_OFF - 8);
+}
 
 // TreasuryAsset layout (state/treasury_asset.rs):
 //   disc 8 | bump 1 | dao 32 | mint 32 | token_account 32 | deposited 8
@@ -229,7 +235,8 @@ function decodeMaxAllocationBps(data: Uint8Array, protocolId: string): number | 
     }
     if (!match) continue;
     const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    return dv.getUint16(base + 16 + 1 + 32, true);
+    // High two bits carry the venue risk tier.
+    return dv.getUint16(base + 16 + 1 + 32, true) & 0x3fff;
   }
   return null;
 }
@@ -373,7 +380,7 @@ async function maybeRevalueEvmViaSigner(
   try {
     const res = await fetch(`${signerUrl.replace(/\/$/, "")}/relay-evm`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecretFor("operational") ?? signerSecret },
       body: JSON.stringify({
         action: "revalue_treasury",
         chain_id: chainId,
@@ -407,7 +414,7 @@ async function maybeRevalueViaSigner(
   try {
     const res = await fetch(`${signerUrl.replace(/\/$/, "")}/sign`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+      headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecretFor("operational") ?? signerSecret },
       body: JSON.stringify({
         action: "revalue_treasury",
         dao_address: daoAddress,
@@ -439,6 +446,8 @@ interface StrategyPositionSnapshot {
   mint: string;
   escrow_balance_base_units: string;
   current_value_base_units: string;
+  /** Principal on the position; current / deposited across snapshots gives the measured APY. */
+  deposited_base_units: string;
 }
 
 /**
@@ -545,6 +554,7 @@ async function reconcileDao(
         mint: m.mint,
         escrow_balance_base_units: escrowBal.toString(),
         current_value_base_units: positionValue.toString(),
+        deposited_base_units: (posData ? (decodeStrategyPositionDeposited(posData) ?? 0n) : 0n).toString(),
       });
 
       if (m.isStablecoin && m.decimals <= 6) {
@@ -822,7 +832,7 @@ Deno.serve(async (req: Request) => {
             total_value_usd: metrics.navUsd,
             sol_balance: metrics.nativeEth,
             usdc_balance: 0,
-            strategy_positions: [],
+            strategy_positions: metrics.positions,
             token_balances: [
               {
                 kind: "evm_native_eth",

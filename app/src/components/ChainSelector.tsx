@@ -2,9 +2,8 @@ import { USER_CHAINS, type ChainFamily } from '../lib/chain/types';
 import { chainDisplayLabel } from '../lib/programConfig';
 
 /**
- * Chain picker offering EXACTLY the three Nave targets: Solana, Ethereum, Base.
- * There is intentionally no entry for any other chain. Used by CreateDAO and
- * TreasuryLobby to set the active chain family.
+ * Chain picker for the networks in `chains` (defaults to USER_CHAINS).
+ * Used by CreateDAO and TreasuryLobby to set the active chain family.
  */
 export default function ChainSelector({
   value,

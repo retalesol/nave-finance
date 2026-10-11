@@ -56,6 +56,8 @@ test('hasWrappedNave: true for configured testnets, false for unconfigured mainn
 test('getSupportedBridgeRoutes: never emits a route for an unconfigured (mainnet) chain', () => {
   const routes = getSupportedBridgeRoutes();
   assert.equal(routes.some((r) => r.evmChainId === 1 || r.evmChainId === 8453 || r.evmChainId === 4663), false);
+  assert.equal(routes.some((r) => r.evmChainId === 5042002), false, 'Arc has no wNAVE route');
+  assert.equal(hasWrappedNave(5042002), false);
 });
 
 test('quoteBridge: mirrors computeBridgeFee and reports the total fee bps', () => {

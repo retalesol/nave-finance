@@ -16,12 +16,15 @@ import {
   isActionHash,
   normalizeActionHash,
   reviewFromRecord,
+  storedDecision,
   treasuryKey,
   type ChainObservation,
 } from "./genlayerCharter.ts";
 
 export interface SyncedReview {
+  /** Charter pass/fail, or the halt verdict when kind is halt. Venue leaves this empty. */
   decision: string;
+  halt_decision: "keep_pause" | "lift_pause" | "";
   rule_ids: string[];
   summary: string;
   finished: boolean;
@@ -94,13 +97,25 @@ export async function syncReview(
     observation = { status: "Accepted", executionResult: "" };
   }
 
-  return reviewFromRecord({
+  const recorded = reviewFromRecord({
     kind,
     record,
     observation,
     actionHash,
     txId,
   });
+  return {
+    decision: storedDecision(recorded),
+    halt_decision: recorded.halt_decision,
+    rule_ids: recorded.rule_ids,
+    summary: recorded.summary,
+    finished: recorded.finished,
+    provisional: recorded.provisional,
+    action_hash: recorded.action_hash,
+    tx_id: recorded.tx_id,
+    customer_status: recorded.customer_status,
+    venue_status: recorded.venue_status,
+  };
 }
 
 /**

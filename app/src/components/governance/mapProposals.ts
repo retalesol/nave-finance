@@ -71,5 +71,6 @@ export function mapLiveProposalsToUi(
     votingEndTimestamp: p.votingEnd,
     eligibleTotal: p.snapshotSupply || 0,
     myVote: null,
+    actionHash: p.payloadHash,
   }));
 }

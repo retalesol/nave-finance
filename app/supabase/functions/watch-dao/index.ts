@@ -183,7 +183,7 @@ Deno.serve(async (req: Request) => {
 
     const governanceType: GovernanceType = dao.governance_type === "token" ? "token" : "wallet";
     const privacyEnabled = !!dao.privacy_enabled;
-    const isEvmDao = dao.chain === "ethereum" || dao.chain === "base" || dao.chain === "robinhood" || isEvmAddress(dao.dao_onchain_address);
+    const isEvmDao = dao.chain === "ethereum" || dao.chain === "base" || dao.chain === "robinhood" || dao.chain === "arc" || isEvmAddress(dao.dao_onchain_address);
     const normalizedWallet = isEvmDao ? walletAddress.toLowerCase() : walletAddress;
 
     let allowed = !privacyEnabled || dao.creator_wallet === normalizedWallet;

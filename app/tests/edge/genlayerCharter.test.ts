@@ -8,6 +8,9 @@ import {
   CUSTOMER_STATUS_LABEL,
   HOW_CHECKED_LABEL,
   buildHaltArgs,
+  counterevidenceError,
+  venueWatchJobs,
+  VENUE_STATUS_TARGETS,
   assetIsStable,
   buildOpenCaseArgs,
   charterGateOutcome,
@@ -24,6 +27,9 @@ import {
   reviewFromRecord,
   screenStatus,
   sha256Hex,
+  chainFamilyFrom,
+  isChainFamily,
+  storedDecision,
 } from "../../supabase/functions/_shared/genlayerCharter.ts";
 import { syncReview } from "../../supabase/functions/_shared/genlayerSync.ts";
 import {
@@ -236,6 +242,12 @@ test("venue stop withholds a new deploy only when the venue flag is on", () => {
   const watches = [{ protocolId: "kamino", status: "stop" }];
   assert.deepEqual(withholdStoppedVenues(opportunities, watches, false), opportunities);
   assert.deepEqual(withholdStoppedVenues(opportunities, watches, true), [{ protocolId: "jito" }]);
+
+  const evm = [{ protocolId: "aave" }, { protocolId: "compound" }];
+  assert.deepEqual(
+    withholdStoppedVenues(evm, [{ protocolId: "aave-v3", status: "stop" }], true),
+    [{ protocolId: "compound" }],
+  );
 });
 
 test("keep_pause blocks clear only when the halt flag is on; lift never signs or shortens the window", () => {
@@ -378,16 +390,86 @@ test("open_case args carry the mandate and constitution, and public inputs allow
     assert.equal(call.args[7], "Keep at least 10 percent available.");
     assert.equal(call.args[8], await sha256Hex("Keep at least 10 percent available."));
     assert.equal(call.args[9], constitution);
+    assert.throws(
+      () => buildHaltArgs({
+        chain_family: "base",
+        network: "testnet",
+        treasury: "0x2222222222222222222222222222222222222222",
+        action_hash: ACTION,
+        pause_reason: "Reviewers asked for another look at this move.",
+      }),
+      /counterevidence is missing/,
+    );
+    assert.equal(counterevidenceError("   "), "counterevidence is missing");
+    assert.equal(counterevidenceError("lift_pause"), "A prewritten decision is not evidence");
+    const evidence = "The venue published a full incident closure and service is restored.";
     const halt = buildHaltArgs({
       chain_family: "base",
       network: "testnet",
       treasury: "0x2222222222222222222222222222222222222222",
       action_hash: ACTION,
       pause_reason: "Reviewers asked for another look at this move.",
+      counterevidence: evidence,
     });
     assert.equal(halt.method, "open_appeal");
     assert.equal(halt.args[3], ACTION);
+    assert.equal(halt.args[5], evidence);
   });
+});
+
+test("venue watch covers kamino, aave v3, and compound v3 and skips balancer", () => {
+  const venues = VENUE_STATUS_TARGETS.map((target) => target.venue);
+  assert.deepEqual(venues, ["kamino", "aave-v3", "compound-v3"]);
+  assert.equal(venues.includes("balancer-v2"), false);
+  for (const target of VENUE_STATUS_TARGETS) {
+    assert.match(target.statusUrl, /^https:\/\/\S+$/);
+  }
+  const jobs = venueWatchJobs([
+    { treasury: "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2", chain: "solana", network: "devnet" },
+    { treasury: "0x1111111111111111111111111111111111111111", chain: "ethereum", network: "testnet" },
+    { treasury: "0x2222222222222222222222222222222222222222", chain: "base", network: "testnet" },
+    { treasury: "0x3333333333333333333333333333333333333333", chain: "robinhood", network: "testnet" },
+    { treasury: "0x4444444444444444444444444444444444444444", chain: "arc", network: "testnet" },
+    { treasury: "0x5555555555555555555555555555555555555555", chain: "ethereum", network: "mainnet" },
+  ]);
+  assert.deepEqual(jobs.map((job) => `${job.chain_family}:${job.venue}`), [
+    "solana:kamino",
+    "ethereum:aave-v3",
+    "ethereum:compound-v3",
+    "base:aave-v3",
+  ]);
+  assert.equal(jobs.some((job) => job.venue.includes("balancer")), false);
+  assert.equal(jobs.some((job) => job.network === "mainnet"), false);
+  assert.equal(jobs.some((job) => job.chain_family === "arc"), false);
+});
+
+test("arc stays in the family union, and venue and halt stay off the charter decision", () => {
+  assert.equal(isChainFamily("arc"), true);
+  assert.equal(chainFamilyFrom("arc", 5042002), "arc");
+  assert.equal(chainFamilyFrom(null, 5042002), "arc");
+  assert.equal(chainFamilyFrom(null, 5042), "solana");
+  const venue = reviewFromRecord({
+    kind: "venue",
+    record: { status: "fine", summary: "Aave status page is up." },
+    observation: { status: "Finalized", executionResult: "FinishedWithReturn" },
+    actionHash: "aave-v3",
+    txId: "0xvenue",
+  });
+  assert.equal(venue.decision, "");
+  assert.equal(venue.halt_decision, "");
+  assert.equal(venue.venue_status, "fine");
+  assert.equal(storedDecision(venue), "");
+  const halt = reviewFromRecord({
+    kind: "halt",
+    record: { decision: "keep_pause", summary: "The pause stays until the incident is closed." },
+    observation: { status: "Finalized", executionResult: "FinishedWithReturn" },
+    actionHash: ACTION,
+    txId: "0xhalt",
+  });
+  assert.equal(halt.decision, "");
+  assert.equal(halt.halt_decision, "keep_pause");
+  assert.equal(halt.venue_status, null);
+  assert.equal(storedDecision(halt), "keep_pause");
 });
 
 test("a configured session opens a case once, and an accepted result does not finish it", async () => {

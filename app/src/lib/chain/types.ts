@@ -1,7 +1,7 @@
 // ─── Chain abstraction types ─────────────────────────────────────────────────
-// Nave is multi-chain across Solana, Ethereum, Base and Robinhood Chain. The
-// EVM chain-id set is deliberately closed to the six numeric environments
-// below — there is NO BNB/BSC, Polygon, or any other EVM chain in product
+// Nave is multi-chain across Solana, Ethereum, Base, Robinhood Chain, and
+// Arc Testnet. The EVM chain-id set is deliberately closed — there is NO
+// BNB/BSC, Polygon, Arc mainnet (5042), or any other EVM chain in product
 // scope. Adding a chain id here is the single chokepoint that would widen that
 // set, so the union types are intentionally narrow.
 //
@@ -20,15 +20,32 @@ export type ChainKind = 'solana' | 'evm';
  *   - 11155111  Ethereum Sepolia (testnet)
  *   - 84532     Base Sepolia (testnet)
  *   - 46630     Robinhood Chain Testnet
+ *   - 5042002   Arc Testnet (no Arc mainnet id)
  */
-export const EVM_CHAIN_IDS = [1, 8453, 4663, 11155111, 84532, 46630] as const;
+export const EVM_CHAIN_IDS = [1, 8453, 4663, 11155111, 84532, 46630, 5042002] as const;
 export type EvmChainId = (typeof EVM_CHAIN_IDS)[number];
 
 /** Human-facing chain "family" used by selectors and routing. */
-export type ChainFamily = 'solana' | 'ethereum' | 'base' | 'robinhood';
+export type ChainFamily = 'solana' | 'ethereum' | 'base' | 'robinhood' | 'arc';
 
-/** DAO-creation UX: Base + Robinhood mainnet only (Solana / Ethereum create disabled). */
-export const USER_CHAINS: readonly ChainFamily[] = ['base', 'robinhood'] as const;
+/** Testnet treasury creation: Solana, Ethereum, Base, Robinhood, and Arc. */
+export const TESTNET_USER_CHAINS: readonly ChainFamily[] = ['solana', 'ethereum', 'base', 'robinhood', 'arc'];
+
+/** Mainnet and mixed pickers stay Base observe-only. */
+export const MAINNET_USER_CHAINS: readonly ChainFamily[] = ['base'];
+
+export function userChainsFor(mode: EvmDeploymentMode): readonly ChainFamily[] {
+  return mode === 'testnet' ? TESTNET_USER_CHAINS : MAINNET_USER_CHAINS;
+}
+
+function deploymentModeFromEnv(): EvmDeploymentMode {
+  const raw = import.meta.env?.VITE_EVM_NETWORK;
+  if (raw === 'mainnet' || raw === 'mixed') return raw;
+  return 'testnet';
+}
+
+/** DAO-creation chains for the active `VITE_EVM_NETWORK` (default testnet). */
+export const USER_CHAINS: readonly ChainFamily[] = userChainsFor(deploymentModeFromEnv());
 
 /**
  * Homepage / lobby / DAO-app wallet switcher — Base + Robinhood only so create
@@ -37,7 +54,7 @@ export const USER_CHAINS: readonly ChainFamily[] = ['base', 'robinhood'] as cons
 export const APP_WALLET_CHAINS: readonly ChainFamily[] = USER_CHAINS;
 
 /** Every network the Bridge/Stake wallet switcher offers (Solana + all EVM). */
-export const WALLET_CHAINS: readonly ChainFamily[] = ['solana', 'ethereum', 'base', 'robinhood'] as const;
+export const WALLET_CHAINS: readonly ChainFamily[] = ['solana', 'ethereum', 'base', 'robinhood', 'arc'] as const;
 
 /** Brand accent per chain family — used by icons/badges so every surface
  *  colors chains identically: Solana purple, Ethereum grey, Base blue,
@@ -47,6 +64,7 @@ export const CHAIN_COLORS: Record<ChainFamily, string> = {
   ethereum: '#8C8C8C',
   base: '#0052FF',
   robinhood: '#00C805',
+  arc: '#0F766E',
 };
 
 /** A fully-resolved active chain. `evmChainId` is present iff `kind === 'evm'`. */
@@ -80,12 +98,16 @@ export type EvmChainFamily = Exclude<ChainFamily, 'solana'>;
 /** EVM families that host Nave DAO contracts. */
 export type DaoEvmChainFamily = EvmChainFamily;
 
-/** Mainnet/testnet chain id for the EVM families (closed set). */
-export const EVM_CHAIN_ID_BY_FAMILY: Record<EvmChainFamily, Record<EvmNetwork, EvmChainId>> = {
+/**
+ * Mainnet/testnet chain id for the EVM families. Arc has a testnet id only.
+ * `evmChainIdFor('arc', 'mainnet')` throws — chain id 5042 is not supported.
+ */
+export const EVM_CHAIN_ID_BY_FAMILY = {
   ethereum: { mainnet: 1, testnet: 11155111 },
   base: { mainnet: 8453, testnet: 84532 },
   robinhood: { mainnet: 4663, testnet: 46630 },
-};
+  arc: { testnet: 5042002 },
+} as const;
 
 const EVM_CHAIN_META: Record<EvmChainId, { family: EvmChainFamily; label: string; isTestnet: boolean }> = {
   1: { family: 'ethereum', label: 'Ethereum', isTestnet: false },
@@ -94,6 +116,7 @@ const EVM_CHAIN_META: Record<EvmChainId, { family: EvmChainFamily; label: string
   11155111: { family: 'ethereum', label: 'Ethereum Sepolia', isTestnet: true },
   84532: { family: 'base', label: 'Base Sepolia', isTestnet: true },
   46630: { family: 'robinhood', label: 'Robinhood Testnet', isTestnet: true },
+  5042002: { family: 'arc', label: 'Arc Testnet', isTestnet: true },
 };
 
 /**
@@ -108,6 +131,7 @@ export const EVM_EXPLORERS: Record<EvmChainId, { name: string; url: string }> = 
   11155111: { name: 'Etherscan', url: 'https://sepolia.etherscan.io' },
   84532: { name: 'Basescan', url: 'https://sepolia.basescan.org' },
   46630: { name: 'Blockscout', url: 'https://explorer.testnet.chain.robinhood.com' },
+  5042002: { name: 'Arc Explorer', url: 'https://explorer.testnet.arc.io' },
 };
 
 /** Explorer link for a tx hash or address on a supported EVM chain (null for unknown ids). */
@@ -161,7 +185,18 @@ export function isEvmTestnet(chainId: EvmChainId): boolean {
 
 /** Resolve the active EVM chain id for a family + network (closed set). */
 export function evmChainIdFor(family: EvmChainFamily, network: EvmNetwork): EvmChainId {
+  if (family === 'arc') {
+    if (network !== 'testnet') {
+      throw new Error('Arc mainnet chain id 5042 is not supported');
+    }
+    return EVM_CHAIN_ID_BY_FAMILY.arc.testnet;
+  }
   return EVM_CHAIN_ID_BY_FAMILY[family][network];
+}
+
+/** Gas token symbol. Arc charges gas in 18-decimal native USDC, not ETH. */
+export function evmNativeGasSymbol(chainId: EvmChainId): string {
+  return chainId === 5042002 ? 'USDC' : 'ETH';
 }
 
 /** Build a ChainTarget for Solana. */
@@ -178,6 +213,7 @@ export function recommendedSisterChainId(from: EvmChainId): EvmChainId {
     case 84532: return 11155111;
     case 1: return 8453;
     case 11155111: return 84532;
+    case 5042002: return 11155111;
   }
 }
 
@@ -199,15 +235,13 @@ export function evmTarget(chainId: EvmChainId): ChainTarget {
  * Chain family label for agent-admin / activation payloads
  * (`'ethereum' | 'base' | 'robinhood'`). Prefer this over binary ethereum/base maps.
  */
-export function evmActivationChainFamily(
-  chainId: EvmChainId,
-): 'ethereum' | 'base' | 'robinhood' {
+export function evmActivationChainFamily(chainId: EvmChainId): EvmChainFamily {
   return EVM_CHAIN_META[chainId].family;
 }
 
 /** True when the connected wallet family can run EVM DAO / agent ops. */
 export function isEvmDaoOpsFamily(family: ChainFamily | null | undefined): boolean {
-  return family === 'ethereum' || family === 'base' || family === 'robinhood';
+  return family === 'ethereum' || family === 'base' || family === 'robinhood' || family === 'arc';
 }
 
 /** Build a ChainTarget from a family + EVM network selection. */
@@ -243,6 +277,8 @@ export function chainFamilyLabel(family: ChainFamily): string {
       return 'Base';
     case 'robinhood':
       return 'Robinhood Chain';
+    case 'arc':
+      return 'Arc';
   }
 }
 
@@ -273,5 +309,7 @@ export function chainFamilyLabelWithNetwork(
       return network === 'mainnet' ? 'Base (Mainnet)' : 'Base (Base Sepolia)';
     case 'robinhood':
       return network === 'mainnet' ? 'Robinhood Chain (Mainnet)' : 'Robinhood Chain (Testnet)';
+    case 'arc':
+      return 'Arc (Testnet)';
   }
 }

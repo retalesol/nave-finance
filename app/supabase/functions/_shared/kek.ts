@@ -91,3 +91,105 @@ export async function unwrapDek(w: WrappedDek): Promise<string> {
   );
   return bytesToBase64(new Uint8Array(decrypted));
 }
+
+// ── v2 envelope: per-role KEK + associated data ─────────────────────────────
+// Mirrors signer-service/src/kek.ts. The wrapped DEK carries AES-GCM associated
+// data `nave-dek:v2|<dao>|<role>|<chain>` so it only unwraps for the row it was
+// written for. The per-role KEK (NAVE_KEK_<ROLE> for Solana, NAVE_EVM_KEK_<ROLE>
+// for EVM) is used when configured; otherwise the family master KEK.
+
+export type KekFamily = "solana" | "evm";
+
+export interface DekBinding {
+  dao: string;
+  /** Agent role, or `guardian#<index>` for custodied EVM guardians. */
+  role: string;
+  /** `solana` or `evm:<chainId>`. */
+  chain: string;
+}
+
+export interface BoundWrappedDek extends WrappedDek {
+  dek_wrap_version: 2;
+  dek_kek_ref: "role" | "master";
+}
+
+function dekAad(binding: DekBinding): ArrayBuffer {
+  const bytes = new TextEncoder().encode(`nave-dek:v2|${binding.dao}|${binding.role}|${binding.chain}`);
+  const out = new ArrayBuffer(bytes.length);
+  new Uint8Array(out).set(bytes);
+  return out;
+}
+
+function roleKekEnvName(family: KekFamily, role: string): string {
+  const base = role.split("#")[0].toUpperCase();
+  return family === "evm" ? `NAVE_EVM_KEK_${base}` : `NAVE_KEK_${base}`;
+}
+
+function masterKekEnv(family: KekFamily): string | undefined {
+  return family === "evm"
+    ? Deno.env.get("NAVE_EVM_MASTER_KEK") || Deno.env.get("NAVE_MASTER_KEK")
+    : Deno.env.get("NAVE_MASTER_KEK");
+}
+
+async function importKek(raw: string, label: string): Promise<CryptoKey> {
+  const keyBytes = base64ToBytes(raw);
+  if (keyBytes.length !== 32) throw new Error(`${label} must decode to 32 bytes (256-bit)`);
+  return await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function kekFor(family: KekFamily, role: string, ref: "role" | "master"): Promise<CryptoKey> {
+  if (ref === "role") {
+    const name = roleKekEnvName(family, role);
+    const raw = Deno.env.get(name);
+    if (!raw) throw new Error(`${name} is not configured`);
+    return await importKek(raw, name);
+  }
+  const raw = masterKekEnv(family);
+  if (!raw) throw new Error(`No ${family} master KEK configured`);
+  return await importKek(raw, `${family} master KEK`);
+}
+
+/** Wrap a raw DEK (base64) for one row: per-role KEK when set, bound to `binding`. */
+export async function wrapDekBound(
+  family: KekFamily,
+  dekBase64: string,
+  binding: DekBinding,
+): Promise<BoundWrappedDek> {
+  const ref: "role" | "master" = Deno.env.get(roleKekEnvName(family, binding.role)) ? "role" : "master";
+  const kek = await kekFor(family, binding.role, ref);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, tagLength: 128, additionalData: dekAad(binding) },
+      kek,
+      base64ToBytes(dekBase64),
+    ),
+  );
+  return {
+    wrapped_dek: bytesToBase64(encrypted.slice(0, encrypted.length - 16)),
+    dek_wrap_iv: bytesToBase64(iv),
+    dek_wrap_tag: bytesToBase64(encrypted.slice(encrypted.length - 16)),
+    dek_wrap_version: 2,
+    dek_kek_ref: ref,
+  };
+}
+
+/** Unwrap a v2 row's DEK; fails unless `binding` matches the row it was written for. */
+export async function unwrapDekBound(
+  family: KekFamily,
+  row: WrappedDek & { dek_kek_ref?: string | null },
+  binding: DekBinding,
+): Promise<string> {
+  const kek = await kekFor(family, binding.role, row.dek_kek_ref === "role" ? "role" : "master");
+  const ciphertext = base64ToBytes(row.wrapped_dek);
+  const tag = base64ToBytes(row.dek_wrap_tag);
+  const combined = new Uint8Array(ciphertext.length + tag.length);
+  combined.set(ciphertext, 0);
+  combined.set(tag, ciphertext.length);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(row.dek_wrap_iv), tagLength: 128, additionalData: dekAad(binding) },
+    kek,
+    combined,
+  );
+  return bytesToBase64(new Uint8Array(decrypted));
+}

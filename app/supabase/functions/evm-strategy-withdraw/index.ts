@@ -18,6 +18,7 @@ import { type ChainKind, isEvmChain, normalizeChain, normalizeEvmAddress } from 
 import { hasEvmRpc, readEvmTreasuryFounder } from "../_shared/evmFounder.ts";
 import { checkChallengeTimestamp, verifyWalletSignature } from "../_shared/walletAuth.ts";
 import { consumeChallenge, replayChainLabel } from "../_shared/replay.ts";
+import { signerSecretFor } from "../_shared/signerAuth.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = corsHeadersFor(req, { allowBrowserFallback: true });
@@ -144,7 +145,7 @@ Deno.serve(async (req) => {
 
   const resp = await fetch(`${signerUrl.replace(/\/$/, "")}/relay-evm`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecret },
+    headers: { "Content-Type": "application/json", "X-Signer-Secret": signerSecretFor("executive") ?? signerSecret },
     body: JSON.stringify(payload),
   });
   const errText = await resp.text().catch(() => "");

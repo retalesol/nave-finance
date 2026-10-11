@@ -14,9 +14,9 @@ import {
 } from '../../src/lib/chain/types';
 import { toAddress } from '../../src/lib/evm/addresses';
 
-test('closed EVM chain-id set: only 1 / 8453 / 4663 / 11155111 / 84532 / 46630 are in scope', () => {
-  for (const id of [1, 8453, 4663, 11155111, 84532, 46630]) assert.equal(isEvmChainId(id), true);
-  for (const id of [56, 137, 42161, 10, 0]) assert.equal(isEvmChainId(id), false, `chain ${id} is out of scope`);
+test('closed EVM chain-id set includes Arc testnet and rejects Arc mainnet', () => {
+  for (const id of [1, 8453, 4663, 11155111, 84532, 46630, 5042002]) assert.equal(isEvmChainId(id), true);
+  for (const id of [56, 137, 42161, 10, 0, 5042]) assert.equal(isEvmChainId(id), false, `chain ${id} is out of scope`);
 });
 
 test('evmTarget: resolves the right family + testnet flag; throws on out-of-scope ids', () => {
@@ -49,6 +49,8 @@ test('evmChainIdFor / isEvmTestnet: family+network maps to the correct chain id'
   assert.equal(evmChainIdFor('base', 'mainnet'), 8453);
   assert.equal(evmChainIdFor('robinhood', 'testnet'), 46630);
   assert.equal(evmChainIdFor('robinhood', 'mainnet'), 4663);
+  assert.equal(evmChainIdFor('arc', 'testnet'), 5042002);
+  assert.throws(() => evmChainIdFor('arc', 'mainnet'), /5042 is not supported/);
   assert.equal(isEvmTestnet(11155111), true);
   assert.equal(isEvmTestnet(1), false);
   assert.equal(isEvmTestnet(46630), true);
@@ -56,11 +58,12 @@ test('evmChainIdFor / isEvmTestnet: family+network maps to the correct chain id'
 });
 
 test('chainFamilyLabelWithNetwork: discloses Devnet/Sepolia/Mainnet per family', () => {
-  const byFamily = { ethereum: 'testnet', base: 'mainnet', robinhood: 'mainnet' } as const;
+  const byFamily = { ethereum: 'testnet', base: 'mainnet', robinhood: 'mainnet', arc: 'testnet' } as const;
   assert.equal(chainFamilyLabelWithNetwork('solana', byFamily, 'devnet'), 'Solana (Devnet)');
   assert.equal(chainFamilyLabelWithNetwork('ethereum', byFamily, 'devnet'), 'Ethereum (Sepolia)');
   assert.equal(chainFamilyLabelWithNetwork('base', byFamily, 'devnet'), 'Base (Mainnet)');
   assert.equal(chainFamilyLabelWithNetwork('robinhood', byFamily, 'devnet'), 'Robinhood Chain (Mainnet)');
+  assert.equal(chainFamilyLabelWithNetwork('arc', byFamily, 'devnet'), 'Arc (Testnet)');
 });
 
 test('address discriminator: EVM (0x…40 hex) vs Solana (base58), used to gate direction', () => {

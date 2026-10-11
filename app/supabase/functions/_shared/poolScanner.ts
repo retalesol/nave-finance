@@ -198,119 +198,136 @@ export async function scanJupiterPools(
 
 // ─── Kamino scanner ──────────────────────────────────────────────────────────
 
-type KaminoStrategy = {
-  tokenMintA?: string;
-  tokenMintB?: string;
-  apy?: number;
-  totalValueLocked?: number;
-  tvl?: number;
-  lendingMarket?: string;
-  tokenAReserve?: string;
-  tokenBReserve?: string;
-  collateralAMint?: string;
-  collateralBMint?: string;
-  strategyType?: string;
+type KaminoReserveMetrics = {
+  reserve?: string;
+  liquidityToken?: string;
+  liquidityTokenMint?: string;
+  supplyApy?: string | number;
+  totalSupplyUsd?: string | number;
+  totalBorrowUsd?: string | number;
 };
 
+/** Kamino Lend main market; NAVE_KAMINO_MARKETS (comma-separated) adds or replaces markets. */
+export const KAMINO_MAIN_MARKET = "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF";
+/** Above this utilization a reserve is not offered: withdrawals can queue behind borrowers. */
+export const KAMINO_MAX_UTILIZATION = 0.95;
+/** Above this utilization a reserve is offered but treated as illiquid. */
+export const KAMINO_ILLIQUID_UTILIZATION = 0.9;
+/** klend Reserve layout: collateral (cToken) mint offset. */
+const KLEND_RESERVE_COLLATERAL_MINT_OFFSET = 2560;
+
+function kaminoMarkets(): string[] {
+  const env = typeof Deno !== "undefined" ? Deno.env.get("NAVE_KAMINO_MARKETS") : undefined;
+  const list = (env ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+  return list.length > 0 ? list : [KAMINO_MAIN_MARKET];
+}
+
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(bytes: Uint8Array): string {
+  let n = 0n;
+  for (const b of bytes) n = n * 256n + BigInt(b);
+  let out = "";
+  while (n > 0n) {
+    out = B58[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = "1" + out;
+  }
+  return out;
+}
+
+/** Read each reserve's cToken mint from chain; missing entries are left out. */
+async function kaminoCollateralMints(rpcUrl: string, reserves: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let i = 0; i < reserves.length; i += 100) {
+    const chunk = reserves.slice(i, i + 100);
+    const resp = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getMultipleAccounts",
+        params: [chunk, {
+          encoding: "base64",
+          dataSlice: { offset: KLEND_RESERVE_COLLATERAL_MINT_OFFSET, length: 32 },
+        }],
+      }),
+    });
+    if (!resp.ok) continue;
+    const json = await resp.json() as { result?: { value?: Array<{ data?: [string, string] } | null> } };
+    (json.result?.value ?? []).forEach((acc, j) => {
+      const b64 = acc?.data?.[0];
+      if (!b64) return;
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      if (bytes.length === 32 && bytes.some((b) => b !== 0)) out.set(chunk[j], base58(bytes));
+    });
+  }
+  return out;
+}
+
 /**
- * Scan Kamino strategies for all allowed assets.
- * Prefers single-token strategies (strategyType = "NON_PEGGED" or similar)
- * over LP strategies where only one side is in the allowlist.
+ * Scan Kamino Lend (klend) reserves for allowed assets. Each opportunity is a
+ * single-asset supply into a reserve: `extMarket` = lending market,
+ * `extReserve` = reserve, which is what `configure_position_targets` binds
+ * and what the signer resolves `kamino_deposit` accounts from.
  */
 export async function scanKaminoPools(
   kaminoProgramId: string,
   cluster = "mainnet-beta",
+  rpcUrl?: string,
 ): Promise<PoolOpportunity[]> {
-  const raw = await safeJson(
-    `https://api.kamino.finance/strategies?cluster=${cluster}&status=active`,
-  ) as KaminoStrategy[];
-
   const results: PoolOpportunity[] = [];
-  const seenPools = new Set<string>();
-
-  for (const s of raw) {
-    const apy = Number(s.apy);
-    if (!Number.isFinite(apy) || apy <= 0) continue;
-
-    const tvlUsd = Number(s.totalValueLocked ?? s.tvl ?? 0);
-    const apyBps = pctToBps(apy);
-
-    // Single-asset strategy (only tokenMintA meaningful, B is empty or same)
-    const mintA = s.tokenMintA ?? "";
-    const mintB = s.tokenMintB ?? "";
-    const assetA = resolveAsset(mintA);
-    const assetB = mintB ? resolveAsset(mintB) : undefined;
-
-    // Determine pool type and primary asset
-    if (assetA && !assetB) {
-      // Single-token vault
-      const poolKey = `kamino:${mintA}:${s.lendingMarket}`;
-      if (seenPools.has(poolKey)) continue;
-      seenPools.add(poolKey);
-
-      const { riskScore, adjustedScore } = scorePool("kamino", assetA, "single-stake", tvlUsd, apyBps);
-      if (!s.lendingMarket || !s.tokenAReserve) continue;
+  for (const market of kaminoMarkets()) {
+    const raw = await safeJson(
+      `https://api.kamino.finance/kamino-market/${market}/reserves/metrics?env=${cluster}`,
+    ) as KaminoReserveMetrics[];
+    for (const r of Array.isArray(raw) ? raw : []) {
+      const mint = r.liquidityTokenMint ?? "";
+      const asset = resolveAsset(mint);
+      if (!asset || !r.reserve) continue;
+      const supplyApy = Number(r.supplyApy);
+      if (!Number.isFinite(supplyApy) || supplyApy <= 0) continue;
+      const tvlUsd = Number(r.totalSupplyUsd ?? 0);
+      const borrowedUsd = Number(r.totalBorrowUsd ?? 0);
+      const utilization = tvlUsd > 0 ? borrowedUsd / tvlUsd : 1;
+      if (utilization > KAMINO_MAX_UTILIZATION) continue;
+      const apyBps = Math.round(supplyApy * 10_000);
+      const { riskScore, adjustedScore } = scorePool("kamino", asset, "single-stake", tvlUsd, apyBps);
       results.push({
         protocolId: "kamino",
         programId: kaminoProgramId,
-        mint: mintA,
-        symbol: assetA.symbol,
-        poolId: poolKey,
+        mint,
+        symbol: asset.symbol,
+        poolId: `kamino:${market}:${r.reserve}`,
         poolType: "single-stake",
-        extMarket: s.lendingMarket,
-        extReserve: s.tokenAReserve,
-        collateralMint: s.collateralAMint,
+        extMarket: market,
+        extReserve: r.reserve,
         tvlUsd,
         apyBps,
         riskScore,
         adjustedScore,
-        assetClass: assetA.assetClass,
-        liquid: true,
-        source: `live:kamino:${assetA.symbol}`,
-      });
-    } else if (assetA && assetB) {
-      // Two-sided LP — only add if both assets are allowed and it's a valid pool type
-      const isStableLP = assetA.assetClass === "stablecoin" && assetB.assetClass === "stablecoin";
-      const isSolStableLP =
-        (assetA.assetClass === "sol-like" && assetB.assetClass === "stablecoin") ||
-        (assetA.assetClass === "stablecoin" && assetB.assetClass === "sol-like");
-      if (!isStableLP && !isSolStableLP) continue;
-
-      const poolType: PoolType = isStableLP ? "stable-lp" : "sol-stable-lp";
-      const primaryAsset = assetA.assetClass === "sol-like" ? assetA : assetA;
-      const poolKey = `kamino:${mintA}:${mintB}:${s.lendingMarket}`;
-      if (seenPools.has(poolKey)) continue;
-      seenPools.add(poolKey);
-
-      const { riskScore, adjustedScore } = scorePool("kamino", primaryAsset, poolType, tvlUsd, apyBps);
-      if (!s.lendingMarket || !s.tokenAReserve) continue;
-      results.push({
-        protocolId: "kamino",
-        programId: kaminoProgramId,
-        mint: mintA,
-        symbol: `${assetA.symbol}/${assetB.symbol}`,
-        poolId: poolKey,
-        poolType,
-        extMarket: s.lendingMarket,
-        extReserve: s.tokenAReserve,
-        collateralMint: s.collateralAMint,
-        tvlUsd,
-        apyBps,
-        riskScore,
-        adjustedScore,
-        assetClass: isStableLP ? "stablecoin" : "sol-like",
-        liquid: true,
-        source: `live:kamino:${assetA.symbol}-${assetB.symbol}`,
+        assetClass: asset.assetClass,
+        liquid: utilization <= KAMINO_ILLIQUID_UTILIZATION,
+        source: `live:kamino-lend:${asset.symbol}`,
       });
     }
   }
 
-  // Sort by adjustedScore descending and deduplicate (keep best pool per mint)
   const bestPerMint = new Map<string, PoolOpportunity>();
   for (const op of results.sort((a, b) => b.adjustedScore - a.adjustedScore)) {
     if (!bestPerMint.has(op.mint)) bestPerMint.set(op.mint, op);
   }
-  return Array.from(bestPerMint.values());
+  const best = Array.from(bestPerMint.values());
+  if (rpcUrl && best.length > 0) {
+    try {
+      const mints = await kaminoCollateralMints(rpcUrl, best.map((op) => op.extReserve));
+      for (const op of best) op.collateralMint = mints.get(op.extReserve);
+    } catch { /* collateral mint stays unset; the founder can enter it */ }
+  }
+  return best;
 }
 
 // ─── MarginFi scanner ─────────────────────────────────────────────────────────
@@ -348,7 +365,7 @@ type MarginfiBank = {
  * on submit — the founder can still configure it manually via "Advanced".
  */
 export async function scanMarginfiPools(
-  marginfiProgramId: string,
+  marginfiAdapterId: string,
 ): Promise<PoolOpportunity[]> {
   const raw = await safeJson("https://api.marginfi.com/state") as {
     banks?: MarginfiBank[];
@@ -376,7 +393,7 @@ export async function scanMarginfiPools(
     const { riskScore, adjustedScore } = scorePool("marginfi", asset, "single-stake", tvlUsd, apyBps);
     results.push({
       protocolId: "marginfi",
-      programId: marginfiBankProgramId,
+      programId: marginfiAdapterId,
       mint,
       symbol: asset.symbol,
       poolId: `marginfi:${mint}:${bankAddress}`,
@@ -400,9 +417,6 @@ export async function scanMarginfiPools(
   }
   return Array.from(bestPerMint.values());
 }
-
-// marginfi bank/group program id (used to verify CPIs in nave_marginfi_adapter)
-const marginfiBankProgramId = "MFv2hWf31Z9kbCa1snEPdcgp7nZFSB4S7TE1RQmj6Gm";
 
 // ─── Jito (stake pools) scanner ───────────────────────────────────────────────
 
@@ -484,11 +498,14 @@ export async function scanJitoPools(
 
 export interface ScanConfig {
   kaminoProgramId: string;
-  marginfiBankProgramId?: string;
+  /** Nave MarginFi adapter id; MarginFi is skipped when unset. */
+  marginfiProgramId?: string;
   jitoProgramId: string;
   jupiterProgramId: string;
   jupiterApiKey?: string;
   cluster?: "mainnet-beta" | "devnet";
+  /** Solana RPC used to read Kamino reserve cToken mints. */
+  rpcUrl?: string;
 }
 
 /**
@@ -513,18 +530,20 @@ export async function scanAllPools(config: ScanConfig): Promise<PoolOpportunity[
   // Kamino — available on mainnet; devnet data is limited
   try {
     const cluster = config.cluster === "devnet" ? "devnet" : "mainnet-beta";
-    const kamino = await scanKaminoPools(config.kaminoProgramId, cluster);
+    const kamino = await scanKaminoPools(config.kaminoProgramId, cluster, config.rpcUrl);
     results.push(...kamino);
   } catch (e) {
     errors.push(`kamino: ${e instanceof Error ? e.message : e}`);
   }
 
   // MarginFi — mainnet API (devnet data may be incomplete)
-  try {
-    const mfi = await scanMarginfiPools(config.marginfiBankProgramId ?? marginfiBankProgramId);
-    results.push(...mfi);
-  } catch (e) {
-    errors.push(`marginfi: ${e instanceof Error ? e.message : e}`);
+  if (config.marginfiProgramId) {
+    try {
+      const mfi = await scanMarginfiPools(config.marginfiProgramId);
+      results.push(...mfi);
+    } catch (e) {
+      errors.push(`marginfi: ${e instanceof Error ? e.message : e}`);
+    }
   }
 
   // Jupiter Lend — requires API key; skip if not configured

@@ -1,8 +1,8 @@
 import { createDecipheriv } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { privateKeyToAccount } from 'viem/accounts';
-import type { Address, Hex, TypedData, TypedDataDomain } from 'viem';
-import { isEvmKekConfigured, unwrapEvmDek } from './kek.js';
+import type { Address, Hex, TypedDataDomain } from 'viem';
+import { isEvmKekConfigured, unwrapStoredDek } from './kek.js';
 
 // ─── EVM (secp256k1 + EIP-712) GUARDIAN signing for Nave ─────────────────────
 //
@@ -26,9 +26,9 @@ import { isEvmKekConfigured, unwrapEvmDek } from './kek.js';
 
 export type EvmSignerRole = 'executive' | 'financial' | 'oversight' | 'operational' | 'guardian';
 
-export type EvmChainKind = 'ethereum' | 'base' | 'robinhood';
+export type EvmChainKind = 'ethereum' | 'base' | 'robinhood' | 'arc';
 
-/** Numeric chain id → kind (1/8453/4663 + testnets). */
+/** Numeric chain id → kind. Arc mainnet 5042 is not included. */
 export const EVM_CHAIN_ID_TO_KIND: Record<number, EvmChainKind> = {
   1: 'ethereum',
   11155111: 'ethereum',
@@ -36,6 +36,7 @@ export const EVM_CHAIN_ID_TO_KIND: Record<number, EvmChainKind> = {
   84532: 'base',
   4663: 'robinhood',
   46630: 'robinhood',
+  5042002: 'arc',
 };
 
 /**
@@ -52,6 +53,9 @@ export const GUARDIAN_ACTION_TYPE = {
   CANCEL_RECOVERY: 5,
   /** Parity with Solana nullify_agent; EVM discriminant is 6 (CANCEL_RECOVERY owns 5). */
   NULLIFY_AGENT: 6,
+  ENABLE_AGENTS: 7,
+  RESTORE_AGENT: 8,
+  CANCEL_AGENT_ROTATION: 9,
 } as const;
 
 export type GuardianActionName = keyof typeof GUARDIAN_ACTION_TYPE;
@@ -78,6 +82,8 @@ interface EvmKeyRow {
   wrapped_dek: string | null;
   dek_wrap_iv: string | null;
   dek_wrap_tag: string | null;
+  dek_wrap_version: number | null;
+  dek_kek_ref: string | null;
 }
 
 /** Decrypt an AES-256-GCM ciphertext into a 0x-hex secp256k1 private key. */
@@ -113,7 +119,7 @@ export async function loadEvmAccount(
   let query = getSupabase()
     .from('encrypted_evm_keys')
     .select(
-      'evm_address, encrypted_private_key, encryption_iv, encryption_tag, wrapped_dek, dek_wrap_iv, dek_wrap_tag',
+      'evm_address, encrypted_private_key, encryption_iv, encryption_tag, wrapped_dek, dek_wrap_iv, dek_wrap_tag, dek_wrap_version, dek_kek_ref',
     )
     .eq('dao_onchain_address', daoAddress.toLowerCase())
     .eq('chain_id', chainId)
@@ -135,11 +141,21 @@ export async function loadEvmAccount(
     throw new Error('EVM key row is missing the wrapped DEK envelope fields');
   }
 
-  const dek = unwrapEvmDek({
-    wrapped_dek: data.wrapped_dek,
-    dek_wrap_iv: data.dek_wrap_iv,
-    dek_wrap_tag: data.dek_wrap_tag,
-  });
+  const dek = unwrapStoredDek(
+    'evm',
+    {
+      wrapped_dek: data.wrapped_dek,
+      dek_wrap_iv: data.dek_wrap_iv,
+      dek_wrap_tag: data.dek_wrap_tag,
+      dek_wrap_version: data.dek_wrap_version,
+      dek_kek_ref: data.dek_kek_ref,
+    },
+    {
+      dao: daoAddress.toLowerCase(),
+      role: guardianIndex === undefined || guardianIndex === null ? role : `guardian#${guardianIndex}`,
+      chain: `evm:${chainId}`,
+    },
+  );
   const privKey = decryptPrivateKey(
     dek,
     data.encrypted_private_key,
@@ -156,9 +172,9 @@ export async function loadEvmAccount(
 // ─── EIP-712 typed data ──────────────────────────────────────────────────────
 // Canonical schema for the NaveTreasury GUARDIAN action flow. Matches the
 // contract exactly (NaveTreasury.GUARDIAN_ACTION_TYPEHASH + _domainSeparator):
-//   GuardianAction(uint8 actionType,uint8 agentSlot,uint8 newStatus,address newKey,uint64 nonce)
-// When a future contract revision changes the struct, callers may pass a full
-// `typed_data` passthrough instead — forward-compat escape hatch.
+//   GuardianAction(uint8 actionType,uint8 agentSlot,uint8 newStatus,address newKey,uint64 nonce,uint64 deadline)
+// Only this struct is ever signed: the custodied guardian key never signs
+// caller-supplied typed data or a domain other than its own treasury.
 
 // Domain name defaults to the treasury domain. (env override allowed, but the
 // contract hard-codes "NaveTreasury" so this should not normally be changed.)
@@ -200,12 +216,9 @@ export interface EvmGuardianSignRequest {
   agent_role: EvmSignerRole;
   /** Which custodied guardian signer to use (M-of-N). Defaults to 0. */
   guardian_index?: number;
-  /**
-   * Optional explicit EIP-712 verifyingContract override. Defaults to
-   * dao_address (the treasury). Provided for completeness; normally omit it.
-   */
+  /** Optional; must equal dao_address when given (the domain is pinned to the treasury). */
   verifying_contract?: string;
-  /** GuardianAction.actionType — name (e.g. 'FREEZE') or raw uint8 (0-4). */
+  /** GuardianAction.actionType — name (e.g. 'FREEZE') or raw uint8 (0-9). */
   action_type?: GuardianActionName | number;
   /** GuardianAction.agentSlot (0-3); 0 for freeze/unfreeze/disable. */
   agent_slot?: number;
@@ -221,17 +234,6 @@ export interface EvmGuardianSignRequest {
    * guardians must sign the SAME deadline.
    */
   deadline?: number | string;
-  /**
-   * Optional full EIP-712 passthrough. When provided, it is signed verbatim
-   * (the canonical builder above is ignored) — forward-compat escape hatch
-   * for a revised contract schema.
-   */
-  typed_data?: {
-    domain: TypedDataDomain;
-    types: TypedData;
-    primaryType: string;
-    message: Record<string, unknown>;
-  };
 }
 
 export interface EvmSignResult {
@@ -247,13 +249,17 @@ function asAddress(v: string, label: string): Address {
   return v.toLowerCase() as Address;
 }
 
-/** Resolve a guardian actionType from a name or a raw 0-4 discriminant. */
+const MAX_GUARDIAN_ACTION_TYPE = Math.max(...Object.values(GUARDIAN_ACTION_TYPE));
+
+/** Resolve a guardian actionType from a name or a raw discriminant. */
 function resolveActionType(v: GuardianActionName | number | undefined): number {
   if (v === undefined || v === null) {
-    throw new Error('action_type is required (FREEZE|UNFREEZE|UPDATE_AGENT_STATUS|ROTATE_AGENT_KEY|DISABLE_AGENTS or 0-4)');
+    throw new Error(`action_type is required (${Object.keys(GUARDIAN_ACTION_TYPE).join('|')} or 0-${MAX_GUARDIAN_ACTION_TYPE})`);
   }
   if (typeof v === 'number') {
-    if (!Number.isInteger(v) || v < 0 || v > 4) throw new Error(`Invalid action_type ${v} (expected 0-4)`);
+    if (!Number.isInteger(v) || v < 0 || v > MAX_GUARDIAN_ACTION_TYPE) {
+      throw new Error(`Invalid action_type ${v} (expected 0-${MAX_GUARDIAN_ACTION_TYPE})`);
+    }
     return v;
   }
   const mapped = GUARDIAN_ACTION_TYPE[v];
@@ -274,7 +280,7 @@ export async function signEvmApproval(body: EvmGuardianSignRequest): Promise<Evm
   const { chain_id, dao_address, agent_role } = body;
 
   if (!isEvmChainId(chain_id)) {
-    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum + Base only: 1, 8453, 11155111, 84532)`);
+    throw new Error(`Unsupported chain_id ${chain_id} (Ethereum, Base, Robinhood, Arc Testnet: 1, 8453, 4663, 11155111, 84532, 46630, 5042002)`);
   }
   if (agent_role !== 'guardian') {
     throw new Error(
@@ -282,31 +288,16 @@ export async function signEvmApproval(body: EvmGuardianSignRequest): Promise<Evm
     );
   }
 
-  const account = await loadEvmAccount(dao_address, chain_id, 'guardian', body.guardian_index ?? 0);
-
-  // Passthrough: sign the caller-supplied typed data verbatim.
-  if (body.typed_data) {
-    const td = body.typed_data;
-    const signature = await account.signTypedData({
-      domain: td.domain,
-      types: td.types as TypedData,
-      primaryType: td.primaryType,
-      // viem types message generically; the struct is validated against `types`.
-      message: td.message as never,
-    });
-    return {
-      signature,
-      signer: account.address,
-      primary_type: td.primaryType,
-      chain_id,
-      domain: td.domain,
-    };
+  if ((body as { typed_data?: unknown }).typed_data !== undefined) {
+    throw new Error('typed_data is not accepted: the guardian key only signs the canonical GuardianAction struct');
   }
-
-  // verifyingContract defaults to the treasury (DAO) address — the per-clone
-  // NaveTreasury domain binds to its own address(this).
-  const verifyingContract = asAddress(body.verifying_contract ?? dao_address, 'verifying_contract');
+  const verifyingContract = asAddress(dao_address, 'dao_address');
+  if (body.verifying_contract !== undefined && asAddress(body.verifying_contract, 'verifying_contract') !== verifyingContract) {
+    throw new Error('verifying_contract must equal dao_address');
+  }
   const domain = domainFor(chain_id, verifyingContract);
+
+  const account = await loadEvmAccount(dao_address, chain_id, 'guardian', body.guardian_index ?? 0);
 
   const actionType = resolveActionType(body.action_type);
   const agentSlot = body.agent_slot ?? 0;

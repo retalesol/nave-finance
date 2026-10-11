@@ -13,6 +13,11 @@
 // be re-run and skips the steps that already landed.
 
 import { PublicKey } from '@solana/web3.js';
+import {
+  constitutionCapsBps,
+  findVenue,
+  packSolanaAllocation,
+} from '../../supabase/functions/_shared/strategyCatalog.ts';
 import type { Connection } from '@solana/web3.js';
 import { getNavePrograms } from './naveProgram';
 import {
@@ -28,7 +33,7 @@ import {
   WSOL_MINT,
   type TransactionBuildResult,
 } from './transactionBuilders';
-import { NAVE_JITO_ADAPTER_ID, SOL_USD_PRICE_UPDATE, SYSTEM_CONFIDENCE_THRESHOLD, getAdapterProgramId } from './programConfig';
+import { SOL_USD_PRICE_UPDATE, SYSTEM_CONFIDENCE_THRESHOLD, getAdapterProgramId } from './programConfig';
 
 /** Rough SOL/USD estimate used when Pyth price data is unavailable. */
 const ESTIMATED_SOL_USD_PRICE = 150;
@@ -87,6 +92,8 @@ export interface ConstitutionProtocolInput {
 
 /** Policy parameter overrides from the wizard (UI percent values → BPS). */
 export interface WizardPolicyParams {
+  /** Per-venue cap written on every approved protocol (the preset's max lending exposure). */
+  maxAllocationBps?: number;
   minStablecoinReserveBps: number;
   maxTotalDeployedBps: number;
   minLiquidityBps: number;
@@ -212,22 +219,31 @@ export async function runSolanaAutoActivation(
     if ((await wsolSeedDeposited(connection, dao)) && (await constitutionRatified(connection, dao))) {
       ctx.onStep('seedAndRatify', 'done', 'Already completed');
     } else {
+      const policy = ctx.policyParams;
       // Build the protocol list from wizard selection, or fall back to Jito-only.
       const wizardProtocols = ctx.constitutionProtocols && ctx.constitutionProtocols.length > 0
         ? ctx.constitutionProtocols
         : [{ id: 'jito' }];
 
-      const protocolEntries = wizardProtocols.map((p) => {
-        const programId = p.id === 'jito' ? NAVE_JITO_ADAPTER_ID : getAdapterProgramId(p.id);
-        return {
+      const maxAllocationBps = policy?.maxAllocationBps || DEFAULT_JITO_MAX_ALLOCATION_BPS;
+      const tiered = wizardProtocols.map((p) => ({ id: p.id, tier: findVenue('solana', p.id)?.tier ?? 1 }));
+      const capsBps = constitutionCapsBps(tiered, maxAllocationBps / 100);
+      const protocolEntries: Array<{ protocolId: string; programId: PublicKey; maxAllocationBps: number; approved: boolean }> = [];
+      for (const p of tiered) {
+        const programId = getAdapterProgramId(p.id);
+        if (!programId) {
+          const msg = `No program id is configured for ${p.id}; deselect it or configure it before activating.`;
+          ctx.onStep('seedAndRatify', 'error', msg);
+          return { ok: false, error: msg };
+        }
+        protocolEntries.push({
           protocolId: p.id,
-          programId: programId ?? NAVE_JITO_ADAPTER_ID,
-          maxAllocationBps: DEFAULT_JITO_MAX_ALLOCATION_BPS,
+          programId,
+          maxAllocationBps: packSolanaAllocation(capsBps.get(p.id) ?? maxAllocationBps, p.tier),
           approved: true,
-        };
-      });
+        });
+      }
 
-      const policy = ctx.policyParams;
       const confidenceThreshold = policy?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
 
       // Derive agentThresholdUsdMicro: use explicit value, or estimate from seed.

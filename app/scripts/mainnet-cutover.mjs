@@ -110,10 +110,10 @@ const EXPECTED_VAULT_LAST_REVALUED_OFF = 130;
 // Base + Robinhood Chain; any other EVM chain (e.g. BSC 56) is HARD-REJECTED.
 // Robinhood (4663 / testnet 46630, Arbitrum Nitro L2) is BRIDGE/STAKE-ONLY:
 // it never has factory/protocol/adapter addresses, only the bridge triple.
-const EVM_SUPPORTED_CHAIN_IDS = new Set([1, 8453, 4663, 11155111, 84532, 46630]);
+const EVM_SUPPORTED_CHAIN_IDS = new Set([1, 8453, 4663, 11155111, 84532, 46630, 5042002]);
 const EVM_MAINNET_CHAIN_IDS = new Set([1, 8453, 4663]);
 // The env-key network segments Nave uses for VITE_EVM_<SEG>_* vars.
-const EVM_ENV_SEGMENTS = ["ETHEREUM", "BASE", "ROBINHOOD", "SEPOLIA", "BASE_SEPOLIA", "ROBINHOOD_TESTNET"];
+const EVM_ENV_SEGMENTS = ["ETHEREUM", "BASE", "ROBINHOOD", "SEPOLIA", "BASE_SEPOLIA", "ROBINHOOD_TESTNET", "ARC_TESTNET"];
 // Segments allowed for a MAINNET cutover (testnet segments are rejected on the
 // mainnet path so a prod build can't silently point at Sepolia).
 const EVM_MAINNET_SEGMENTS = ["ETHEREUM", "BASE", "ROBINHOOD"];
@@ -1397,7 +1397,7 @@ function assertEvmConfig(env, scope) {
   if (declaredId) {
     const idNum = Number(declaredId);
     if (!EVM_SUPPORTED_CHAIN_IDS.has(idNum)) {
-      throw new Error(`VITE_EVM_CHAIN_ID ${declaredId} is not a supported Nave EVM chain (1, 8453, 4663, 11155111, 84532, 46630).`);
+      throw new Error(`VITE_EVM_CHAIN_ID ${declaredId} is not a supported Nave EVM chain (1, 8453, 4663, 11155111, 84532, 46630, 5042002).`);
     }
     if (!EVM_MAINNET_CHAIN_IDS.has(idNum)) {
       throw new Error(`VITE_EVM_CHAIN_ID ${declaredId} is a testnet; the mainnet cutover requires 1, 8453 or 4663.`);
@@ -1406,7 +1406,7 @@ function assertEvmConfig(env, scope) {
 
   // Testnet bridge addresses must NOT ride into a mainnet build (wrong-network
   // wNAVE/lockbox/staking would break the bridge silently).
-  for (const seg of ["SEPOLIA", "BASE_SEPOLIA", "ROBINHOOD_TESTNET"]) {
+  for (const seg of ["SEPOLIA", "BASE_SEPOLIA", "ROBINHOOD_TESTNET", "ARC_TESTNET"]) {
     for (const suffix of ["WRAPPED_NAVE_ADDRESS", "BRIDGE_LOCKBOX_ADDRESS", "STAKING_ADDRESS"]) {
       if ((env[`VITE_EVM_${seg}_${suffix}`] || "").trim()) {
         throw new Error(
@@ -1417,7 +1417,7 @@ function assertEvmConfig(env, scope) {
   }
 
   // Testnet segments must NOT carry addresses on the mainnet path.
-  for (const seg of ["SEPOLIA", "BASE_SEPOLIA"]) {
+  for (const seg of ["SEPOLIA", "BASE_SEPOLIA", "ARC_TESTNET"]) {
     if ((env[`VITE_EVM_${seg}_FACTORY_ADDRESS`] || "").trim() || (env[`VITE_EVM_${seg}_PROTOCOL_ADDRESS`] || "").trim()) {
       throw new Error(`Testnet segment ${seg} must not be configured on the mainnet cutover (set only ETHEREUM/BASE).`);
     }

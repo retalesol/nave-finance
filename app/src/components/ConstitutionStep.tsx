@@ -18,6 +18,23 @@ import {
 } from '../lib/strategyReadiness';
 import type { ChainFamily, EvmChainId } from '../lib/chain/types';
 import { SYSTEM_CONFIDENCE_THRESHOLD, activeEvmChainId } from '../lib/programConfig';
+import { useStrategyRates } from '../hooks/useStrategyRates';
+import {
+  TIER_PRESETS,
+  blendedEstimate,
+  constitutionCapsBps,
+  effectiveApy,
+  findVenue,
+  isTemporaryRate,
+  presetRisks,
+  strategyChainForEvmId,
+  venuesForChain,
+  type RiskTier,
+  type StrategyChain,
+  type StrategyRate,
+  type StrategyVenue,
+  type TierPresetId,
+} from '../../supabase/functions/_shared/strategyCatalog.ts';
 
 const SOLANA_STRATEGY_STATUS_BY_ID = new Map(
   getSolanaStrategyStatuses().map((status) => [status.id, status]),
@@ -26,7 +43,7 @@ const MARGINFI_STRATEGY_ENABLED = SOLANA_STRATEGY_STATUS_BY_ID.get('marginfi')?.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type RiskPreset = 'conservative' | 'balanced' | 'aggressive' | 'custom';
+export type RiskPreset = 'conservative' | 'balanced' | 'yield6' | 'aggressive' | 'custom';
 
 export interface PolicyState {
   riskPreset: RiskPreset;
@@ -54,8 +71,8 @@ export interface ConstitutionStepProps {
   /** When true, renders a compact read-only summary card instead of the editor. */
   readOnly?: boolean;
   /**
-   * Preset cards to offer. Create's first constitution card offers Conservative
-   * and Balanced; Aggressive and Custom stay on the amend flow.
+   * Preset cards to offer. Create offers Conservative, Balanced and Yield 6%;
+   * Aggressive and Custom stay on the amend flow.
    */
   offeredPresets?: readonly RiskPreset[];
 }
@@ -63,8 +80,9 @@ export interface ConstitutionStepProps {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const RISK_PRESETS: { id: RiskPreset; label: string; desc: string }[] = [
-  { id: 'conservative', label: 'Conservative', desc: 'Capital preservation. Low risk, steady yield.' },
-  { id: 'balanced',     label: 'Balanced',     desc: 'Moderate risk-return profile.' },
+  { id: 'conservative', label: 'Conservative', desc: 'Tier 1 lending and savings only.' },
+  { id: 'balanced',     label: 'Balanced',     desc: 'Tier 1, plus up to 30% in Tier 2 vaults.' },
+  { id: 'yield6',       label: 'Yield 6% target', desc: 'Adds Tier 3 credit and fixed-term venues (at most 15%). Not guaranteed.' },
   { id: 'aggressive',   label: 'Aggressive',   desc: 'Maximise yield. Higher risk tolerance.' },
   { id: 'custom',       label: 'Custom',        desc: 'Define your own parameters.' },
 ];
@@ -72,34 +90,97 @@ export const RISK_PRESETS: { id: RiskPreset; label: string; desc: string }[] = [
 export const PRESET_DEFAULTS: Record<RiskPreset, Partial<PolicyState>> = {
   conservative: { minStablecoin: 60, maxDeployment: 40, maxLending: 20, liquidityReserve: 25 },
   balanced:     { minStablecoin: 35, maxDeployment: 65, maxLending: 40, liquidityReserve: 15 },
+  yield6:       { minStablecoin: 30, maxDeployment: 70, maxLending: 40, liquidityReserve: 12 },
   aggressive:   { minStablecoin: 15, maxDeployment: 85, maxLending: 70, liquidityReserve: 8  },
   custom:       {},
 };
 
+/** Tiers each preset approves. Custom leaves approvals alone. */
+const PRESET_TIERS: Partial<Record<RiskPreset, RiskTier[]>> = {
+  conservative: TIER_PRESETS.conservative.tiers,
+  balanced: TIER_PRESETS.balanced.tiers,
+  yield6: TIER_PRESETS.yield6.tiers,
+  aggressive: [1, 2, 3],
+};
+
 export const PROTOCOLS_SOLANA = [
-  { key: 'kamino',   label: 'Kamino',   desc: 'Automated liquidity & lending strategies', apy: '7–11%', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'kamino',   label: 'Kamino',   desc: 'Main-market USDC lending', badge: null as 'beta' | null, badgeReason: null as string | null },
   ...(MARGINFI_STRATEGY_ENABLED
-    ? [{ key: 'marginfi', label: 'MarginFi', desc: 'Lending / borrowing protocol', apy: '5–9%', badge: null as 'beta' | null, badgeReason: null as string | null }]
+    ? [{ key: 'marginfi', label: 'MarginFi', desc: 'Lending / borrowing protocol', badge: null as 'beta' | null, badgeReason: null as string | null }]
     : []),
-  { key: 'jito',    label: 'Jito',    desc: 'Liquid staking (jitoSOL)',                  apy: '6–8%', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'jito',    label: 'Jito',    desc: 'Liquid staking (jitoSOL)', badge: null as 'beta' | null, badgeReason: null as string | null },
   {
     key: 'jupiter',
     label: 'Jupiter',
     desc: 'Lend Earn — yield on stablecoins and SOL',
-    apy: '4–8%',
     badge: SOLANA_STRATEGY_STATUS_BY_ID.get('jupiter')?.badge ?? null,
     badgeReason: SOLANA_STRATEGY_STATUS_BY_ID.get('jupiter')?.badgeReason ?? null,
   },
 ];
 
 export const PROTOCOLS_EVM = [
-  { key: 'aave',     label: 'Aave V3',    desc: 'Lending and borrowing markets',  apy: '3–8%',  badge: null as 'beta' | null, badgeReason: null as string | null },
-  { key: 'compound', label: 'Compound V3', desc: 'Blue-chip lending protocol',     apy: '3–7%',  badge: null as 'beta' | null, badgeReason: null as string | null },
-  { key: 'balancer', label: 'Balancer',    desc: 'Weighted liquidity pools',       apy: '4–10%', badge: null as 'beta' | null, badgeReason: null as string | null },
-  { key: 'arbitrum-bridge', label: 'Arbitrum Bridge', desc: 'Bridge WETH to Ethereum sister treasury', apy: '—', badge: null as 'beta' | null, badgeReason: null as string | null },
-  { key: 'cctp', label: 'CCTP USDC', desc: 'Circle CCTP USDC to sister treasury', apy: '—', badge: null as 'beta' | null, badgeReason: null as string | null },
-  { key: 'op-standard-bridge', label: 'OP Bridge', desc: 'Base ↔ Ethereum ETH/WETH StandardBridge', apy: '—', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'aave',     label: 'Aave V3',    desc: 'Lending and borrowing markets', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'compound', label: 'Compound V3', desc: 'Blue-chip lending protocol', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'balancer', label: 'Balancer',    desc: 'Weighted liquidity pools', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'arbitrum-bridge', label: 'Arbitrum Bridge', desc: 'Bridge WETH to Ethereum sister treasury', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'cctp', label: 'CCTP USDC', desc: 'Circle CCTP USDC to sister treasury', badge: null as 'beta' | null, badgeReason: null as string | null },
+  { key: 'op-standard-bridge', label: 'OP Bridge', desc: 'Base ↔ Ethereum ETH/WETH StandardBridge', badge: null as 'beta' | null, badgeReason: null as string | null },
 ];
+
+/** Strategy-menu chain for the wizard's chain selection. */
+export function strategyChainFor(chain: 'solana' | 'evm', evmChainId?: EvmChainId | null): StrategyChain | null {
+  return chain === 'solana' ? 'solana' : strategyChainForEvmId(evmChainId ?? null);
+}
+
+/**
+ * Approvals after picking a preset: catalog dollar venues are on exactly when
+ * their tier is in the preset. Non-dollar venues (Jito) and bridge adapters
+ * keep their current toggle, and only `selectable` keys can turn on.
+ */
+export function approvalsForPreset(
+  preset: RiskPreset,
+  strategyChain: StrategyChain | null,
+  current: Record<string, boolean>,
+  selectable: readonly string[],
+): Record<string, boolean> {
+  const tiers = PRESET_TIERS[preset];
+  if (!tiers || !strategyChain) return current;
+  const next = { ...current };
+  for (const key of selectable) {
+    const venue = findVenue(strategyChain, key);
+    if (!venue || !venue.stable || venue.availability === 'later') continue;
+    next[key] = tiers.includes(venue.tier);
+  }
+  return next;
+}
+
+/**
+ * Per-venue cap (bps) for the constitution: the per-venue limit, with Tier 2
+ * and Tier 3 ceilings split across that tier's approved venues so the on-chain
+ * tier totals always fit. Venues outside the catalog count as Tier 1.
+ */
+export function tierBoundedCaps(
+  chain: 'solana' | 'evm',
+  evmChainId: EvmChainId | null | undefined,
+  policy: Pick<PolicyState, 'approvedProtocols' | 'maxLending'>,
+): (protocolId: string) => number {
+  const strategyChain = strategyChainFor(chain, evmChainId);
+  const tierOf = (id: string): RiskTier => (strategyChain && findVenue(strategyChain, id)?.tier) || 1;
+  const approved = Object.entries(policy.approvedProtocols).filter(([, on]) => on).map(([id]) => id);
+  const caps = constitutionCapsBps(approved.map((id) => ({ id, tier: tierOf(id) })), policy.maxLending);
+  const flat = Math.round(policy.maxLending * 100);
+  return (id) => caps.get(id) ?? flat;
+}
+
+function formatApy(apy: number): string {
+  return `${apy.toFixed(apy >= 10 ? 1 : 2)}%`;
+}
+
+function availabilityLabel(venue: StrategyVenue): string {
+  if (venue.availability === 'testnet') return 'On testnet';
+  if (venue.availability === 'fork-only') return 'Mainnet only · tested on a fork';
+  return 'Later';
+}
 
 export const REBALANCE_OPTIONS = ['Hourly', 'Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Manual'];
 
@@ -133,12 +214,20 @@ export function policyForChain(chain: ChainFamily, preset: RiskPreset = 'conserv
     ...PRESET_DEFAULTS[preset],
     riskPreset: preset,
   };
-  if (chain === 'solana') return base;
+  if (chain === 'solana') {
+    const selectable = PROTOCOLS_SOLANA.filter((p) => p.badge !== 'beta').map((p) => p.key);
+    return { ...base, approvedProtocols: approvalsForPreset(preset, 'solana', base.approvedProtocols, selectable) };
+  }
+  const evmChainId = activeEvmChainId(chain);
   const approvedProtocols: Record<string, boolean> = {};
-  for (const status of getEvmAdapterStatuses(activeEvmChainId(chain))) {
+  for (const status of getEvmAdapterStatuses(evmChainId)) {
     approvedProtocols[status.protocolId] = status.configured;
   }
-  return { ...base, approvedProtocols };
+  const configured = Object.entries(approvedProtocols).filter(([, on]) => on).map(([id]) => id);
+  return {
+    ...base,
+    approvedProtocols: approvalsForPreset(preset, strategyChainForEvmId(evmChainId), approvedProtocols, configured),
+  };
 }
 
 /** Whole-percent label for an on-chain basis-point figure. */
@@ -231,11 +320,6 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
   chain: 'solana' | 'evm';
   evmChainId?: EvmChainId;
 }) {
-  const protocolOptions = (chain === 'evm' ? PROTOCOLS_EVM : PROTOCOLS_SOLANA).filter((p) => {
-    if (chain !== 'evm') return true;
-    const status = evmStatusByProtocol.get(p.key as EvmAdapterProtocolId);
-    return !!(status?.configured && status.address && !/^0x0{40}$/i.test(status.address));
-  });
   const evmAdapterStatuses = useMemo(
     () => (chain === 'evm' && evmChainId ? getEvmAdapterStatuses(evmChainId) : []),
     [chain, evmChainId],
@@ -244,6 +328,11 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
     () => new Map(evmAdapterStatuses.map((s) => [s.protocolId, s])),
     [evmAdapterStatuses],
   );
+  const protocolOptions = (chain === 'evm' ? PROTOCOLS_EVM : PROTOCOLS_SOLANA).filter((p) => {
+    if (chain !== 'evm') return true;
+    const status = evmStatusByProtocol.get(p.key as EvmAdapterProtocolId);
+    return !!(status?.configured && status.address && !/^0x0{40}$/i.test(status.address));
+  });
 
   const approvedProtocolLabels = protocolOptions
     .filter((p) => {
@@ -291,6 +380,141 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
   );
 }
 
+// ── Strategy menu ──────────────────────────────────────────────────────────────
+
+const TIER_STYLE: Record<RiskTier, { bg: string; fg: string }> = {
+  1: { bg: 'hsl(var(--accent-muted))', fg: 'hsl(var(--accent-muted-foreground))' },
+  2: { bg: 'hsl(var(--warning-muted))', fg: 'hsl(38 60% 30%)' },
+  3: { bg: 'hsl(0 85% 95%)', fg: 'hsl(0 60% 38%)' },
+};
+
+function TierBadge({ tier }: { tier: RiskTier }) {
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded"
+      style={{ fontSize: '10px', fontWeight: 600, backgroundColor: TIER_STYLE[tier].bg, color: TIER_STYLE[tier].fg }}
+    >
+      Tier {tier}
+    </span>
+  );
+}
+
+function StrategyMenu({ strategyChain, preset, rates, asOf }: {
+  strategyChain: StrategyChain;
+  preset: RiskPreset;
+  rates: Map<string, StrategyRate>;
+  asOf: string | null;
+}) {
+  const venues = venuesForChain(strategyChain);
+  const tierPreset: TierPresetId | null =
+    preset === 'conservative' || preset === 'balanced' || preset === 'yield6' ? preset : null;
+  const estimate = tierPreset ? blendedEstimate(strategyChain, tierPreset, rates) : null;
+  const risks = tierPreset ? presetRisks(strategyChain, tierPreset) : [];
+  const target = tierPreset ? TIER_PRESETS[tierPreset].targetApy : null;
+  const asOfLabel = asOf
+    ? `Live rates as of ${new Date(asOf).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+    : 'Reference rates from Oct 10, 2026 (live feed not loaded)';
+
+  return (
+    <CollapsibleSection title="Strategy Menu" subtitle={asOfLabel}>
+      <div className="space-y-4" data-testid="strategy-menu">
+        {estimate && (
+          <div
+            className="p-3.5 rounded-xl border"
+            style={{ borderColor: 'hsl(var(--border-strong))', backgroundColor: 'hsl(var(--surface-1))' }}
+          >
+            {estimate.weights.size > 0 ? (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+                    Estimated blend at today's mainnet rates
+                  </span>
+                  <span className="nave-mono" style={{ fontSize: '15px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+                    {formatApy(estimate.apy)}
+                  </span>
+                </div>
+                {target != null && estimate.meetsTarget === false && (
+                  <p style={{ fontSize: '12px', color: 'hsl(38 60% 30%)', marginTop: 6, lineHeight: 1.5 }}>
+                    Today's rates put this mix at {formatApy(estimate.apy)}, short of the {target}% target. Nave will not
+                    go past the tier caps (Tier 2 at most 30%, Tier 3 at most 15%) to close the gap; the blend rises only
+                    if venue rates rise.
+                  </p>
+                )}
+                {target != null && estimate.meetsTarget === true && (
+                  <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
+                    At today's rates this mix reaches the {target}% target. Rates change daily, so this is an estimate, not a promise.
+                  </p>
+                )}
+                <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
+                  Base yield only; reward tokens are left out because a treasury contract cannot claim them. Venues marked
+                  "Mainnet only" cannot be approved on this testnet.
+                </p>
+              </>
+            ) : (
+              <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+                No dollar venues on this chain match this preset yet.
+              </p>
+            )}
+            {risks.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {risks.map((r) => (
+                  <li key={r} style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', paddingLeft: 14, listStyle: 'disc' }}>
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {venues.map((venue) => {
+            const rate = rates.get(venue.id);
+            const apy = venue.rate ? effectiveApy(rate, venue.fallbackApy) : null;
+            return (
+              <div
+                key={venue.id}
+                data-testid={`strategy-venue-${venue.id}`}
+                className="p-3 rounded-xl border"
+                style={{
+                  borderColor: 'hsl(var(--border))',
+                  backgroundColor: 'hsl(var(--surface-0))',
+                  opacity: venue.availability === 'later' ? 0.62 : 1,
+                }}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium" style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>{venue.label}</span>
+                  <TierBadge tier={venue.tier} />
+                  {!venue.stable && (
+                    <span className="px-1.5 py-0.5 rounded" style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: 'hsl(38 60% 30%)' }}>
+                      {venue.asset}, not stable
+                    </span>
+                  )}
+                  <span className="nave-mono ml-auto" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>
+                    {apy != null ? `${formatApy(apy)}${rate ? '' : ' est.'}` : '—'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 3, lineHeight: 1.5 }}>
+                  {availabilityLabel(venue)} · Exit: {venue.exitNote}
+                  {rate && isTemporaryRate(rate) ? ' · Rate spike; using the 30-day average' : ''}
+                </div>
+                {venue.availability === 'later' && venue.laterReason && (
+                  <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>{venue.laterReason}</div>
+                )}
+                {venue.tier > 1 && (
+                  <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
+                    {venue.risks.join(' ')}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </CollapsibleSection>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ConstitutionStep({
@@ -316,12 +540,23 @@ export default function ConstitutionStep({
     return !!(status?.configured && status.address && !/^0x0{40}$/i.test(status.address));
   });
 
+  const strategyChain = strategyChainFor(chain, evmChainId);
+  const { rates, asOf } = useStrategyRates(readOnly ? null : strategyChain);
+
   if (readOnly) {
     return <ConstitutionSummary policy={policy} chain={chain} evmChainId={evmChainId} />;
   }
 
   function applyPreset(preset: RiskPreset) {
-    setPolicy({ riskPreset: preset, ...PRESET_DEFAULTS[preset] });
+    const selectable = protocolOptions
+      .filter((p) => p.badge !== 'beta')
+      .filter((p) => chain !== 'evm' || evmStatusByProtocol.get(p.key as EvmAdapterProtocolId)?.configured)
+      .map((p) => p.key);
+    setPolicy({
+      riskPreset: preset,
+      ...PRESET_DEFAULTS[preset],
+      approvedProtocols: approvalsForPreset(preset, strategyChain, policy.approvedProtocols, selectable),
+    });
   }
 
   function toggleProtocol(key: string) {
@@ -419,6 +654,11 @@ export default function ConstitutionStep({
               : undefined;
             const disabled = chain === 'evm' && !evmStatus?.configured;
             const enabled = !disabled && !!policy.approvedProtocols[p.key];
+            const venue = strategyChain ? findVenue(strategyChain, p.key) : undefined;
+            const rate = venue ? rates.get(venue.id) : undefined;
+            const apyLabel = venue && venue.rate
+              ? `${formatApy(effectiveApy(rate, venue.fallbackApy))}${rate ? '' : ' est.'}`
+              : '—';
             return (
               <div
                 key={p.key}
@@ -437,9 +677,19 @@ export default function ConstitutionStep({
                     <span
                       className="nave-mono px-1.5 py-0.5 rounded"
                       style={{ fontSize: '10px', backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))', border: '1px solid hsl(var(--border))' }}
+                      title={rate ? `Live mainnet rate (${rate.source.split(':')[0]})` : 'Reference rate from Oct 10, 2026; live rate not loaded'}
                     >
-                      {p.apy}
+                      {apyLabel}
                     </span>
+                    {venue && <TierBadge tier={venue.tier} />}
+                    {venue && !venue.stable && (
+                      <span
+                        className="px-1.5 py-0.5 rounded"
+                        style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: 'hsl(38 60% 30%)' }}
+                      >
+                        {venue.asset}, not stable
+                      </span>
+                    )}
                     {p.badge === 'beta' && (
                       <span
                         className="px-1.5 py-0.5 rounded uppercase"
@@ -453,6 +703,11 @@ export default function ConstitutionStep({
                   <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '1px' }}>
                     {disabled && evmStatus ? evmStatus.reason : (p.badge === 'beta' && p.badgeReason ? p.badgeReason : p.desc)}
                   </div>
+                  {venue && (
+                    <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                      Exit: {venue.exitNote}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => toggleProtocol(p.key)}
@@ -483,6 +738,15 @@ export default function ConstitutionStep({
           })}
         </div>
       </CollapsibleSection>
+
+      {strategyChain && (
+        <StrategyMenu
+          strategyChain={strategyChain}
+          preset={policy.riskPreset}
+          rates={rates}
+          asOf={asOf}
+        />
+      )}
 
       {/* Automation */}
       <CollapsibleSection title="Automation & Operations">

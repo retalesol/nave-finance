@@ -89,11 +89,12 @@ export function assertEvmKekPolicy(): void {
   }
 }
 
-function unwrapWithKek(kek: Buffer, w: WrappedDek): string {
+function unwrapWithKek(kek: Buffer, w: WrappedDek, aad?: Buffer): string {
   const iv = Buffer.from(w.dek_wrap_iv, 'base64');
   const tag = Buffer.from(w.dek_wrap_tag, 'base64');
   const ciphertext = Buffer.from(w.wrapped_dek, 'base64');
   const decipher = createDecipheriv('aes-256-gcm', kek, iv);
+  if (aad) decipher.setAAD(aad);
   decipher.setAuthTag(tag);
   const dek = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return dek.toString('base64');
@@ -120,4 +121,60 @@ export function unwrapEvmDek(w: WrappedDek): string {
     );
   }
   return unwrapWithKek(loadKekFromEnv(envName), w);
+}
+
+// ── v2 envelope: per-role KEK + associated data ─────────────────────────────
+//
+// Version 2 rows are wrapped with AES-GCM associated data
+// `nave-dek:v2|<dao>|<role>|<chain>`, so a wrapped DEK copied onto another
+// DAO's, role's or chain's row fails to unwrap. `dek_kek_ref` records which KEK
+// wrapped it: 'role' = the per-role KEK (NAVE_KEK_<ROLE> for Solana,
+// NAVE_EVM_KEK_<ROLE> for EVM), 'master' = the chain family's master KEK.
+
+export type KekFamily = 'solana' | 'evm';
+export type KekRef = 'role' | 'master';
+
+export interface DekBinding {
+  dao: string;
+  /** Agent role, or `guardian#<index>` for custodied EVM guardians. */
+  role: string;
+  /** `solana` or `evm:<chainId>`. */
+  chain: string;
+}
+
+export interface StoredWrappedDek extends WrappedDek {
+  dek_wrap_version?: number | null;
+  dek_kek_ref?: string | null;
+}
+
+export function dekAad(binding: DekBinding): Buffer {
+  return Buffer.from(`nave-dek:v2|${binding.dao}|${binding.role}|${binding.chain}`, 'utf8');
+}
+
+export function roleKekEnvName(family: KekFamily, role: string): string {
+  const base = role.split('#')[0].toUpperCase();
+  return family === 'evm' ? `NAVE_EVM_KEK_${base}` : `NAVE_KEK_${base}`;
+}
+
+function masterKekFor(family: KekFamily): Buffer {
+  if (family === 'solana') return getMasterKek();
+  const envName = resolveEvmKekEnvName();
+  if (!envName) throw new Error('No EVM master KEK configured');
+  return loadKekFromEnv(envName);
+}
+
+/**
+ * Unwrap a row's DEK. v1 rows (no associated data) unwrap with the family's
+ * master KEK; v2 rows require the binding to match the row they were written for.
+ */
+export function unwrapStoredDek(family: KekFamily, row: StoredWrappedDek, binding: DekBinding): string {
+  const version = row.dek_wrap_version ?? 1;
+  if (version === 1) {
+    return family === 'evm' ? unwrapEvmDek(row) : unwrapDek(row);
+  }
+  if (version !== 2) throw new Error(`Unsupported dek_wrap_version ${version}`);
+  const kek = row.dek_kek_ref === 'role'
+    ? loadKekFromEnv(roleKekEnvName(family, binding.role))
+    : masterKekFor(family);
+  return unwrapWithKek(kek, row, dekAad(binding));
 }

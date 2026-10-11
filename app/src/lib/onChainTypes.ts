@@ -91,6 +91,7 @@ export interface ProtocolEntry {
   protocolId: string;       // human-readable ID ("kamino", "jito", "marginfi")
   programId: string;        // base58 program ID of the adapter
   maxAllocationBps: number; // max % of vault this protocol can hold
+  riskTier?: number;        // venue risk tier 1..3
   approved: boolean;
 }
 

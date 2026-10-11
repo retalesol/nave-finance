@@ -10,7 +10,7 @@
 // `npm run sync-abi`). Keep them in lockstep with src/abi/*.json.
 
 import type { Abi, Address } from 'viem';
-import { decodeAbiParameters, encodeAbiParameters } from 'viem';
+import { decodeAbiParameters, encodeAbiParameters, zeroAddress } from 'viem';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, NaveGovernorAbi, NaveExecutionAbi, NaveDaoStakeAbi, Erc20Abi } from './contracts';
 import { getFactoryAddress, toAddress, assertSupportedChain } from './addresses';
 import { isEvmTestnet, type EvmChainId } from '../chain/types';
@@ -576,38 +576,8 @@ export function buildCreateStrategyRequestBootstrapEvm(
 }
 
 /**
- * One-time founder bootstrap variant of {buildCreateTransferRequestEvm}: bind a
- * passed Transfer proposal to a zero-review-window request. Founder-gated and
- * consumes the same one-time `bootstrapUsed` latch as the strategy bootstrap.
- */
-export function buildCreateTransferRequestBootstrapEvm(
-  chainId: EvmChainId,
-  execution: string,
-  proposalIndex: number | bigint,
-  asset: string,
-  recipient: string,
-  amount: bigint,
-): EvmBuildResult {
-  assertSupportedChain(chainId);
-  const executionAddr = toAddress(execution);
-  const assetAddr = toAddress(asset);
-  const recipientAddr = toAddress(recipient);
-  if (!executionAddr || !assetAddr || !recipientAddr) return notConfigured('NaveExecution');
-  return {
-    request: {
-      kind: 'evm',
-      chainId,
-      address: executionAddr,
-      abi: NaveExecutionAbi,
-      functionName: 'createTransferRequestBootstrap',
-      args: [BigInt(proposalIndex), assetAddr, recipientAddr, amount],
-    },
-  };
-}
-
-/**
- * Permissionless post-review execution of a request keyed by its proposal index.
- * `minOut` is the caller-supplied slippage floor threaded to the adapter join
+ * Post-review execution (Executive agent only) of a request keyed by its
+ * proposal index. `minOut` is the caller-supplied slippage floor threaded to the adapter join
  * (C-3/C-4). Quote it off-chain and pass it via {resolveEvmMinOut} — never a
  * hardcoded mainnet 0 (ignored for Transfer requests, enforced for Balancer/Curve).
  */
@@ -809,19 +779,9 @@ export function buildGuardianVetoRecoveryEvm(
   deadline: number | bigint = defaultGuardianActionDeadline(),
   signatures: readonly `0x${string}`[] = [],
 ): EvmBuildResult {
-  assertSupportedChain(chainId);
-  const treasuryAddr = toAddress(treasury);
-  if (!treasuryAddr) return notConfigured('NaveTreasury');
-  return {
-    request: {
-      kind: 'evm',
-      chainId,
-      address: treasuryAddr,
-      abi: NaveTreasuryAbi,
-      functionName: 'guardianVetoRecovery',
-      args: [BigInt(nonce), BigInt(deadline), signatures],
-    },
-  };
+  return buildGuardianActionEvm(chainId, treasury, {
+    actionType: EVM_GUARDIAN_ACTION.CANCEL_RECOVERY, nonce, deadline,
+  }, signatures);
 }
 
 /**
@@ -1003,7 +963,67 @@ export function defaultGuardianActionDeadline(): bigint {
   return BigInt(Math.floor(Date.now() / 1000) + 6 * 24 * 60 * 60);
 }
 
-/** `emergency_freeze` → NaveTreasury.emergencyFreeze(nonce, deadline, signatures). */
+/** `GuardianActionType` discriminants (contracts/evm/src/libraries/NaveEnums.sol). */
+export const EVM_GUARDIAN_ACTION = {
+  FREEZE: 0,
+  UNFREEZE: 1,
+  UPDATE_AGENT_STATUS: 2,
+  ROTATE_AGENT_KEY: 3,
+  DISABLE_AGENTS: 4,
+  CANCEL_RECOVERY: 5,
+  NULLIFY_AGENT: 6,
+  ENABLE_AGENTS: 7,
+  RESTORE_AGENT: 8,
+  CANCEL_AGENT_ROTATION: 9,
+} as const;
+
+export interface EvmGuardianActionParams {
+  actionType: number;
+  agentSlot?: number;
+  newStatus?: number;
+  newKey?: string;
+  nonce: number | bigint;
+  deadline?: number | bigint;
+}
+
+/**
+ * Every guardian M-of-N action → NaveTreasury.guardianAction(params, signatures).
+ * Each signature is an EIP-712 `GuardianAction` over exactly these fields.
+ */
+export function buildGuardianActionEvm(
+  chainId: EvmChainId,
+  treasury: string,
+  params: EvmGuardianActionParams,
+  signatures: readonly `0x${string}`[],
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  const treasuryAddr = toAddress(treasury);
+  if (!treasuryAddr) return notConfigured('NaveTreasury');
+  const newKey = params.newKey ? toAddress(params.newKey) : zeroAddress;
+  if (!newKey) return { request: null, error: `Invalid agent key: ${params.newKey}` };
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: treasuryAddr,
+      abi: NaveTreasuryAbi,
+      functionName: 'guardianAction',
+      args: [
+        {
+          actionType: params.actionType,
+          agentSlot: params.agentSlot ?? 0,
+          newStatus: params.newStatus ?? 0,
+          newKey,
+          nonce: BigInt(params.nonce),
+          deadline: BigInt(params.deadline ?? defaultGuardianActionDeadline()),
+        },
+        signatures,
+      ],
+    },
+  };
+}
+
+/** `emergency_freeze` → guardianAction(FREEZE). */
 export function buildEmergencyFreezeEvm(
   chainId: EvmChainId,
   treasury: string,
@@ -1011,22 +1031,12 @@ export function buildEmergencyFreezeEvm(
   deadline: number | bigint = defaultGuardianActionDeadline(),
   signatures: readonly `0x${string}`[] = [],
 ): EvmBuildResult {
-  assertSupportedChain(chainId);
-  const treasuryAddr = toAddress(treasury);
-  if (!treasuryAddr) return notConfigured('NaveTreasury');
-  return {
-    request: {
-      kind: 'evm',
-      chainId,
-      address: treasuryAddr,
-      abi: NaveTreasuryAbi,
-      functionName: 'emergencyFreeze',
-      args: [BigInt(nonce), BigInt(deadline), signatures],
-    },
-  };
+  return buildGuardianActionEvm(chainId, treasury, {
+    actionType: EVM_GUARDIAN_ACTION.FREEZE, nonce, deadline,
+  }, signatures);
 }
 
-/** `emergency_unfreeze` → NaveTreasury.emergencyUnfreeze(nonce, deadline, signatures). */
+/** `emergency_unfreeze` → guardianAction(UNFREEZE). */
 export function buildEmergencyUnfreezeEvm(
   chainId: EvmChainId,
   treasury: string,
@@ -1034,28 +1044,16 @@ export function buildEmergencyUnfreezeEvm(
   deadline: number | bigint = defaultGuardianActionDeadline(),
   signatures: readonly `0x${string}`[] = [],
 ): EvmBuildResult {
-  assertSupportedChain(chainId);
-  const treasuryAddr = toAddress(treasury);
-  if (!treasuryAddr) return notConfigured('NaveTreasury');
-  return {
-    request: {
-      kind: 'evm',
-      chainId,
-      address: treasuryAddr,
-      abi: NaveTreasuryAbi,
-      functionName: 'emergencyUnfreeze',
-      args: [BigInt(nonce), BigInt(deadline), signatures],
-    },
-  };
+  return buildGuardianActionEvm(chainId, treasury, {
+    actionType: EVM_GUARDIAN_ACTION.UNFREEZE, nonce, deadline,
+  }, signatures);
 }
 
 /**
- * Guardian M-of-N agent pause → NaveTreasury.guardianDisableAgents(nonce, deadline, signatures).
- * Replaces the removed single-actor `emergencyPauseAgents()`. Every signature
- * must be an EIP-712 `GuardianAction(DISABLE_AGENTS)` over the SAME nonce/deadline
- * (see `buildGuardianDisableAgentsTypedData` in edgeFunctionClient). The normal
- * UI path is the founder-signed `agent-admin` proxy, which collects the custodied
- * guardian signature(s) and broadcasts; this builder is the direct-wallet route.
+ * Guardian M-of-N agent pause → guardianAction(DISABLE_AGENTS). Disabling also
+ * locks the pipeline: the Executive cannot re-enable it, only a guardian
+ * ENABLE_AGENTS quorum can. The normal UI path is the founder-signed
+ * `agent-admin` proxy; this builder is the direct-wallet route.
  */
 export function buildGuardianDisableAgentsEvm(
   chainId: EvmChainId,
@@ -1064,22 +1062,12 @@ export function buildGuardianDisableAgentsEvm(
   deadline: number | bigint,
   signatures: readonly `0x${string}`[],
 ): EvmBuildResult {
-  assertSupportedChain(chainId);
-  const treasuryAddr = toAddress(treasury);
-  if (!treasuryAddr) return notConfigured('NaveTreasury');
   if (signatures.length === 0) {
-    return { request: null, error: 'guardianDisableAgents requires at least one guardian signature' };
+    return { request: null, error: 'Disabling agents requires at least one guardian signature' };
   }
-  return {
-    request: {
-      kind: 'evm',
-      chainId,
-      address: treasuryAddr,
-      abi: NaveTreasuryAbi,
-      functionName: 'guardianDisableAgents',
-      args: [BigInt(nonce), BigInt(deadline), signatures],
-    },
-  };
+  return buildGuardianActionEvm(chainId, treasury, {
+    actionType: EVM_GUARDIAN_ACTION.DISABLE_AGENTS, nonce, deadline,
+  }, signatures);
 }
 
 /** `set_asset_enabled`-equivalent → NaveTreasury.setAssetEnabled(asset, enabled). */

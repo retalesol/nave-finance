@@ -55,6 +55,9 @@ const ENTRY_ID_OFF = 0;
 const ENTRY_ID_LEN_OFF = 16;
 const ENTRY_PROGRAM_ID_OFF = 17;
 const ENTRY_MAX_BPS_OFF = 49;
+// max_allocation_bps packs the venue risk tier into its two high bits.
+import { unpackSolanaAllocation as unpackAllocation } from "./strategyCatalog.ts";
+export { unpackAllocation };
 const ENTRY_APPROVED_OFF = 51;
 
 // Scalar fields after the protocol array (computed from explicit offsets rather
@@ -99,6 +102,7 @@ export interface ApprovedProtocol {
   protocolId: string;
   programId: string;
   maxAllocationBps: number;
+  riskTier: number;
   approved: boolean;
 }
 
@@ -197,9 +201,11 @@ export async function readConstitution(
         raw.slice(base + ENTRY_PROGRAM_ID_OFF, base + ENTRY_PROGRAM_ID_OFF + 32),
       ).toBase58();
       const dv = new DataView(raw.buffer, raw.byteOffset);
-      const maxAllocationBps = dv.getUint16(base + ENTRY_MAX_BPS_OFF, true);
+      const { bps: maxAllocationBps, riskTier } = unpackAllocation(
+        dv.getUint16(base + ENTRY_MAX_BPS_OFF, true),
+      );
       const approved = raw[base + ENTRY_APPROVED_OFF] === 1;
-      protocols.push({ protocolId, programId, maxAllocationBps, approved });
+      protocols.push({ protocolId, programId, maxAllocationBps, riskTier, approved });
     }
 
     const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);

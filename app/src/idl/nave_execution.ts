@@ -1080,6 +1080,68 @@ export type NaveExecution = {
         {
           "name": "naveCoreProgram",
           "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "agentSet",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  101,
+                  110,
+                  116,
+                  95,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
         }
       ],
       "args": []
@@ -1780,6 +1842,73 @@ export type NaveExecution = {
         {
           "name": "naveCoreProgram",
           "address": "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB"
+        },
+        {
+          "name": "daoControl",
+          "docs": [
+            "guardian-locked). Owner checked by `DaoControl::is_guardian_locked`."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  111,
+                  95,
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "daoRegistry"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                107,
+                246,
+                146,
+                40,
+                40,
+                177,
+                194,
+                61,
+                12,
+                178,
+                136,
+                4,
+                131,
+                48,
+                167,
+                128,
+                141,
+                194,
+                153,
+                75,
+                63,
+                152,
+                103,
+                108,
+                220,
+                227,
+                19,
+                24,
+                42,
+                89,
+                69,
+                196
+              ]
+            }
+          }
         }
       ],
       "args": []
@@ -2656,7 +2785,17 @@ export type NaveExecution = {
           "writable": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "reasonHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "operationalHalt",
@@ -5041,6 +5180,15 @@ export type NaveExecution = {
           {
             "name": "agent",
             "type": "pubkey"
+          },
+          {
+            "name": "reasonHash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -5278,7 +5426,8 @@ export type NaveExecution = {
           {
             "name": "maxAllocationBps",
             "docs": [
-              "Maximum allocation in basis points."
+              "Maximum allocation in basis points, with the venue risk tier packed into",
+              "the two high bits. Read through `allocation_bps` / `risk_tier`."
             ],
             "type": "u16"
           },

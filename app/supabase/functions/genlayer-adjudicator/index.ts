@@ -22,6 +22,7 @@ import {
   type CustomerStatus,
   type PublicCharterInput,
   charterRpcParams,
+  counterevidenceError,
   isActionHash,
   normalizeActionHash,
   parsePublicCase,
@@ -87,6 +88,8 @@ Deno.serve(async (req: Request) => {
     if (kind !== "charter" && kind !== "halt") {
       return jsonResponse({ error: "Another check is for this move." }, 400);
     }
+    const evidenceError = counterevidenceError(input.counterevidence);
+    if (evidenceError) return jsonResponse({ error: evidenceError }, 400);
     const existing = await readRow(supabase, input, "charter");
     const pause = input.pause_reason
       ?? (typeof existing?.summary === "string" && existing.summary.trim().length >= 12
@@ -97,7 +100,7 @@ Deno.serve(async (req: Request) => {
       synced = await syncConfiguredReview("halt", {
         ...input,
         pause_reason: pause,
-        counterevidence: input.counterevidence ?? "",
+        counterevidence: (input.counterevidence ?? "").trim(),
         venue: input.venue || "move",
         amount: input.amount || "0",
         asset: input.asset || "asset",
