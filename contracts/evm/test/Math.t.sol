@@ -48,18 +48,18 @@ contract MathTest is Test {
         h = new MathHarness();
     }
 
-    // ───── performance fee: 8.5% (850 bps) of realized yield ─────────────────
+    // ───── performance fee: 15% (1500 bps) of realized yield ────────────────
     function test_perfSkim_taxesOnlyGainNotPrincipal() public pure {
-        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(1100, 1000, 1100, 850);
+        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(1100, 1000, 1100, 1500);
         assertEq(gain, 100);
-        assertEq(fee, 8);
+        assertEq(fee, 15);
     }
 
     function test_perfSkim_zeroWhenNoYield() public pure {
-        (uint256 g1, uint256 f1) = FeeMath.calculatePerformanceSkim(1000, 1000, 1000, 850);
+        (uint256 g1, uint256 f1) = FeeMath.calculatePerformanceSkim(1000, 1000, 1000, 1500);
         assertEq(g1, 0);
         assertEq(f1, 0);
-        (uint256 g2, uint256 f2) = FeeMath.calculatePerformanceSkim(900, 1000, 900, 850);
+        (uint256 g2, uint256 f2) = FeeMath.calculatePerformanceSkim(900, 1000, 900, 1500);
         assertEq(g2, 0);
         assertEq(f2, 0);
     }
@@ -67,21 +67,21 @@ contract MathTest is Test {
     function test_perfSkim_zeroWhenBpsOrAmountZero() public pure {
         (uint256 g1, uint256 f1) = FeeMath.calculatePerformanceSkim(1100, 1000, 1100, 0);
         assertEq(g1 | f1, 0);
-        (uint256 g2, uint256 f2) = FeeMath.calculatePerformanceSkim(0, 1000, 1100, 850);
+        (uint256 g2, uint256 f2) = FeeMath.calculatePerformanceSkim(0, 1000, 1100, 1500);
         assertEq(g2 | f2, 0);
     }
 
     function test_perfSkim_proportionalOnPartialWithdrawal() public pure {
-        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(600, 1000, 1200, 850);
+        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(600, 1000, 1200, 1500);
         assertEq(gain, 100);
-        assertEq(fee, 8);
+        assertEq(fee, 15);
     }
 
     function test_perfSkim_multiTrancheSumsToFullGain() public pure {
-        (uint256 gA, uint256 fA) = FeeMath.calculatePerformanceSkim(600, 1000, 1200, 850);
-        (uint256 gB, uint256 fB) = FeeMath.calculatePerformanceSkim(600, 500, 600, 850);
+        (uint256 gA, uint256 fA) = FeeMath.calculatePerformanceSkim(600, 1000, 1200, 1500);
+        (uint256 gB, uint256 fB) = FeeMath.calculatePerformanceSkim(600, 500, 600, 1500);
         assertEq(gA + gB, 200);
-        assertEq(fA + fB, 16);
+        assertEq(fA + fB, 30);
     }
 
     function test_perfSkim_fullRateTakesEntireGain() public pure {
@@ -91,12 +91,12 @@ contract MathTest is Test {
     }
 
     function test_perfSkim_pureYieldPosition() public pure {
-        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(500, 0, 500, 850);
+        (uint256 gain, uint256 fee) = FeeMath.calculatePerformanceSkim(500, 0, 500, 1500);
         assertEq(gain, 500);
-        assertEq(fee, 42);
+        assertEq(fee, 75);
     }
 
-    // ───── management fee: discrete annual 0.65% (65 bps) ────────────────────
+    // ───── management fee: canonical rate is 0 even after a year ─────────────
     function test_mgmtFee_notDueBeforeYear() public pure {
         uint256 anchor = FeeMath.floorToUtcMidnight(1_700_000_000);
         assertFalse(FeeMath.managementFeeDue(anchor, anchor));
@@ -109,12 +109,12 @@ contract MathTest is Test {
         assertTrue(FeeMath.managementFeeDue(anchor, anchor + 365 * 86_400 + 86_400));
     }
 
-    function test_mgmtFee_is65BpsOfBalance() public pure {
-        assertEq(FeeMath.annualManagementFee(1_000_000, 65), 6500);
-        assertEq(FeeMath.annualManagementFee(2_000_000, 65), 13_000);
-        assertEq(FeeMath.annualManagementFee(500_000_000, 65), 3_250_000);
-        assertEq(FeeMath.annualManagementFee(0, 65), 0);
+    function test_mgmtFee_isZeroAtCanonicalRate() public pure {
         assertEq(FeeMath.annualManagementFee(1_000_000, 0), 0);
+        assertEq(FeeMath.annualManagementFee(2_000_000, 0), 0);
+        assertEq(FeeMath.annualManagementFee(500_000_000, 0), 0);
+        uint256 anchor = FeeMath.floorToUtcMidnight(1_700_000_000);
+        assertTrue(FeeMath.managementFeeDue(anchor, anchor + 365 * 86_400));
     }
 
     function test_floorToUtcMidnight_idempotent() public pure {

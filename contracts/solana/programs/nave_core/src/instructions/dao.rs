@@ -4,9 +4,10 @@ use anchor_spl::token::{Mint, TokenAccount};
 
 use crate::constants::{
     AgentRole, GovernanceType, PrivacyMode, AGENT_COUNT, AGENT_SET_SEED, CONSTITUTION_SEED,
-    DAO_REGISTRY_SEED, DEFAULT_QUORUM_BPS, FEE_CONFIG_SEED, FORMATION_FEE_LAMPORTS,
-    GLOBAL_CONFIG_SEED, GUARDIAN_CONFIG_SEED, MAX_GUARDIAN_THRESHOLD, MAX_GUARDIAN_WALLETS,
-    TOKEN_REGISTRY_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
+    DAO_REGISTRY_SEED, DEFAULT_MANAGEMENT_FEE_BPS, DEFAULT_PERFORMANCE_FEE_BPS, DEFAULT_QUORUM_BPS,
+    FEE_CONFIG_SEED, FORMATION_FEE_LAMPORTS, GLOBAL_CONFIG_SEED, GUARDIAN_CONFIG_SEED,
+    MAX_GUARDIAN_THRESHOLD, MAX_GUARDIAN_WALLETS, TOKEN_REGISTRY_SEED, TREASURY_VAULT_SEED,
+    VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
 use crate::events::DaoInitialized;
@@ -14,7 +15,7 @@ use crate::state::{
     AgentSet, AgentSlot, DaoRegistry, FeeConfig, GuardianConfig, NaveGlobalConfig, TokenRegistry,
     TreasuryConstitution, TreasuryVault, VaultAuthority,
 };
-use crate::utils::{require_not_paused};
+use crate::utils::require_not_paused;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct InitializeDaoParams {
@@ -36,7 +37,10 @@ pub struct InitializeDaoParams {
     pub governance_type: u8,
 }
 
-pub fn initialize_dao_handler(ctx: Context<InitializeDao>, params: InitializeDaoParams) -> Result<()> {
+pub fn initialize_dao_handler(
+    ctx: Context<InitializeDao>,
+    params: InitializeDaoParams,
+) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
 
     require!(
@@ -67,7 +71,10 @@ pub fn initialize_dao_handler(ctx: Context<InitializeDao>, params: InitializeDao
         PrivacyMode::from_u8(params.privacy_mode).is_some(),
         NaveError::InvalidPrivacyMode
     );
-    require!(params.fee_recipient != Pubkey::default(), NaveError::InvalidFeeRecipient);
+    require!(
+        params.fee_recipient != Pubkey::default(),
+        NaveError::InvalidFeeRecipient
+    );
     require!(
         params.protocol_revenue_wallet != Pubkey::default(),
         NaveError::InvalidFeeRecipient
@@ -101,12 +108,11 @@ pub fn initialize_dao_handler(ctx: Context<InitializeDao>, params: InitializeDao
         .checked_add(1)
         .ok_or(NaveError::MathOverflow)?;
 
-    // Formation is now FEE-FREE: the protocol takes no profit at creation. The
-    // old SOL formation fee has been replaced by a recoverable `$99`-of-NAVE
-    // stake locked via `stake_dao_creation` immediately after this 3-step
-    // creation flow (see `DaoStakeLock`). No SOL is moved here. The
-    // `protocol_treasury` account is retained in the context only for account-
-    // list / IDL stability with existing clients; it is not debited or credited.
+    // Formation moves no SOL and does not require `stake_dao_creation`. Any
+    // later NAVE lock is optional legacy state; new treasuries are not asked
+    // to create one. The `protocol_treasury` account is retained in the
+    // context only for account-list / IDL stability with existing clients; it
+    // is not debited or credited.
     let _ = FORMATION_FEE_LAMPORTS; // retained constant (now 0); see constants.rs
     let _ = &ctx.accounts.protocol_treasury;
 
@@ -169,6 +175,11 @@ pub fn initialize_dao_extensions_handler(
         params.agent_authorities.len() == AGENT_COUNT,
         NaveError::InvalidAgentRole
     );
+    FeeConfig::validate_bps(params.management_fee_bps, params.performance_fee_bps)?;
+    FeeConfig::validate_bps(
+        params.frozen_management_fee_bps,
+        params.frozen_performance_fee_bps,
+    )?;
     crate::utils::require_agent_params_distinct(
         &params.agent_authorities,
         &ctx.accounts.dao_registry.founder,
@@ -201,10 +212,10 @@ pub fn initialize_dao_extensions_handler(
     let fee_config = &mut ctx.accounts.fee_config;
     fee_config.bump = ctx.bumps.fee_config;
     fee_config.dao = ctx.accounts.dao_registry.key();
-    fee_config.management_fee_bps = params.management_fee_bps;
-    fee_config.performance_fee_bps = params.performance_fee_bps;
-    fee_config.frozen_management_fee_bps = params.frozen_management_fee_bps;
-    fee_config.frozen_performance_fee_bps = params.frozen_performance_fee_bps;
+    fee_config.management_fee_bps = DEFAULT_MANAGEMENT_FEE_BPS;
+    fee_config.performance_fee_bps = DEFAULT_PERFORMANCE_FEE_BPS;
+    fee_config.frozen_management_fee_bps = DEFAULT_MANAGEMENT_FEE_BPS;
+    fee_config.frozen_performance_fee_bps = DEFAULT_PERFORMANCE_FEE_BPS;
     fee_config.fee_recipient = params.fee_recipient;
     fee_config.fee_asset_mint = Pubkey::default();
     fee_config.protocol_revenue_wallet = params.protocol_revenue_wallet;
@@ -245,12 +256,10 @@ pub fn initialize_dao_governance_handler(
     // Seed continuous treasury policy with safe defaults (35% reserve / 50%
     // max deployed / 20% liquidity / 30-day rebalance cadence). Governance can
     // retune these via `set_policy_parameters`.
-    constitution.min_stablecoin_reserve_bps =
-        crate::constants::DEFAULT_MIN_STABLECOIN_RESERVE_BPS;
+    constitution.min_stablecoin_reserve_bps = crate::constants::DEFAULT_MIN_STABLECOIN_RESERVE_BPS;
     constitution.max_total_deployed_bps = crate::constants::DEFAULT_MAX_TOTAL_DEPLOYED_BPS;
     constitution.min_liquidity_bps = crate::constants::DEFAULT_MIN_LIQUIDITY_BPS;
-    constitution.rebalance_frequency_secs =
-        crate::constants::DEFAULT_REBALANCE_FREQUENCY_SECONDS;
+    constitution.rebalance_frequency_secs = crate::constants::DEFAULT_REBALANCE_FREQUENCY_SECONDS;
     constitution.last_rebalance_at = 0;
     // $100 default agent operating threshold (micro-USD).
     constitution.agent_threshold_usd = 100_000_000;
@@ -586,7 +595,10 @@ pub fn record_bootstrap_usage_handler(ctx: Context<RecordBootstrapUsage>) -> Res
     )?;
 
     let dao_registry = &mut ctx.accounts.dao_registry;
-    require!(!dao_registry.bootstrap_used, NaveError::BootstrapAlreadyUsed);
+    require!(
+        !dao_registry.bootstrap_used,
+        NaveError::BootstrapAlreadyUsed
+    );
     dao_registry.bootstrap_used = true;
     dao_registry.updated_at = Clock::get()?.unix_timestamp;
 

@@ -27,18 +27,17 @@
 //   script/DeployAdapters.s.sol, sequenced after `deploy` (needs the protocol
 //   address) and before `handoff`. In a full `all` run a missing adapter script
 //   is a loud skip; `--phase adapters` fails closed if it is missing.
-//   stake: pins the wrapped-NAVE DAO creation stake on NaveProtocol via
-//   setNaveStakeConfig(NAVE_STAKE_TOKEN, REQUIRED_NAVE_STAKE) + setDaoStake(
-//   DAO_STAKE_MODULE), mirroring the Solana set_nave_mint. onlyOwner, so it MUST
-//   run BEFORE the Safe handoff. In a full `all` run a missing stake config is a
-//   loud skip (creation stays fee-free with NO stake until the Safe sets it
-//   post-handoff); `--phase stake` fails closed if it is missing.
+//   stake: records a zero required NAVE amount on NaveProtocol via
+//   setNaveStakeConfig(NAVE_STAKE_TOKEN, 0) + setDaoStake(DAO_STAKE_MODULE) so an
+//   existing lock can still be released. onlyOwner, so it MUST run BEFORE the
+//   Safe handoff. REQUIRED_NAVE_STAKE must be 0 or unset. A non-zero value fails
+//   closed. In a full `all` run a missing token/module is a loud skip.
 // Mainnet phases (chain id 1 / 8453 / 4663) require --confirm-mainnet, just
 // like the Solana cutover's strict guard.
 //
-// DAO creation is FEE-FREE (FORMATION_FEE_WEI / TREASURY_SEED_WEI must be 0 on
-// mainnet); the recoverable $99-of-NAVE stake is the creation gate. The
-// token-mint fee is separate and unchanged (0.05 ETH on mainnet).
+// DAO creation charges no protocol fee (FORMATION_FEE_WEI / TREASURY_SEED_WEI
+// must be 0 on mainnet). Forming a treasury does not lock NAVE. The token-mint
+// fee is separate and unchanged (0.05 ETH on mainnet).
 //
 // Required env (per chosen --chain-id):
 //   EVM_RPC_URL                  JSON-RPC for the target chain (single-chain), OR
@@ -58,7 +57,7 @@
 // Fee-free creation (enforced 0 below): FORMATION_FEE_WEI and TREASURY_SEED_WEI,
 //   if set on mainnet, MUST be 0 (MAINNET_FORMATION_FEE_WEI / MAINNET_TREASURY_SEED_WEI
 //   are both "0"). Creation takes no ETH profit and there is no formation-fee
-//   carve-out; the recoverable $99-of-NAVE stake (--phase stake) is the gate.
+//   carve-out. REQUIRED_NAVE_STAKE (--phase stake) must be 0.
 //   Omit both to default to 0.
 // Adapter constructor args (per chain, optional; deploys the subset that is set):
 //   AAVE_V3_POOL
@@ -334,20 +333,17 @@ function verifyRpcChainId(env, chainId) {
   }
 }
 
-// DAO creation is now FEE-FREE on every network (mirrors the Solana side where
-// FORMATION_FEE_LAMPORTS = 0). The protocol takes no ETH profit at formation;
-// creation is gated by the recoverable `$99`-of-NAVE stake (wrapped NAVE escrow
-// via the NaveDaoStake module — see `--phase stake`). The token-mint fee is a
-// SEPARATE, ongoing fee and is unchanged (mirrors the Solana token mint cost).
-const MAINNET_FORMATION_FEE_WEI = "0"; // fee-free creation (NAVE stake is the gate)
+// DAO creation charges no protocol fee on every network (mirrors the Solana side
+// where FORMATION_FEE_LAMPORTS = 0). Forming a treasury does not lock NAVE. The
+// token-mint fee is a SEPARATE, ongoing fee and is unchanged.
+const MAINNET_FORMATION_FEE_WEI = "0"; // no protocol fee at formation
 const MAINNET_TOKEN_MINT_FEE_WEI = "50000000000000000"; // 0.05 ETH (separate mint fee, unchanged)
-// No formation-fee carve-out: creation is fee-free, so there is nothing to seed
-// from a fee. The founder supplies any initial treasury deposit separately.
-const MAINNET_TREASURY_SEED_WEI = "0"; // no fee carve-out; user seed is separate
-// Canonical mainnet NAVE stake target ($99). The wrapped-NAVE token address +
-// required base-unit amount are per-chain and set via setNaveStakeConfig in the
-// `stake` phase (the amount derives from the off-chain price oracle quote).
-const DAO_STAKE_TARGET_USD = 99;
+// No formation-fee carve-out. The founder supplies any initial treasury deposit
+// separately. That deposit is not a fee.
+const MAINNET_TREASURY_SEED_WEI = "0";
+// New treasuries lock no NAVE. The stake phase writes required amount 0 and may
+// still set the moonlight module so an existing lock can be released.
+const DAO_STAKE_TARGET_USD = 0;
 
 function preflight(env, chainId, scope) {
   const meta = CHAIN_META[chainId];
@@ -372,17 +368,16 @@ function preflight(env, chainId, scope) {
     throw new Error("EVM_RPC_URL hostname suggests an out-of-scope network.");
   }
 
-  // On mainnet, creation is FEE-FREE: FORMATION_FEE_WEI and TREASURY_SEED_WEI, if
-  // set, MUST be 0 (the NAVE stake is the creation gate, not an ETH fee). The
-  // separate token-mint fee is unchanged (must equal 0.05 ETH). Fail closed.
+  // On mainnet, creation charges no protocol fee: FORMATION_FEE_WEI and
+  // TREASURY_SEED_WEI, if set, MUST be 0. The separate token-mint fee is
+  // unchanged (must equal 0.05 ETH). Fail closed.
   // (DAO-fee posture is meaningless on bridge-only chains — skipped there.)
   if (MAINNET_CHAIN_IDS.has(chainId) && !bridgeOnly) {
     const fee = (env.FORMATION_FEE_WEI || "").trim();
     if (fee && BigInt(fee) !== BigInt(MAINNET_FORMATION_FEE_WEI)) {
       throw new Error(
         `FORMATION_FEE_WEI ${fee} must equal ${MAINNET_FORMATION_FEE_WEI} ` +
-        `(creation is fee-free; the protocol takes no ETH profit at formation — the ` +
-        `recoverable $99-of-NAVE stake is the gate). Omit it to default to 0.`,
+        `(creation charges no protocol fee; gas only). Omit it to default to 0.`,
       );
     }
     const tokenMintFee = (env.TOKEN_MINT_FEE_WEI || "").trim();
@@ -842,35 +837,35 @@ function normalizeAdapters(adapters) {
 }
 
 /**
- * Pin the wrapped-NAVE DAO creation stake on NaveProtocol (mirrors the Solana
- * `set_nave_mint`). Calls setNaveStakeConfig(NAVE_STAKE_TOKEN, REQUIRED_NAVE_STAKE)
- * and setDaoStake(DAO_STAKE_MODULE). Both are onlyOwner, so this MUST run while
- * the deploy wallet is still the owner — BEFORE the Safe handoff. Verifies the
- * config on-chain after writing (fail closed). Returns null when the stake
- * config env is absent: a full `all` run skips loudly (creation stays fee-free
- * with NO stake gate until the Safe sets it post-handoff); `--phase stake` fails
- * closed so the operator knows the stake was not configured.
+ * Record a zero required NAVE amount and the moonlight module on NaveProtocol.
+ * Calls setNaveStakeConfig(NAVE_STAKE_TOKEN, 0) and setDaoStake(DAO_STAKE_MODULE).
+ * Both are onlyOwner, so this MUST run while the deploy wallet is still the
+ * owner — BEFORE the Safe handoff. Verifies the config on-chain after writing.
+ * REQUIRED_NAVE_STAKE must be 0 or unset. A non-zero value fails closed.
+ * Returns null when the token or module env is absent.
  *
- * Env: NAVE_STAKE_TOKEN (wrapped-NAVE ERC-20), REQUIRED_NAVE_STAKE (uint base
- * units, the $99-equivalent from the oracle), DAO_STAKE_MODULE (NaveDaoStake).
+ * Env: NAVE_STAKE_TOKEN (wrapped-NAVE ERC-20), REQUIRED_NAVE_STAKE (must be 0),
+ * DAO_STAKE_MODULE (NaveDaoStake, so an existing lock can be released).
  */
 function configureNaveStake(env, chainId, artifact, { explicit }) {
   const token = (env.NAVE_STAKE_TOKEN || "").trim();
-  const amount = (env.REQUIRED_NAVE_STAKE || "").trim();
+  const amountRaw = (env.REQUIRED_NAVE_STAKE || "").trim();
+  const amount = amountRaw === "" ? "0" : amountRaw;
   const module = (env.DAO_STAKE_MODULE || "").trim();
-  if (!token || !amount) {
+  if (!/^[0-9]+$/.test(amount) || BigInt(amount) !== 0n) {
+    throw new Error(
+      `REQUIRED_NAVE_STAKE must be 0 or unset (forming a treasury does not require NAVE). Got "${amountRaw}".`,
+    );
+  }
+  if (!token || !module) {
     const msg =
-      `NAVE stake config not set (NAVE_STAKE_TOKEN + REQUIRED_NAVE_STAKE) for chain ${chainId}. ` +
-      "DAO creation stays FEE-FREE with NO stake gate until configured " +
-      "(the Safe can call setNaveStakeConfig/setDaoStake post-handoff once wrapped NAVE + NaveDaoStake exist).";
+      `NAVE stake module not fully set (NAVE_STAKE_TOKEN + DAO_STAKE_MODULE) for chain ${chainId}. ` +
+      "New treasuries already lock nothing. Set the module before handoff so an existing lock can be released.";
     if (explicit) throw new Error(msg);
     console.warn(`\n  WARNING: ${msg}\n  (Continuing — re-run \`--phase stake\` BEFORE handoff once configured.)`);
     return null;
   }
   requireAddresses(env, ["NAVE_STAKE_TOKEN", "DAO_STAKE_MODULE"]);
-  if (!/^[0-9]+$/.test(amount)) {
-    throw new Error(`REQUIRED_NAVE_STAKE must be a non-negative integer (token base units), got "${amount}".`);
-  }
   if (!hasOnchainCode(env, token)) {
     throw new Error(`NAVE_STAKE_TOKEN ${token} has no on-chain bytecode on chain ${chainId} (cast code == 0x).`);
   }
@@ -1057,8 +1052,8 @@ function writeLaunchArtifact(env, chainId, artifact, adapters, naveStake, handof
     })(),
     addresses: artifact,
     adapters: normalizeAdapters(adapters),
-    // Fee-free creation gated by the recoverable $99-of-NAVE stake (null until
-    // setNaveStakeConfig is run — creation stays fee-free with no stake gate).
+    // New treasuries lock no NAVE. requiredNaveStake is 0. The module, when set,
+    // can still release an existing lock.
     naveStake: naveStake ?? null,
     authority: {
       expectedSafe: env.SAFE_ADDRESS ?? "",
@@ -1198,16 +1193,16 @@ async function main() {
   console.log(`  VITE_EVM_${net}_FACTORY_ADDRESS=${artifact.factory}`);
   if (naveStake) {
     console.log(
-      `\n  NAVE creation stake (fee-free formation): token=${naveStake.naveStakeToken}, ` +
+      `\n  NAVE stake module: token=${naveStake.naveStakeToken}, ` +
         `requiredStake=${naveStake.requiredNaveStake}` +
         (naveStake.daoStake ? `, daoStake=${naveStake.daoStake}` : ", daoStake=<unset>") +
-        ` ($${naveStake.stakeTargetUsd} target).`,
+        ". New treasuries lock nothing.",
     );
   } else {
     console.log(
-      "\n  NAVE creation stake: NOT configured — creation is fee-free with NO stake gate. " +
-        "Run `--phase stake` (NAVE_STAKE_TOKEN + REQUIRED_NAVE_STAKE [+ DAO_STAKE_MODULE]) BEFORE handoff, " +
-        "or have the Safe call setNaveStakeConfig/setDaoStake post-handoff.",
+      "\n  NAVE stake module: NOT configured. New treasuries already lock nothing. " +
+        "Run `--phase stake` (NAVE_STAKE_TOKEN + DAO_STAKE_MODULE, REQUIRED_NAVE_STAKE=0) BEFORE handoff " +
+        "so an existing lock can be released.",
     );
   }
   const adapterConfig = normalizeAdapters(adapters);

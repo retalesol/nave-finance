@@ -1,10 +1,10 @@
 {
   "chainId": 11155111,
   "daoStake": "0xd3E7E74A6A4aE4b54c6Aa32611B4DB74b34e1415",
-  "daoStakeImplementation": "0x12DA47672287c188C79c1504eE72E2aC8b446f7B",
+  "daoStakeImplementation": "0x7d4ac59bdea13419c07608c38b285ac4bb7927b4",
   "owner": "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca",
   "protocol": "0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1",
-  "requiredStake": 100000,
+  "requiredStake": 0,
   "stakeToken": "0x1d1d988e8ffE542f1f8F7932DE3A634251D4A042",
   "wired": true
 }

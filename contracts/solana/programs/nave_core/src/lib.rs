@@ -56,12 +56,11 @@ pub mod nave_core {
     }
 
     // ── DAO creation stake (Phase 3) ─────────────────────────────────────────
-    /// Lock the recoverable `$99`-of-NAVE creation stake into escrow. Called in
-    /// the same creation flow, immediately after `initialize_dao_governance`.
-    /// `amount` is the oracle-derived required NAVE (base units); the handler
-    /// enforces the escrow receives the full, non-zero transfer. Formation
-    /// itself charges NO protocol fee. `price_usd_micro` is recorded as
-    /// price-snapshot metadata only.
+    /// Optional legacy lock of NAVE into escrow. Creation does not require this
+    /// instruction. `amount` is the NAVE base units to lock; the handler
+    /// enforces the escrow receives the full transfer. Formation itself charges
+    /// NO protocol fee. `price_usd_micro` is recorded as price-snapshot
+    /// metadata only.
     pub fn stake_dao_creation(
         ctx: Context<StakeDaoCreation>,
         amount: u64,
@@ -86,7 +85,9 @@ pub mod nave_core {
     }
 
     /// Distribution wizard step 2: after the bound `MoonlightDistribution`
-    /// proposal passes, release the staked NAVE to the approved recipient.
+    /// proposal passes, release a NAVE stake that is already locked. The stake
+    /// accounts are optional; pass the program id when this treasury never
+    /// created a `DaoStakeLock`.
     pub fn execute_moonlight_distribution(
         ctx: Context<ExecuteMoonlightDistribution>,
     ) -> Result<()> {
@@ -98,13 +99,10 @@ pub mod nave_core {
         finalize_moonlight_handler(ctx)
     }
 
-    /// Founder-only reopen: restake the current `$99` of NAVE and return the DAO
-    /// to `Active`.
-    pub fn restore_dao(
-        ctx: Context<RestoreDao>,
-        amount: u64,
-        price_usd_micro: u64,
-    ) -> Result<()> {
+    /// Founder-only reopen. Returns the DAO to `Active` without a new NAVE
+    /// transfer. `amount` and `price_usd_micro` are ignored. Stake accounts are
+    /// optional; pass the program id when this treasury has no `DaoStakeLock`.
+    pub fn restore_dao(ctx: Context<RestoreDao>, amount: u64, price_usd_micro: u64) -> Result<()> {
         restore_dao_handler(ctx, amount, price_usd_micro)
     }
 
@@ -117,10 +115,7 @@ pub mod nave_core {
         update_constitution_handler(ctx, protocols, confidence_threshold, agent_threshold_usd)
     }
 
-    pub fn set_review_window(
-        ctx: Context<SetReviewWindow>,
-        review_window_secs: i64,
-    ) -> Result<()> {
+    pub fn set_review_window(ctx: Context<SetReviewWindow>, review_window_secs: i64) -> Result<()> {
         set_review_window_handler(ctx, review_window_secs)
     }
 
@@ -298,14 +293,12 @@ pub mod nave_core {
         withdraw_from_vault_handler(ctx, amount)
     }
 
-    /// Collect the discrete annual management fee (0.65%/yr of idle balance) for
-    /// one registered asset, paid in-kind to the protocol revenue wallet. Call
-    /// once per mint. Replaces the prior continuous time-prorated model.
+    /// Management-fee instruction retained so older transactions still resolve.
+    /// Transfers nothing, does not advance the annual anchor, and clears stored
+    /// fee bps to the canonical 0 management / 1500 performance pair.
     ///
-    /// NOTE: the performance fee is no longer a standalone instruction. It is an
-    /// 8.5%-of-realized-yield skim taken inline on `record_strategy_withdrawal`
-    /// (the audited strategy-withdrawal path); the old high-water-mark
-    /// `collect_performance_fee` was inert (Finding C) and has been removed.
+    /// The performance fee is a 15%-of-realized-yield skim taken inline on
+    /// `record_strategy_withdrawal`. There is no separate collector for it.
     pub fn collect_management_fee(ctx: Context<CollectManagementFee>) -> Result<()> {
         collect_management_fee_handler(ctx)
     }
@@ -344,9 +337,7 @@ pub mod nave_core {
         register_dao_token_handler(ctx, name, symbol, decimals, charge_mint_fee, initial_supply)
     }
 
-    pub fn initialize_protocol_fee_vault(
-        ctx: Context<InitializeProtocolFeeVault>,
-    ) -> Result<()> {
+    pub fn initialize_protocol_fee_vault(ctx: Context<InitializeProtocolFeeVault>) -> Result<()> {
         initialize_protocol_fee_vault_handler(ctx)
     }
 
@@ -550,7 +541,13 @@ pub mod nave_core {
         expected_amount_out: u64,
         route_data: Vec<u8>,
     ) -> Result<()> {
-        jupiter_swap_handler(ctx, amount_in, min_amount_out, expected_amount_out, route_data)
+        jupiter_swap_handler(
+            ctx,
+            amount_in,
+            min_amount_out,
+            expected_amount_out,
+            route_data,
+        )
     }
 
     pub fn init_strategy_escrow(

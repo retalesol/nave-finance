@@ -102,10 +102,10 @@ contract TestnetE2ETest is Test {
             guardianWallets: guardians,
             guardianThreshold: 2,
             agentAuthorities: [agentExec, agentFin, agentOver, agentOper],
-            managementFeeBps: 65,
-            performanceFeeBps: 850,
+            managementFeeBps: 0,
+            performanceFeeBps: 1500,
             frozenManagementFeeBps: 0,
-            frozenPerformanceFeeBps: 0,
+            frozenPerformanceFeeBps: 1500,
             protocolRevenueWallet: deployer,
             quorumBps: 1000,
             governanceType: 0

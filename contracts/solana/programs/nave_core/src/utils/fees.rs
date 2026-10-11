@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::{BPS_DENOMINATOR, SECONDS_PER_DAY, SECONDS_PER_YEAR};
 use crate::errors::NaveError;
 
-// ─── Performance fee: 8.5% of realized yield, skimmed on withdrawal ──────────
+// ─── Performance fee: 15% of realized yield, skimmed on withdrawal ───────────
 //
 // The performance fee is no longer a separate high-water-mark instruction (that
 // model was inert — Finding C). Instead, every strategy withdrawal computes the
@@ -62,13 +62,12 @@ pub fn calculate_performance_skim(
     Ok((gain_u64, fee_u64))
 }
 
-// ─── Management fee: discrete annual 0.65% of each asset balance ─────────────
+// ─── Management fee: canonical rate is 0 ─────────────────────────────────────
 //
-// Replaces the continuous time-prorated model with a discrete annual
-// collection. The fee is due once a full `SECONDS_PER_YEAR` has elapsed since
-// the (midnight-UTC-aligned) accounting anchor. The collection is per registered
-// asset, in-kind: `fee_bps` of that asset's idle treasury balance is transferred
-// to the protocol revenue wallet's ATA for the mint, and the anchor is advanced.
+// The annual-due window and the `balance * bps / 10_000` helper remain so
+// older call sites compile. The charged rate is 0, including after a full
+// year, so `collect_management_fee` transfers nothing and does not advance
+// the anchor.
 
 /// Floor a unix timestamp to the start of its UTC day (00:00:00 UTC). Used to
 /// anchor the annual management-fee cycle to a midnight boundary so that
@@ -106,42 +105,53 @@ pub fn annual_management_fee(balance: u64, fee_bps: u16) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::{DEFAULT_MANAGEMENT_FEE_BPS, DEFAULT_PERFORMANCE_FEE_BPS};
 
-    // ───── performance fee: 8.5% (850 bps) of realized yield ─────────────────
+    // ───── performance fee: 15% (1500 bps) of realized yield ─────────────────
 
     #[test]
     fn perf_skim_taxes_only_the_gain_not_principal() {
         // Position: 1_000 principal marked up to 1_100 (100 of gain). Fully
         // withdrawing 1_100: gain = 1_100 * (1_100 - 1_000) / 1_100 = 100.
-        // fee = 100 * 850 / 10_000 = 8 (8.5, floored).
-        let (gain, fee) = calculate_performance_skim(1_100, 1_000, 1_100, 850).unwrap();
+        // fee = 100 * 1500 / 10_000 = 15.
+        let (gain, fee) =
+            calculate_performance_skim(1_100, 1_000, 1_100, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!(gain, 100);
-        assert_eq!(fee, 8);
+        assert_eq!(fee, 15);
     }
 
     #[test]
     fn perf_skim_zero_when_no_yield() {
         // current_value == deposited_amount -> no realized gain -> no fee.
-        let (gain, fee) = calculate_performance_skim(1_000, 1_000, 1_000, 850).unwrap();
+        let (gain, fee) =
+            calculate_performance_skim(1_000, 1_000, 1_000, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!((gain, fee), (0, 0));
         // current_value below principal (drawdown) is likewise untaxed.
-        let (gain, fee) = calculate_performance_skim(900, 1_000, 900, 850).unwrap();
+        let (gain, fee) =
+            calculate_performance_skim(900, 1_000, 900, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!((gain, fee), (0, 0));
     }
 
     #[test]
     fn perf_skim_zero_when_bps_or_amount_zero() {
-        assert_eq!(calculate_performance_skim(1_100, 1_000, 1_100, 0).unwrap(), (0, 0));
-        assert_eq!(calculate_performance_skim(0, 1_000, 1_100, 850).unwrap(), (0, 0));
+        assert_eq!(
+            calculate_performance_skim(1_100, 1_000, 1_100, 0).unwrap(),
+            (0, 0)
+        );
+        assert_eq!(
+            calculate_performance_skim(0, 1_000, 1_100, DEFAULT_PERFORMANCE_FEE_BPS).unwrap(),
+            (0, 0)
+        );
     }
 
     #[test]
     fn perf_skim_is_proportional_on_partial_withdrawal() {
         // Position 1_000 principal marked to 1_200 (200 gain). Withdraw half the
-        // marked value (600): gain = 600 * 200 / 1_200 = 100; fee = 100*850/10000 = 8.
-        let (gain, fee) = calculate_performance_skim(600, 1_000, 1_200, 850).unwrap();
+        // marked value (600): gain = 600 * 200 / 1_200 = 100; fee = 100*1500/10000 = 15.
+        let (gain, fee) =
+            calculate_performance_skim(600, 1_000, 1_200, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!(gain, 100);
-        assert_eq!(fee, 8);
+        assert_eq!(fee, 15);
     }
 
     #[test]
@@ -149,13 +159,15 @@ mod tests {
         // Withdrawing the marked value in two tranches taxes the same total gain
         // as a single full withdrawal would. Position 1_000 -> 1_200 (200 gain).
         // Tranche A: withdraw 600 of 1_200 -> gain 100.
-        let (gain_a, fee_a) = calculate_performance_skim(600, 1_000, 1_200, 850).unwrap();
+        let (gain_a, fee_a) =
+            calculate_performance_skim(600, 1_000, 1_200, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         // After A the position is marked 600 with principal 500 (proportional
         // unwind: 600 * 1000/1200 = 500 principal left). Tranche B withdraws the
         // remaining 600 -> gain 600 * (600-500)/600 = 100.
-        let (gain_b, fee_b) = calculate_performance_skim(600, 500, 600, 850).unwrap();
+        let (gain_b, fee_b) =
+            calculate_performance_skim(600, 500, 600, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!(gain_a + gain_b, 200); // entire realized gain taxed once
-        assert_eq!(fee_a + fee_b, 16); // 8 + 8
+        assert_eq!(fee_a + fee_b, 30); // 15 + 15
     }
 
     #[test]
@@ -171,12 +183,13 @@ mod tests {
     fn perf_skim_pure_yield_position() {
         // Degenerate position with zero recorded principal (all marked value is
         // gain): the entire withdrawal is gain.
-        let (gain, fee) = calculate_performance_skim(500, 0, 500, 850).unwrap();
+        let (gain, fee) =
+            calculate_performance_skim(500, 0, 500, DEFAULT_PERFORMANCE_FEE_BPS).unwrap();
         assert_eq!(gain, 500);
-        assert_eq!(fee, 42); // 500 * 850 / 10_000 = 42 (42.5 floored)
+        assert_eq!(fee, 75); // 500 * 1500 / 10_000 = 75
     }
 
-    // ───── management fee: discrete annual 0.65% (65 bps) of balance ─────────
+    // ───── management fee: canonical 0 bps, including after a full year ──────
 
     #[test]
     fn mgmt_fee_not_due_before_a_full_year() {
@@ -189,7 +202,10 @@ mod tests {
     fn mgmt_fee_due_exactly_at_one_year() {
         let anchor = floor_to_utc_midnight(1_700_000_000);
         assert!(management_fee_due(anchor, anchor + SECONDS_PER_YEAR));
-        assert!(management_fee_due(anchor, anchor + SECONDS_PER_YEAR + 86_400));
+        assert!(management_fee_due(
+            anchor,
+            anchor + SECONDS_PER_YEAR + 86_400
+        ));
     }
 
     #[test]
@@ -199,19 +215,24 @@ mod tests {
     }
 
     #[test]
-    fn mgmt_fee_is_65_bps_of_balance() {
-        // 0.65% of 1_000_000 = 6_500.
-        assert_eq!(annual_management_fee(1_000_000, 65).unwrap(), 6_500);
-    }
-
-    #[test]
-    fn mgmt_fee_per_asset_balance_is_independent() {
-        // Multi-asset: each asset's fee is computed from its own balance at the
-        // same 65 bps rate (per-asset, in-kind).
-        assert_eq!(annual_management_fee(2_000_000, 65).unwrap(), 13_000); // USDC vault
-        assert_eq!(annual_management_fee(500_000_000, 65).unwrap(), 3_250_000); // SOL vault
-        assert_eq!(annual_management_fee(0, 65).unwrap(), 0); // empty asset
-        assert_eq!(annual_management_fee(1_000_000, 0).unwrap(), 0); // disabled
+    fn mgmt_fee_is_zero_even_after_a_year() {
+        let anchor = floor_to_utc_midnight(1_700_000_000);
+        assert!(management_fee_due(anchor, anchor + SECONDS_PER_YEAR));
+        assert_eq!(DEFAULT_MANAGEMENT_FEE_BPS, 0);
+        assert_eq!(DEFAULT_PERFORMANCE_FEE_BPS, 1500);
+        // A full year does not create a charge at the canonical rate.
+        assert_eq!(
+            annual_management_fee(1_000_000, DEFAULT_MANAGEMENT_FEE_BPS).unwrap(),
+            0
+        );
+        assert_eq!(
+            annual_management_fee(500_000_000, DEFAULT_MANAGEMENT_FEE_BPS).unwrap(),
+            0
+        );
+        assert_eq!(
+            annual_management_fee(0, DEFAULT_MANAGEMENT_FEE_BPS).unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -223,11 +244,17 @@ mod tests {
         let new_anchor = floor_to_utc_midnight(collected_at);
         assert_eq!(new_anchor, day0_midnight);
         assert_eq!(new_anchor % SECONDS_PER_DAY, 0); // midnight-aligned
-        // Immediately after collection the fee is not due again (no double-charge
-        // within the year) until a full year passes from the new anchor.
+                                                     // Immediately after collection the fee is not due again (no double-charge
+                                                     // within the year) until a full year passes from the new anchor.
         assert!(!management_fee_due(new_anchor, collected_at));
-        assert!(!management_fee_due(new_anchor, new_anchor + SECONDS_PER_YEAR - 1));
-        assert!(management_fee_due(new_anchor, new_anchor + SECONDS_PER_YEAR));
+        assert!(!management_fee_due(
+            new_anchor,
+            new_anchor + SECONDS_PER_YEAR - 1
+        ));
+        assert!(management_fee_due(
+            new_anchor,
+            new_anchor + SECONDS_PER_YEAR
+        ));
     }
 
     #[test]

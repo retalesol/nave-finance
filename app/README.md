@@ -97,7 +97,7 @@ All client-exposed vars must be prefixed with `VITE_`. See `.env.example`.
 | `VITE_SUPABASE_ANON_KEY` | yes | **not** hardcoded in source — must be set |
 | `VITE_USE_MOCKS` | no | `true` renders the demo lobby with mock data |
 | `VITE_NAVE_*_PROGRAM_ID` | no | override the canonical IDs above |
-| `VITE_NAVE_PROTOCOL_FEE_WALLET` | yes (prod) | receives the 2 SOL DAO formation fee (`global_config.treasury`) |
+| `VITE_NAVE_PROTOCOL_FEE_WALLET` | yes (prod) | protocol revenue wallet. Receives the 15% yield skim. Forming a treasury does not pay this wallet a formation fee. |
 | `NAVE_PROTOCOL_FEE_WALLET` | yes (deploy) | same wallet used by deploy/server-side tooling |
 
 > The Supabase anon key is public by design, but it is intentionally read from
@@ -150,7 +150,7 @@ NAVE_EXEC_AES_KEY              # per-agent AES keys (from generate-agent-keys)
 NAVE_FIN_AES_KEY
 NAVE_OVER_AES_KEY
 NAVE_OPS_AES_KEY
-NAVE_PROTOCOL_FEE_WALLET       # 2 SOL formation fee destination (matches on-chain treasury)
+NAVE_PROTOCOL_FEE_WALLET       # protocol revenue wallet for the 15% yield skim (not a formation fee)
 ```
 
 **Agent keys & signer crypto:** The supported layout is **`NAVE_MASTER_KEK`** on the signer plus rows in **`encrypted_agent_keys`** (see [`docs/SECRETS.md`](docs/SECRETS.md)). The per-role `NAVE_*_AES_KEY` names above are a legacy path; prefer the runbook in **SECRETS.md** when wiring new environments.

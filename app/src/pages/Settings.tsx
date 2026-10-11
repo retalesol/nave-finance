@@ -76,6 +76,7 @@ import {
   buildSetMoonlightDistribution,
   buildExecuteMoonlightDistribution,
   buildFinalizeMoonlight,
+  buildRestoreDao,
 } from '../lib/transactionBuilders';
 import { getAccount } from '@solana/spl-token';
 import { getDaoLifecyclePDA, getDaoStakeLockPDA, getProposalPDA } from '../lib/pdaDerivation';
@@ -3177,8 +3178,8 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
     return (
       <div className="nave-card p-5">
         <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-          NaveDaoStake is not configured on this chain yet (creation stake / moonlight module unset).
-          Configure the stake module at cutover to enable EVM moonlighting.
+          The moonlight module is not configured on this chain yet.
+          An existing locked stake cannot be returned until it is set. New treasuries do not lock NAVE.
         </p>
       </div>
     );
@@ -3335,7 +3336,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
             const built = buildFinalizeMoonlightEvm(evmChainId, module, daoAddress);
             const outcome = await tx.sendEvm(built, { successLabel: 'DAO moonlighted' });
             if (outcome.status === 'error') throw new Error(outcome.error ?? 'Finalize failed');
-            setNotice('DAO moonlighted. Founder can reopen by restaking.');
+            setNotice('DAO moonlighted. The founder can reopen it without a new stake.');
           })}
         >
           Finalize moonlight
@@ -3538,9 +3539,9 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
       const [distributionProposal] = getProposalPDA(daoPubkey, idx - 1);
       const naveMint = stake?.naveMint ? new PublicKey(stake.naveMint) : SOLANA_NAVE_MINT;
       const result = await buildExecuteMoonlightDistribution(daoPubkey, publicKey, naveMint, new PublicKey(recipientStr), distributionProposal);
-      const outcome = await tx.send(result, { successLabel: 'Staked NAVE released', quietMock: true });
+      const outcome = await tx.send(result, { successLabel: 'Distribution executed', quietMock: true });
       if (outcome.status === 'error') throw new Error(outcome.error ?? 'Execution failed');
-      setNotice('Staked NAVE released. Distribute remaining SOL/SPL assets via Governance, then finalize.');
+      setNotice('Distribution executed. Any locked NAVE stake has been released. Distribute remaining SOL/SPL assets via Governance, then finalize.');
     });
   }
 
@@ -3551,7 +3552,19 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
       const result = await buildFinalizeMoonlight(daoPubkey, publicKey);
       const outcome = await tx.send(result, { successLabel: 'DAO moonlighted', quietMock: true });
       if (outcome.status === 'error') throw new Error(outcome.error ?? 'Finalize failed');
-      setNotice('DAO moonlighted — it is now hidden from participants. Only the founder can reopen it by restaking.');
+      setNotice('DAO moonlighted — it is now hidden from participants. Only the founder can reopen it, and reopening does not require a new stake.');
+    });
+  }
+
+  function handleRestore() {
+    void run('restore', async () => {
+      if (!publicKey || !daoAddress) throw new Error('Connect your Solana wallet.');
+      if (!isFounder) throw new Error('Only the founder can reopen this DAO.');
+      const daoPubkey = new PublicKey(daoAddress);
+      const result = await buildRestoreDao(daoPubkey, publicKey);
+      const outcome = await tx.send(result, { successLabel: 'DAO restored', quietMock: true });
+      if (outcome.status === 'error') throw new Error(outcome.error ?? 'Restore failed');
+      setNotice('DAO restored to Active. Reopening did not move NAVE. Re-enable agents explicitly if needed.');
     });
   }
 
@@ -3571,11 +3584,11 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
           {lifecycle && <MoonlightStageBadge status={status} />}
         </div>
         <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-          Wind a DAO down through governance: an approved request halts agents, then assets and the recoverable NAVE stake are distributed to an approved recipient, and the DAO is hidden until the founder restakes to reopen it.
+          Wind a DAO down through governance: an approved request halts agents, then assets are distributed to an approved recipient. An existing locked NAVE stake, if this treasury has one, is returned with that distribution. New treasuries have nothing to return. The DAO stays hidden until the founder reopens it, which does not require a new stake.
         </p>
         {stake?.exists && stake.status !== 1 && (
           <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-            <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Recoverable NAVE stake</span>
+            <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Existing locked NAVE</span>
             <span className="nave-mono" style={{ fontSize: '13px', fontWeight: 600 }}>
               {naveBaseUnitsToUi(stake.lockedAmount.toString()).toLocaleString(undefined, { maximumFractionDigits: 4 })} NAVE
             </span>
@@ -3701,7 +3714,7 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
                 }}
               >
                 <Fi icon={busy === 'execute' ? 'spinner' : 'bolt'} style={{ fontSize: '12px' }} className={busy === 'execute' ? 'animate-spin' : ''} />
-                {busy === 'execute' ? 'Executing…' : 'Execute Distribution (Release Staked NAVE)'}
+                {busy === 'execute' ? 'Executing…' : 'Execute distribution'}
               </button>
             </div>
           )}
@@ -3712,7 +3725,7 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
       {status === 3 && (
         <div className="nave-card p-5 space-y-3" style={{ backgroundColor: 'hsl(var(--surface-0))' }}>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Staked NAVE has been released. Distribute remaining SOL, SPL tokens, and NFTs via recipient-bound Transfer proposals in Governance, then finalize.
+            Distribution is complete. Any locked NAVE stake has been released. Distribute remaining SOL, SPL tokens, and NFTs via recipient-bound Transfer proposals in Governance, then finalize.
           </p>
           {(isFounder || isDriver) && (
             <button
@@ -3735,10 +3748,26 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
 
       {/* Stage 4 — Moonlighted */}
       {status === 4 && (
-        <div className="nave-card p-5" style={{ backgroundColor: 'hsl(var(--surface-0))' }}>
+        <div className="nave-card p-5 space-y-3" style={{ backgroundColor: 'hsl(var(--surface-0))' }}>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            This DAO is moonlighted and hidden from participants. Only the founder can reopen it by restaking NAVE.
+            This DAO is moonlighted and hidden from participants. Only the founder can reopen it, and reopening does not require a new stake.
           </p>
+          {isFounder && (
+            <button
+              onClick={handleRestore}
+              disabled={!!busy}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold w-full"
+              style={{
+                fontSize: '13.5px',
+                backgroundColor: !!busy ? 'hsl(var(--muted))' : 'hsl(var(--primary))',
+                color: !!busy ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary-foreground))',
+                cursor: !!busy ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <Fi icon={busy === 'restore' ? 'spinner' : 'sun'} style={{ fontSize: '12px' }} className={busy === 'restore' ? 'animate-spin' : ''} />
+              {busy === 'restore' ? 'Reopening…' : 'Reopen DAO'}
+            </button>
+          )}
         </div>
       )}
 
@@ -3861,7 +3890,7 @@ function MoonlightSection({ daoAddress }: { daoAddress: string }) {
               <h3 className="text-display font-semibold" style={{ fontSize: '16px' }}>Set Distribution Wallet</h3>
             </div>
             <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.65 }}>
-              Enter the wallet address that will receive all assets and the recoverable NAVE stake. This creates a binding distribution proposal that DAO members must vote on.
+              Enter the wallet that will receive the treasury assets. If this treasury still has a locked NAVE stake, that stake is released to the same recipient. This creates a binding distribution proposal that DAO members must vote on.
             </p>
             <input
               value={recipient}

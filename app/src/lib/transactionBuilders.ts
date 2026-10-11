@@ -1,4 +1,4 @@
-import { BN } from '@coral-xyz/anchor';
+import BN from 'bn.js';
 import {
   PublicKey,
   TransactionInstruction,
@@ -96,8 +96,8 @@ export interface InitializeDaoParams {
   feeRecipient: PublicKey;
   /**
    * Protocol revenue wallet (owner account, NOT a token account). Destination
-   * for the 8.5% performance-fee skim and the annual 0.65% management fee (paid
-   * to its ATA per mint). Required & validated non-zero on-chain.
+   * for the 15% realized-yield skim (paid to its ATA per mint). The annual
+   * management fee is 0. Required and validated non-zero on-chain.
    */
   protocolRevenueWallet: PublicKey;
   quorumBps: number;
@@ -386,28 +386,50 @@ export async function buildSetMoonlightDistribution(
   return { instruction, programId: NAVE_CORE_PROGRAM_ID };
 }
 
+/** StakeStatus::Locked. Any other status, or a missing lock, is not releasable. */
+const STAKE_STATUS_LOCKED = 0;
+
 /** execute_moonlight_distribution — proposal creator (bound on-chain). Distribution
  *  wizard step 2: after the bound MoonlightDistribution (type 10) proposal passes,
- *  releases the staked NAVE from escrow to the approved recipient. The recipient's
- *  NAVE ATA is created idempotently as a preInstruction (payer = authority). */
+ *  releases a still-locked creation stake to the approved recipient.
+ *
+ *  `dao_stake_lock`, `stake_escrow`, and `recipient_nave_account` are optional.
+ *  When this treasury has no DaoStakeLock, or the lock is not still Locked, they
+ *  are passed as null. Anchor encodes null as the nave_core program id (same
+ *  convention as `buildMintAdditionalTokens`). A Locked stake must pass the real
+ *  accounts or the tokens stay in escrow. The recipient ATA is created only on
+ *  that release path. */
 export async function buildExecuteMoonlightDistribution(
   daoPubkey: PublicKey,
   authority: PublicKey,
   naveMint: PublicKey,
   recipient: PublicKey,
   distributionProposal: PublicKey,
+  options?: { stakeLocked?: boolean },
 ): Promise<TransactionBuildResult> {
   if (USE_MOCKS) return mock(NAVE_CORE_PROGRAM_ID);
   const { core } = getNavePrograms();
   const [globalConfig] = getNaveGlobalConfigPDA();
   const [daoLifecycle] = getDaoLifecyclePDA(daoPubkey);
-  const [daoStakeLock] = getDaoStakeLockPDA(daoPubkey);
-  const [stakeEscrow] = getStakeEscrowPDA(daoPubkey);
-  const recipientNaveAccount = getAssociatedTokenAddressSync(naveMint, recipient, false);
+  const [daoStakeLockPda] = getDaoStakeLockPDA(daoPubkey);
+  const [stakeEscrowPda] = getStakeEscrowPDA(daoPubkey);
 
-  const preInstructions = [
-    createAssociatedTokenAccountIdempotentInstruction(authority, recipientNaveAccount, recipient, naveMint),
-  ];
+  let stakeLocked = options?.stakeLocked;
+  let releaseMint = naveMint;
+  if (stakeLocked === undefined) {
+    const lock = await core.account.daoStakeLock.fetchNullable(daoStakeLockPda);
+    stakeLocked = lock != null && Number(lock.status) === STAKE_STATUS_LOCKED;
+    if (stakeLocked && lock?.naveMint) {
+      releaseMint = new PublicKey(lock.naveMint);
+    }
+  }
+
+  const recipientNaveAccount = stakeLocked
+    ? getAssociatedTokenAddressSync(releaseMint, recipient, false)
+    : null;
+  const preInstructions = recipientNaveAccount
+    ? [createAssociatedTokenAccountIdempotentInstruction(authority, recipientNaveAccount, recipient, releaseMint)]
+    : [];
 
   const instruction = await core.methods
     .executeMoonlightDistribution()
@@ -416,15 +438,19 @@ export async function buildExecuteMoonlightDistribution(
       globalConfig,
       daoRegistry: daoPubkey,
       daoLifecycle,
-      daoStakeLock,
-      stakeEscrow,
+      daoStakeLock: stakeLocked ? daoStakeLockPda : null,
+      stakeEscrow: stakeLocked ? stakeEscrowPda : null,
       recipientNaveAccount,
       distributionProposal,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
 
-  return { instruction, programId: NAVE_CORE_PROGRAM_ID, preInstructions };
+  return {
+    instruction,
+    programId: NAVE_CORE_PROGRAM_ID,
+    ...(preInstructions.length ? { preInstructions } : {}),
+  };
 }
 
 /** finalize_moonlight — founder or distribution driver. Final phase: marks the
@@ -454,23 +480,26 @@ export async function buildFinalizeMoonlight(
 }
 
 /** restore_dao(amount, price_usd_micro) — founder only. Reopen a moonlighted DAO
- *  by restaking the current `NAVE_DAO_CREATION_STAKE_USD` of NAVE into the (now-empty) escrow, returning
- *  the DAO to Active. The founder's NAVE ATA, DaoLifecycle, DaoStakeLock, and
- *  stake_escrow PDAs are derived; the escrow already exists from creation. */
+ *  without locking new NAVE. `amount` and `price_usd_micro` stay in the
+ *  instruction data and are ignored on-chain. `naveMint` is accepted so older
+ *  call sites still compile; it is not placed in the transaction.
+ *
+ *  `dao_stake_lock`, `nave_mint`, `founder_nave_account`, and `stake_escrow`
+ *  are optional. This builder passes null for all four, which Anchor encodes
+ *  as the nave_core program id, so a restore does not require a NAVE balance
+ *  or an existing lock. `token_program` stays required. Clients that still
+ *  pass the old accounts succeed and move no NAVE. */
 export async function buildRestoreDao(
   daoPubkey: PublicKey,
   founder: PublicKey,
-  naveMint: PublicKey,
-  amount: number | bigint,
-  priceUsdMicro: number | bigint,
+  _naveMint?: PublicKey | null,
+  amount: number | bigint = 0,
+  priceUsdMicro: number | bigint = 0,
 ): Promise<TransactionBuildResult> {
   if (USE_MOCKS) return mock(NAVE_CORE_PROGRAM_ID);
   const { core } = getNavePrograms();
   const [globalConfig] = getNaveGlobalConfigPDA();
   const [daoLifecycle] = getDaoLifecyclePDA(daoPubkey);
-  const [daoStakeLock] = getDaoStakeLockPDA(daoPubkey);
-  const [stakeEscrow] = getStakeEscrowPDA(daoPubkey);
-  const founderNaveAccount = getAssociatedTokenAddressSync(naveMint, founder, false);
 
   const instruction = await core.methods
     .restoreDao(toBN(amount), toBN(priceUsdMicro))
@@ -479,10 +508,10 @@ export async function buildRestoreDao(
       globalConfig,
       daoRegistry: daoPubkey,
       daoLifecycle,
-      daoStakeLock,
-      naveMint,
-      founderNaveAccount,
-      stakeEscrow,
+      daoStakeLock: null,
+      naveMint: null,
+      founderNaveAccount: null,
+      stakeEscrow: null,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
@@ -911,15 +940,12 @@ export async function buildDepositToVault(
   return { instruction, programId: NAVE_CORE_PROGRAM_ID };
 }
 
-/** collect_management_fee — discrete per-asset annual fee (0.65%/yr of the
- *  asset's idle vault balance), paid in-kind to the protocol revenue wallet's
- *  ATA for `mint`. Permissionless-but-validated: due only once per
- *  SECONDS_PER_YEAR (UTC-midnight anchored). Must be called ONCE PER MINT.
- *
- *  NOTE: the performance fee is no longer a standalone instruction — it is an
- *  8.5%-of-realized-yield skim taken inline on the strategy-withdrawal path
- *  (see withdraw_from_strategy / record_strategy_withdrawal). The old
- *  `collect_performance_fee` instruction was removed. */
+/** collect_management_fee — kept so existing transactions still decode.
+ *  The annual management fee is 0, so a call transfers nothing. It writes the
+ *  canonical 0 / 1500 bps pair back onto `fee_config` (that account must be
+ *  writable) and does not emit `ManagementFeeCollected`. A confirmed
+ *  transaction is success; do not wait on that event. The UI does not invite
+ *  this action. Realized yield is skimmed at 15% on withdrawal. */
 export async function buildCollectManagementFee(
   daoPubkey: PublicKey,
   feeCollector: PublicKey,

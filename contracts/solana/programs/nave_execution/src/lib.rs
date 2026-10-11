@@ -668,7 +668,7 @@ pub mod nave_execution {
         // NE-8 (revised for the realized-yield path): cap cumulative withdrawals
         // for this request at the deployed principal PLUS the position's marked
         // realized gain (`current_value - deposited_amount`). This lets realized
-        // GAINS flow back (the 8.5% performance skim is taken in nave_core on the
+        // GAINS flow back (the 15% performance skim is taken in nave_core on the
         // way out), which the original `<= request.amount` cap forbade
         // (Finding B). The anti-drain guarantee is preserved by nave_core's
         // per-call `current_value >= amount` floor in `record_strategy_withdrawal`:
@@ -2046,9 +2046,11 @@ pub struct WithdrawFromStrategy<'info> {
     #[account(mut)]
     pub strategy_position: AccountInfo<'info>,
 
-    /// Fee configuration (nave_core) — forwarded to `record_strategy_withdrawal`
-    /// so the 8.5% performance-fee skim can be taken on the realized yield.
+    /// Fee configuration (nave_core) — forwarded writable to
+    /// `record_strategy_withdrawal` so the 15% performance-fee skim can correct
+    /// a stale stored rate after it is taken on the realized yield.
     #[account(
+        mut,
         seeds = [FEE_CONFIG_SEED, dao_registry.key().as_ref()],
         bump = fee_config.bump,
         seeds::program = nave_core::ID,

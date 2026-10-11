@@ -20,8 +20,8 @@ its EVM function and the Foundry test that exercises it.
   quote env vars are supplied.
 - **End-to-end:** `E2ETest` (`test/E2E.t.sol`) runs the full Part E lifecycle in
   one flow on the local EVM — create DAO → deposit → proposal → vote → finalize →
-  4-agent execution pipeline → adapter deposit → yield → withdrawal + 8.5% skim →
-  Transfer proposal → management-fee collection, plus a token-governance
+  4-agent execution pipeline → adapter deposit → yield → withdrawal + 15% yield skim →
+  Transfer proposal → management-fee call (transfers nothing), plus a token-governance
   lock/vote/finalize/release path. This is the runnable substitute for a live
   Sepolia / Base Sepolia E2E (see §6 sign-off for what needs live testnet creds).
 
@@ -56,7 +56,7 @@ its EVM function and the Foundry test that exercises it.
 | `deposit_to_vault` | `NaveTreasury.deposit` (stablecoin → NAV at $1) | `TreasuryTest.test_deposit_stablecoinCreditsNavAtOneDollar` | ✅ |
 | `deposit_to_asset` | `NaveTreasury.deposit` (unified multi-asset deposit) | `ExecutionTest` (setUp funds treasury) | ⤳✅ |
 | `withdraw_from_vault` | `NaveTreasury.withdrawFromVault` → **always reverts** | `TreasuryTest.test_withdrawFromVault_alwaysReverts` | ✅ |
-| `collect_management_fee` | `NaveTreasury.collectManagementFee` (dual rate, annual, in-kind) | `TreasuryTest.test_managementFee_*` | ✅ |
+| `collect_management_fee` | `NaveTreasury.collectManagementFee` (transfers nothing; management bps are 0 in both the normal and frozen state) | `TreasuryTest.test_managementFee_*` | ✅ |
 | `set_dao_privacy` | `NaveTreasury.setDaoPrivacy` | (founder-gated setter) | ✅ |
 | `set_holder_annotation` | `NaveTreasury.setHolderAnnotation` (→ `TreasuryAdminLib`) | (annotation flow) | ✅ |
 | `approve_holder_annotation` | `NaveTreasury.approveHolderAnnotation` | (annotation flow) | ✅ |
@@ -72,7 +72,7 @@ its EVM function and the Foundry test that exercises it.
 | `update_strategy_position_value` | `NaveTreasury.updateStrategyPositionValue` | `ExecutionTest.test_withdrawWithYield_skims85pct` | ✅ |
 | `record_proposal_creation` | `NaveTreasury.recordProposalCreation` (governor-gated) | `GovernanceTest` (proposal creation) | ✅ |
 | `record_strategy_deposit` | `NaveTreasury.recordStrategyDeposit` (execution-gated) | `ExecutionTest.test_fullPipeline_deploys` | ✅ |
-| `record_strategy_withdrawal` | `NaveTreasury.recordStrategyWithdrawal` (+ 8.5% perf skim) | `ExecutionTest.test_withdrawWithYield_skims85pct` | ✅ |
+| `record_strategy_withdrawal` | `NaveTreasury.recordStrategyWithdrawal` (+ 15% of realized yield; frozen uses the same 15%; principal is not charged) | `ExecutionTest.test_withdrawWithYield_skims85pct` | ✅ |
 | `initialize_protocol_fee_vault` | ❎ `NaveProtocol` collects native fees directly (no separate PDA) | — | ❎ |
 | `set_fee_asset` | ❎ legacy (pre-redesign), unused by the in-kind fee model | — | ❎ |
 | `configure_position_targets` | ❎ Solana Kamino market/reserve binding; on EVM the adapter encodes its target | — | ❎ |
@@ -154,8 +154,8 @@ Fork-path documentation:
 | Must-have | Where enforced | Test |
 |---|---|---|
 | No direct treasury withdraw (exits only via execution) | `NaveTreasury.withdrawFromVault` reverts; funds move only via `transferForStrategy` / `executeTransfer` (`onlyExecution`) | `TreasuryTest.test_withdrawFromVault_alwaysReverts` |
-| Dual fee rates (normal vs frozen) | `NaveTreasury` mgmt/perf bps + `frozen*` rates | `TreasuryTest.test_managementFee_collects65bpsAfterYear` |
-| Performance fee = 8.5% of realized yield, skimmed on withdrawal | `FeeMath.calculatePerformanceSkim` + `recordStrategyWithdrawal` | `ExecutionTest.test_withdrawWithYield_skims85pct`, `MathTest.test_perfSkim_*` |
+| Yield fee = 15% of realized yield, skimmed on withdrawal. Principal is not charged. Frozen treasuries use the same 15%. There is no annual management fee (0 bps, normal and frozen). | `FeeMath.calculatePerformanceSkim` + `recordStrategyWithdrawal`; `collectManagementFee` transfers nothing | `ExecutionTest.test_withdrawWithYield_skims85pct`, `MathTest.test_perfSkim_*`, `TreasuryTest.test_managementFee_*` |
+| No creation stake. Forming a treasury does not lock NAVE. An existing lock is still released on moonlight. Reopening does not require a new stake. | `NaveDAOFactory.createDao` does not call `lockStake`. `restoreDao` does not demand a new lock. | `DaoStakeTest` moonlight release and restore paths |
 | 48h agent-rotation timelock | `NaveTreasury.updateAgentSet` / `applyAgentRotation` | `TreasuryTest.test_agentRotation_respects48hTimelock` |
 | Guardian M-of-N (EIP-712 + bitmask) | `NaveTreasury._verifyGuardianAction` | `TreasuryTest.test_guardianFreeze_*` |
 | Allocation bps gates + per-protocol caps | `BpsGates` + `NaveExecution._prepareStrategyDeposit` | `MathTest.test_allocationCap_*`, `test_globalLimits_*` |

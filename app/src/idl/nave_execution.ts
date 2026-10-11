@@ -3857,7 +3857,8 @@ export type NaveExecution = {
                 196
               ]
             }
-          }
+          },
+          "writable": true
         },
         {
           "name": "revenueTokenAccount",

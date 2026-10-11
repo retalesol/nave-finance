@@ -1404,10 +1404,10 @@ input[type='range']::-moz-range-thumb {
 .home-util { padding: 26px; display: flex; flex-direction: column; gap: 18px; }
 .home-util h3 { margin: 0 0 6px; font-family: var(--font-body); font-size: 16.5px; font-weight: 500; }
 .home-util p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--home-muted); }
-.home-util-grid { margin-top: 72px; }
+.home-util-grid { margin-top: 72px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 
 /* Pricing */
-.home-price-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.home-price-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-price-card { padding: 30px 28px 32px; display: flex; flex-direction: column; gap: 22px; }
 .home-price-card .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .home-price-card h3 { margin: 0; font-family: var(--font-body); font-size: 15px; font-weight: 500; }
@@ -1473,6 +1473,7 @@ input[type='range']::-moz-range-thumb {
   .home-section { padding: 80px 0; }
   .home-sec-head { margin-bottom: 40px; }
   .home-grid-3,
+  .home-util-grid,
   .home-price-grid,
   .home-dao,
   .home-const-grid,

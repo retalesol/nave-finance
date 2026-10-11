@@ -148,14 +148,48 @@ contract NaveBase is Test {
             guardianWallets: _guardians(),
             guardianThreshold: 2,
             agentAuthorities: _agents(),
-            managementFeeBps: 65,
-            performanceFeeBps: 850,
+            managementFeeBps: 0,
+            performanceFeeBps: 1500,
             frozenManagementFeeBps: 0,
-            frozenPerformanceFeeBps: 0,
+            frozenPerformanceFeeBps: 1500,
             protocolRevenueWallet: revenueWallet,
             quorumBps: 1000,
             governanceType: governanceType
         });
+    }
+
+    /// Overwrite the four packed fee bps on a live treasury. They share a slot
+    /// with `protocolRevenueWallet`; only those eight bytes are replaced.
+    /// Used to simulate a treasury created before the 0 / 1500 schedule.
+    function _writeFeeBps(
+        NaveTreasury treasury,
+        uint16 management,
+        uint16 performance,
+        uint16 frozenManagement,
+        uint16 frozenPerformance
+    ) internal {
+        uint256 needle = (uint256(treasury.performanceFeeBps()) << 16)
+            | (uint256(treasury.frozenPerformanceFeeBps()) << 48);
+        bytes32 slot;
+        bool found;
+        for (uint256 i; i < 64; i++) {
+            uint256 raw = uint256(vm.load(address(treasury), bytes32(i)));
+            uint256 seen = (raw & (uint256(type(uint16).max) << 16))
+                | (raw & (uint256(type(uint16).max) << 48));
+            if (
+                seen == needle && uint16(raw) == treasury.managementFeeBps()
+                    && uint16(raw >> 32) == treasury.frozenManagementFeeBps()
+            ) {
+                slot = bytes32(i);
+                found = true;
+                break;
+            }
+        }
+        require(found, "fee slot not found");
+        uint256 current = uint256(vm.load(address(treasury), slot));
+        uint256 packed = uint256(management) | (uint256(performance) << 16)
+            | (uint256(frozenManagement) << 32) | (uint256(frozenPerformance) << 48);
+        vm.store(address(treasury), slot, bytes32((current & ~uint256(type(uint64).max)) | packed));
     }
 
     /// Create a DAO via the factory and return its three proxies.

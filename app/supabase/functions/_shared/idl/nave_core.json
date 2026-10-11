@@ -1142,7 +1142,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "vault_authority",
@@ -3353,15 +3354,18 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "stake_escrow",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "recipient_nave_account",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "distribution_proposal",
@@ -9320,7 +9324,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "revenue_token_account",
@@ -10384,14 +10389,17 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
-          "name": "nave_mint"
+          "name": "nave_mint",
+          "optional": true
         },
         {
           "name": "founder_nave_account",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "stake_escrow",
@@ -10420,7 +10428,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "token_program",

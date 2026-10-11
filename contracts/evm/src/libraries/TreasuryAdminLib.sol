@@ -655,26 +655,20 @@ library TreasuryAdminLib {
         }
     }
 
+    /// Annual management fee is 0. Validates the asset is registered, transfers
+    /// nothing, and leaves `lastManagementFeeAt` where it is so the anchor does
+    /// not move as if a fee had been taken. Arguments are retained so the
+    /// treasury call shape stays stable.
     function collectManagementFee(
-        IERC20 asset,
+        IERC20,
         NaveStructs.AssetRecord storage a,
-        uint16 feeBps,
-        address protocolRevenueWallet,
-        uint256 idle
-    ) external returns (uint256 fee, uint256 newAnchor) {
+        uint16,
+        address,
+        uint256
+    ) external view returns (uint256 fee, uint256 newAnchor) {
         if (!a.registered) revert NaveErrors.AssetNotRegistered();
-        if (!FeeMath.managementFeeDue(a.lastManagementFeeAt, block.timestamp)) {
-            revert NaveErrors.NoManagementFeeDue();
-        }
-        fee = FeeMath.annualManagementFee(idle, feeBps);
-        if (fee == 0) revert NaveErrors.NoManagementFeeDue();
-        if (idle < fee) revert NaveErrors.InsufficientFeeAsset();
-        newAnchor = FeeMath.floorToUtcMidnight(block.timestamp);
-        a.lastManagementFeeAt = newAnchor;
-        // SafeERC20: non-standard tokens (e.g. USDT) return false instead of
-        // reverting on a failed transfer; a bare transfer would advance the fee
-        // anchor while silently skipping the actual fee movement.
-        asset.safeTransfer(protocolRevenueWallet, fee);
+        fee = 0;
+        newAnchor = a.lastManagementFeeAt;
     }
 
     function chargeTokenMintFee(INaveProtocol protocol, uint256 msgValue, address payer) external {
@@ -756,7 +750,7 @@ library TreasuryAdminLib {
         uint256 amount,
         uint256 amountUsd,
         uint256 deployedCapital,
-        uint16 feeBps,
+        uint16,
         address protocolRevenueWallet,
         uint256 totalWithdrawn
     )
@@ -769,7 +763,13 @@ library TreasuryAdminLib {
         )
     {
         (perfFeeSkimmed, newDeployedCapital, gain) = TreasuryStrategyLib.recordWithdrawal(
-            positions[adapter], assets[asset], deployedCapital, feeBps, asset, amount, amountUsd
+            positions[adapter],
+            assets[asset],
+            deployedCapital,
+            NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS,
+            asset,
+            amount,
+            amountUsd
         );
         newTotalWithdrawn = totalWithdrawn + amountUsd;
         if (perfFeeSkimmed > 0) {
@@ -791,6 +791,9 @@ library TreasuryAdminLib {
     }
 
     function validateBps(uint16 management, uint16 performance) internal pure {
-        if (management > 10_000 || performance > 10_000) revert NaveErrors.InvalidBps();
+        if (
+            management != NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS
+                || performance != NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS
+        ) revert NaveErrors.InvalidBps();
     }
 }

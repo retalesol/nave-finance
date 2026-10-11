@@ -27,7 +27,7 @@ import { base } from 'viem/chains';
 
 const SAFE = '0xd338C8d0C3e28979D1cFec2f7C66769C796db89c';
 const WNAVE = '0xFc04710C3F310f6ed84b441cf897a05807312358';
-const REQUIRED = 472010724n; // ≈ $19 @ live NAVE price (6 decimals); update via Safe anytime
+const REQUIRED = 0n; // forming a treasury locks no NAVE; the module can still release an existing lock
 
 const CHAINS = {
   base: {

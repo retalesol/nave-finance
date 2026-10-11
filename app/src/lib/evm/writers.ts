@@ -230,7 +230,10 @@ export function buildRevalueTreasuryEvm(chainId: EvmChainId, treasury: string): 
   };
 }
 
-/** Collect the time-weighted management fee in-kind for one registered asset. */
+/**
+ * Instruction shape for collectManagementFee. The annual fee is 0, so this is a
+ * no-op on chain. The app does not offer a button that calls it.
+ */
 export function buildCollectManagementFeeEvm(
   chainId: EvmChainId,
   treasury: string,

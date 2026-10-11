@@ -26,8 +26,10 @@ contract TreasuryTest is NaveBase {
         assertEq(treasury.quorumBps(), 1000);
         assertEq(treasury.guardianCount(), 3);
         assertEq(treasury.guardianThreshold(), 2);
-        assertEq(treasury.performanceFeeBps(), 850);
-        assertEq(treasury.managementFeeBps(), 65);
+        assertEq(treasury.performanceFeeBps(), 1500);
+        assertEq(treasury.frozenPerformanceFeeBps(), 1500);
+        assertEq(treasury.managementFeeBps(), 0);
+        assertEq(treasury.frozenManagementFeeBps(), 0);
         (address auth, bool op) = treasury.agent(AgentRole.Executive);
         assertEq(auth, exec);
         assertTrue(op);
@@ -156,22 +158,39 @@ contract TreasuryTest is NaveBase {
         assertEq(usdc.balanceOf(address(treasury)), 1000e6);
     }
 
-    // ── Management fee: dual rate + annual gate ───────────────────────────
-    function test_managementFee_notDueBeforeYear() public {
+    // ── Management fee is 0, including after a year ───────────────────────
+    function test_managementFee_transfersNothingAndClearsStoredBps() public {
         _registerUsdc();
         _fund(1000e6);
-        vm.expectRevert(NaveErrors.NoManagementFeeDue.selector);
+        // Simulate a treasury created before the yield-only schedule.
+        _writeFeeBps(treasury, 65, 850, 40, 100);
+        assertEq(treasury.managementFeeBps(), 65);
+        assertEq(treasury.performanceFeeBps(), 850);
+        assertEq(treasury.frozenManagementFeeBps(), 40);
+        assertEq(treasury.frozenPerformanceFeeBps(), 100);
+
+        uint256 treasuryBefore = usdc.balanceOf(address(treasury));
+        uint256 revBefore = usdc.balanceOf(revenueWallet);
         treasury.collectManagementFee(address(usdc));
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore);
+        assertEq(usdc.balanceOf(revenueWallet), revBefore);
+        assertEq(treasury.managementFeeBps(), 0);
+        assertEq(treasury.frozenManagementFeeBps(), 0);
+        assertEq(treasury.performanceFeeBps(), 1500);
+        assertEq(treasury.frozenPerformanceFeeBps(), 1500);
+
+        vm.warp(block.timestamp + 365 days + 1);
+        treasury.collectManagementFee(address(usdc));
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore, "still zero after a year");
+        assertEq(usdc.balanceOf(revenueWallet), revBefore);
     }
 
-    function test_managementFee_collects65bpsAfterYear() public {
-        _registerUsdc();
-        _fund(1000e6);
-        vm.warp(block.timestamp + 365 days + 1);
-        uint256 before = usdc.balanceOf(revenueWallet);
-        treasury.collectManagementFee(address(usdc));
-        // 0.65% of 1000e6 = 6.5e6
-        assertEq(usdc.balanceOf(revenueWallet) - before, 6_500_000);
+    function test_createDao_rejectsNonCanonicalFees() public {
+        NaveDAOFactory.CreateDaoParams memory p = _daoParams(0);
+        p.performanceFeeBps = 850;
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.InvalidBps.selector);
+        factory.createDao(p);
     }
 
     // ── Agent rotation 48h timelock ───────────────────────────────────────

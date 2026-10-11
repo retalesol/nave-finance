@@ -1,6 +1,6 @@
 /*!
- * NAVE_COPY — real homepage copy, extracted verbatim from app/src/pages/Index.tsx
- * (mainnet variant of every conditional string; NAVE_DAO_CREATION_STAKE_USD = 19).
+ * NAVE_COPY — real homepage copy, extracted from app/src/pages/Index.tsx
+ * (mainnet variant of every conditional string).
  * Icons are the Font Awesome names used by <Fi icon="..."/> so demos can map them
  * to their own glyphs. Live numbers (hero stats, token stats) are static fallbacks.
  */
@@ -129,15 +129,14 @@
       id: 'tokenomics',
       sectionLabel: 'Tokenomics',
       sectionIcon: 'coins',
-      h2: 'Nave Shares align treasury',
-      h2Italic: 'creation and governance.',
+      h2: 'Nave Shares are the',
+      h2Italic: 'protocol token.',
       // Rich paragraph: "Nave Shares" and "$NAVE" are emphasised in the source.
-      sub: 'Nave Shares (ticker $NAVE) are the protocol token of Nave, capped at a fixed maximum supply. Holders stake Nave Shares to form DAOs, activate treasury infrastructure, and participate in governance where it is enabled.',
+      sub: 'Nave Shares (ticker $NAVE) are the protocol token of Nave, capped at a fixed maximum supply. Holders vote where a treasury enables token governance. Forming a treasury does not require NAVE.',
       subParts: { lead: 'Nave Shares', tickerPrefix: ' (ticker ', ticker: '$NAVE',
-        rest: ') are the protocol token of Nave, capped at a fixed maximum supply. Holders stake Nave Shares to form DAOs, activate treasury infrastructure, and participate in governance where it is enabled.' },
+        rest: ') are the protocol token of Nave, capped at a fixed maximum supply. Holders vote where a treasury enables token governance. Forming a treasury does not require NAVE.' },
       bullets: [
         'Fixed maximum supply of 500,000 $NAVE',
-        'Recoverable $19 NAVE staked to form a DAO',
         'Governance over DAO votes and treasury decisions',
         'Fully fair launched — no team allocation or supply'
       ],
@@ -161,8 +160,6 @@
         }
       },
       utilities: [
-        { icon: 'wand-magic-sparkles', title: 'Form DAOs',
-          desc: 'Stake $19 NAVE to form a DAO and activate its treasury infrastructure. The stake is recoverable — it replaces the old SOL creation fee, not a cost.' },
         { icon: 'shield', title: 'Vote',
           desc: 'Participate in DAO votes and treasury decisions wherever token governance is enabled, aligning holders with protocol direction.' },
         { icon: 'ship', title: 'Fair Launch',
@@ -176,12 +173,10 @@
       h2: 'Aligned with treasury growth',
       sub: 'Simple, transparent pricing designed for long-term treasury retention and TVL growth.',
       cards: [
-        { title: 'DAO Formation', icon: 'wand-magic-sparkles', price: '$19 NAVE staked', period: 'recoverable — not a fee',
-          items: ['Recoverable NAVE stake, not a protocol fee', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agent deployment', 'Governance structure configuration'] },
-        { title: 'Treasury Management', icon: 'landmark', price: '0.65%', period: 'annualized',
-          items: ['Continuous agent coordination', 'Constitutional policy enforcement', 'Multisig execution layer', 'Treasury monitoring and accounting'] },
-        { title: 'Yield Performance', icon: 'signal', price: '8.5%', period: 'on generated yield',
-          items: ['SOL staking via Jito & Kamino', 'EVM lending via Aave & Compound', 'Stablecoin yield optimization', 'Auto-compounding across chains'] }
+        { title: 'Treasury Formation', icon: 'wand-magic-sparkles', price: 'Gas', period: 'to form a treasury',
+          items: ['Network gas and account rent', 'No protocol fee and no NAVE stake', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agents and governance'] },
+        { title: 'Yield', icon: 'signal', price: '15%', period: 'of realized yield',
+          items: ['Charged when a strategy position is withdrawn', 'Principal is not charged', 'The same 15% if the treasury is frozen', 'SOL staking via Jito and Kamino', 'EVM lending via Aave and Compound'] }
       ]
     },
 

@@ -99,19 +99,20 @@ prints the resolved autonomy posture; review it before proceeding.
 - [ ] `NAVE_COMPOUND_ENABLED` (default `false`) and `NAVE_COMPOUND_MIN_GAIN_BPS`
       (default `100`) reviewed for the intended harvest→redeploy posture.
 
-### 4b) Fee Model and Revenue Wallet (post-redesign)
+### 4b) Fee Model and Revenue Wallet
 
-The fee model is two in-kind fees paid to a single **protocol revenue wallet**:
+The only protocol treasury fee is **15% of realized yield**, paid in-kind to a
+single **protocol revenue wallet**:
 
-- **Performance fee — 8.5% of realized yield** (`performance_fee_bps=850`),
-  skimmed *inline on the strategy-withdrawal path* (`withdraw_from_strategy` →
+- **Yield fee — 15% of realized yield** (`performance_fee_bps=1500`), skimmed
+  *inline on the strategy-withdrawal path* (`withdraw_from_strategy` →
   `record_strategy_withdrawal`) before the remainder credits the treasury.
-  Principal is never taxed; only the proportional realized gain. There is no
-  standalone `collect_performance_fee` instruction anymore.
-- **Management fee — 0.65%/yr of idle balance** (`management_fee_bps=65`),
-  collected *discretely per registered asset* once per year (UTC-midnight
-  anchored) by the management-fee scheduler, paid in-kind to the revenue
-  wallet's ATA for each mint.
+  Realized yield is the gain above principal. Principal is not charged. Yield
+  that is still deployed is charged when it is withdrawn. Frozen treasuries use
+  the same 15%. There is no standalone `collect_performance_fee` instruction.
+- **No annual management fee** (`management_fee_bps=0`), including while a
+  treasury is frozen. Do not enable a management-fee collector.
+  `collect_management_fee` transfers nothing.
 
 The cutover preflight asserts and prints this posture; review it before proceeding.
 
@@ -119,22 +120,18 @@ The cutover preflight asserts and prints this posture; review it before proceedi
       (and optional server-side mirror `NAVE_PROTOCOL_REVENUE_WALLET`) must be a
       real, non-zero, **funded** mainnet wallet — preflight REFUSES cutover if it
       is missing, the all-zeros default, or unfunded on-chain (it pays rent for
+      its per-mint fee ATAs). It is bound into every DAO at creation and receives
+      the yield skim. It does not receive a formation fee.
 - [ ] **Revenue-wallet ATAs provisioned** for every registered asset mint (USDC,
       wSOL, …). Run before launch and after adding any new mint:
       `npm run provision:revenue-atas:dry` (preview) then `npm run provision:revenue-atas`.
-      Missing ATAs cause withdrawal skims to FAIL on-chain.
-      its per-mint fee ATAs). It is bound into every DAO at creation and receives
-      both fees.
-- [ ] Fee bps confirmed: `NAVE_PERFORMANCE_FEE_BPS=850`, `NAVE_MANAGEMENT_FEE_BPS=65`
+      Missing ATAs cause withdrawal skims to FAIL on-chain. See `docs/RUNBOOKS.md`.
+- [ ] Fee bps confirmed: `NAVE_PERFORMANCE_FEE_BPS=1500`, `NAVE_MANAGEMENT_FEE_BPS=0`
       (on-chain `FeeConfig` is authoritative; these are surfaced for review and
       validated to be integers in `[0, 10000]`).
-- [ ] **Management-fee scheduler enabled.** The worker requires
-      `NAVE_OPS_WALLET_SECRET` (the permissionless fee_collector/payer) and runs
-      every `MANAGEMENT_FEE_INTERVAL_MS` (default `3600000`, hourly) so each
-      asset is collected shortly after its annual UTC-midnight boundary. Each
-      tick is a cheap no-op when nothing is due.
-- [ ] Revenue-wallet fee ATAs provisioned for every held mint (USDC, wSOL, …)
-      so the skim/fee transfers land. See `docs/RUNBOOKS.md`.
+- [ ] **No management-fee collector.** Do not schedule `collect_management_fee`.
+      `NAVE_OPS_WALLET_SECRET` remains the agent SOL replenishment payer. It is
+      not a fee collector.
 - [ ] Agent SOL replenishment tiers reviewed: `NAVE_AGENT_SOL_REQUEST_THRESHOLD=0.05`,
       `NAVE_AGENT_SOL_OPERATE_LEVEL=0.10`, `NAVE_AGENT_SOL_FILL_CEILING=0.25`,
       `NAVE_AGENT_SOL_REFILL_TRIGGER=0.10` (must satisfy
@@ -452,12 +449,13 @@ deploying, then change them for the next chain):
       or `0` because the current EVM contracts do not implement a revoke reward.
 - [ ] `TREASURY_SEED_WEI=0` — creation is fee-free, so there is no formation-fee
       carve-out. The contracts EVM cutover REFUSES any non-zero value on mainnet.
-- [ ] **EVM NAVE stake** (`--phase stake`, BEFORE the Safe handoff): set
-      `NAVE_STAKE_TOKEN` (wrapped NAVE), `REQUIRED_NAVE_STAKE` (the $99-equivalent
-      in token base units from the price oracle), and `DAO_STAKE_MODULE`
-      (`NaveDaoStake`) so `NaveProtocol.setNaveStakeConfig` + `setDaoStake`
-      enforce the same `$99` stake. Unset ⇒ EVM creation stays fee-free with NO
-      stake gate until the Safe configures it post-handoff (loud skip on `all`).
+- [ ] **EVM creation stake is zero** (`--phase stake`, BEFORE the Safe handoff):
+      `setNaveStakeConfig` amount is `0` (`REQUIRED_NAVE_STAKE=0`). Do not set a
+      `$99` or `$19` stake, and do not leave a non-zero `requiredNaveStake` for
+      the Safe to fill in later. `createDao` does not lock NAVE even if an old
+      config is still non-zero; the follow-up owner transaction still stores `0`.
+      `formationFee` stays `0`. `DAO_STAKE_MODULE` remains the moonlight module:
+      it releases an existing lock and does not demand a new one to reopen.
 
 **Strategy-adapter deploy inputs** (the `adapters` phase invokes
 `script/DeployAdapters.s.sol`, sequenced after `deploy`, before `handoff`). Set
@@ -566,38 +564,42 @@ unless ALL of the following hold:
       `EVM_RELEASE_GATE_EMERGENCY_FREEZE`, and
       `EVM_RELEASE_GATE_EXPLORER_LINKS`.
 
-### 4e) Unified DAO creation flow — fee split, treasury seed, bootstrap
+### 4e) Unified DAO creation flow — gas, optional seed, bootstrap
 
-DAO creation is a single guided flow that seeds the new treasury from the
-formation-fee carve-out, ratifies the constitution, starts the agents, and fires
-ONE bootstrap action that bypasses the review window so the agents deploy
-immediately. The cutover preflight asserts and prints this posture
+DAO creation is a single guided flow. The founder pays only network gas (and
+account rent). There is no protocol formation fee and no NAVE or wNAVE creation
+stake. A founder may deposit their own assets as a seed. That deposit is their
+capital, not a fee. The flow can then ratify the constitution, start the agents,
+and fire ONE bootstrap action that bypasses the review window so the agents
+deploy immediately. The cutover preflight asserts and prints this posture
 (`Unified DAO creation flow …`); review it before proceeding.
 
-**Creation is FEE-FREE + recoverable $99 NAVE stake (Solana).** `initialize_dao`
-charges no SOL and `global_config.formation_fee_lamports` is `0`/inert on every
-network. The DAO creation gate is a recoverable **$99-of-NAVE stake** locked via
-`stake_dao_creation` (released to an approved recipient through the moonlighting
-lifecycle: `record_moonlight_request` → `set_moonlight_distribution` →
-`execute_moonlight_distribution` → `finalize_moonlight`; `restore_dao` re-stakes
-to reopen). The user treasury seed is a separate wizard input (wrapped to wSOL,
-deposited client-side), not a fee carve-out. `TREASURY_SEED_LAMPORTS = 0`.
+**Creation is gas and rent only.** `initialize_dao` charges no SOL and
+`global_config.formation_fee_lamports` is `0` on every network. Do not require
+`stake_dao_creation` after init. An existing locked creation stake, from a
+treasury formed before this change, is still released through moonlight
+(`record_moonlight_request` → `set_moonlight_distribution` →
+`execute_moonlight_distribution` → `finalize_moonlight`). New treasuries have
+nothing to return. `restore_dao` reopens without a new NAVE transfer. A founder
+seed is a separate deposit of their own capital, not a fee carve-out.
+`TREASURY_SEED_LAMPORTS = 0`.
 
 - [ ] **`global_config.formation_fee_lamports` is `0` on mainnet.** The app +
       contracts cutovers REFUSE `FORMATION_FEE_LAMPORTS` / `TREASURY_SEED_LAMPORTS`
       (both OPTIONAL) when set to anything but `0`.
-- [ ] **Mainnet NAVE stake mint pinned.** The contracts cutover pins the
-      canonical mainnet NAVE mint
+- [ ] **Canonical NAVE mint, not a creation stake.** The contracts cutover may
+      still pin the canonical mainnet NAVE mint
       `EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory` via `set_nave_mint`
       (`global_config.authority`-gated, run pre-handoff; standalone
-      `--phase set-nave-mint`). The devnet replica mint
+      `--phase set-nave-mint`). That pin is the protocol token. It is not a
+      stake requirement. The devnet replica mint
       `GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa` MUST NEVER appear on the
-      mainnet path (the cutover fails closed if it does). The launch artifact
-      records `naveStake.pinned`.
-- [ ] **EVM parity.** Creation is fee-free on EVM too (`formationFee` /
-      `treasurySeed` = `0`); the `$99` stake is enforced via
-      `NaveProtocol.setNaveStakeConfig` + `setDaoStake` (contracts EVM cutover
-      `--phase stake`, pre-handoff).
+      mainnet path (the cutover fails closed if it does).
+- [ ] **EVM parity.** Creation is gas-only on EVM too (`formationFee` /
+      `treasurySeed` = `0`). `NaveProtocol.setNaveStakeConfig` amount is `0`
+      (contracts EVM cutover `--phase stake`, pre-handoff). Do not enforce a
+      creation stake. Moonlight still releases an existing lock. Reopening does
+      not require a new one.
 
 **Bootstrap activation (immediate first action).** A one-time, founder-gated
 `create_execution_request(…, bootstrap=true)` snapshots `review_window = 0` so
@@ -682,27 +684,28 @@ Agent-autonomy flags (optional; safe defaults — see `.env.mainnet.cutover.exam
 - `NAVE_AUTOPROPOSE_WITHDRAW_ENABLED=false` (requires the master gate to take effect).
 - `NAVE_COMPOUND_ENABLED=false`, `NAVE_COMPOUND_MIN_GAIN_BPS=100`.
 
-Fee model + scheduler (defaults — see `.env.mainnet.cutover.example`):
+Fee model (defaults — see `.env.mainnet.cutover.example`):
 
-- `NAVE_PROTOCOL_REVENUE_WALLET` — defaults to `VITE_NAVE_PROTOCOL_FEE_WALLET`; **must be funded on mainnet.**
-- `NAVE_PERFORMANCE_FEE_BPS=850`, `NAVE_MANAGEMENT_FEE_BPS=65`.
-- `NAVE_OPS_WALLET_SECRET` — worker's permissionless management-fee collector/payer (signer/worker host).
-- `MANAGEMENT_FEE_INTERVAL_MS=3600000` (hourly management-fee check).
+- `NAVE_PROTOCOL_REVENUE_WALLET` — defaults to `VITE_NAVE_PROTOCOL_FEE_WALLET`; **must be funded on mainnet.** Receives the 15% yield skim, not a formation fee.
+- `NAVE_PERFORMANCE_FEE_BPS=1500`, `NAVE_MANAGEMENT_FEE_BPS=0`.
+- `NAVE_OPS_WALLET_SECRET` — agent SOL replenishment payer (signer/worker host). Not a management-fee collector.
 - `NAVE_AGENT_SOL_REQUEST_THRESHOLD=0.05`, `NAVE_AGENT_SOL_OPERATE_LEVEL=0.10`, `NAVE_AGENT_SOL_FILL_CEILING=0.25`, `NAVE_AGENT_SOL_REFILL_TRIGGER=0.10`.
 
-Unified DAO creation flow — FEE-FREE + recoverable $99 NAVE stake (all OPTIONAL; see 4e):
+Unified DAO creation flow — gas and rent only (see 4e):
 
-- `FORMATION_FEE_LAMPORTS=0` — creation is fee-free. Unset is fine; when set the
+- `FORMATION_FEE_LAMPORTS=0` — no protocol formation fee. Unset is fine; when set the
   cutover refuses anything but `0`.
-- `TREASURY_SEED_LAMPORTS=0` — no fee carve-out; user seed is supplied separately
-  in the creation wizard.
+- `TREASURY_SEED_LAMPORTS=0` — no protocol seed carve-out. A founder may deposit
+  their own assets as a seed. That deposit is their capital, not a fee.
 - `MAINNET_NAVE_MINT=EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory` — canonical
-  mainnet NAVE stake mint (pinned on-chain by the contracts cutover). When set it
-  must match; the devnet replica mint is refused on the mainnet path.
-- `FORMATION_FEE_WEI=0` / `TREASURY_SEED_WEI=0` — EVM creation is fee-free too.
-- `NAVE_STAKE_TOKEN` / `REQUIRED_NAVE_STAKE` / `DAO_STAKE_MODULE` — EVM wrapped-NAVE
-  stake config (contracts EVM cutover `--phase stake`, pre-handoff). Unset ⇒ EVM
-  creation stays fee-free with no stake gate until the Safe configures it.
+  mainnet NAVE mint. When set it must match; the devnet replica mint is refused
+  on the mainnet path. Pinning this mint does not create a stake requirement.
+- `FORMATION_FEE_WEI=0` / `TREASURY_SEED_WEI=0` — EVM creation has no protocol
+  formation fee either. Any value sent with creation is the founder's seed.
+- `REQUIRED_NAVE_STAKE=0` — do not set a creation stake. `NAVE_STAKE_TOKEN` /
+  `DAO_STAKE_MODULE` stay available so moonlight can release an existing lock.
+  Do not run `app/scripts/wire-dao-stake-safe.mjs` as written: it still submits
+  the old non-zero amount. Set `setNaveStakeConfig(wNAVE, 0)` from the Safe.
 - `NAVE_SWAP_ENABLED=false`, `NAVE_SWAP_MAX_SLIPPAGE_BPS=1000` — agent `jupiter_swap`
   capability (fail-closed; bootstrap first action is SOL→Jito, does not depend on it).
 

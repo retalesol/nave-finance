@@ -1,10 +1,10 @@
 {
   "chainId": 84532,
   "daoStake": "0xBdD053Ff930eb216DF9e91dBf9e6EdC31Ab1ADE9",
-  "daoStakeImplementation": "0x4606e302A53876f442731968459877Ea1906df53",
+  "daoStakeImplementation": "0x52e736facccda93eda9eeac042bec6edf1b8f0ab",
   "owner": "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca",
   "protocol": "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6",
-  "requiredStake": 100000,
+  "requiredStake": 0,
   "stakeToken": "0xC286e67D59F643a725cf4998af6Bb4f8D1354280",
   "wired": true
 }

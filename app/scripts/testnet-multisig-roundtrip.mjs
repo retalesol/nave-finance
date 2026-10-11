@@ -512,25 +512,8 @@ async function othersBlocked(publicClient, others, address, functionName, args) 
   }
 }
 
-async function ensureStake(founderWallet, publicClient, protocol, founder) {
-  const required = await read(publicClient, protocol, "requiredNaveStake");
-  if (required === 0n) return { required: "0" };
-  const token = await read(publicClient, protocol, "naveStakeToken");
-  const module = await read(publicClient, protocol, "daoStake");
-  if (token === ZERO || module === ZERO) throw new Error("stake is required but the module is unset");
-  const balance = await read(publicClient, token, "balanceOf", [founder]);
-  if (balance < required) throw new Error(`stake balance ${balance} is below ${required}`);
-  const allowance = await read(publicClient, token, "allowance", [founder, module]);
-  if (allowance < required) {
-    await send(founderWallet, publicClient, {
-      address: token,
-      abi: ABI,
-      functionName: "approve",
-      args: [module, required],
-    });
-    await readUntil(publicClient, token, "allowance", [founder, module], (value) => value >= required, "stake allowance");
-  }
-  return { required: required.toString(), token, module };
+async function ensureStake() {
+  return { required: "0" };
 }
 
 async function createDao(founderWallet, publicClient, spec, founder, guardians, agents) {
@@ -544,10 +527,10 @@ async function createDao(founderWallet, publicClient, spec, founder, guardians, 
       guardianWallets: guardians.map((account) => account.address),
       guardianThreshold: 2,
       agentAuthorities: agents.map((account) => account.address),
-      managementFeeBps: 65,
-      performanceFeeBps: 850,
+      managementFeeBps: 0,
+      performanceFeeBps: 1500,
       frozenManagementFeeBps: 0,
-      frozenPerformanceFeeBps: 0,
+      frozenPerformanceFeeBps: 1500,
       protocolRevenueWallet: founder,
       quorumBps: QUORUM_BPS,
       governanceType: 0,

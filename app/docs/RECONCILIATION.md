@@ -96,31 +96,24 @@ Pyth (stablecoins at $1):
 Fees (from emitted events, in the relevant asset's base units):
 
 The fee model was redesigned (supersedes the prior "inert performance fee"
-caveat). Both fees pay **in-kind** to the protocol revenue wallet's ATA for the
-relevant mint (`fee_config.protocol_revenue_wallet`); there is no longer a
-USD-denominated stablecoin fee path, and there is no standalone
+caveat). The yield skim pays **in-kind** to the protocol revenue wallet's ATA
+for the relevant mint (`fee_config.protocol_revenue_wallet`); there is no longer
+a USD-denominated stablecoin fee path, and there is no standalone
 `collect_performance_fee` instruction.
 
-- **Performance fee = 8.5% of realized yield, skimmed on withdrawal.**
+- **Yield fee = 15% of realized yield, skimmed on withdrawal.**
   `PerformanceFeeSkimmed { mint, withdrawn, gain, fee }` is emitted by
   `record_strategy_withdrawal`. For an `amount` unwound from a position with
   `deposited_amount` principal and `current_value` mark, the realized
   `gain = amount * (current_value − deposited_amount) / current_value` (principal
-  is untaxed) and `fee = gain * performance_fee_bps / 10_000` (default 850 bps).
-  The `fee` base units are moved straight from the strategy escrow to the revenue
-  ATA **before** the remainder credits the treasury, so the skim never enters
-  `current_nav`. Net treasury credit on a withdrawal = `amount − fee`.
-- **Management fee = 0.65%/yr of each asset balance, discrete annual, in-kind.**
-  `ManagementFeeCollected { mint, amount, balance, new_anchor }` is emitted by
-  `collect_management_fee`, once per registered mint when due
-  (`now ≥ treasury_asset.last_management_fee_at + SECONDS_PER_YEAR`). `amount =
-  management_fee_bps * idle_balance / 10_000` (default 65 bps) transferred from
-  the asset's idle `asset_vault` to the revenue ATA; the per-asset anchor is then
-  advanced to `floor_to_utc_midnight(now)`. The anchor is floored to **UTC
-  midnight** and a fee year is exactly 365 whole days, so periods stay
-  midnight-aligned; the first period is anchored at asset registration. The
-  off-chain worker triggers collection at/after the midnight boundary once due,
-  calling once per mint for multi-asset DAOs.
+  is not charged) and `fee = gain * performance_fee_bps / 10_000` (1500 bps).
+  Frozen treasuries use the same 1500 bps. The `fee` base units are moved
+  straight from the strategy escrow to the revenue ATA **before** the remainder
+  credits the treasury, so the skim never enters `current_nav`. Net treasury
+  credit on a withdrawal = `amount − fee`.
+- **No annual management fee.** `management_fee_bps` is 0.
+  `collect_management_fee` transfers nothing, including on a frozen treasury.
+  Do not subtract a management-fee transfer from NAV.
 
 ### Yield recognition semantics (read this before asserting yield)
 
@@ -171,18 +164,16 @@ window's Pyth marks (use `EPSILON` for USD rounding):
     ```
 
     Equivalently, **NAV grows by exactly the realized yield that returned to the
-    vault.** Under the redesigned performance fee, the 8.5% skim is taken at the
-    escrow on the way out and never enters the vault, so what returns to idle is
-    already net of the performance fee:
+    vault.** The 15% skim is taken at the escrow on the way out and never enters
+    the vault, so what returns to idle is already net of that yield fee:
 
     ```
     idle_returned == amount − performance_skim   (per withdrawal)
     Δcurrent_nav (from strategy activity) == realized_yield_usd − performance_skim_usd
     ```
 
-    where `performance_skim_usd = Σ value_usd(PerformanceFeeSkimmed.fee)`.
-    The annual management fee further reduces NAV when collected
-    (`Σ value_usd(ManagementFeeCollected.amount)`).
+    where `performance_skim_usd = Σ value_usd(PerformanceFeeSkimmed.fee)` and the
+    skim is 15% of the gain. There is no annual management fee to subtract.
 
 12. **Performance skim consistency.** For every `PerformanceFeeSkimmed`,
     `fee ≤ gain ≤ withdrawn`, and `gain == withdrawn * (current_value −
@@ -201,10 +192,9 @@ To assert "treasury NAV grew by exactly realized yield minus fees" for a cycle:
 3. Revalue at `t1` and snapshot `current_nav` again.
 4. Compute `realized_yield_usd = value_usd(idle_returned) − value_usd(min(idle_returned, principal_out))`
    (the portion of what came back that exceeds returned principal).
-5. Sum `fees_collected_usd` = `Σ value_usd(PerformanceFeeSkimmed.fee)` +
-   `Σ value_usd(ManagementFeeCollected.amount)` over the window. (The
-   performance skim already reduced `idle_returned`; the management fee is a
-   separate idle→revenue transfer.)
+5. Sum `fees_collected_usd` = `Σ value_usd(PerformanceFeeSkimmed.fee)` over the
+   window (15% of each realized gain). The skim already reduced `idle_returned`.
+   There is no management-fee transfer to add.
 6. Assert `current_nav(t1) − current_nav(t0) == realized_yield_usd − fees_collected_usd ± EPSILON`,
    after backing out any `deposit_to_asset` / external flow in the window.
    Note `realized_yield_usd` here is the gross gain that returned; the
@@ -229,7 +219,7 @@ DAO-custodied), but they bound what the on-chain NAV can currently express:
   through the audited path. NE-8 was revised to cap at `request.amount +
   (current_value − deposited_amount)` (the position's marked realized gain), via
   the shared `nave_core::utils::realized_yield_withdraw_cap`. Realized yield now
-  flows back, and the 8.5% performance skim takes its cut at the escrow.
+  flows back, and the 15% yield skim takes its cut at the escrow.
   This did **not** reopen the drain vector: the hard ceiling is unchanged —
   `record_strategy_withdrawal` still enforces `current_value ≥ amount` per call
   and decrements `current_value`, so a position can never return more than its
@@ -239,12 +229,12 @@ DAO-custodied), but they bound what the on-chain NAV can currently express:
 - **(C) RESOLVED — performance fee is no longer inert.** The high-water-mark
   `collect_performance_fee` (which observed `current_nav ≤ high_water_mark` right
   after every `revalue_treasury` ratchet and charged `0`) has been **removed**.
-  The performance fee is now an 8.5%-of-realized-yield skim taken inline on
+  The yield fee is a 15%-of-realized-yield skim taken inline on
   `record_strategy_withdrawal`, computed from the position's marked gain at
   withdrawal time — it does not depend on the NAV/HWM relationship at all, so the
-  revalue ratchet can no longer zero it out. `high_water_mark` is now vestigial
-  (see the field note above). Management fees moved to a discrete annual in-kind
-  model (see the Fees section) and are likewise independent of the HWM.
+  revalue ratchet can no longer zero it out. Frozen treasuries use the same 15%.
+  `high_water_mark` is now vestigial (see the field note above). There is no
+  annual management fee (see the Fees section).
 
 ## Where each value comes from
 

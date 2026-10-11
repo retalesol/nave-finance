@@ -113,7 +113,11 @@ fn mgmt_fee_anchor_advances_cleanly_across_a_decade() {
         // Collect: advance the anchor to the floored midnight of the collection.
         let new_anchor = floor_to_utc_midnight(clock);
         assert!(new_anchor > anchor, "anchor must move forward");
-        assert_eq!(new_anchor % SECONDS_PER_DAY, 0, "anchor stays midnight-aligned");
+        assert_eq!(
+            new_anchor % SECONDS_PER_DAY,
+            0,
+            "anchor stays midnight-aligned"
+        );
 
         // Immediately after collection it must not be due again (no double charge).
         assert!(!management_fee_due(new_anchor, clock));
@@ -121,7 +125,10 @@ fn mgmt_fee_anchor_advances_cleanly_across_a_decade() {
         collections += 1;
     }
 
-    assert_eq!(collections, 10, "exactly one collection per year for a decade");
+    assert_eq!(
+        collections, 10,
+        "exactly one collection per year for a decade"
+    );
     // After ten ~year hops the anchor has advanced by at least 10 fee-years.
     let elapsed_days = (anchor - floor_to_utc_midnight(1_700_000_000)) / SECONDS_PER_DAY;
     assert!(
@@ -130,24 +137,23 @@ fn mgmt_fee_anchor_advances_cleanly_across_a_decade() {
     );
 }
 
-/// The annual fee is exactly `bps` of the asset balance for every epoch, and an
-/// empty year (zero balance) yields a zero fee — which the on-chain handler then
-/// refuses to collect (so it cannot silently reset the year).
+/// The canonical management rate is 0, so every balance — including a non-empty
+/// treasury after a full year — produces a zero fee. The handler transfers
+/// nothing and does not advance the anchor.
 #[test]
 fn mgmt_fee_amount_is_stable_each_epoch_and_zero_balance_is_noop() {
     let balances = [1_000_000u64, 2_500_000, 0, 9_999_999, 1];
     for b in balances {
-        let fee = annual_management_fee(b, 65).unwrap();
-        // floor(b * 65 / 10_000)
-        assert_eq!(fee as u128, (b as u128) * 65 / 10_000);
+        let fee = annual_management_fee(b, 0).unwrap();
+        assert_eq!(fee, 0, "canonical management rate charges nothing");
     }
-    assert_eq!(annual_management_fee(0, 65).unwrap(), 0);
+    assert_eq!(annual_management_fee(0, 0).unwrap(), 0);
 }
 
 // ───────────────── multi-tranche performance skim consistency ────────────────
 
 /// Unwinding a marked-up position in N tranches taxes EXACTLY the realized gain
-/// once — the sum of the per-tranche 8.5% skims equals (within per-tranche
+/// once — the sum of the per-tranche 15% skims equals (within per-tranche
 /// flooring) the skim on the whole gain, and the position fully drains to zero.
 #[test]
 fn multi_tranche_skim_sums_to_full_gain_over_many_tranches() {
@@ -166,7 +172,8 @@ fn multi_tranche_skim_sums_to_full_gain_over_many_tranches() {
     let mut total_fee = 0u64;
     for _ in 0..6 {
         let (gain, fee) =
-            calculate_performance_skim(2_000, pos.deposited_amount, pos.current_value, 850).unwrap();
+            calculate_performance_skim(2_000, pos.deposited_amount, pos.current_value, 1500)
+                .unwrap();
         total_gain += gain;
         total_fee += fee;
         record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 2_000, 2_000, 2).unwrap();
@@ -178,9 +185,15 @@ fn multi_tranche_skim_sums_to_full_gain_over_many_tranches() {
     assert_eq!(pos.deposited_amount, 0, "principal fully returned");
     assert_eq!(asset.deployed_capital, 0);
     assert_eq!(vault.deployed_capital, 0);
-    assert_eq!(total_gain, 3_000, "exactly the realized gain is taxed, once");
-    // 8.5% of 3_000 == 255; per-tranche flooring loses at most 1 unit per tranche.
-    assert!(total_fee <= 255 && total_fee >= 255 - 6, "skim ~= 8.5% of gain (got {total_fee})");
+    assert_eq!(
+        total_gain, 3_000,
+        "exactly the realized gain is taxed, once"
+    );
+    // 15% of 3_000 == 450; per-tranche flooring loses at most 1 unit per tranche.
+    assert!(
+        total_fee <= 450 && total_fee >= 450 - 6,
+        "skim ~= 15% of gain (got {total_fee})"
+    );
 }
 
 /// A position that DRAWS DOWN below principal across its life never produces a
@@ -191,7 +204,7 @@ fn skim_never_taxes_a_drawdown_position() {
     pos.deposited_amount = 5_000;
     pos.current_value = 4_200; // 16% drawdown
     let (gain, fee) =
-        calculate_performance_skim(4_200, pos.deposited_amount, pos.current_value, 850).unwrap();
+        calculate_performance_skim(4_200, pos.deposited_amount, pos.current_value, 1500).unwrap();
     assert_eq!((gain, fee), (0, 0));
 }
 
@@ -225,10 +238,19 @@ fn nav_value_tracks_pyth_price_moves_monotonically() {
 #[test]
 fn wide_confidence_band_is_rejected_at_the_two_percent_bound() {
     let price = 150i64 * 100_000_000; // $150 encoded
-    // 1.99% accepted, 2.00% accepted (<=), 2.01% rejected.
-    assert!(confidence_within_bounds(price, (price as u64) * 199 / 10_000));
-    assert!(confidence_within_bounds(price, (price as u64) * 200 / 10_000));
-    assert!(!confidence_within_bounds(price, (price as u64) * 201 / 10_000));
+                                      // 1.99% accepted, 2.00% accepted (<=), 2.01% rejected.
+    assert!(confidence_within_bounds(
+        price,
+        (price as u64) * 199 / 10_000
+    ));
+    assert!(confidence_within_bounds(
+        price,
+        (price as u64) * 200 / 10_000
+    ));
+    assert!(!confidence_within_bounds(
+        price,
+        (price as u64) * 201 / 10_000
+    ));
     // A negative / zero price is always rejected regardless of conf.
     assert!(!confidence_within_bounds(0, 0));
     assert!(!confidence_within_bounds(-5, 0));
@@ -274,7 +296,10 @@ fn archive_then_create_never_reuses_a_proposal_pda_index() {
         while dao.proposal_count < MAX_PROPOSALS_PER_DAO {
             let idx = dao.create();
             // Every PDA index must be globally unique across the DAO's lifetime.
-            assert!(!used_indices.contains(&idx), "index {idx} reused — PDA collision!");
+            assert!(
+                !used_indices.contains(&idx),
+                "index {idx} reused — PDA collision!"
+            );
             used_indices.push(idx);
         }
         // Archive all-but-one of the active proposals.
@@ -284,7 +309,10 @@ fn archive_then_create_never_reuses_a_proposal_pda_index() {
 
     // next_proposal_index is monotonic and strictly above every used index.
     assert_eq!(dao.next_proposal_index as usize, used_indices.len());
-    assert!(used_indices.windows(2).all(|w| w[1] > w[0]), "indices strictly increasing");
+    assert!(
+        used_indices.windows(2).all(|w| w[1] > w[0]),
+        "indices strictly increasing"
+    );
     // The active-count cap was respected throughout (never exceeded MAX).
     assert!(dao.proposal_count <= MAX_PROPOSALS_PER_DAO);
 }
@@ -303,8 +331,14 @@ fn active_proposal_count_growth_is_bounded_by_max_per_dao() {
     dao.archive(10);
     assert_eq!(dao.proposal_count, MAX_PROPOSALS_PER_DAO - 10);
     let reused = dao.create();
-    assert_eq!(reused, before_index, "new proposal uses the next monotonic index");
-    assert!(reused >= MAX_PROPOSALS_PER_DAO, "and never an archived slot index");
+    assert_eq!(
+        reused, before_index,
+        "new proposal uses the next monotonic index"
+    );
+    assert!(
+        reused >= MAX_PROPOSALS_PER_DAO,
+        "and never an archived slot index"
+    );
 }
 
 // ───────────── guardian-action threshold SNAPSHOT semantics ──────────────────
@@ -354,9 +388,13 @@ fn guardian_action_requires_snapshotted_threshold_not_live() {
     assert!(action.record_signature(i0).is_err());
 
     // Two more distinct guardians reach the snapshot threshold.
-    action.record_signature(action.guardian_index(&g[1]).unwrap()).unwrap();
+    action
+        .record_signature(action.guardian_index(&g[1]).unwrap())
+        .unwrap();
     assert!(action.signature_count < action.threshold);
-    action.record_signature(action.guardian_index(&g[2]).unwrap()).unwrap();
+    action
+        .record_signature(action.guardian_index(&g[2]).unwrap())
+        .unwrap();
     assert_eq!(action.signature_count, action.threshold, "now executable");
 }
 
@@ -392,7 +430,10 @@ fn cancel_guardian_action_respects_staleness_window() {
     let created = action.created_at;
     // Fresh, unexecuted: cannot cancel (founder can't kill an in-flight freeze).
     assert!(!can_cancel(&action, created));
-    assert!(!can_cancel(&action, created + GUARDIAN_ACTION_STALE_SECS - 1));
+    assert!(!can_cancel(
+        &action,
+        created + GUARDIAN_ACTION_STALE_SECS - 1
+    ));
     // Exactly at the 7-day stale boundary: cancellable for rent reclaim.
     assert!(can_cancel(&action, created + GUARDIAN_ACTION_STALE_SECS));
 
@@ -447,12 +488,12 @@ fn reserve_floor_ok(nav_usd: u128, reserve_bps: u16, idle_after_usd: u128) -> bo
 #[test]
 fn stablecoin_reserve_floor_blocks_overdeploy() {
     let nav = 1_000_000u128; // $1.00 (micro-USD) for ratio simplicity
-    // 35% reserve floor (the DAO default).
+                             // 35% reserve floor (the DAO default).
     assert!(reserve_floor_ok(nav, 3_500, 350_000)); // idle exactly 35% — ok
     assert!(reserve_floor_ok(nav, 3_500, 650_000)); // idle 65% — ok
     assert!(!reserve_floor_ok(nav, 3_500, 349_999)); // idle just under 35% — breach
     assert!(!reserve_floor_ok(nav, 3_500, 0)); // fully drained — breach
-    // A disabled (0 bps) reserve floor imposes no constraint.
+                                               // A disabled (0 bps) reserve floor imposes no constraint.
     assert!(reserve_floor_ok(nav, 0, 0));
 }
 

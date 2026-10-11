@@ -44,7 +44,11 @@ pub fn transfer_vault_to_escrow<'info>(
     dao_key: &Pubkey,
     amount: u64,
 ) -> Result<()> {
-    let seeds = &[VAULT_AUTHORITY_SEED, dao_key.as_ref(), &[vault_authority.bump]];
+    let seeds = &[
+        VAULT_AUTHORITY_SEED,
+        dao_key.as_ref(),
+        &[vault_authority.bump],
+    ];
     let signer = &[&seeds[..]];
     token::transfer(
         CpiContext::new_with_signer(
@@ -93,7 +97,11 @@ pub fn transfer_escrow_to_account<'info>(
     dao_key: &Pubkey,
     amount: u64,
 ) -> Result<()> {
-    let seeds = &[VAULT_AUTHORITY_SEED, dao_key.as_ref(), &[vault_authority.bump]];
+    let seeds = &[
+        VAULT_AUTHORITY_SEED,
+        dao_key.as_ref(),
+        &[vault_authority.bump],
+    ];
     let signer = &[&seeds[..]];
     token::transfer(
         CpiContext::new_with_signer(
@@ -176,7 +184,7 @@ pub fn record_strategy_withdrawal(
 
     // Reduce principal PROPORTIONALLY to the marked value being unwound, rather
     // than by the full `amount`. This is what keeps the realized-gain
-    // attribution (and therefore the 8.5% performance skim) consistent across
+    // attribution (and therefore the 15% performance skim) consistent across
     // multiple partial withdrawals of a marked-up position: a withdrawal of
     // `amount` out of `current_value` returns `amount * deposited / current_value`
     // of principal and the remainder as realized gain. With full-`amount`
@@ -215,9 +223,7 @@ pub fn record_strategy_withdrawal(
         .checked_sub(principal_unwound.min(treasury_asset.deployed_capital))
         .ok_or(NaveError::InsufficientVaultBalance)?;
 
-    treasury_vault.deployed_capital = treasury_vault
-        .deployed_capital
-        .saturating_sub(amount_usd);
+    treasury_vault.deployed_capital = treasury_vault.deployed_capital.saturating_sub(amount_usd);
 
     Ok(())
 }
@@ -296,7 +302,10 @@ pub fn enforce_global_deployment_limits(
             .ok_or(NaveError::MathOverflow)?
             .checked_div(BPS_DENOMINATOR)
             .ok_or(NaveError::MathOverflow)?;
-        require!(projected <= max_deployable, NaveError::LiquidityFloorBreached);
+        require!(
+            projected <= max_deployable,
+            NaveError::LiquidityFloorBreached
+        );
     }
 
     Ok(())
@@ -308,7 +317,7 @@ pub fn enforce_global_deployment_limits(
 /// (`position_value - position_deposited`, saturating at 0 for a drawdown).
 ///
 /// This loosens the historical `<= request_principal` cap so realized GAINS can
-/// flow back through the audited withdrawal path (the 8.5% skim is taken on the
+/// flow back through the audited withdrawal path (the 15% skim is taken on the
 /// way out). It does NOT reopen a drain vector: the absolute anti-drain ceiling
 /// remains nave_core's per-call `current_value >= amount` floor in
 /// `record_strategy_withdrawal`, which guarantees a position can never return
@@ -326,10 +335,7 @@ pub fn realized_yield_withdraw_cap(
 }
 
 /// Derive strategy escrow token account PDA seeds.
-pub fn strategy_escrow_seeds<'a>(
-    dao_key: &'a Pubkey,
-    protocol_id: &'a [u8],
-) -> [&'a [u8]; 3] {
+pub fn strategy_escrow_seeds<'a>(dao_key: &'a Pubkey, protocol_id: &'a [u8]) -> [&'a [u8]; 3] {
     [STRATEGY_ESCROW_SEED, dao_key.as_ref(), protocol_id]
 }
 
@@ -447,7 +453,8 @@ mod tests {
         let mut pos = make_position();
 
         // Deploy 100 base units valued at 100 USD (micro-USD here for brevity).
-        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW).unwrap();
+        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW)
+            .unwrap();
         assert_eq!(pos.deposited_amount, 100);
         assert_eq!(pos.current_value, 100);
         assert_eq!(asset.deployed_capital, 100);
@@ -470,7 +477,8 @@ mod tests {
         let mut asset = make_asset();
         let mut pos = make_position();
 
-        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW).unwrap();
+        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW)
+            .unwrap();
         // Simulate `update_strategy_position_value` marking the position up.
         pos.current_value = 105;
 
@@ -494,7 +502,9 @@ mod tests {
         pos.deposited_amount = 100;
         pos.current_value = 100;
 
-        assert!(record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 101, 101, NOW).is_err());
+        assert!(
+            record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 101, 101, NOW).is_err()
+        );
         // State is unchanged on the rejected path (require! short-circuits first).
         assert_eq!(pos.current_value, 100);
     }
@@ -522,7 +532,7 @@ mod tests {
     fn multi_tranche_skim_matches_total_realized_gain() {
         use crate::utils::calculate_performance_skim;
         // Full marked-up position unwound in two tranches; the sum of the per-
-        // tranche 8.5% skims must equal the skim on the whole realized gain
+        // tranche 15% skims must equal the skim on the whole realized gain
         // (no over-/under-tax), which proportional principal reduction guarantees.
         let mut vault = make_vault_with_deployed(1_000_000, 1_000);
         let mut asset = make_asset();
@@ -533,15 +543,15 @@ mod tests {
 
         // Tranche A: withdraw 600.
         let (gain_a, fee_a) =
-            calculate_performance_skim(600, pos.deposited_amount, pos.current_value, 850).unwrap();
+            calculate_performance_skim(600, pos.deposited_amount, pos.current_value, 1500).unwrap();
         record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 600, 600, NOW).unwrap();
         // Tranche B: withdraw the rest (600).
         let (gain_b, fee_b) =
-            calculate_performance_skim(600, pos.deposited_amount, pos.current_value, 850).unwrap();
+            calculate_performance_skim(600, pos.deposited_amount, pos.current_value, 1500).unwrap();
         record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 600, 600, NOW).unwrap();
 
         assert_eq!(gain_a + gain_b, 200); // exactly the realized gain, taxed once
-        assert_eq!(fee_a + fee_b, 16); // 8 + 8 (8.5% of 200, floored per tranche)
+        assert_eq!(fee_a + fee_b, 30); // 15 + 15 (15% of 200)
         assert_eq!(pos.deposited_amount, 0);
         assert_eq!(pos.current_value, 0);
         assert_eq!(asset.deployed_capital, 0);
@@ -553,7 +563,8 @@ mod tests {
         let mut asset = make_asset();
         let mut pos = make_position();
 
-        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW).unwrap();
+        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW)
+            .unwrap();
         record_strategy_withdrawal(&mut vault, &mut asset, &mut pos, 40, 40, NOW).unwrap();
 
         assert_eq!(pos.deposited_amount, 60);
@@ -568,7 +579,8 @@ mod tests {
         let mut asset = make_asset();
         let mut pos = make_position();
 
-        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW).unwrap();
+        record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 100, 100, NOW)
+            .unwrap();
         record_strategy_deposit(&mut vault, &mut asset, &mut pos, b"kamino", 50, 50, NOW).unwrap();
 
         assert_eq!(pos.deposited_amount, 150);
@@ -591,7 +603,7 @@ mod tests {
         let p = Pubkey::new_unique();
         let c = make_constitution(p, 5000);
         let v = make_vault(1_000); // cap = 500
-        // 400 already deployed + 200 new = 600 > 500 -> reject
+                                   // 400 already deployed + 200 new = 600 > 500 -> reject
         assert!(enforce_allocation_cap(&c, &v, &p, 400, 200).is_err());
         // 400 + 100 = 500 == cap -> ok
         assert!(enforce_allocation_cap(&c, &v, &p, 400, 100).is_ok());

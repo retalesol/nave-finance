@@ -1148,7 +1148,8 @@ export type NaveCore = {
                 "path": "daoRegistry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "vaultAuthority",
@@ -3359,15 +3360,18 @@ export type NaveCore = {
                 "path": "daoRegistry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "stakeEscrow",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "recipientNaveAccount",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "distributionProposal",
@@ -9326,7 +9330,8 @@ export type NaveCore = {
                 "path": "daoRegistry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "revenueTokenAccount",
@@ -10390,14 +10395,17 @@ export type NaveCore = {
                 "path": "daoRegistry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
-          "name": "naveMint"
+          "name": "naveMint",
+          "optional": true
         },
         {
           "name": "founderNaveAccount",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "stakeEscrow",
@@ -10426,7 +10434,8 @@ export type NaveCore = {
                 "path": "daoRegistry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "tokenProgram",

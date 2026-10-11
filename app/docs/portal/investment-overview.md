@@ -38,7 +38,7 @@ The opportunity scales with on-chain treasury value and with the number of organ
 
 ## Business surface
 
-The platform model includes a formation step for new treasuries and ongoing operation under each treasury's constitution. As the system moves from devnet beta toward mainnet, the monetization and go-to-market surface should be evaluated alongside the maturity milestones rather than assumed; this portal does not overstate revenue mechanics that are still being finalized.
+The platform model includes a formation step for new treasuries and ongoing operation under each treasury's constitution. Forming a treasury costs only network gas (and account rent). The only protocol treasury fee is 15% of realized yield on strategy withdrawal. Principal is not charged, and there is no annual management fee. Readiness still belongs with the maturity milestones in [Product Maturity](/docs/product-maturity).
 
 ## What to diligence next
 

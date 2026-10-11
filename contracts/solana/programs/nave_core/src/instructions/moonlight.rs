@@ -1,14 +1,15 @@
 //! DAO moonlighting lifecycle (Phase 5).
 //!
 //! Moonlighting is a first-class DAO lifecycle (NOT an overload of the emergency
-//! freeze). It lets a DAO be wound down and its assets — including the
-//! recoverable `$99` NAVE creation stake — distributed to an approved recipient
-//! after two binding governance votes, then hidden from participants until the
-//! founder restakes to reopen it.
+//! freeze). It lets a DAO be wound down and its assets distributed to an
+//! approved recipient after two binding governance votes, then hidden from
+//! participants until the founder reopens it. New treasuries do not lock NAVE.
+//! A stake that is already locked is still released. Reopening does not lock
+//! a new one.
 //!
 //! State machine (see `MoonlightStatus`): `Active → Requested →
 //! DistributionPending → Distributing → Moonlighted`, with `Moonlighted →
-//! Active` only via `restore_dao` (founder restakes the current `$99`).
+//! Active` only via `restore_dao` (no new NAVE transfer).
 //!
 //! Lifecycle transitions are bound to PASSED `nave_governance` proposals read
 //! off-chain-agnostic via `GovernanceProposalLayout` (the same wire mirror used
@@ -23,26 +24,23 @@ use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::solana_program::program::invoke;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
+use crate::constants::nave_governance_program;
 use crate::constants::{
     gov_proposal_type, MoonlightStatus, StakeStatus, AGENT_SET_SEED, DAO_LIFECYCLE_SEED,
-    DAO_REGISTRY_SEED, DAO_STAKE_LOCK_SEED, GLOBAL_CONFIG_SEED, MIN_DAO_STAKE_NAVE_BASE_UNITS,
-    STAKE_ESCROW_SEED,
+    DAO_REGISTRY_SEED, DAO_STAKE_LOCK_SEED, GLOBAL_CONFIG_SEED, STAKE_ESCROW_SEED,
 };
 use crate::errors::NaveError;
 use crate::events::{
-    DaoMoonlighted, DaoRestored, DaoStakeLocked, DaoStakeReleased, MoonlightDistributed,
-    MoonlightDistributionSet, MoonlightRequested,
+    DaoMoonlighted, DaoRestored, DaoStakeReleased, MoonlightDistributed, MoonlightDistributionSet,
+    MoonlightRequested,
 };
 use crate::state::{
-    AgentSet, DaoLifecycle, DaoRegistry, DaoStakeLock, GovernanceProposalLayout,
-    NaveGlobalConfig,
+    AgentSet, DaoLifecycle, DaoRegistry, DaoStakeLock, GovernanceProposalLayout, NaveGlobalConfig,
 };
-use crate::constants::nave_governance_program;
 use crate::utils::require_not_paused;
 
 // Anchor global instruction discriminator: sha256("global:mark_moonlight_proposal_executed")[..8].
-const DISC_MARK_MOONLIGHT_PROPOSAL_EXECUTED: [u8; 8] =
-    [197, 174, 240, 144, 29, 209, 125, 219];
+const DISC_MARK_MOONLIGHT_PROPOSAL_EXECUTED: [u8; 8] = [197, 174, 240, 144, 29, 209, 125, 219];
 
 /// CPI into `nave_governance::mark_moonlight_proposal_executed`, flipping the
 /// given `Passed` `MoonlightRequest`/`MoonlightDistribution` proposal to
@@ -98,7 +96,10 @@ fn load_passed_proposal(
     let data = proposal_ai.try_borrow_data()?;
     let prop = GovernanceProposalLayout::try_deserialize_skip_discriminator(&data)?;
     require!(prop.dao == *dao, NaveError::DaoOwnershipMismatch);
-    require!(prop.proposal_type == expected_type, NaveError::MoonlightProposalInvalid);
+    require!(
+        prop.proposal_type == expected_type,
+        NaveError::MoonlightProposalInvalid
+    );
     require!(
         prop.status == gov_proposal_type::STATUS_PASSED,
         NaveError::MoonlightProposalInvalid
@@ -184,7 +185,10 @@ pub fn set_moonlight_distribution_handler(
     recipient: Pubkey,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
-    require!(recipient != Pubkey::default(), NaveError::MoonlightRecipientMismatch);
+    require!(
+        recipient != Pubkey::default(),
+        NaveError::MoonlightRecipientMismatch
+    );
 
     let lifecycle = &mut ctx.accounts.dao_lifecycle;
     require!(
@@ -227,7 +231,10 @@ pub fn execute_moonlight_distribution_handler(
 
     // The distribution proposal payload binds the approved recipient (first 32
     // payload bytes) so the on-chain payout cannot be redirected.
-    require!(prop.payload_len as usize >= 32, NaveError::MoonlightProposalInvalid);
+    require!(
+        prop.payload_len as usize >= 32,
+        NaveError::MoonlightProposalInvalid
+    );
     let payload_recipient = Pubkey::new_from_array(prop.payload[0..32].try_into().unwrap());
 
     let lifecycle_status;
@@ -245,11 +252,19 @@ pub fn execute_moonlight_distribution_handler(
         NaveError::MoonlightInvalidStatus
     );
     require!(prop.proposer == initiated_by, NaveError::Unauthorized);
-    require!(payload_recipient == recipient, NaveError::MoonlightRecipientMismatch);
     require!(
-        ctx.accounts.recipient_nave_account.owner == recipient,
+        payload_recipient == recipient,
         NaveError::MoonlightRecipientMismatch
     );
+    // A treasury with no creation stake passes the program id here (None).
+    // When an ATA is supplied, it must still belong to the approved recipient;
+    // the locked-stake release path enforces the same check before transfer.
+    if let Some(ata) = ctx.accounts.recipient_nave_account.as_deref() {
+        require!(
+            ata.owner == recipient,
+            NaveError::MoonlightRecipientMismatch
+        );
+    }
 
     // Consume the distribution proposal immediately so it can never be
     // replayed (e.g. re-fed into this same handler after a future restore_dao
@@ -265,45 +280,54 @@ pub fn execute_moonlight_distribution_handler(
 
     let now = Clock::get()?.unix_timestamp;
 
-    // Release the staked NAVE from escrow → recipient (signed by the stake-lock
-    // PDA), if still locked. Idempotent: a second call after release is a no-op
-    // on the token leg but keeps the lifecycle advance available.
-    let mut released_amount = 0u64;
-    {
-        let stake = &ctx.accounts.dao_stake_lock;
-        if stake.status == StakeStatus::Locked as u8 {
-            released_amount = ctx.accounts.stake_escrow.amount;
-            require!(released_amount > 0, NaveError::StakeNotReleasable);
-
-            let lock_bump = stake.bump;
-            let signer_seeds: &[&[u8]] =
-                &[DAO_STAKE_LOCK_SEED, dao_key.as_ref(), &[lock_bump]];
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.stake_escrow.to_account_info(),
-                        to: ctx.accounts.recipient_nave_account.to_account_info(),
-                        authority: ctx.accounts.dao_stake_lock.to_account_info(),
-                    },
-                    &[signer_seeds],
-                ),
-                released_amount,
-            )?;
-
-            let stake = &mut ctx.accounts.dao_stake_lock;
-            stake.status = StakeStatus::Released as u8;
-            stake.unlock_eligible = true;
-            stake.locked_amount = 0;
-            stake.released_at = now;
-
-            emit!(DaoStakeReleased {
-                dao: dao_key,
-                recipient,
-                amount: released_amount,
-                released_at: now,
-            });
+    // Release a stake that is already locked. A treasury that never created a
+    // DaoStakeLock passes those accounts as the program id (Option::None) and
+    // distribution still succeeds. A second call after release is a no-op on
+    // the token leg.
+    let stake_is_locked = ctx
+        .accounts
+        .dao_stake_lock
+        .as_deref()
+        .is_some_and(|stake| stake.status == StakeStatus::Locked as u8);
+    let released_amount = {
+        let token_program_ai = ctx.accounts.token_program.to_account_info();
+        if stake_is_locked {
+            let stake = ctx.accounts.dao_stake_lock.as_deref().unwrap();
+            let escrow = ctx
+                .accounts
+                .stake_escrow
+                .as_deref()
+                .ok_or(NaveError::StakeNotReleasable)?;
+            let recipient_ata = ctx
+                .accounts
+                .recipient_nave_account
+                .as_deref()
+                .ok_or(NaveError::MoonlightRecipientMismatch)?;
+            release_locked_stake(
+                &dao_key,
+                stake,
+                escrow,
+                recipient_ata,
+                &recipient,
+                &token_program_ai,
+            )?
+        } else {
+            0
         }
+    };
+    if released_amount > 0 {
+        let stake = ctx.accounts.dao_stake_lock.as_mut().unwrap();
+        stake.status = StakeStatus::Released as u8;
+        stake.unlock_eligible = true;
+        stake.locked_amount = 0;
+        stake.released_at = now;
+
+        emit!(DaoStakeReleased {
+            dao: dao_key,
+            recipient,
+            amount: released_amount,
+            released_at: now,
+        });
     }
 
     let lifecycle = &mut ctx.accounts.dao_lifecycle;
@@ -330,9 +354,16 @@ pub fn finalize_moonlight_handler(ctx: Context<FinalizeMoonlight>) -> Result<()>
     let signer = ctx.accounts.authority.key();
     let (founder, lifecycle_status, initiated_by) = {
         let lifecycle = &ctx.accounts.dao_lifecycle;
-        (ctx.accounts.dao_registry.founder, lifecycle.status, lifecycle.initiated_by)
+        (
+            ctx.accounts.dao_registry.founder,
+            lifecycle.status,
+            lifecycle.initiated_by,
+        )
     };
-    require!(signer == founder || signer == initiated_by, NaveError::Unauthorized);
+    require!(
+        signer == founder || signer == initiated_by,
+        NaveError::Unauthorized
+    );
     require!(
         lifecycle_status == MoonlightStatus::Distributing as u8,
         NaveError::MoonlightInvalidStatus
@@ -362,66 +393,25 @@ pub fn finalize_moonlight_handler(ctx: Context<FinalizeMoonlight>) -> Result<()>
     Ok(())
 }
 
-/// Restore a moonlighted DAO: the FOUNDER ONLY re-enters the DAO and restakes
-/// the current `$99` of NAVE into the (now-empty) escrow, returning the DAO to
-/// `Active`. Agents remain disabled until re-enabled through governance.
+/// Restore a moonlighted DAO. The founder reopens it without locking new NAVE.
+/// `amount` and `price_usd_micro` stay in the instruction signature so existing
+/// clients still decode; they are ignored. Stake accounts are optional: pass
+/// the program id when this treasury never created a `DaoStakeLock`. An
+/// existing lock is left released. Agents stay disabled until governance
+/// re-enables them.
 pub fn restore_dao_handler(
     ctx: Context<RestoreDao>,
-    amount: u64,
-    price_usd_micro: u64,
+    _amount: u64,
+    _price_usd_micro: u64,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
-    require!(
-        amount >= MIN_DAO_STAKE_NAVE_BASE_UNITS,
-        NaveError::StakeAmountTooLow
-    );
-
     require!(
         ctx.accounts.dao_lifecycle.status == MoonlightStatus::Moonlighted as u8,
         NaveError::DaoNotMoonlighted
     );
 
-    // Pinned-mint enforcement (parity with stake_dao_creation).
-    let pinned = ctx.accounts.global_config.nave_mint;
-    if pinned != Pubkey::default() {
-        require!(
-            ctx.accounts.nave_mint.key() == pinned,
-            NaveError::StakeMintMismatch
-        );
-    }
-    require!(
-        ctx.accounts.stake_escrow.key() == ctx.accounts.dao_stake_lock.escrow_token_account,
-        NaveError::InvalidVaultTokenAccount
-    );
-
-    // Restake: founder funds the escrow again.
-    token::transfer(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.founder_nave_account.to_account_info(),
-                to: ctx.accounts.stake_escrow.to_account_info(),
-                authority: ctx.accounts.founder.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-    ctx.accounts.stake_escrow.reload()?;
-    require!(
-        ctx.accounts.stake_escrow.amount >= amount,
-        NaveError::StakeNotFullyFunded
-    );
-
     let now = Clock::get()?.unix_timestamp;
     let dao_key = ctx.accounts.dao_registry.key();
-
-    let stake = &mut ctx.accounts.dao_stake_lock;
-    stake.status = StakeStatus::Locked as u8;
-    stake.unlock_eligible = false;
-    stake.locked_amount = amount;
-    stake.price_usd_micro = price_usd_micro;
-    stake.locked_at = now;
-    stake.released_at = 0;
 
     let lifecycle = &mut ctx.accounts.dao_lifecycle;
     lifecycle.status = MoonlightStatus::Active as u8;
@@ -434,22 +424,56 @@ pub fn restore_dao_handler(
     let registry = &mut ctx.accounts.dao_registry;
     registry.updated_at = now;
 
-    emit!(DaoStakeLocked {
-        dao: dao_key,
-        founder: ctx.accounts.founder.key(),
-        nave_mint: ctx.accounts.nave_mint.key(),
-        escrow: ctx.accounts.stake_escrow.key(),
-        amount,
-        price_usd_micro,
-        locked_at: now,
-    });
     emit!(DaoRestored {
         dao: dao_key,
         founder: ctx.accounts.founder.key(),
-        restaked_amount: amount,
+        restaked_amount: 0,
         restored_at: now,
     });
     Ok(())
+}
+
+/// Move a still-locked creation stake from escrow to the approved recipient.
+/// Returns the base units released. Caller updates the lock record after this
+/// returns so the token accounts are not borrowed across the status write.
+fn release_locked_stake<'info>(
+    dao_key: &Pubkey,
+    stake: &Account<'info, DaoStakeLock>,
+    escrow: &Account<'info, TokenAccount>,
+    recipient_ata: &Account<'info, TokenAccount>,
+    recipient: &Pubkey,
+    token_program: &AccountInfo<'info>,
+) -> Result<u64> {
+    require!(
+        escrow.key() == stake.escrow_token_account,
+        NaveError::InvalidVaultTokenAccount
+    );
+    require!(
+        recipient_ata.owner == *recipient,
+        NaveError::MoonlightRecipientMismatch
+    );
+    require!(
+        recipient_ata.mint == stake.nave_mint,
+        NaveError::StakeMintMismatch
+    );
+    let released_amount = escrow.amount;
+    require!(released_amount > 0, NaveError::StakeNotReleasable);
+
+    let lock_bump = stake.bump;
+    let signer_seeds: &[&[u8]] = &[DAO_STAKE_LOCK_SEED, dao_key.as_ref(), &[lock_bump]];
+    token::transfer(
+        CpiContext::new_with_signer(
+            token_program.clone(),
+            Transfer {
+                from: escrow.to_account_info(),
+                to: recipient_ata.to_account_info(),
+                authority: stake.to_account_info(),
+            },
+            &[signer_seeds],
+        ),
+        released_amount,
+    )?;
+    Ok(released_amount)
 }
 
 // ── Account contexts ─────────────────────────────────────────────────────────
@@ -547,25 +571,23 @@ pub struct ExecuteMoonlightDistribution<'info> {
     )]
     pub dao_lifecycle: Box<Account<'info, DaoLifecycle>>,
 
+    /// Existing creation-stake lock. Pass the nave_core program id when this
+    /// treasury never created one; distribution still completes.
     #[account(
         mut,
         seeds = [DAO_STAKE_LOCK_SEED, dao_registry.key().as_ref()],
         bump = dao_stake_lock.bump,
         constraint = dao_stake_lock.dao == dao_registry.key() @ NaveError::DaoOwnershipMismatch
     )]
-    pub dao_stake_lock: Box<Account<'info, DaoStakeLock>>,
+    pub dao_stake_lock: Option<Box<Account<'info, DaoStakeLock>>>,
 
-    #[account(
-        mut,
-        constraint = stake_escrow.key() == dao_stake_lock.escrow_token_account @ NaveError::InvalidVaultTokenAccount
-    )]
-    pub stake_escrow: Box<Account<'info, TokenAccount>>,
+    /// Escrow that holds a locked stake. Program id when `dao_stake_lock` is absent.
+    #[account(mut)]
+    pub stake_escrow: Option<Box<Account<'info, TokenAccount>>>,
 
-    #[account(
-        mut,
-        constraint = recipient_nave_account.mint == dao_stake_lock.nave_mint @ NaveError::StakeMintMismatch
-    )]
-    pub recipient_nave_account: Box<Account<'info, TokenAccount>>,
+    /// Recipient ATA for a locked stake. Program id when there is no lock.
+    #[account(mut)]
+    pub recipient_nave_account: Option<Box<Account<'info, TokenAccount>>>,
 
     /// CHECK: nave_governance-owned passed MoonlightDistribution proposal (validated in handler).
     #[account(mut)]
@@ -638,30 +660,30 @@ pub struct RestoreDao<'info> {
     )]
     pub dao_lifecycle: Box<Account<'info, DaoLifecycle>>,
 
+    /// Present only when this treasury already has a DaoStakeLock. Not re-locked.
+    /// Pass the nave_core program id when the treasury never created one.
     #[account(
         mut,
         seeds = [DAO_STAKE_LOCK_SEED, dao_registry.key().as_ref()],
         bump = dao_stake_lock.bump,
         constraint = dao_stake_lock.dao == dao_registry.key() @ NaveError::DaoOwnershipMismatch
     )]
-    pub dao_stake_lock: Box<Account<'info, DaoStakeLock>>,
+    pub dao_stake_lock: Option<Box<Account<'info, DaoStakeLock>>>,
 
-    pub nave_mint: Box<Account<'info, Mint>>,
+    /// Ignored. Kept so existing restore transactions still name the account.
+    pub nave_mint: Option<Box<Account<'info, Mint>>>,
 
-    #[account(
-        mut,
-        constraint = founder_nave_account.mint == nave_mint.key() @ NaveError::StakeMintMismatch,
-        constraint = founder_nave_account.owner == founder.key() @ NaveError::Unauthorized
-    )]
-    pub founder_nave_account: Box<Account<'info, TokenAccount>>,
+    /// Ignored. Reopen does not pull NAVE from the founder.
+    #[account(mut)]
+    pub founder_nave_account: Option<Box<Account<'info, TokenAccount>>>,
 
+    /// Ignored. Reopen does not move the escrow.
     #[account(
         mut,
         seeds = [STAKE_ESCROW_SEED, dao_registry.key().as_ref()],
-        bump,
-        constraint = stake_escrow.mint == nave_mint.key() @ NaveError::StakeMintMismatch
+        bump
     )]
-    pub stake_escrow: Box<Account<'info, TokenAccount>>,
+    pub stake_escrow: Option<Box<Account<'info, TokenAccount>>>,
 
     pub token_program: Program<'info, Token>,
 }

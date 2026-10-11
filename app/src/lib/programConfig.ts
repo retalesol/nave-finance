@@ -157,16 +157,14 @@ if (NAVE_DEVNET_PRICE_USD <= 0) {
   throw new Error(`VITE_NAVE_DEVNET_PRICE_USD must be greater than zero; got ${NAVE_DEVNET_PRICE_USD}.`);
 }
 
-/** Creation stake target in USD value. Operators can change on-chain via Safe
- *  `setNaveStakeConfig`; keep this env in sync for Solana quotes / UI labels. */
+/**
+ * Historical USD figure for treasuries that locked NAVE before formation became
+ * gas-only. New treasuries do not stake NAVE, and the create flow must not read
+ * this. Kept so older quote helpers still compile.
+ */
 export const NAVE_DAO_CREATION_STAKE_USD = optionalEnvNumber('VITE_NAVE_DAO_CREATION_STAKE_USD', 19);
-if (NAVE_DAO_CREATION_STAKE_USD <= 0) {
-  throw new Error(
-    `VITE_NAVE_DAO_CREATION_STAKE_USD must be greater than zero; got ${NAVE_DAO_CREATION_STAKE_USD}.`,
-  );
-}
 export const NAVE_DEVNET_DAO_CREATION_STAKE_AMOUNT =
-  NAVE_DAO_CREATION_STAKE_USD / NAVE_DEVNET_PRICE_USD;
+  NAVE_DAO_CREATION_STAKE_USD > 0 ? NAVE_DAO_CREATION_STAKE_USD / NAVE_DEVNET_PRICE_USD : 0;
 
 /** Mainnet pricing intentionally comes from the later central oracle phase. */
 export const NAVE_MAINNET_PRICE_MODE = 'central-oracle-average' as const;
@@ -390,11 +388,10 @@ export const AGENT_WALLET_SEED_SOL = IS_MAINNET ? 0.05 : 0.01;
 /** Total SOL allocated to agent wallets during creation (4 × AGENT_WALLET_SEED_SOL). */
 export const AGENT_WALLET_TOTAL_SEED_SOL = AGENT_WALLET_SEED_SOL * 4; // mainnet 0.2 SOL / devnet 0.04 SOL
 /**
- * Protocol profit (SOL) taken at DAO creation. DAO formation is now FEE-FREE on
- * every network: there is no SOL/native protocol fee — creation instead requires
- * a recoverable NAVE stake sized by `NAVE_DAO_CREATION_STAKE_USD` (and the
- * stake oracle). Kept as a named export (zero) so existing fee-display references
- * compile; do NOT reintroduce a SOL formation fee here.
+ * Protocol profit (SOL) taken at DAO creation. Formation charges no protocol fee
+ * and locks no NAVE. The founder pays network gas and account rent. Kept as a
+ * named export (zero) so existing fee-display references compile; do NOT
+ * reintroduce a SOL formation fee here.
  */
 export const PROTOCOL_PROFIT_SOL = 0;
 /**
@@ -405,9 +402,8 @@ export const PROTOCOL_PROFIT_SOL = 0;
  */
 export const TREASURY_SEED_SOL = 0;
 /**
- * Total non-recoverable native (SOL) cost at DAO creation. Formation is fee-free,
- * so this is just agent-wallet seeding (PROTOCOL_PROFIT_SOL is 0). The recoverable
- * NAVE creation stake and the user's treasury seed are NOT included here.
+ * SOL moved to the four agent wallets at DAO creation (PROTOCOL_PROFIT_SOL is 0).
+ * This is not a protocol fee. The founder's treasury seed is NOT included here.
  * Mainnet: 0.2 SOL. Devnet: 0.04 SOL.
  */
 export const DAO_FORMATION_FEE_SOL = PROTOCOL_PROFIT_SOL + AGENT_WALLET_TOTAL_SEED_SOL;
@@ -462,8 +458,13 @@ export const AGENT_ENABLE_PROPOSAL_TITLE = 'Enable Autonomous Agents';
 export const TOKEN_MINT_QUORUM_PCT = 25;
 /** Quorum (%) required to switch the voting system. */
 export const SWITCH_VOTING_QUORUM_PCT = 70;
-export const MANAGEMENT_FEE_BPS_NORMAL = 65; // 0.65%
-export const MANAGEMENT_FEE_BPS_FROZEN = 35; // 0.35%
+/** Annual management fee is not charged, including while a treasury is frozen. */
+export const MANAGEMENT_FEE_BPS_NORMAL = 0;
+export const MANAGEMENT_FEE_BPS_FROZEN = 0;
+/** 15% of realized yield, skimmed when a strategy position is withdrawn. */
+export const PERFORMANCE_FEE_BPS = 1500;
+/** Frozen treasuries use the same 15% yield fee. There is no frozen discount. */
+export const FROZEN_PERFORMANCE_FEE_BPS = 1500;
 export const FROZEN_FEE_DURATION_YEARS = 5;
 export const REVIEW_WINDOW_SECONDS = 48 * 3600; // 48-hour operational review window
 /**
@@ -746,9 +747,8 @@ export const NAVE_BRIDGE_STAKING_POOL_ACCOUNT: string | undefined = optionalEnvS
  * Nave fee wallet on mainnet (required by cutover); founder fallback only when
  * unset (testnets). When unset (e.g. testnets), the
  * DAO-creation flow falls back to the founder address so creation still works.
- * Note: the current create flow sets performanceFeeBps = 0, so this wallet
- * receives nothing until performance fees are enabled; configuring it now makes
- * the routing correct the moment fees are turned on.
+ * The create flow sets performanceFeeBps to 1500, so this wallet receives 15%
+ * of realized yield when a strategy position is withdrawn.
  */
 export const EVM_PROTOCOL_REVENUE_WALLET: string | undefined = optionalEnvString(
   'VITE_EVM_PROTOCOL_REVENUE_WALLET',

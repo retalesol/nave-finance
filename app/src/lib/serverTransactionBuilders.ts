@@ -20,7 +20,7 @@
 // Frontend-used builders (deposits, proposals, voting, guardian config, constitution,
 // emergency pause/freeze, token ops, etc.) remain in `transactionBuilders.ts`.
 
-import { BN } from '@coral-xyz/anchor';
+import BN from 'bn.js';
 import {
   PublicKey,
   SystemProgram,
@@ -29,6 +29,7 @@ import {
 import {
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
 import { getNavePrograms, getAdapterProgram } from './naveProgram';
 import {
@@ -51,6 +52,7 @@ import {
   getAssetVaultPDA,
   getStrategyPositionForMintPDA,
   getStrategyEscrowForMintPDA,
+  getFeeConfigPDA,
 } from './pdaDerivation';
 import type { TransactionBuildResult } from './transactionBuilders';
 
@@ -595,6 +597,18 @@ export async function buildWithdrawFromStrategy(
   const [strategyPosition] = getStrategyPositionForMintPDA(daoPubkey, protocolId, assetMint);
   const [vaultTokenAccount] = getAssetVaultPDA(daoPubkey, assetMint);
   const strategyEscrow = resolveStrategyEscrow(daoPubkey, protocolId, assetMint);
+  // fee_config is writable: the CPI skim writes the canonical 0/1500 rates back.
+  const [feeConfig] = getFeeConfigPDA(daoPubkey);
+  const feeConfigAcc = await programs.core.account.feeConfig.fetch(feeConfig);
+  const protocolRevenueWallet = new PublicKey(feeConfigAcc.protocolRevenueWallet);
+  if (protocolRevenueWallet.equals(PublicKey.default)) {
+    return {
+      instruction: null,
+      programId: NAVE_EXECUTION_PROGRAM_ID,
+      error: 'withdraw_from_strategy: fee_config.protocol_revenue_wallet is unset on-chain',
+    };
+  }
+  const revenueTokenAccount = getAssociatedTokenAddressSync(assetMint, protocolRevenueWallet, true);
 
   const instruction = await programs.execution.methods
     .withdrawFromStrategy(toBN(amount))
@@ -615,6 +629,8 @@ export async function buildWithdrawFromStrategy(
       executionRequest,
       strategyEscrow,
       strategyPosition,
+      feeConfig,
+      revenueTokenAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
       instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
       naveCoreProgram: NAVE_CORE_PROGRAM_ID,

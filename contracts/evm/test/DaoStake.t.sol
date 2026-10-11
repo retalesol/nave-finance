@@ -18,11 +18,9 @@ import {NaveConstants} from "../src/libraries/NaveConstants.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-/// @notice Phase 3 (NAVE creation stake escrow) + Phase 5 (moonlighting
-/// lifecycle) parity tests for the EVM port. Creation stays fee-free; the
-/// recoverable wrapped-NAVE stake is locked at creation and released to the
-/// approved recipient on an approved moonlight distribution, then restaked by
-/// the founder to reopen the DAO.
+/// @notice Moonlight lifecycle tests. Creation is fee-free and does not lock
+/// NAVE. A treasury that already has a lock still releases it on moonlight.
+/// Reopening does not demand a new lock.
 contract DaoStakeTest is NaveBase {
     NaveDaoStake internal stakeModule;
     MockERC20 internal nave; // wrapped NAVE (18 decimals)
@@ -49,39 +47,51 @@ contract DaoStakeTest is NaveBase {
         vm.stopPrank();
     }
 
-    /// Fund + approve the founder so the factory can pull the stake, then create.
+    /// Create, then lock the way the factory used to, so moonlight can still
+    /// release a pre-upgrade stake. `createDao` itself does not lock.
     function _createStaked()
         internal
         returns (NaveTreasury treasury, NaveGovernor governor, NaveExecution execution)
     {
+        (treasury, governor, execution) = _createDao(0);
         nave.mint(founder, STAKE_AMOUNT);
         vm.prank(founder);
         nave.approve(address(stakeModule), STAKE_AMOUNT);
-        return _createDao(0); // wallet governance
+        vm.prank(address(factory));
+        stakeModule.lockStake(address(treasury), founder, address(nave), STAKE_AMOUNT, 0);
     }
 
-    function test_createDao_isFeeFree_andLocksStake() public {
+    function test_createDao_isFeeFree_andDoesNotLockStake() public {
         assertEq(protocol.formationFee(), 0, "creation must be fee-free");
-        (NaveTreasury treasury,,) = _createStaked();
+        assertGt(protocol.requiredNaveStake(), 0, "old config may still be non-zero");
+        nave.mint(founder, STAKE_AMOUNT);
+        vm.prank(founder);
+        nave.approve(address(stakeModule), STAKE_AMOUNT);
 
-        (
+        (NaveTreasury treasury,,) = _createDao(0);
+
+        (address sFounder, address sToken, uint256 sAmount,,,) = _stakeHead(address(treasury));
+        assertEq(sFounder, address(0));
+        assertEq(sToken, address(0));
+        assertEq(sAmount, 0);
+        assertEq(nave.balanceOf(address(stakeModule)), 0, "factory did not pull NAVE");
+        assertEq(nave.balanceOf(founder), STAKE_AMOUNT);
+    }
+
+    function _stakeHead(address treasury)
+        internal
+        view
+        returns (
             address sFounder,
             address sToken,
             uint256 sAmount,
             bool sReleased,
-            ,
-            uint8 sStatus,
-            ,
-            ,
-            ,
-        ) = stakeModule.stakes(address(treasury));
-        assertEq(sFounder, founder);
-        assertEq(sToken, address(nave));
-        assertEq(sAmount, STAKE_AMOUNT);
-        assertFalse(sReleased);
-        assertEq(sStatus, uint8(MoonlightStatus.Active));
-        assertEq(nave.balanceOf(address(stakeModule)), STAKE_AMOUNT, "escrow holds the stake");
-        assertEq(nave.balanceOf(founder), 0);
+            uint256 priceUsdMicro,
+            uint8 sStatus
+        )
+    {
+        (sFounder, sToken, sAmount, sReleased, priceUsdMicro, sStatus,,,,) =
+            stakeModule.stakes(treasury);
     }
 
     function test_lockStake_onlyFactory() public {
@@ -122,15 +132,12 @@ contract DaoStakeTest is NaveBase {
         stakeModule.finalizeMoonlight(address(treasury));
         assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Moonlighted));
 
-        // ── Reopen: founder restakes the current $99 of NAVE ────────────────
-        nave.mint(founder, STAKE_AMOUNT);
-        vm.startPrank(founder);
-        nave.approve(address(stakeModule), STAKE_AMOUNT);
+        // ── Reopen: no new NAVE lock ────────────────────────────────────────
+        vm.prank(founder);
         stakeModule.restoreDao(address(treasury), STAKE_AMOUNT, 0);
-        vm.stopPrank();
         assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Active));
         assertFalse(stakeModule.isMoonlighting(address(treasury)));
-        assertEq(nave.balanceOf(address(stakeModule)), STAKE_AMOUNT, "restaked into escrow");
+        assertEq(nave.balanceOf(address(stakeModule)), 0, "restore does not lock NAVE");
     }
 
     function test_setMoonlightRecipient_onlyInitiator() public {
@@ -190,20 +197,12 @@ contract DaoStakeTest is NaveBase {
         vm.prank(founder);
         stakeModule.finalizeMoonlight(address(treasury));
 
-        // Reopen must meet the NEW required stake (fresh lock), not the old amount.
-        nave.mint(founder, lockedAtCreate);
-        vm.startPrank(founder);
-        nave.approve(address(stakeModule), lockedAtCreate);
-        vm.expectRevert(NaveErrors.StakeAmountTooLow.selector);
-        stakeModule.restoreDao(address(treasury), lockedAtCreate, 0); // under-stake vs current gate
-        vm.stopPrank();
-
-        nave.mint(founder, newRequired);
-        vm.startPrank(founder);
-        nave.approve(address(stakeModule), newRequired);
-        stakeModule.restoreDao(address(treasury), newRequired, 0);
-        vm.stopPrank();
-        assertEq(nave.balanceOf(address(stakeModule)), newRequired, "restake uses current gate");
+        // Reopen does not demand the new required stake, or any stake.
+        vm.prank(founder);
+        stakeModule.restoreDao(address(treasury), 0, 0);
+        assertEq(nave.balanceOf(address(stakeModule)), 0, "restore does not pull a new stake");
+        assertEq(nave.balanceOf(recipient), lockedAtCreate, "released amount stays with recipient");
+        assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Active));
     }
 
     // ── P6-3: moonlight proposals are consumed (no cross-cycle replay) ────
@@ -228,11 +227,8 @@ contract DaoStakeTest is NaveBase {
         assertEq(uint8(governor.getProposal(distIdx).status), uint8(ProposalStatus.Executed));
         vm.prank(founder);
         stakeModule.finalizeMoonlight(address(treasury));
-        nave.mint(founder, STAKE_AMOUNT);
-        vm.startPrank(founder);
-        nave.approve(address(stakeModule), STAKE_AMOUNT);
-        stakeModule.restoreDao(address(treasury), STAKE_AMOUNT, 0);
-        vm.stopPrank();
+        vm.prank(founder);
+        stakeModule.restoreDao(address(treasury), 0, 0);
         assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Active));
 
         // Replay of the old request approval is rejected.
@@ -250,7 +246,7 @@ contract DaoStakeTest is NaveBase {
         stakeModule.setMoonlightRecipient(address(treasury), recipient);
         vm.expectRevert(NaveErrors.MoonlightProposalInvalid.selector);
         stakeModule.executeMoonlightDistribution(address(treasury), address(governor), distIdx);
-        assertEq(nave.balanceOf(address(stakeModule)), STAKE_AMOUNT, "stake stays escrowed");
+        assertEq(nave.balanceOf(address(stakeModule)), 0, "replay does not lock a new stake");
     }
 
     /// The distribution approval is consumed atomically with the stake release,
@@ -318,6 +314,32 @@ contract DaoStakeTest is NaveBase {
         vm.prank(address(stakeModule));
         vm.expectRevert(NaveErrors.ProposalNotPassed.selector);
         governor.markMoonlightProposalExecuted(reqIdx);
+    }
+
+    /// A treasury that never locked NAVE can still moonlight and reopen.
+    function test_moonlight_withoutStake_releasesNothing_andRestores() public {
+        (NaveTreasury treasury, NaveGovernor governor,) = _createDao(0);
+        assertEq(nave.balanceOf(address(stakeModule)), 0);
+
+        uint64 reqIdx = _passProposal(governor, uint8(ProposalType.MoonlightRequest), "");
+        stakeModule.recordMoonlightRequest(address(treasury), address(governor), reqIdx);
+        vm.prank(founder);
+        stakeModule.setMoonlightRecipient(address(treasury), recipient);
+        uint64 distIdx =
+            _passProposal(governor, uint8(ProposalType.MoonlightDistribution), abi.encode(recipient));
+        stakeModule.executeMoonlightDistribution(address(treasury), address(governor), distIdx);
+
+        assertEq(nave.balanceOf(recipient), 0, "nothing to release");
+        assertEq(nave.balanceOf(address(stakeModule)), 0);
+        assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Distributing));
+
+        vm.prank(founder);
+        stakeModule.finalizeMoonlight(address(treasury));
+        vm.prank(founder);
+        stakeModule.restoreDao(address(treasury), 0, 0);
+        assertEq(stakeModule.moonlightStatus(address(treasury)), uint8(MoonlightStatus.Active));
+        assertFalse(stakeModule.isMoonlighting(address(treasury)));
+        assertEq(nave.balanceOf(address(stakeModule)), 0);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

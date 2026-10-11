@@ -309,10 +309,10 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         governanceType = p.governanceType;
         createdAt = block.timestamp;
 
-        managementFeeBps = p.managementFeeBps;
-        performanceFeeBps = p.performanceFeeBps;
-        frozenManagementFeeBps = p.frozenManagementFeeBps;
-        frozenPerformanceFeeBps = p.frozenPerformanceFeeBps;
+        managementFeeBps = NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS;
+        performanceFeeBps = NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS;
+        frozenManagementFeeBps = NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS;
+        frozenPerformanceFeeBps = NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS;
         protocolRevenueWallet = p.protocolRevenueWallet;
 
         TreasuryAdminLib.initAgents(_agents, p.agentAuthorities, p.founder, p.guardianWallets);
@@ -775,15 +775,14 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         revert NaveErrors.ExecutionRequestRequired();
     }
 
-    /// Discrete annual management fee for one registered asset, paid in-kind to
-    /// the protocol revenue wallet. Permissionless-but-validated.
+    /// Retained so older callers still resolve. Transfers nothing, does not
+    /// advance the asset's management-fee anchor, and writes the canonical
+    /// 0 / 1500 bps pair (normal and frozen) onto this treasury.
     function collectManagementFee(address asset) external nonReentrant notPaused {
-        uint16 feeBps = frozen ? frozenManagementFeeBps : managementFeeBps;
-        uint256 balance = idleBalance(asset);
-        (uint256 fee, uint256 newAnchor) = TreasuryAdminLib.collectManagementFee(
-            IERC20(asset), _assets[asset], feeBps, protocolRevenueWallet, balance
+        TreasuryAdminLib.collectManagementFee(
+            IERC20(asset), _assets[asset], 0, protocolRevenueWallet, idleBalance(asset)
         );
-        emit ManagementFeeCollected(asset, fee, balance, newAnchor, frozen);
+        _syncCanonicalFees();
     }
 
     /// Recompute NAV (idle + deployed base units valued in USD) across all
@@ -873,17 +872,17 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     }
 
     /// Record a strategy withdrawal. The adapter has already returned the
-    /// underlying to this treasury. The 8.5% performance skim is taken on the
-    /// realized gain and sent to the protocol revenue wallet before the position
-    /// counters are reduced. Mirrors `record_strategy_withdrawal` + the inline
-    /// performance-fee skim.
+    /// underlying to this treasury. 15% of the realized gain is sent to the
+    /// protocol revenue wallet before the position counters are reduced.
+    /// Frozen treasuries use the same rate. Stored bps are corrected to
+    /// 0 management / 1500 performance when they differ.
     function recordStrategyWithdrawal(
         address adapter,
         address asset,
         uint256 amount,
         uint256 amountUsd
     ) external onlyExecution nonReentrant returns (uint256 perfFeeSkimmed) {
-        uint16 feeBps = frozen ? frozenPerformanceFeeBps : performanceFeeBps;
+        _syncCanonicalFees();
         uint256 gain;
         (perfFeeSkimmed, deployedCapital, gain, totalWithdrawn) = TreasuryAdminLib.recordStrategyWithdrawal(
             _positions,
@@ -893,7 +892,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
             amount,
             amountUsd,
             deployedCapital,
-            feeBps,
+            NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS,
             protocolRevenueWallet,
             totalWithdrawn
         );
@@ -931,6 +930,23 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         TreasuryGuardianLib.requireFounderOrGuardian(_guardianWallets, founder, msg.sender);
         TreasuryAdminLib.reviewAnnotation(_annotations, holder, status);
         emit HolderAnnotationReviewed(holder, status);
+    }
+
+    /// Write 0 management bps and 1500 performance bps, normal and frozen,
+    /// when a treasury still stores an older schedule.
+    function _syncCanonicalFees() internal {
+        if (managementFeeBps != NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS) {
+            managementFeeBps = NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS;
+        }
+        if (frozenManagementFeeBps != NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS) {
+            frozenManagementFeeBps = NaveConstants.DEFAULT_MANAGEMENT_FEE_BPS;
+        }
+        if (performanceFeeBps != NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS) {
+            performanceFeeBps = NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS;
+        }
+        if (frozenPerformanceFeeBps != NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS) {
+            frozenPerformanceFeeBps = NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS;
+        }
     }
 
     function _operational(TreasuryAdminLib.AgentSlot storage s) internal view returns (bool) {

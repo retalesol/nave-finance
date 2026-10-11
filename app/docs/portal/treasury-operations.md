@@ -17,7 +17,9 @@ Form DAO + ratify constitution
 
 A treasury begins with DAO creation: a name, a governance model, and an initial constitution. The constitution is not optional boilerplate — it is the enforceable rulebook that bounds every later action. Decide your approved protocols, allocation caps, liquidity floor, and confidence thresholds up front. See [Constitution & Policy](/docs/constitution-and-policy).
 
-Formation requires staking the USD-equivalent of **$99 in `$NAVE`**. This is **recoverable**, not a cost — it replaces an earlier flat SOL creation fee and is returned to the founder through the wind-down flow described below if the treasury is ever moonlighted. See [Tokenomics & Bridge](/docs/tokenomics) for the token mechanics.
+Forming a treasury costs only network gas (and account rent). There is no protocol formation fee and no NAVE or wNAVE creation stake on any chain. A founder may still deposit their own assets into the treasury as a seed. That deposit is their capital, not a fee.
+
+The only protocol treasury fee is **15% of realized yield**: the gain above principal when a strategy position is withdrawn. Principal is not charged. Yield that is still deployed is charged when it is withdrawn. Frozen treasuries use the same 15%. There is no annual management fee. The skim is paid in-kind to the protocol revenue wallet. See [Tokenomics & Bridge](/docs/tokenomics) for what `$NAVE` is used for. Forming a treasury is not one of those uses.
 
 ## 2. Funding
 
@@ -55,11 +57,11 @@ A treasury that has run its course can be wound down through governance rather t
 Active
    ──▶ Moonlight requested   (a governance proposal passes; agents halt)
    ──▶ Distribution pending  (the proposer sets a recipient wallet, bound into a second proposal)
-   ──▶ Distributing          (the recoverable NAVE stake is released to the recipient)
-   ──▶ Moonlighted           (the DAO is hidden until the founder restakes to reopen it)
+   ──▶ Distributing          (an existing locked creation stake, if this treasury has one, is released to the recipient)
+   ──▶ Moonlighted           (the DAO is hidden until the founder reopens it)
 ```
 
-Two separate governance proposals gate the two points where assets actually move — one to authorize winding down at all, one to bind the specific recipient — so no single signer can redirect a treasury's assets unilaterally. A moonlighted DAO is not destroyed: the founder can restake the formation amount at any time to reopen it, returning it to **Active** with agents still disabled until explicitly re-enabled.
+Two separate governance proposals gate the two points where assets actually move — one to authorize winding down at all, one to bind the specific recipient — so no single signer can redirect a treasury's assets unilaterally. A moonlighted DAO is not destroyed: the founder can reopen it at any time without a new stake, returning it to **Active** with agents still disabled until explicitly re-enabled. An existing locked creation stake, from a treasury formed before this change, is still returned. New treasuries have nothing to return.
 
 ## How autonomy is bounded
 
@@ -80,4 +82,4 @@ Because every figure derives from on-chain state and indexed events, treasury re
 - Author the rulebook: [Constitution & Policy](/docs/constitution-and-policy).
 - Understand the safety model: [Risk & Controls](/docs/risk-and-controls).
 - Verify the numbers: [Treasury Reconciliation](/docs/reconciliation).
-- The formation stake and bridging `$NAVE`: [Tokenomics & Bridge](/docs/tokenomics).
+- `$NAVE`, voting, and the closed bridge: [Tokenomics & Bridge](/docs/tokenomics).

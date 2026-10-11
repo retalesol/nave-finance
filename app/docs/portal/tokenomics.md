@@ -1,6 +1,6 @@
 # Tokenomics & Bridge
 
-What `$NAVE` (Nave Shares) does, how it is used in the protocol, and the state of the cross-chain bridge. Treasury-level fees are covered in [Treasury Operations](/docs/treasury-operations).
+What `$NAVE` (Nave Shares) does, how it is used in the protocol, and the state of the cross-chain bridge. The treasury yield fee and formation cost are covered in [Treasury Operations](/docs/treasury-operations).
 
 ## Nave Shares ($NAVE)
 
@@ -19,25 +19,16 @@ There is no team or insider allocation carved out of supply, and no vesting sche
 
 | Use | Mechanics |
 | --- | --- |
-| **Form a DAO** | Where a network requires a stake, the founder locks a recoverable amount to create the treasury. The amount depends on the network. See below. |
 | **Vote** | Where a DAO enables token governance, $NAVE (or that DAO's own governance token) is the voting weight for proposals and treasury decisions. |
 | **Bridge** | A designed path for moving $NAVE between Solana and EVM. The Solana program that accepted locks is closed. Do not use it in this beta. |
 
-### The DAO-formation stake is recoverable, not a fee
+Forming a treasury is not a use of `$NAVE`. There is no protocol formation fee and no NAVE or wNAVE creation stake on any chain. The founder pays only network gas (and account rent). A founder may still deposit their own assets into the treasury as a seed. That deposit is their capital, not a fee.
 
-Where a stake is required, it replaces an earlier flat SOL creation fee. The stake is **recoverable**, not spent. It is locked against the DAO while it is active and is returned to the founder if the DAO winds down (moonlights) and the founder later wants to reopen it, or distributed as part of a moonlight wind-down. See [Treasury Operations](/docs/treasury-operations#winding-a-treasury-down-moonlighting) for the full lifecycle.
+An existing locked creation stake, from a treasury formed before this change, is still returned when that treasury moonlights. New treasuries have nothing to return. Reopening does not require a new stake. See [Treasury Operations](/docs/treasury-operations#winding-a-treasury-down-moonlighting).
 
-Public beta amounts:
+The only protocol treasury fee is **15% of realized yield**: the gain above principal when a strategy position is withdrawn. Principal is not charged. Frozen treasuries use the same 15%. There is no annual management fee. Detail is in [Treasury Operations](/docs/treasury-operations).
 
-| Network | Creation stake |
-| --- | --- |
-| Solana devnet | Built-in price of **$10 per NAVE**, which is about **9.9 devnet NAVE**. This is not a $99 mainnet stake. The app does not use a live market quote for this amount. |
-| Ethereum Sepolia | **0.1 wNAVE** |
-| Base Sepolia | **0.1 wNAVE** |
-| Robinhood Testnet | None |
-| Arc Testnet | None |
-
-Mainnet create stays refused while the closed Solana bridge cannot redeem locked NAVE for wNAVE. A mainnet quote, when that path exists, fails closed if too few healthy price sources are available. Testers do not use that path.
+Mainnet create stays refused while the closed Solana bridge cannot redeem locked NAVE for wNAVE. That refusal is about the closed bridge. It is not a creation stake. Testers do not use that path.
 
 ## The cross-chain bridge
 
@@ -82,7 +73,7 @@ Testers get gas from the site banner.
 - **Network** selects Solana devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, or Arc Testnet, and asks an EVM wallet to add or switch chains. Solana Devnet opens Phantom’s devnet instructions.
 - **Faucet** opens a QuickNode faucet for Solana devnet SOL, Ethereum Sepolia ETH, Base Sepolia ETH, or Robinhood Testnet ETH. Arc uses Circle’s faucet. Arc gas is native USDC (18 decimals). Treasury USDC on Arc is a separate 6-decimal token.
 
-Solana creation still needs about 9.9 devnet NAVE in the wallet, at the built-in $10 price. The banner faucets supply gas. They are not a reason to lock NAVE in the closed bridge.
+Solana creation needs testnet SOL for the transaction and for account rent. It does not need NAVE. The banner faucets supply gas. They are not a reason to lock NAVE in the closed bridge.
 
 ## Where to go next
 

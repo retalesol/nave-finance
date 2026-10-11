@@ -30,13 +30,15 @@ The programs are deployed on the five beta networks, and the application reads s
 
 ### Is there a token?
 
-Yes — `$NAVE` ("Nave Shares"), fixed at a maximum supply of 500,000 and fully fair launched with no team allocation. The creation stake depends on the network:
+Yes — `$NAVE` ("Nave Shares"), fixed at a maximum supply of 500,000 and fully fair launched with no team allocation. Forming a treasury does not require `$NAVE`. There is no protocol formation fee and no NAVE or wNAVE creation stake on any chain. Where a DAO enables token governance, `$NAVE` (or that DAO's own governance token) is the voting weight. See [Tokenomics & Bridge](/docs/tokenomics).
 
-- Solana devnet uses a built-in $10 NAVE price. Creation stakes about 9.9 devnet NAVE. That is not a $99 mainnet stake.
-- Ethereum Sepolia and Base Sepolia stake 0.1 wNAVE.
-- Robinhood Testnet and Arc Testnet require no NAVE stake.
+### What does forming a treasury cost?
 
-The stake is recoverable where one is required. See [Tokenomics & Bridge](/docs/tokenomics).
+Network gas (and account rent) only. There is no protocol formation fee and no NAVE or wNAVE creation stake. A founder may deposit their own assets as a seed. That deposit is their capital, not a fee.
+
+### What fee does the protocol take from a treasury?
+
+The only protocol treasury fee is **15% of realized yield**: the gain above principal when a strategy position is withdrawn. Principal is not charged. Yield that is still deployed is charged when it is withdrawn. Frozen treasuries use the same 15%. There is no annual management fee. The bridge fee and token-mint fees are separate and are not a cost of forming a treasury.
 
 ### Which networks can create a treasury?
 
@@ -86,11 +88,11 @@ No. Public, non-private DAO data is readable by anyone, but personal data such a
 
 **Liquidity floor** — A constitution rule requiring a minimum share of NAV to remain liquid and undeployed.
 
-**Moonlighting** — The governed wind-down lifecycle for a treasury: a passed proposal halts agents, a second bound proposal authorizes distribution to a recipient, and the DAO is then hidden until the founder restakes to reopen it.
+**Moonlighting** — The governed wind-down lifecycle for a treasury: a passed proposal halts agents, a second bound proposal authorizes distribution to a recipient, and the DAO is then hidden until the founder reopens it. Reopening does not require a new stake. An existing locked creation stake, from a treasury formed before this change, is still returned. New treasuries have nothing to return.
 
 **NAV (Net Asset Value)** — The total value of everything a treasury holds.
 
-**$NAVE (Nave Shares)** — The protocol token. Fixed maximum supply of 500,000, fully fair launched with no team allocation. On Solana devnet, creation uses the built-in $10 price (about 9.9 devnet NAVE). Ethereum and Base testnets stake 0.1 wNAVE. Robinhood and Arc have no NAVE stake.
+**$NAVE (Nave Shares)** — The protocol token. Fixed maximum supply of 500,000, fully fair launched with no team allocation. It is not required to form a treasury. Where a DAO enables token governance, it can be the voting weight.
 
 **PDA (Program Derived Address)** — A deterministic on-chain account address controlled by a program rather than a private key. Nave uses PDAs for vaults and strategy escrows.
 
@@ -104,7 +106,7 @@ No. Public, non-private DAO data is readable by anyone, but personal data such a
 
 **Vault** — The on-chain account that custodies a treasury's primary assets.
 
-**WrappedNAVE** — The ERC-20 representation of `$NAVE` on Ethereum and Base. Ethereum Sepolia and Base Sepolia creation stakes 0.1 wNAVE. Do not mint it by locking NAVE in the closed Solana bridge.
+**WrappedNAVE** — The ERC-20 representation of `$NAVE` on Ethereum and Base. Forming a treasury does not stake it. Do not mint it by locking NAVE in the closed Solana bridge.
 
 ## Where to go next
 

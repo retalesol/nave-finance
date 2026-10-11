@@ -115,41 +115,36 @@ See `docs/SECRETS.md` for the full inventory. Quick reference:
   (re-reads status, only acts on actionable states), so catch-up is safe.
 - Verify recovery: confirm a fresh `treasury_snapshot` and that any eligible
   `InReview`-past-`review_end` request executes on the next tick.
-- The worker also runs the **management-fee scheduler** (see 5a) and agent-wallet
-  replenishment; both are idempotent and safe to re-run on restart.
+- The worker also runs agent-wallet replenishment (see 5a). It does not collect
+  an annual management fee. Replenishment is idempotent and safe to re-run on restart.
 
 ---
 
-## 5a. Management-fee scheduler & protocol revenue wallet
+## 5a. Yield skim and protocol revenue wallet
 
-The protocol charges two in-kind fees to a single **protocol revenue wallet**
-(`fee_config.protocol_revenue_wallet`, bound at DAO creation from
-`VITE_NAVE_PROTOCOL_FEE_WALLET`):
+The only protocol treasury fee is **15% of realized yield**
+(`performance_fee_bps = 1500`), paid in-kind to a single **protocol revenue
+wallet** (`fee_config.protocol_revenue_wallet`, bound at DAO creation from
+`VITE_NAVE_PROTOCOL_FEE_WALLET`).
 
-- **Performance fee (8.5% of realized yield)** — taken *inline* on every
-  strategy withdrawal (`withdraw_from_strategy` → `record_strategy_withdrawal`).
+- **Yield fee** — taken *inline* on every strategy withdrawal
+  (`withdraw_from_strategy` → `record_strategy_withdrawal`). Realized yield is
+  the gain above principal. Principal is not charged. Yield that is still
+  deployed is charged when it is withdrawn. Frozen treasuries use the same 15%.
   No operator action: the signer derives `fee_config` + the revenue wallet's ATA
   for the withdrawn mint automatically. There is no standalone
-  `collect_performance_fee` instruction anymore.
-- **Management fee (0.65%/yr of idle balance, per asset)** — collected by the
-  worker's `runCollectManagementFees` loop. It enumerates each DAO's registered
-  mints and calls the permissionless `collect_management_fee` once per mint;
-  on-chain it errs cleanly (`NoManagementFeeDue` / zero-fee) until an asset's
-  annual UTC-midnight boundary, which the worker swallows as a graceful skip.
+  `collect_performance_fee` instruction.
+- **No annual management fee.** `management_fee_bps` is 0 in both the normal and
+  frozen state. Do not run a collector for it. `collect_management_fee` transfers
+  nothing. `NAVE_OPS_WALLET_SECRET` is the payer for agent-wallet replenishment.
+  It is not a management-fee collector. If it is unset, replenishment is skipped.
 
 Ops:
 
-- **Enablement**: requires `NAVE_OPS_WALLET_SECRET` on the worker host — that
-  keypair is the permissionless `fee_collector` and pays the (tiny) tx fee. If
-  unset, the management-fee loop (and replenishment) are skipped silently.
-- **Cadence**: `MANAGEMENT_FEE_INTERVAL_MS` (default `3600000`, hourly). Hourly
-  is intentional: it catches each asset's midnight boundary quickly, and off-cycle
-  ticks are cheap no-ops. Lower only if you need tighter boundary precision.
-- **Revenue-wallet fee ATAs**: BOTH fees pay to the revenue wallet's associated
-  token account for each mint. **Provision an ATA for every held mint** (USDC,
-  wSOL, …) on the revenue wallet, and keep the wallet funded for ATA rent —
-  otherwise the skim/fee transfer fails. The withdrawal skim and the management
-  fee both target this same ATA per mint.
+- **Revenue-wallet fee ATAs**: the yield skim pays the revenue wallet's
+  associated token account for each mint. **Provision an ATA for every held
+  mint** (USDC, wSOL, …) on the revenue wallet, and keep the wallet funded for
+  ATA rent — otherwise the skim fails.
   Run the provisioning script before launch and whenever a new asset mint is
   registered to a DAO:
   ```bash
@@ -165,12 +160,10 @@ Ops:
   `NAVE_MINTS=<mint1>,<mint2>` to override or supplement. It is idempotent —
   existing ATAs are skipped.
 - **Verification**: after a withdrawal that realizes yield, confirm a
-  `PerformanceFeeSkimmed` event and a balance increase on the revenue-wallet ATA.
-  After an asset's annual boundary, confirm a `ManagementFeeCollected` event and
-  that `TreasuryAsset.last_management_fee_at` advanced to the new midnight anchor.
-- **Recovery**: the loop is idempotent — the on-chain due-window + anchor advance
-  prevent double-charging within a year, so re-running after a worker restart is
-  safe and a missed boundary is picked up on the next tick.
+  `PerformanceFeeSkimmed` event for 15% of the gain and a balance increase on
+  the revenue-wallet ATA. Do not expect a management-fee transfer.
+- **Recovery**: the skim happens on the withdrawal itself. There is no annual
+  boundary to catch up after a worker restart.
 
 ---
 
@@ -187,8 +180,7 @@ Ops:
   (g) repeated deterministic-guardrail blocks (`guardrail_failures` on
   `agent_action_logs`), (h) failed autonomous proposal creation
   (`agent_proposals.status='failed'` or `proposal-creator` errors), (i)
-  management-fee collection errors that are NOT `NoManagementFeeDue`/zero-fee
-  (e.g. missing revenue-wallet ATA or unfunded ops wallet — see 5a). Wire
+  yield-skim failures (missing revenue-wallet ATA — see 5a). Wire
   `ALERT_WEBHOOK_URL`.
 
 ---
@@ -251,32 +243,25 @@ Record the decision and, if doing real CPIs, treat it as a new audited revision.
 
 ---
 
-## 9. Unified DAO creation flow (fee split, treasury seed, bootstrap)
+## 9. Unified DAO creation flow (gas, optional seed, bootstrap)
 
-DAO creation is a single guided flow: seed the treasury from the formation-fee
-carve-out, ratify the constitution, start the agents, and fire ONE bootstrap
-action that bypasses the review window so the agents deploy immediately.
+DAO creation is a single guided flow. The founder pays only network gas (and
+account rent). There is no protocol formation fee and no NAVE or wNAVE creation
+stake on any chain. A founder may deposit their own assets into the treasury as
+a seed. That deposit is their capital, not a fee. The flow can then ratify the
+constitution, start the agents, and fire ONE bootstrap action that bypasses the
+review window so the agents deploy immediately.
 
-**Formation-fee split (Solana).** The mainnet carve-out a founder pays is split:
+**Formation.** `initialize_dao` charges no SOL.
+`global_config.formation_fee_lamports` is `0` on every network. Do not write a
+non-zero formation fee. EVM `formationFee` stays `0`. Any `msg.value` the
+founder sends with creation is their own treasury seed, not a protocol charge.
+Token-mint fees (0.5 SOL / 0.05 ETH) are unchanged and are not a cost of
+forming a treasury.
 
-- **Protocol portion — 1.5 SOL** charged on-chain by `initialize_dao_handler`
-  to `global_config.treasury`. The mainnet cutover writes this to
-  `global_config.formation_fee_lamports`; the handler charges
-  `max(global, FORMATION_FEE_LAMPORTS)` where the mainnet constant is 1.5 SOL.
-  **Never write the 1.8 SOL total — it would overcharge founders by the seed.**
-- **Treasury seed — 0.3 SOL** the flow wraps to wSOL and deposits into the new
-  DAO's own treasury vault client-side: create founder wSOL ATA → transfer the
-  seed → `sync_native` → `register_asset(wSOL, SolLike, SOL/USD feed)` →
-  `deposit_to_asset` → `revalue_treasury`. The DAO starts with a priced SOL-like
-  balance so the agents can deploy.
-- **Devnet** = 0 protocol + 0.1 SOL seed. On devnet,
-  `global_config.formation_fee_lamports` **MUST be 0** (the handler's
-  `.max(FORMATION_FEE_LAMPORTS=0)` would otherwise still charge a non-zero global).
-- **EVM parity.** `NaveProtocol.treasurySeed` is configurable via `setTreasurySeed`
-  (guarded `treasurySeed <= formationFee`, emits `TreasurySeedUpdated`); the
-  deploy script wires it. Devnet = 0.01 ETH all-to-seed. **Mainnet split is NOT
-  FINALIZED** (`TREASURY_SEED_WEI`, `MAINNET_TREASURY_SEED_BPS=1667` ≈ 1/6 of the
-  0.1 ETH fee) — confirm the absolute amounts before launch.
+**Moonlight.** An existing locked creation stake, from a treasury formed before
+this change, is still released on moonlight. New treasuries have no lock to
+release. Reopening (`restore_dao` / EVM restore) does not require a new stake.
 
 **Bootstrap activation (immediate first action).** The first founder-gated
 `create_execution_request(…, bootstrap=true)` snapshots `review_window = 0` so the

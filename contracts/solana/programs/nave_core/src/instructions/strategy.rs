@@ -3,9 +3,10 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::constants::{
     jupiter_lending_program, kamino_lending_program, nave_execution_program,
-    spl_stake_pool_program, AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, FEE_CONFIG_SEED,
-    GLOBAL_CONFIG_SEED, MAX_PROTOCOL_ID_LEN, STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED,
-    TREASURY_ASSET_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
+    spl_stake_pool_program, AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED,
+    DEFAULT_PERFORMANCE_FEE_BPS, FEE_CONFIG_SEED, GLOBAL_CONFIG_SEED, MAX_PROTOCOL_ID_LEN,
+    STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED, TREASURY_ASSET_SEED, TREASURY_VAULT_SEED,
+    VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
 use crate::events::{PerformanceFeeSkimmed, PositionMarked};
@@ -15,9 +16,9 @@ use crate::state::{
 };
 use crate::utils::{
     calculate_performance_skim, capped_mark, jupiter_ftoken_value, kamino_collateral_value,
-    record_strategy_deposit, record_strategy_withdrawal, require_not_paused, stake_pool_token_value,
-    transfer_escrow_to_account, transfer_escrow_to_vault, transfer_vault_to_escrow,
-    verify_execution_authority,
+    record_strategy_deposit, record_strategy_withdrawal, require_not_paused,
+    stake_pool_token_value, transfer_escrow_to_account, transfer_escrow_to_vault,
+    transfer_vault_to_escrow, verify_execution_authority,
 };
 
 pub fn init_strategy_position_handler(
@@ -205,18 +206,16 @@ pub fn record_strategy_withdrawal_handler(
 
     let dao_key = ctx.accounts.dao_registry.key();
 
-    // ── Performance-fee skim (8.5% of realized yield, before treasury credit) ──
-    // Compute the realized-yield portion of this withdrawal from the position's
-    // PRE-withdrawal mark, and skim `performance_fee_bps` of it. Principal is
-    // never taxed; only the proportional gain. The skim is in the withdrawn
-    // asset and is moved straight from the strategy escrow to the protocol
-    // revenue wallet, so it never lands in the treasury balance.
-    let perf_fee_bps = ctx.accounts.fee_config.performance_fee_bps;
+    // ── Performance-fee skim (15% of realized yield, before treasury credit) ──
+    // Always 1500 bps, including when the treasury is frozen or `FeeConfig`
+    // still stores an older rate. Principal is never taxed; only the
+    // proportional gain. The skim is in the withdrawn asset and is moved
+    // straight from the strategy escrow to the protocol revenue wallet.
     let (gain, perf_fee) = calculate_performance_skim(
         amount,
         ctx.accounts.strategy_position.deposited_amount,
         ctx.accounts.strategy_position.current_value,
-        perf_fee_bps,
+        DEFAULT_PERFORMANCE_FEE_BPS,
     )?;
 
     if perf_fee > 0 {
@@ -230,7 +229,7 @@ pub fn record_strategy_withdrawal_handler(
         )?;
     }
 
-    // The remaining 91.5% of yield plus 100% of principal credits the treasury
+    // The remaining 85% of yield plus 100% of principal credits the treasury
     // vault, symmetric to deposit: escrow -> asset_vault(mint), signed by the
     // nave_core-owned vault_authority PDA.
     let to_treasury = amount
@@ -270,6 +269,10 @@ pub fn record_strategy_withdrawal_handler(
             fee: perf_fee,
         });
     }
+
+    // Lazy correction: an older treasury that still stores 65/850 (or any
+    // other pair) becomes 0/1500, normal and frozen, on this withdrawal.
+    ctx.accounts.fee_config.sync_canonical_rates();
 
     Ok(())
 }
@@ -330,15 +333,24 @@ fn receipt_token(
     if let Some(k) = expected_key {
         require!(info.key() == *k, NaveError::PositionMarkSourceMismatch);
     }
-    require!(info.owner == &anchor_spl::token::ID, NaveError::PositionMarkSourceMismatch);
+    require!(
+        info.owner == &anchor_spl::token::ID,
+        NaveError::PositionMarkSourceMismatch
+    );
     let data = info.try_borrow_data()?;
     let acct = TokenAccount::try_deserialize(&mut &data[..])
         .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?;
-    require!(acct.owner == *owner && acct.mint == *mint, NaveError::PositionMarkSourceMismatch);
+    require!(
+        acct.owner == *owner && acct.mint == *mint,
+        NaveError::PositionMarkSourceMismatch
+    );
     Ok(acct.amount)
 }
 
-fn observe_position_value(ctx: &Context<UpdateStrategyPositionValue>, protocol_id: &[u8]) -> Result<u64> {
+fn observe_position_value(
+    ctx: &Context<UpdateStrategyPositionValue>,
+    protocol_id: &[u8],
+) -> Result<u64> {
     let sp = &ctx.accounts.strategy_position;
     let vault_authority = ctx.accounts.vault_authority.key();
     let venue = &ctx.accounts.venue_state;
@@ -352,44 +364,57 @@ fn observe_position_value(ctx: &Context<UpdateStrategyPositionValue>, protocol_i
         0
     } else {
         match protocol_id {
-        b"kamino" => {
-            require!(
-                venue.key() == sp.ext_reserve && venue.owner == &kamino_lending_program::ID,
-                NaveError::PositionMarkSourceMismatch
-            );
-            let data = receipt.try_borrow_data()?;
-            let collateral_mint = TokenAccount::try_deserialize(&mut &data[..])
-                .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
-                .mint;
-            drop(data);
-            let c = receipt_token(receipt, Some(&sp.position_token_account), &vault_authority, &collateral_mint)?;
-            kamino_collateral_value(&venue.try_borrow_data()?, &sp.mint, &collateral_mint, c)?
-        }
-        b"jupiter" => {
-            require!(
-                venue.key() == sp.ext_market && venue.owner == &jupiter_lending_program::ID,
-                NaveError::PositionMarkSourceMismatch
-            );
-            let lending = venue.try_borrow_data()?;
-            let (_, f_token_mint) = jupiter_ftoken_value(&lending, &sp.mint, 0)?;
-            let ata = anchor_spl::associated_token::get_associated_token_address(&vault_authority, &f_token_mint);
-            let f = receipt_token(receipt, Some(&ata), &vault_authority, &f_token_mint)?;
-            jupiter_ftoken_value(&lending, &sp.mint, f)?.0
-        }
-        b"jito" => {
-            require!(
-                venue.key() == sp.ext_market && venue.owner == &spl_stake_pool_program::ID,
-                NaveError::PositionMarkSourceMismatch
-            );
-            let data = receipt.try_borrow_data()?;
-            let pool_mint = TokenAccount::try_deserialize(&mut &data[..])
-                .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
-                .mint;
-            drop(data);
-            let t = receipt_token(receipt, Some(&sp.position_token_account), &vault_authority, &pool_mint)?;
-            stake_pool_token_value(&venue.try_borrow_data()?, &pool_mint, t)?
-        }
-        _ => return err!(NaveError::PositionMarkSourceMismatch),
+            b"kamino" => {
+                require!(
+                    venue.key() == sp.ext_reserve && venue.owner == &kamino_lending_program::ID,
+                    NaveError::PositionMarkSourceMismatch
+                );
+                let data = receipt.try_borrow_data()?;
+                let collateral_mint = TokenAccount::try_deserialize(&mut &data[..])
+                    .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
+                    .mint;
+                drop(data);
+                let c = receipt_token(
+                    receipt,
+                    Some(&sp.position_token_account),
+                    &vault_authority,
+                    &collateral_mint,
+                )?;
+                kamino_collateral_value(&venue.try_borrow_data()?, &sp.mint, &collateral_mint, c)?
+            }
+            b"jupiter" => {
+                require!(
+                    venue.key() == sp.ext_market && venue.owner == &jupiter_lending_program::ID,
+                    NaveError::PositionMarkSourceMismatch
+                );
+                let lending = venue.try_borrow_data()?;
+                let (_, f_token_mint) = jupiter_ftoken_value(&lending, &sp.mint, 0)?;
+                let ata = anchor_spl::associated_token::get_associated_token_address(
+                    &vault_authority,
+                    &f_token_mint,
+                );
+                let f = receipt_token(receipt, Some(&ata), &vault_authority, &f_token_mint)?;
+                jupiter_ftoken_value(&lending, &sp.mint, f)?.0
+            }
+            b"jito" => {
+                require!(
+                    venue.key() == sp.ext_market && venue.owner == &spl_stake_pool_program::ID,
+                    NaveError::PositionMarkSourceMismatch
+                );
+                let data = receipt.try_borrow_data()?;
+                let pool_mint = TokenAccount::try_deserialize(&mut &data[..])
+                    .map_err(|_| error!(NaveError::PositionMarkSourceMismatch))?
+                    .mint;
+                drop(data);
+                let t = receipt_token(
+                    receipt,
+                    Some(&sp.position_token_account),
+                    &vault_authority,
+                    &pool_mint,
+                )?;
+                stake_pool_token_value(&venue.try_borrow_data()?, &pool_mint, t)?
+            }
+            _ => return err!(NaveError::PositionMarkSourceMismatch),
         }
     };
     escrowed
@@ -528,9 +553,11 @@ pub struct RecordStrategyWithdrawal<'info> {
     )]
     pub strategy_escrow: Account<'info, TokenAccount>,
 
-    /// Fee configuration — supplies `performance_fee_bps` and the
-    /// `protocol_revenue_wallet` skim destination.
+    /// Fee configuration. The skim rate is the canonical 1500 bps, not the
+    /// stored value; this account is writable so a stale rate is corrected.
+    /// `protocol_revenue_wallet` is the skim destination.
     #[account(
+        mut,
         seeds = [FEE_CONFIG_SEED, dao_registry.key().as_ref()],
         bump = fee_config.bump,
         constraint = fee_config.dao == dao_registry.key() @ NaveError::DaoOwnershipMismatch

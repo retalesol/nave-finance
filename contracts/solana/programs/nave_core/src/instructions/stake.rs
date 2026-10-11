@@ -1,14 +1,12 @@
-//! DAO creation stake (Phase 3).
+//! Legacy DAO creation stake (Phase 3).
 //!
-//! Formation is fee-free; instead the founder locks a recoverable `$99`-of-NAVE
-//! stake into a per-DAO escrow (`stake_escrow`) tracked by `DaoStakeLock`. This
-//! instruction is invoked immediately after the 3-step `initialize_dao*` flow in
-//! the same creation transaction batch. The required NAVE amount is derived
-//! off-chain from the accepted oracle quote (a separate price-oracle worker owns
-//! pricing); on-chain we enforce (SEC-M2) a hard NAVE floor
-//! (`MIN_DAO_STAKE_NAVE_BASE_UNITS`), full receipt of the transfer into escrow,
-//! and — once a trusted `NAVE_USD_PYTH_FEED_ID` is pinned — a fresh Pyth
-//! NAVE/USD verification that the stake is worth at least the `$99` target.
+//! New treasuries do not call this. Formation is fee-free and does not require
+//! a NAVE lock; `initialize_dao*` succeeds on its own, and `restore_dao` does
+//! not restake. This instruction remains so a client can still lock NAVE into
+//! `DaoStakeLock` for a treasury that wants the old escrow, and so moonlight
+//! can later release that lock. On-chain it still enforces the NAVE floor
+//! (`MIN_DAO_STAKE_NAVE_BASE_UNITS`), full receipt into escrow, and — once a
+//! trusted `NAVE_USD_PYTH_FEED_ID` is pinned — a fresh Pyth NAVE/USD check.
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
@@ -80,12 +78,8 @@ pub fn stake_dao_creation_handler(
             .get_price_no_older_than(&clock, PYTH_MAX_PRICE_AGE_SECS, &NAVE_USD_PYTH_FEED_ID)
             .map_err(|_| error!(NaveError::StaleOracle))?;
         require_confidence(p.price, p.conf)?;
-        let stake_value_usd_micro = value_usd(
-            amount,
-            ctx.accounts.nave_mint.decimals,
-            p.price,
-            p.exponent,
-        )?;
+        let stake_value_usd_micro =
+            value_usd(amount, ctx.accounts.nave_mint.decimals, p.price, p.exponent)?;
         require!(
             stake_value_usd_micro >= DAO_STAKE_TARGET_USD_MICRO,
             NaveError::StakeAmountTooLow

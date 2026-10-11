@@ -14,7 +14,7 @@ import { useAfterFirstPaint, usePrefersReducedMotion } from '../components/homep
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS } from '../lib/chain/types';
-import { EVM_DEPLOYMENT_MODE, NAVE_DAO_CREATION_STAKE_USD } from '../lib/programConfig';
+import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
 import { usePlatformTreasuryStats, formatHeroProtocolUsd } from '../hooks/usePlatformTreasuryStats';
 import { useNaveTokenStats, formatNavePrice, formatNaveMarketCap, formatNaveHolders } from '../hooks/useNaveTokenStats';
 
@@ -556,13 +556,6 @@ function TokenPriceChart({ data }: { data: { t: number; price: number }[] }) {
 
 const TOKEN_UTILITIES = [
   {
-    icon: 'wand-magic-sparkles',
-    title: 'Form DAOs',
-    desc: EVM_DEPLOYMENT_MODE === 'testnet'
-      ? 'Stake follows the chain. Solana uses the quoted NAVE amount, Ethereum and Base lock 0.1 wNAVE, and Robinhood and Arc require none. Staked tokens come back when the treasury winds down.'
-      : `Stake $${NAVE_DAO_CREATION_STAKE_USD} NAVE to form a DAO and activate its treasury infrastructure. The stake is recoverable — it replaces the old SOL creation fee, not a cost.`,
-  },
-  {
     icon: 'shield',
     title: 'Vote',
     desc: 'Participate in DAO votes and treasury decisions wherever token governance is enabled, aligning holders with protocol direction.',
@@ -603,21 +596,19 @@ function Tokenomics() {
           <Reveal variant="left" className="home-tok-copy">
             <div className="nave-section-label">Tokenomics</div>
             <h2 className="text-display">
-              Nave Shares align treasury
+              Nave Shares are the
               <br />
-              <span className="home-ital">creation and governance.</span>
+              <span className="home-ital">protocol token.</span>
             </h2>
             <p className="home-muted">
               <strong>Nave Shares</strong> (ticker <strong>$NAVE</strong>) are the
-              protocol token of Nave, capped at a fixed maximum supply. Holders stake Nave Shares to form DAOs,
-              activate treasury infrastructure, and participate in governance where it is enabled.
+              protocol token of Nave, capped at a fixed maximum supply. Holders vote
+              where a treasury enables token governance. Forming a treasury does not
+              require NAVE.
             </p>
             <ul className="home-check-list">
               {[
                 'Fixed maximum supply of 500,000 $NAVE',
-                EVM_DEPLOYMENT_MODE === 'testnet'
-                  ? 'Recoverable stake follows the chain: quoted NAVE on Solana, 0.1 wNAVE on Ethereum and Base, none on Robinhood or Arc'
-                  : `Recoverable $${NAVE_DAO_CREATION_STAKE_USD} NAVE staked to form a DAO`,
                 'Governance over DAO votes and treasury decisions',
                 'Fully fair launched — no team allocation or supply',
               ].map((item) => (
@@ -681,7 +672,7 @@ function Tokenomics() {
             </div>
           </Reveal>
         </div>
-        <Reveal stagger className="home-grid-3 home-util-grid">
+        <Reveal stagger className="home-util-grid">
           {TOKEN_UTILITIES.map(({ icon, title, desc }) => (
             <div key={title} className="nave-card nave-card-hover home-util">
               <DitherGlyph name={icon} />
@@ -699,28 +690,20 @@ function Tokenomics() {
 
 const PRICING = [
   {
-    title: 'DAO Formation',
+    title: 'Treasury Formation',
     icon: 'wand-magic-sparkles',
-    price: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Stake set by the chain' : `$${NAVE_DAO_CREATION_STAKE_USD} NAVE staked`,
-    period: 'recoverable — not a fee',
+    price: 'Gas',
+    period: 'to form a treasury',
     brass: false,
-    items: ['Recoverable NAVE stake, not a protocol fee', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agent deployment', 'Governance structure configuration'],
+    items: ['Network gas and account rent', 'No protocol fee and no NAVE stake', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agents and governance'],
   },
   {
-    title: 'Treasury Management',
-    icon: 'landmark',
-    price: '0.65%',
-    period: 'annualized',
-    brass: false,
-    items: ['Continuous agent coordination', 'Constitutional policy enforcement', 'Multisig execution layer', 'Treasury monitoring and accounting'],
-  },
-  {
-    title: 'Yield Performance',
+    title: 'Yield',
     icon: 'signal',
-    price: '8.5%',
-    period: 'on generated yield',
+    price: '15%',
+    period: 'of realized yield',
     brass: true,
-    items: ['SOL staking via Jito & Kamino', 'EVM lending via Aave & Compound', 'Stablecoin yield optimization', 'Auto-compounding across chains'],
+    items: ['Charged when a strategy position is withdrawn', 'Principal is not charged', 'The same 15% if the treasury is frozen', 'SOL staking via Jito and Kamino', 'EVM lending via Aave and Compound'],
   },
 ];
 

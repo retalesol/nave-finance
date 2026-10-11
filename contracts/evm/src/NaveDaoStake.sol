@@ -11,12 +11,15 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 
 import {INaveProtocol} from "./interfaces/INaveProtocol.sol";
 import {INaveGovernor} from "./interfaces/INaveGovernor.sol";
+import {INaveTreasury} from "./interfaces/INaveTreasury.sol";
 import {NaveErrors} from "./libraries/NaveErrors.sol";
 import {ProposalStatus, ProposalType, MoonlightStatus} from "./libraries/NaveEnums.sol";
 
 /// @title NaveDaoStake
-/// @notice Per-chain UUPS singleton for recoverable wrapped-NAVE DAO creation
-/// stake and moonlight lifecycle.
+/// @notice Per-chain UUPS singleton for an optional legacy wrapped-NAVE lock
+/// and the moonlight lifecycle. New treasuries are not locked at creation.
+/// Moonlight releases a lock that already exists and does not require one.
+/// Restoring a moonlighted treasury does not lock new NAVE.
 contract NaveDaoStake is
     Initializable,
     Ownable2StepUpgradeable,
@@ -98,7 +101,15 @@ contract NaveDaoStake is
     function recordMoonlightRequest(address treasury, address governor, uint64 proposalIndex)
         external
     {
-        StakeRecord storage s = _bind(treasury, governor);
+        _requireBoundGovernor(treasury, governor);
+        StakeRecord storage s = stakes[treasury];
+        // A treasury that never locked NAVE still needs a lifecycle record.
+        if (s.founder == address(0) && s.token == address(0)) {
+            address founder_ = INaveTreasury(treasury).founder();
+            if (founder_ == address(0)) revert NaveErrors.StakeNotFound();
+            s.founder = founder_;
+            s.moonlightStatus = uint8(MoonlightStatus.Active);
+        }
         if (s.moonlightStatus != uint8(MoonlightStatus.Active)) {
             revert NaveErrors.MoonlightInvalidStatus();
         }
@@ -120,7 +131,7 @@ contract NaveDaoStake is
 
     function setMoonlightRecipient(address treasury, address recipient) external {
         StakeRecord storage s = stakes[treasury];
-        if (s.token == address(0)) revert NaveErrors.StakeNotFound();
+        if (s.founder == address(0) && s.token == address(0)) revert NaveErrors.StakeNotFound();
         if (s.moonlightStatus != uint8(MoonlightStatus.Requested)) {
             revert NaveErrors.MoonlightInvalidStatus();
         }
@@ -169,7 +180,7 @@ contract NaveDaoStake is
 
     function finalizeMoonlight(address treasury) external {
         StakeRecord storage s = stakes[treasury];
-        if (s.token == address(0)) revert NaveErrors.StakeNotFound();
+        if (s.founder == address(0) && s.token == address(0)) revert NaveErrors.StakeNotFound();
         if (s.moonlightStatus != uint8(MoonlightStatus.Distributing)) {
             revert NaveErrors.MoonlightInvalidStatus();
         }
@@ -178,35 +189,23 @@ contract NaveDaoStake is
         emit DaoMoonlighted(treasury, s.recipient);
     }
 
-    function restoreDao(address treasury, uint256 amount, uint256 priceUsdMicro)
-        external
-        nonReentrant
-    {
+    /// Reopen a moonlighted treasury. `amount` and `priceUsdMicro` stay in the
+    /// signature so existing calldata still decodes; they are not applied.
+    /// Does not pull a new NAVE lock. An existing released lock stays released.
+    function restoreDao(address treasury, uint256, uint256) external nonReentrant {
         StakeRecord storage s = stakes[treasury];
-        if (s.token == address(0)) revert NaveErrors.StakeNotFound();
+        if (s.founder == address(0) && s.token == address(0)) revert NaveErrors.StakeNotFound();
         if (s.moonlightStatus != uint8(MoonlightStatus.Moonlighted)) {
             revert NaveErrors.MoonlightInvalidStatus();
         }
         if (msg.sender != s.founder) revert NaveErrors.Unauthorized();
-        if (amount == 0) revert NaveErrors.StakeAmountTooLow();
-        uint256 required = protocol.requiredNaveStake();
-        if (required > 0 && amount < required) revert NaveErrors.StakeAmountTooLow();
 
-        uint256 beforeBal = IERC20(s.token).balanceOf(address(this));
-        IERC20(s.token).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = IERC20(s.token).balanceOf(address(this)) - beforeBal;
-        if (received < amount) revert NaveErrors.StakeAmountTooLow();
-
-        s.amount = amount;
-        s.released = false;
-        s.priceUsdMicro = priceUsdMicro;
         s.moonlightStatus = uint8(MoonlightStatus.Active);
         s.recipient = address(0);
         s.initiatedBy = address(0);
         s.requestProposal = 0;
         s.distributionProposal = 0;
-        emit StakeLocked(treasury, msg.sender, s.token, amount, priceUsdMicro);
-        emit DaoRestored(treasury, msg.sender, amount);
+        emit DaoRestored(treasury, msg.sender, 0);
     }
 
     function isMoonlighting(address treasury) external view returns (bool) {
@@ -218,15 +217,19 @@ contract NaveDaoStake is
         return stakes[treasury].moonlightStatus;
     }
 
+    function _requireBoundGovernor(address treasury, address governor) internal view {
+        if (!protocol.isNaveGovernor(governor)) revert NaveErrors.Unauthorized();
+        if (INaveGovernor(governor).treasury() != treasury) revert NaveErrors.Unauthorized();
+    }
+
     function _bind(address treasury, address governor)
         internal
         view
         returns (StakeRecord storage s)
     {
+        _requireBoundGovernor(treasury, governor);
         s = stakes[treasury];
-        if (s.token == address(0)) revert NaveErrors.StakeNotFound();
-        if (!protocol.isNaveGovernor(governor)) revert NaveErrors.Unauthorized();
-        if (INaveGovernor(governor).treasury() != treasury) revert NaveErrors.Unauthorized();
+        if (s.founder == address(0) && s.token == address(0)) revert NaveErrors.StakeNotFound();
     }
 
     uint256[48] private __gap;

@@ -32,25 +32,22 @@ import ConstitutionStep, {
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useChain } from '../hooks/useChain';
 import { useSendTransaction } from '../hooks/useSendTransaction';
-import { buildCreateDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTokenEvm, buildApproveErc20Evm, type EvmCreateDaoParams } from '../lib/evm/writers';
+import { buildCreateDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTokenEvm, type EvmCreateDaoParams } from '../lib/evm/writers';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, Erc20Abi } from '../lib/evm/contracts';
-import { fetchFormationFeeEvm, fetchFactoryAddressEvm, fetchNaveStakeConfigEvm, fetchErc20BalanceEvm, type EvmNaveStakeConfig } from '../lib/evm/readers';
+import { fetchFormationFeeEvm, fetchFactoryAddressEvm } from '../lib/evm/readers';
 import { toAddress } from '../lib/evm/addresses';
-import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, SOLANA_NAVE_MINT, activeEvmChainId, chainDisplayLabel, NAVE_DAO_CREATION_STAKE_USD, SYSTEM_CONFIDENCE_THRESHOLD, bridgeCanRedeemNave, EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
-import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, isEvmTestnet, chainFamilyLabel, evmActivationChainFamily, USER_CHAINS } from '../lib/chain/types';
+import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, activeEvmChainId, chainDisplayLabel, SYSTEM_CONFIDENCE_THRESHOLD, EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
+import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, evmActivationChainFamily, USER_CHAINS } from '../lib/chain/types';
 import {
   buildInitializeDao,
   buildInitializeDaoExtensions,
   buildInitializeDaoGovernance,
   buildRegisterDaoToken,
-  buildStakeDaoCreation,
   type InitializeDaoParams,
   type TransactionBuildResult,
 } from '../lib/transactionBuilders';
-import { getDaoRegistryPDA, getNaveGlobalConfigPDA, getVaultAuthorityPDA, getDaoStakeLockPDA, getAgentSetPDA } from '../lib/pdaDerivation';
+import { getDaoRegistryPDA, getNaveGlobalConfigPDA, getVaultAuthorityPDA, getAgentSetPDA } from '../lib/pdaDerivation';
 import { getNavePrograms } from '../lib/naveProgram';
-import { useNaveStakeQuote } from '../hooks/useNaveStakeQuote';
-import { naveBaseUnitsToUi, fetchNaveStakeQuote, creationStakeSourcesDisagree, CREATION_STAKE_MISMATCH_SENTENCE, type NaveStakeQuote } from '../lib/naveStakeOracle';
 import { generateAgentKeys, registerDao, generateEvmAgentKeys, bindEvmAgentKeys, setAgentsEnabledViaProxy, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import {
   runSolanaAutoActivation,
@@ -61,6 +58,8 @@ import { uploadDaoLogo } from '../lib/uploadLogo';
 import {
   MANAGEMENT_FEE_BPS_NORMAL,
   MANAGEMENT_FEE_BPS_FROZEN,
+  PERFORMANCE_FEE_BPS,
+  FROZEN_PERFORMANCE_FEE_BPS,
   TOKEN_MINT_FEE_SOL,
   TOKEN_MINT_FEE_ETH,
   AGENT_WALLET_SEED_SOL,
@@ -151,7 +150,6 @@ const EVM_SUB_STEP_LABELS: Record<string, string> = {
 const SOLANA_SUB_STEP_LABELS: Record<string, string> = {
   foundation: 'Creating DAO foundation',
   governance: 'Setting up DAO governance & extensions',
-  stake: 'Locking NAVE creation stake',
   activate: 'Activating constitution & policy',
   'register-metadata': 'Saving DAO metadata',
 };
@@ -950,7 +948,6 @@ function SeedReviewStep({
   deploying,
   evmFormationFeeWei,
   evmFormationFeeLoading,
-  stake,
 }: {
   config: DAOConfig;
   policy: PolicyState;
@@ -960,7 +957,6 @@ function SeedReviewStep({
   deploying: boolean;
   evmFormationFeeWei?: bigint | null;
   evmFormationFeeLoading?: boolean;
-  stake: StakeGateState;
 }) {
   const isSolana = config.chain === 'solana';
   const chainLabel = chainDisplayLabel(config.chain);
@@ -973,23 +969,14 @@ function SeedReviewStep({
 
   const seedNum = parseFloat(seedAmount);
   const validSeed = !isNaN(seedNum) && seedNum >= 0;
-  const stakeBlocksDeploy = stake.quoteMismatch || stake.mainnetStakeInactive || (stake.active && !stake.canCover);
-  const deployBlocked = deploying || !validSeed || stakeBlocksDeploy;
+  const deployBlocked = deploying || !validSeed;
 
   const presetLabel = RISK_PRESETS.find((r) => r.id === policy.riskPreset)?.label ?? policy.riskPreset;
   const approvedProtocols = (isSolana ? PROTOCOLS_SOLANA : PROTOCOLS_EVM)
     .filter((p) => policy.approvedProtocols[p.key])
     .map((p) => p.label);
 
-  // Recoverable NAVE stake. Dollar copy comes only from a quote that matches
-  // the chain stake and the configured USD target — never a fallback price.
-  const stakeUsdLabel = stake.quotedStakeUsd != null ? `$${stake.quotedStakeUsd}` : null;
-  const stakeUnit = isSolana ? 'NAVE' : 'wNAVE';
-  const stakeRequiredLabel = stake.requiredUi != null
-    ? `${stake.requiredUi.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${stakeUnit}`
-    : '—';
-
-  // Per-network NON-RECOVERABLE native cost rows (Solana). Formation is fee-free.
+  // Per-network native cost rows (Solana). Formation has no protocol fee.
   const isMainnet = SOLANA_NETWORK === 'mainnet';
   const agentSeedSol = AGENT_WALLET_TOTAL_SEED_SOL;
   const rentSol = 0.015;
@@ -1113,29 +1100,13 @@ function SeedReviewStep({
           <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
             Deployment Costs
           </span>
-
-          {/* Recoverable NAVE stake — separated from non-recoverable costs */}
-          <div className="flex items-center justify-between py-2 px-3 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', border: '1px solid hsl(var(--border-strong))' }}>
-            <div>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: 'hsl(var(--accent-muted-foreground))' }}>
-                Recoverable NAVE stake
-              </span>
-              <span style={{ fontSize: '10.5px', color: 'hsl(var(--accent-muted-foreground))', display: 'block', opacity: 0.85 }}>
-                {stake.quoteMismatch
-                  ? CREATION_STAKE_MISMATCH_SENTENCE
-                  : stakeUsdLabel
-                    ? `${stakeUsdLabel} of NAVE locked in escrow — returned on wind-down, not a fee`
-                    : 'Quoted NAVE stake is unavailable, so creation stays closed.'}
-              </span>
-            </div>
-            <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--accent-muted-foreground))' }}>
-              {stakeRequiredLabel}
-            </span>
-          </div>
+          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+            Forming a treasury has no protocol fee and does not lock NAVE. You pay network gas and account rent.
+            Any SOL you deposit is your treasury seed, not a fee.
+          </p>
 
           <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.04em', paddingTop: '2px' }}>
-            Non-recoverable (network)
+            Network
           </div>
 
           {[
@@ -1168,7 +1139,7 @@ function SeedReviewStep({
 
           <div className="pt-1 space-y-1">
             <div className="flex items-center justify-between">
-              <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Non-recoverable SOL (gas, rent, seeding)</span>
+              <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Network SOL (gas, rent, agent funding)</span>
               <span className="nave-mono" style={{ fontSize: '12px' }}>~{totalFeesSol.toFixed(3)} SOL</span>
             </div>
             <div className="flex items-center justify-between border-t pt-2" style={{ borderColor: 'hsl(var(--border))' }}>
@@ -1177,9 +1148,6 @@ function SeedReviewStep({
                 ~{validSeed ? totalCostSol.toFixed(3) : totalFeesSol.toFixed(3)} SOL
               </span>
             </div>
-            <p style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', paddingTop: '2px' }}>
-              Plus the recoverable {stakeRequiredLabel} stake (paid in NAVE, returned on wind-down).
-            </p>
           </div>
         </div>
       )}
@@ -1187,38 +1155,20 @@ function SeedReviewStep({
       {!isSolana && (
         <div className="nave-card p-5 space-y-3" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
           <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>Deployment Costs</span>
-
-          {/* Recoverable NAVE stake (when the bridge/stake path is live on this chain) */}
-          <div className="flex items-center justify-between py-2 px-3 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', border: '1px solid hsl(var(--border-strong))' }}>
-            <div>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: 'hsl(var(--accent-muted-foreground))' }}>
-                Recoverable NAVE stake
-              </span>
-              <span style={{ fontSize: '10.5px', color: 'hsl(var(--accent-muted-foreground))', display: 'block', opacity: 0.85 }}>
-                {stake.quoteMismatch
-                  ? CREATION_STAKE_MISMATCH_SENTENCE
-                  : stake.active
-                    ? (stakeUsdLabel
-                      ? `${stakeUsdLabel} of wNAVE locked in escrow — returned on wind-down, not a fee`
-                      : 'Quoted wNAVE stake is unavailable, so creation stays closed.')
-                    : `$${NAVE_DAO_CREATION_STAKE_USD} of NAVE — activates once the NAVE bridge is live on this chain`}
-              </span>
-            </div>
-            <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--accent-muted-foreground))' }}>
-              {stake.active ? stakeRequiredLabel : '—'}
-            </span>
-          </div>
+          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+            Forming a treasury has no protocol fee and does not lock NAVE. You pay network gas.
+            Any {nativeUnit} you send with creation is your treasury seed, not a fee.
+          </p>
 
           <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.04em', paddingTop: '2px' }}>
-            Network + treasury seed (not protocol profit)
+            Network gas
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Formation carve-out + gas</span>
+                <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Network gas</span>
                 <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', display: 'block', opacity: 0.85 }}>
-                  treasury seed / network cost — stake is the creation gate
+                  no protocol formation fee
                 </span>
               </div>
               <span className="nave-mono" style={{ fontSize: '12px' }}>
@@ -1270,13 +1220,13 @@ function SeedReviewStep({
         <div>
           <p className="font-semibold" style={{ fontSize: '13px', color: 'hsl(var(--foreground))', marginBottom: '3px' }}>
             {isSolana
-              ? 'Your wallet will prompt you up to 4 times'
-              : 'Your wallet will prompt you about 6 times'}
+              ? 'Your wallet will prompt you up to 3 times'
+              : 'Your wallet will prompt you several times'}
           </p>
           <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
             {isSolana
-              ? 'A guided popup walks you through each signature — Foundation, Governance, Lock NAVE stake, then Activate & Ratify. You can retry if interrupted.'
-              : 'You will sign an agent-key message, approve the stake if one is required, create the treasury, sign the key-binding and treasury-details messages, then activate the rules. A token treasury adds one more transaction. You can retry if interrupted.'}
+              ? 'A guided popup walks you through each signature — Foundation, Governance, then Activate & Ratify. You can retry if interrupted.'
+              : 'You will sign an agent-key message, create the treasury, sign the key-binding and treasury-details messages, then activate the rules. A token treasury adds one more transaction. You can retry if interrupted.'}
           </p>
         </div>
       </div>
@@ -1297,11 +1247,6 @@ function SeedReviewStep({
         <Fi icon="rocket" style={{ fontSize: '14px' }} />
         Deploy Treasury
       </button>
-      {stake.quoteMismatch && (
-        <p className="text-center" style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', lineHeight: 1.5 }}>
-          {CREATION_STAKE_MISMATCH_SENTENCE}
-        </p>
-      )}
       {!validSeed && (
         <p className="text-center" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
           Enter a seed amount (0 is valid) to continue
@@ -1310,381 +1255,6 @@ function SeedReviewStep({
     </div>
   );
 }
-
-/* ── Page-one NAVE stake gate ─────────────────────────────── */
-interface StakeGateState {
-  /** Whether a recoverable NAVE stake is required to create on this chain. */
-  active: boolean;
-  loading: boolean;
-  /** Base units the founder must stake (null until known). */
-  required: bigint | null;
-  /** Connected wallet's NAVE balance in base units (null until known). */
-  balance: bigint | null;
-  /** True when the wallet can cover the required stake (or no stake required). */
-  canCover: boolean;
-  /**
-   * EVM mainnet: stake module/token/amount not wired — creation must be refused
-   * (stake is the creation gate; formationFee is only a treasury-seed carve-out).
-   */
-  mainnetStakeInactive: boolean;
-  requiredUi: number | null;
-  balanceUi: number | null;
-  stakeUsd: number;
-  /** Oracle USD target when it agrees with the chain stake. Null otherwise — never a guessed price. */
-  quotedStakeUsd: number | null;
-  /** Oracle quote, on-chain requiredNaveStake, and the configured USD target disagree. */
-  quoteMismatch: boolean;
-  error: string | null;
-  /** Resolved EVM stake config (null on Solana / before load). */
-  evmStake: EvmNaveStakeConfig | null;
-}
-
-/**
- * Page-one stake gate: resolves the recoverable NAVE creation stake required for
- * the selected chain and the connected wallet's NAVE balance, so the wizard can
- * block advancing when the wallet can't cover the stake.
- *
- * - Solana: required = oracle quote (always staked); balance = founder NAVE ATA.
- * - EVM testnet: when module/token/amount are zero, stake is inactive and creation
- *   may proceed (fee-free testnets).
- * - EVM mainnet (DAO-capable): inactive stake config refuses creation — NAVE stake
- *   is the gate; `formationFee` / treasury seed is not protocol profit.
- */
-function useStakeGate(params: {
-  chain: ChainFamily;
-  connectedWallet: string | null;
-  enabled: boolean;
-  quote: NaveStakeQuote | null;
-  quoteLoading: boolean;
-  quoteError: string | null;
-}): StakeGateState {
-  const { chain, connectedWallet, enabled, quote, quoteLoading, quoteError } = params;
-  const { connection } = useConnection();
-  const [balance, setBalance] = useState<bigint | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-  const [evmStake, setEvmStake] = useState<EvmNaveStakeConfig | null>(null);
-  const [evmError, setEvmError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!enabled) {
-      setBalance(null);
-      setEvmStake(null);
-      setBalanceLoading(false);
-      return;
-    }
-    let cancelled = false;
-    // Clear immediately so a Robinhood balance cannot flash under a Base selection
-    // (or vice versa) while the new chain's RPC round-trip is in flight.
-    setBalance(null);
-    setEvmStake(null);
-    setBalanceLoading(true);
-    setEvmError(null);
-
-    async function load() {
-      try {
-        if (chain === 'solana') {
-          setEvmStake(null);
-          if (!connectedWallet) {
-            if (!cancelled) setBalance(null);
-            return;
-          }
-          const owner = new PublicKey(connectedWallet);
-          const ata = getAssociatedTokenAddressSync(SOLANA_NAVE_MINT, owner, false);
-          try {
-            const bal = await connection.getTokenAccountBalance(ata);
-            if (!cancelled) setBalance(BigInt(bal.value.amount));
-          } catch {
-            // No NAVE ATA yet ⇒ zero balance.
-            if (!cancelled) setBalance(0n);
-          }
-        } else {
-          const chainId = activeEvmChainId(chain as Exclude<ChainFamily, 'solana'>);
-          const cfg = await fetchNaveStakeConfigEvm(chainId);
-          if (cancelled) return;
-          setEvmStake(cfg);
-          if (cfg?.active && cfg.token && connectedWallet) {
-            const bal = await fetchErc20BalanceEvm(chainId, cfg.token, connectedWallet);
-            if (!cancelled) setBalance(bal ?? 0n);
-          } else if (!cancelled) {
-            setBalance(null);
-          }
-        }
-      } catch (err) {
-        if (!cancelled) setEvmError(err instanceof Error ? err.message : 'Failed to read NAVE balance');
-      } finally {
-        if (!cancelled) setBalanceLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [chain, connectedWallet, enabled, connection]);
-
-  // ── Resolve required amount + UI figures per chain ──────────────────────────
-  // Dollar labels come from the oracle quote only. The env USD target is a
-  // comparison input, not a price to invent when the oracle is missing.
-  const quotedStakeUsd = quote && Number.isFinite(quote.stakeUsd) ? quote.stakeUsd : null;
-  const stakeUsd = quotedStakeUsd ?? 0;
-  if (chain === 'solana') {
-    let required: bigint | null = null;
-    if (quote) {
-      try {
-        required = BigInt(quote.requiredNaveBaseUnits);
-      } catch {
-        required = null;
-      }
-    }
-    const quoteMismatch = quote != null && (
-      required == null || creationStakeSourcesDisagree(quote, required, NAVE_DAO_CREATION_STAKE_USD)
-    );
-    const decimals = quote?.naveDecimals ?? 6;
-    const canCover = !quoteMismatch && required != null && balance != null ? balance >= required : false;
-    return {
-      active: true,
-      loading: quoteLoading || balanceLoading,
-      required,
-      balance,
-      canCover,
-      mainnetStakeInactive: false,
-      requiredUi: quote && !quoteMismatch ? quote.requiredNave : null,
-      balanceUi: balance != null ? naveBaseUnitsToUi(balance.toString(), decimals) : null,
-      stakeUsd,
-      quotedStakeUsd: quoteMismatch ? null : quotedStakeUsd,
-      quoteMismatch,
-      error: quoteError ?? evmError,
-      evmStake: null,
-    };
-  }
-
-  const chainId = activeEvmChainId(chain as Exclude<ChainFamily, 'solana'>);
-  const isMainnet = !isEvmTestnet(chainId);
-
-  // EVM mainnet: refuse creation when stake path is not wired (stake is the gate).
-  if (isMainnet && evmStake && !evmStake.active) {
-    return {
-      active: false,
-      loading: balanceLoading,
-      required: null,
-      balance: null,
-      canCover: false,
-      mainnetStakeInactive: true,
-      requiredUi: null,
-      balanceUi: null,
-      stakeUsd,
-      quotedStakeUsd: null,
-      quoteMismatch: false,
-      error: 'DAO creation is disabled until the recoverable NAVE stake is configured on this chain.',
-      evmStake,
-    };
-  }
-
-  if (isMainnet && !bridgeCanRedeemNave()) {
-    return {
-      active: false,
-      loading: balanceLoading,
-      required: null,
-      balance: null,
-      canCover: false,
-      mainnetStakeInactive: true,
-      requiredUi: null,
-      balanceUi: null,
-      stakeUsd,
-      quotedStakeUsd: null,
-      quoteMismatch: false,
-      error: 'DAO creation is disabled because locked Solana NAVE cannot be redeemed for wNAVE yet.',
-      evmStake,
-    };
-  }
-
-  // EVM testnet (or config still loading): inactive stake ⇒ no gate.
-  if (!evmStake || !evmStake.active) {
-    return {
-      active: false,
-      loading: balanceLoading,
-      required: null,
-      balance: null,
-      canCover: true,
-      mainnetStakeInactive: false,
-      requiredUi: null,
-      balanceUi: null,
-      stakeUsd,
-      quotedStakeUsd: null,
-      quoteMismatch: false,
-      error: evmError,
-      evmStake,
-    };
-  }
-  const required = evmStake.amount;
-  // Testnet stake is the on-chain amount (faucet-scale). The $19 production
-  // quote is a mainnet guard and must not block Sepolia or Base Sepolia.
-  const quoteMismatch = isMainnet && quote != null && creationStakeSourcesDisagree(quote, required, NAVE_DAO_CREATION_STAKE_USD);
-  const canCover = !quoteMismatch && balance != null && balance >= required;
-  return {
-    active: true,
-    loading: quoteLoading || balanceLoading,
-    required,
-    balance,
-    canCover,
-    mainnetStakeInactive: false,
-    requiredUi: quoteMismatch ? null : naveBaseUnitsToUi(required.toString(), 6),
-    balanceUi: balance != null ? naveBaseUnitsToUi(balance.toString(), 6) : null,
-    stakeUsd,
-    quotedStakeUsd: quoteMismatch ? null : quotedStakeUsd,
-    quoteMismatch,
-    error: quoteError ?? evmError,
-    evmStake,
-  };
-}
-
-/** Page-one notice: recoverable NAVE stake requirement + insufficient-balance CTA. */
-function StakeGateNotice({ gate, chain, onBridge }: { gate: StakeGateState; chain: ChainFamily; onBridge?: () => void }) {
-  const navigate = useNavigate();
-  const unit = chain === 'solana' ? 'NAVE' : 'wNAVE';
-  const stakeUsdLabel = gate.quotedStakeUsd != null ? `$${gate.quotedStakeUsd}` : null;
-
-  if (gate.quoteMismatch) {
-    return (
-      <div
-        className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y sm:border-0"
-        style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-      >
-        <Fi icon="triangle-exclamation" style={{ fontSize: '14px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-        <p style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', lineHeight: 1.6 }}>
-          {CREATION_STAKE_MISMATCH_SENTENCE}
-        </p>
-      </div>
-    );
-  }
-
-  if (gate.mainnetStakeInactive) {
-    return (
-      <div
-        className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y sm:border-0"
-        style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-      >
-        <Fi icon="triangle-exclamation" style={{ fontSize: '14px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-        <p style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', lineHeight: 1.6 }}>
-          {gate.error}
-        </p>
-      </div>
-    );
-  }
-
-  if (!gate.active) {
-    if (gate.loading) {
-      return (
-        <div
-          className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-        >
-          <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Checking whether this network requires a recoverable NAVE stake.
-          </p>
-        </div>
-      );
-    }
-    // No stake required on this chain (Robinhood and Arc testnets).
-    return (
-      <div
-        className="flex items-start gap-2.5 p-4 sm:p-5 w-full border-y"
-        style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-      >
-        <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
-        <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-          DAO creation is fee-free here, and this network does not require a NAVE stake.
-          {chain === 'arc'
-            ? ' Arc gas is 18-decimal USDC. Treasury USDC is the separate 6-decimal token.'
-            : ` Any ${treasuryNativeLabel(chain)} sent with creation is a treasury seed, not a fee.`}
-        </p>
-      </div>
-    );
-  }
-
-  const awaitingWallet = !gate.loading && gate.balance == null;
-  const insufficient = !gate.loading && gate.balance != null && !gate.canCover;
-
-  return (
-    <div
-      className="p-4 sm:p-5 w-full border-y"
-      style={{
-        backgroundColor: insufficient ? 'hsl(var(--destructive-muted))' : 'hsl(var(--accent-muted))',
-        borderColor: insufficient ? 'hsl(0 72% 80%)' : 'hsl(var(--border-strong))',
-      }}
-    >
-      <div className="flex items-start gap-2.5 w-full max-w-none px-0 sm:px-2">
-        <Fi
-          icon={insufficient ? 'triangle-exclamation' : 'lock'}
-          style={{
-            fontSize: '14px',
-            color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--accent))',
-            flexShrink: 0,
-            marginTop: '2px',
-          }}
-        />
-        <div className="flex-1 min-w-0">
-          <p
-            className="font-semibold"
-            style={{ fontSize: '13px', color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--accent-muted-foreground))', marginBottom: '3px' }}
-          >
-            {gate.loading
-              ? 'Checking the NAVE stake on this network…'
-              : awaitingWallet
-                ? `Connect a wallet holding ${gate.requiredUi ?? 'the required'} ${unit}. The stake is locked until the treasury winds down.`
-                : stakeUsdLabel && gate.requiredUi != null
-                  ? `Creating a DAO stakes ${gate.requiredUi} ${unit} (about ${stakeUsdLabel}). It comes back when the treasury winds down.`
-                  : gate.requiredUi != null
-                    ? `Creating a DAO stakes ${gate.requiredUi} ${unit}. It comes back when the treasury winds down.`
-                    : 'Creating a DAO requires a recoverable NAVE stake.'}
-          </p>
-          <p style={{ fontSize: '12.5px', color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6, opacity: 0.9 }}>
-            Your stake is locked in a per-DAO escrow and returned in full when the DAO winds down (moonlights)
-            or is released to an approved recipient — it is never taken as protocol revenue.
-          </p>
-
-          <div className="flex items-end justify-between gap-4 mt-3 flex-wrap">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div>
-                <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))' }}>Required stake</div>
-                <div className="nave-mono" style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                  {gate.requiredUi != null ? `${gate.requiredUi.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unit}` : (gate.loading ? 'Checking…' : '—')}
-                </div>
-              </div>
-            <div>
-              <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))' }}>
-                Your balance · {chainFamilyLabel(chain)}
-              </div>
-              <div className="nave-mono" style={{ fontSize: '13px', fontWeight: 600, color: insufficient ? 'hsl(var(--destructive))' : 'hsl(var(--foreground))' }}>
-                {gate.balanceUi != null ? `${gate.balanceUi.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unit}` : (gate.loading ? 'Checking…' : '—')}
-              </div>
-            </div>
-            </div>
-            {insufficient && (
-              <button
-                onClick={() => (onBridge ? onBridge() : navigate('/bridge'))}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium transition-all flex-shrink-0"
-                style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
-              >
-                <Fi icon="right-left" style={{ fontSize: '11px' }} />
-                Bridge NAVE
-              </button>
-            )}
-          </div>
-
-          {gate.error && (
-            <p style={{ fontSize: '11.5px', color: 'hsl(var(--destructive))', marginTop: '8px' }}>
-              {gate.error}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const CREATE_DAO_DRAFT_KEY = 'nave.createDaoDraft';
 
 /* ── Main page ───────────────────────────────────────────── */
 export default function CreateDAO() {
@@ -1714,17 +1284,15 @@ export default function CreateDAO() {
   const [deploySteps, setDeploySteps] = useState<DeployStep[]>([]);
 
   const DEPLOY_STEP_TEMPLATES_SOLANA = [
-    { id: 'foundation', label: 'Sign 1 of 4 — Foundation' },
-    { id: 'governance', label: 'Sign 2 of 4 — Governance' },
-    { id: 'stake',      label: 'Sign 3 of 4 — Lock NAVE stake' },
-    { id: 'activate',   label: 'Sign 4 of 4 — Activate & Ratify' },
+    { id: 'foundation', label: 'Sign 1 of 3 — Foundation' },
+    { id: 'governance', label: 'Sign 2 of 3 — Governance' },
+    { id: 'activate',   label: 'Sign 3 of 3 — Activate & Ratify' },
     { id: 'agents',     label: 'Starting agents…' },
   ] as const;
 
   const DEPLOY_STEP_TEMPLATES_EVM = [
-    { id: 'approve',  label: 'Sign 1 of 3 — Approve NAVE stake' },
-    { id: 'create',   label: 'Sign 2 of 3 — Create Treasury' },
-    { id: 'activate', label: 'Sign 3 of 3 — Activate & Ratify' },
+    { id: 'create',   label: 'Sign 1 of 2 — Create Treasury' },
+    { id: 'activate', label: 'Sign 2 of 2 — Activate & Ratify' },
     { id: 'agents',   label: 'Starting agents…' },
   ] as const;
 
@@ -1776,15 +1344,14 @@ export default function CreateDAO() {
   }
 
   // Keep the active chain (wallet gating + tx dispatch) synced to the selection,
-  // and ask the EVM wallet to switch so stake/deploy reads & writes hit that chain.
+  // and ask the EVM wallet to switch so deploy reads and writes hit that chain.
   useEffect(() => {
     setChainFamily(config.chain);
     if (config.chain === 'solana' || !evmConnected) return;
     const targetId = activeEvmChainId(config.chain as Exclude<ChainFamily, 'solana'>);
     if (connectedEvmChainId === targetId) return;
     void switchChainAsync?.({ chainId: targetId }).catch(() => {
-      // Wallet rejected or cannot switch — stake reads still use an explicit
-      // per-chain RPC client, so the banner stays correct either way.
+      // Wallet rejected or cannot switch — creation still targets the selected chain.
     });
   }, [config.chain, setChainFamily, evmConnected, connectedEvmChainId, switchChainAsync]);
 
@@ -1834,17 +1401,6 @@ export default function CreateDAO() {
     setPendingResume(findPendingDaoCreationForWallet(connectedWallet));
   }, [connectedWallet]);
 
-  // ── Recoverable NAVE creation stake (page-one gate + deploy amount) ──────────
-  const stakeQuote = useNaveStakeQuote({ enabled: setupMode !== null });
-  const stakeGate = useStakeGate({
-    chain: config.chain,
-    connectedWallet,
-    enabled: setupMode !== null && (step === 0 || step === 2),
-    quote: stakeQuote.quote,
-    quoteLoading: stakeQuote.loading,
-    quoteError: stakeQuote.error,
-  });
-
   function selectSetupMode(mode: SetupMode) {
     setSetupMode(mode);
     if (mode === 'quick') {
@@ -1862,46 +1418,9 @@ export default function CreateDAO() {
     setPolicyState(policyForChain(config.chain, 'conservative'));
   }, [setupMode, config.chain]);
 
-  useEffect(() => {
-    const raw = sessionStorage.getItem(CREATE_DAO_DRAFT_KEY);
-    if (!raw) return;
-    sessionStorage.removeItem(CREATE_DAO_DRAFT_KEY);
-    try {
-      const draft = JSON.parse(raw) as {
-        setupMode?: SetupMode;
-        step?: number;
-        config?: Partial<DAOConfig>;
-        policy?: PolicyState;
-        seedAmount?: string;
-      };
-      if (draft.setupMode === 'quick' || draft.setupMode === 'advanced') setSetupMode(draft.setupMode);
-      if (typeof draft.step === 'number') setStep(draft.step);
-      if (draft.config) {
-        const restored = draft.config.chain;
-        const chain = restored && (USER_CHAINS as readonly string[]).includes(restored) ? restored : 'base';
-        setConfigState((prev) => ({ ...prev, ...draft.config, chain }));
-      }
-      if (draft.policy) setPolicyState(draft.policy);
-      if (typeof draft.seedAmount === 'string') setSeedAmount(draft.seedAmount);
-    } catch {
-      /* ignore a corrupt draft */
-    }
-  }, []);
-
   function openCreateWallet() {
     if (config.chain === 'solana') setVisible(true);
     else openConnectModal?.();
-  }
-
-  function continueToBridge() {
-    sessionStorage.setItem(CREATE_DAO_DRAFT_KEY, JSON.stringify({
-      setupMode,
-      step,
-      config,
-      policy,
-      seedAmount,
-    }));
-    navigate('/bridge', { state: { returnTo: '/create-dao' } });
   }
 
   // Keep quick-mode guardian in sync when the wallet connects after mode selection.
@@ -1924,11 +1443,6 @@ export default function CreateDAO() {
       }
       if (!config.name.trim()) return false;
       if (!config.slug.trim() || !slugReady) return false;
-      // Page-one NAVE stake gate: block until the wallet can cover the recoverable
-      // stake, and refuse outright when mainnet stake config is inactive.
-      if (stakeGate.quoteMismatch) return false;
-      if (stakeGate.mainnetStakeInactive) return false;
-      if (stakeGate.active && !stakeGate.canCover) return false;
       if (setupMode === 'quick') {
         return config.governanceType === 'wallets' && config.authorizedWallets.length > 0;
       }
@@ -1973,7 +1487,7 @@ export default function CreateDAO() {
     setTxError(null);
     setDeploying(true);
     initDeploySteps(false);
-    beginDeployStep('approve');
+    beginDeployStep('create');
 
     // Populated once the treasury exists on-chain — from that point on, any
     // failure is a POST-creation failure (the DAO is real; don't lose it).
@@ -2038,9 +1552,9 @@ export default function CreateDAO() {
         guardianThreshold: defaultGuardianThreshold(guardianWallets.length, custodiedGuardians),
         agentAuthorities,
         managementFeeBps: MANAGEMENT_FEE_BPS_NORMAL,
-        performanceFeeBps: 0,
+        performanceFeeBps: PERFORMANCE_FEE_BPS,
         frozenManagementFeeBps: MANAGEMENT_FEE_BPS_FROZEN,
-        frozenPerformanceFeeBps: 0,
+        frozenPerformanceFeeBps: FROZEN_PERFORMANCE_FEE_BPS,
         // Protocol-revenue share routes to the Nave-controlled fee wallet when
         // configured (mirrors Solana's protocol treasury); falls back to the
         // founder on deployments without one set (e.g. testnets).
@@ -2063,53 +1577,7 @@ export default function CreateDAO() {
           `Testnet factories fall back to the deployed Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet stacks.`,
         );
       }
-      // 2b. Recoverable NAVE stake (formation is fee-free as protocol profit;
-      //     formationFee msg.value may still include a treasury-seed carve-out).
-      //     On mainnet the stake module MUST be configured — refuse create when
-      //     inactive so operators cannot skip the recoverable USD stake gate.
-      const stakeConfig = await fetchNaveStakeConfigEvm(chainId);
-      const mainnetRequiresStake = !isEvmTestnet(chainId);
-      if (mainnetRequiresStake && !stakeConfig?.active) {
-        throw new Error(
-          `DAO creation on this network requires the recoverable NAVE stake to be configured ` +
-          `(NaveDaoStake + requiredNaveStake). Formation is fee-free as profit; the stake is the gate. ` +
-          `Ask an operator to run cutover --phase stake on chain ${chainId}.`,
-        );
-      }
-      if (stakeConfig?.active && stakeConfig.module && stakeConfig.token) {
-        const quote = stakeQuote.quote;
-        if (!quote) {
-          throw new Error(
-            stakeQuote.error
-              ? `Could not fetch the NAVE stake quote: ${stakeQuote.error}`
-              : 'Could not fetch the NAVE creation-stake quote. Refresh and retry.',
-          );
-        }
-        if (!isEvmTestnet(chainId) && creationStakeSourcesDisagree(quote, stakeConfig.amount, NAVE_DAO_CREATION_STAKE_USD)) {
-          throw new Error(CREATION_STAKE_MISMATCH_SENTENCE);
-        }
-        const naveBalance = await fetchErc20BalanceEvm(chainId, stakeConfig.token, founder);
-        if (naveBalance != null && naveBalance < stakeConfig.amount) {
-          throw new Error(
-            `Insufficient NAVE to stake: creating a DAO requires staking ` +
-            `${formatUnits(stakeConfig.amount, 6)} wNAVE (recoverable). ` +
-            `You have ${formatUnits(naveBalance, 6)}. Bridge or acquire more NAVE, then retry.`,
-          );
-        }
-        const approveOutcome = await tx.sendEvm(
-          buildApproveErc20Evm(chainId, stakeConfig.token, stakeConfig.module, stakeConfig.amount),
-          { successLabel: 'NAVE stake approved', quietMock: true, quietToast: true },
-        );
-        if (approveOutcome.status !== 'success' && approveOutcome.status !== 'mock') {
-          failDeployStep('approve', approveOutcome.error ?? undefined);
-          throw new Error(approveOutcome.error || 'NAVE stake approval failed.');
-        }
-        completeDeployStep('approve');
-      } else {
-        completeDeployStep('approve', 'No NAVE stake required on this testnet');
-      }
-
-      beginDeployStep('create');
+      // formationFee is 0. Any msg.value above that is the founder's own seed, not a fee.
       const seedNum = parseFloat(seedAmount);
       const seedWei = !isNaN(seedNum) && seedNum > 0 ? parseEther(String(seedNum)) : 0n;
       const totalValue = formationFeeWei + seedWei;
@@ -2381,10 +1849,6 @@ export default function CreateDAO() {
       setTxError('This network is not open for treasury creation.');
       return;
     }
-    if (stakeGate.quoteMismatch) {
-      setTxError(CREATION_STAKE_MISMATCH_SENTENCE);
-      return;
-    }
     // FN-H1/H2: an earlier attempt for THIS wallet already created a treasury
     // on-chain and didn't finish setup (checkpoint persisted below, or by an
     // earlier failed run) — never silently start a fresh deploy in that case,
@@ -2424,7 +1888,7 @@ export default function CreateDAO() {
     // land) — from that point any failure is a POST-creation failure that
     // should be resumable rather than requiring a full wizard restart.
     let checkpoint: Omit<PendingDaoCreation, 'failedStep' | 'failedError' | 'failedAt'> | null = null;
-    let currentSubStep: 'foundation' | 'governance' | 'stake' | 'activate' | 'register-metadata' = 'foundation';
+    let currentSubStep: 'foundation' | 'governance' | 'activate' | 'register-metadata' = 'foundation';
 
     try {
       const walletBalance = await connection.getBalance(founder);
@@ -2438,9 +1902,8 @@ export default function CreateDAO() {
       if (walletBalance < minLamports) {
         throw new Error(
           `Insufficient SOL: need about ${(minLamports / LAMPORTS_PER_SOL).toFixed(3)} SOL in your wallet ` +
-          `(agent seeding, rent, gas, and your treasury seed — DAO formation is fee-free). ` +
-          `You have ${(walletBalance / LAMPORTS_PER_SOL).toFixed(3)} SOL. ` +
-          `Note: the recoverable $${NAVE_DAO_CREATION_STAKE_USD} NAVE creation stake is paid in NAVE, not SOL.`,
+          `(agent funding, rent, gas, and your treasury seed — formation has no protocol fee). ` +
+          `You have ${(walletBalance / LAMPORTS_PER_SOL).toFixed(3)} SOL.`,
         );
       }
 
@@ -2537,13 +2000,13 @@ export default function CreateDAO() {
         guardianThreshold,
         agentAuthorities,
         managementFeeBps: MANAGEMENT_FEE_BPS_NORMAL,
-        performanceFeeBps: 0,
+        performanceFeeBps: PERFORMANCE_FEE_BPS,
         frozenManagementFeeBps: MANAGEMENT_FEE_BPS_FROZEN,
-        frozenPerformanceFeeBps: 0,
+        frozenPerformanceFeeBps: FROZEN_PERFORMANCE_FEE_BPS,
         privacyMode: 0,
         feeRecipient,
-        // Protocol revenue wallet (perf-fee skim + annual management fee). Sourced
-        // from VITE_NAVE_PROTOCOL_FEE_WALLET; required non-zero on-chain.
+        // Protocol revenue wallet (15% yield skim). Sourced from
+        // VITE_NAVE_PROTOCOL_FEE_WALLET; required non-zero on-chain.
         protocolRevenueWallet: NAVE_PROTOCOL_FEE_WALLET,
         quorumBps: 3500,
         governanceType: isTokenGov ? 1 : 0,
@@ -2791,52 +2254,6 @@ export default function CreateDAO() {
         discord: config.discord,
         logoUrl,
       };
-
-      // ── Lock the recoverable NAVE creation stake (fee-free formation) ───────
-      //    Runs after the DAO registry + governance exist; pulls the oracle-derived
-      //    recoverable USD-of-NAVE from the founder's NAVE ATA into the per-DAO escrow.
-      if (outcome.status === 'success') {
-        currentSubStep = 'stake';
-        beginDeployStep('stake');
-        const quote = stakeQuote.quote;
-        if (!quote) {
-          failDeployStep('stake', stakeQuote.error ?? 'NAVE stake quote unavailable');
-          throw new Error(
-            stakeQuote.error
-              ? `Could not fetch the NAVE stake quote: ${stakeQuote.error}`
-              : 'Could not fetch the NAVE creation-stake quote. Refresh and retry.',
-          );
-        }
-        let stakeAmount: bigint;
-        try {
-          stakeAmount = BigInt(quote.requiredNaveBaseUnits);
-        } catch {
-          failDeployStep('stake', CREATION_STAKE_MISMATCH_SENTENCE);
-          throw new Error(CREATION_STAKE_MISMATCH_SENTENCE);
-        }
-        if (creationStakeSourcesDisagree(quote, stakeAmount, NAVE_DAO_CREATION_STAKE_USD)) {
-          failDeployStep('stake', CREATION_STAKE_MISMATCH_SENTENCE);
-          throw new Error(CREATION_STAKE_MISMATCH_SENTENCE);
-        }
-        const priceUsdMicro = Math.round(quote.priceUsd * 1_000_000);
-        const stakeResult = await buildStakeDaoCreation(
-          founder,
-          daoId,
-          SOLANA_NAVE_MINT,
-          stakeAmount,
-          priceUsdMicro,
-        );
-        const stakeOutcome = await tx.sendGrouped([[stakeResult]], {
-          successLabel: 'NAVE stake locked',
-          quietMock: true,
-          quietToast: true,
-        });
-        if (stakeOutcome.status !== 'success' && stakeOutcome.status !== 'mock') {
-          failDeployStep('stake', stakeOutcome.error ?? undefined);
-          throw new Error(stakeOutcome.error || 'Failed to lock the NAVE creation stake.');
-        }
-        completeDeployStep('stake');
-      }
 
       // ── Auto-activation: seed + ratify (one tx), then start agents off-chain.
       if (outcome.status === 'success') {
@@ -3157,8 +2574,8 @@ export default function CreateDAO() {
     //    group). FN-H1/H2: the checkpoint is now persisted the moment the
     //    foundation group confirms, which means a resume can land here with
     //    ONLY the DaoRegistry/TreasuryVault/VaultAuthority created and NOTHING
-    //    else — a stale resume implementation that jumped straight to the stake
-    //    lock / constitution activation below would fail immediately (those
+    //    else — a stale resume implementation that jumped straight to constitution
+    //    activation below would fail immediately (those
     //    steps depend on accounts this group creates). Detect that case via the
     //    AgentSet PDA (idempotency-checked — its existence implies the whole
     //    governance group already landed, since it's one atomic transaction)
@@ -3195,9 +2612,9 @@ export default function CreateDAO() {
         guardianThreshold,
         agentAuthorities,
         managementFeeBps: MANAGEMENT_FEE_BPS_NORMAL,
-        performanceFeeBps: 0,
+        performanceFeeBps: PERFORMANCE_FEE_BPS,
         frozenManagementFeeBps: MANAGEMENT_FEE_BPS_FROZEN,
-        frozenPerformanceFeeBps: 0,
+        frozenPerformanceFeeBps: FROZEN_PERFORMANCE_FEE_BPS,
         privacyMode: 0,
         feeRecipient,
         protocolRevenueWallet: NAVE_PROTOCOL_FEE_WALLET,
@@ -3241,31 +2658,8 @@ export default function CreateDAO() {
       }
     }
 
-    // 1. Recoverable NAVE stake — idempotency-checked via the DaoStakeLock PDA
-    //    (created once by stake_dao_creation; its existence means it's done).
-    const [daoStakeLockPda] = getDaoStakeLockPDA(daoRegistry);
-    const stakeLock = await core.account.daoStakeLock.fetchNullable(daoStakeLockPda);
-    if (!stakeLock) {
-      const quoteResult = await fetchNaveStakeQuote();
-      if (!quoteResult.ok || !quoteResult.quote) {
-        throw new Error(
-          quoteResult.error
-            ? `Could not fetch the NAVE stake quote: ${quoteResult.error}`
-            : 'Could not fetch the NAVE creation-stake quote. Refresh and retry.',
-        );
-      }
-      const stakeAmount = BigInt(quoteResult.quote.requiredNaveBaseUnits);
-      const priceUsdMicro = Math.round(quoteResult.quote.priceUsd * 1_000_000);
-      const stakeResult = await buildStakeDaoCreation(founder, record.daoId!, SOLANA_NAVE_MINT, stakeAmount, priceUsdMicro);
-      const stakeOutcome = await tx.sendGrouped([[stakeResult]], {
-        successLabel: 'NAVE stake locked', quietMock: true, quietToast: true,
-      });
-      if (stakeOutcome.status !== 'success' && stakeOutcome.status !== 'mock') {
-        throw new Error(stakeOutcome.error || 'Failed to lock the NAVE creation stake.');
-      }
-    }
-
-    // 2. Constitution activation — idempotent (createDaoActivation.ts checks).
+    // Constitution activation — idempotent (createDaoActivation.ts checks).
+    // New treasuries do not lock NAVE. An existing lock, if any, is released on moonlight.
     const wizardSeedNum = parseFloat(record.seedAmount);
     const seedLamports = !isNaN(wizardSeedNum) && wizardSeedNum > 0
       ? Math.round(wizardSeedNum * LAMPORTS_PER_SOL)
@@ -3420,13 +2814,6 @@ export default function CreateDAO() {
         </div>
       </header>
 
-      {/* Full-bleed stake notice (outside the form column) */}
-      {setupMode !== null && step === 0 && !deploying && (
-        <div className="w-full">
-          <StakeGateNotice gate={stakeGate} chain={config.chain} onBridge={continueToBridge} />
-        </div>
-      )}
-
       {/* Content */}
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
         {pendingResume && !deploying && (
@@ -3533,7 +2920,6 @@ export default function CreateDAO() {
             deploying={deploying}
             evmFormationFeeWei={evmFormationFeeWei}
             evmFormationFeeLoading={evmFormationFeeLoading}
-            stake={stakeGate}
           />
         )}
 

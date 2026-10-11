@@ -272,7 +272,11 @@ describe("moonlight cross-cycle replay protection (P6-3)", () => {
     const distributionProp = await harness.governance.account.proposal.fetch(distributionProposal);
     assert.equal(distributionProp.status, 4, "MoonlightDistribution proposal marked Executed");
 
-    // ── Step 4: restore_dao (founder re-stakes) brings the DAO back Active ──
+    // ── Step 4: restore_dao reopens without pulling a new NAVE lock ────────
+    const founderBeforeRestore = await getAccount(harness.provider.connection, founderNaveAta);
+    const escrowBeforeRestore = await getAccount(harness.provider.connection, stakeEscrow);
+    assert.equal(escrowBeforeRestore.amount.toString(), "0", "escrow already emptied by release");
+
     await harness.core.methods
       .restoreDao(new anchor.BN(STAKE.toString()), new anchor.BN(PRICE_USD_MICRO.toString()))
       .accounts({
@@ -290,6 +294,17 @@ describe("moonlight cross-cycle replay protection (P6-3)", () => {
 
     lifecycle = await harness.core.account.daoLifecycle.fetch(daoLifecycle);
     assert.equal(lifecycle.status, 0, "lifecycle restored to Active");
+    const founderAfterRestore = await getAccount(harness.provider.connection, founderNaveAta);
+    assert.equal(
+      founderAfterRestore.amount.toString(),
+      founderBeforeRestore.amount.toString(),
+      "restore does not pull NAVE",
+    );
+    const escrowAfterRestore = await getAccount(harness.provider.connection, stakeEscrow);
+    assert.equal(escrowAfterRestore.amount.toString(), "0", "escrow stays empty");
+    const lockAfterRestore = await harness.core.account.daoStakeLock.fetch(daoStakeLock);
+    assert.equal(lockAfterRestore.status, 1, "existing lock stays Released");
+    assert.equal(lockAfterRestore.lockedAmount.toString(), "0");
 
     // ── Key assertion #2 (the fix under test): replaying the EXACT SAME
     // now-Executed proposal pair must be rejected. Before the fix, these
@@ -346,5 +361,115 @@ describe("moonlight cross-cycle replay protection (P6-3)", () => {
 
     lifecycle = await harness.core.account.daoLifecycle.fetch(daoLifecycle);
     assert.equal(lifecycle.status, 0, "lifecycle still Active after rejected replay attempts");
+  });
+
+  it("moonlights and restores a treasury that never locked NAVE", async () => {
+    const dao = await harness.createDao({
+      name: "Moonlight No Stake DAO",
+      memberCount: 3,
+      depositPerMemberUsdc: 100,
+      guardianCount: 1,
+      guardianThreshold: 1,
+      governanceType: 1,
+    });
+    const daoLifecycle = lifecyclePda(dao.daoRegistry);
+    const founderBefore = await getAccount(harness.provider.connection, founderNaveAta);
+
+    const requestProposal = await createAndPassMoonlightProposal(
+      dao,
+      9,
+      Buffer.alloc(0),
+      "Wind down without a stake",
+    );
+    await harness.core.methods
+      .recordMoonlightRequest()
+      .accounts({
+        founder: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+        agentSet: dao.agentSet,
+        daoLifecycle,
+        requestProposal,
+        governanceProgram: harness.governance.programId,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    await harness.core.methods
+      .setMoonlightDistribution(recipient.publicKey)
+      .accounts({
+        initiator: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+        daoLifecycle,
+      })
+      .rpc();
+
+    const distributionProposal = await createAndPassMoonlightProposal(
+      dao,
+      10,
+      recipient.publicKey.toBuffer(),
+      "Distribute with no stake",
+    );
+    const recipientBefore = await getAccount(harness.provider.connection, recipientNaveAccount);
+    await harness.core.methods
+      .executeMoonlightDistribution()
+      .accounts({
+        authority: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+        daoLifecycle,
+        daoStakeLock: null,
+        stakeEscrow: null,
+        recipientNaveAccount: null,
+        distributionProposal,
+        governanceProgram: harness.governance.programId,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const recipientAfter = await getAccount(harness.provider.connection, recipientNaveAccount);
+    assert.equal(
+      recipientAfter.amount.toString(),
+      recipientBefore.amount.toString(),
+      "no stake means nothing is released",
+    );
+
+    await harness.core.methods
+      .finalizeMoonlight()
+      .accounts({
+        authority: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+        agentSet: dao.agentSet,
+        daoLifecycle,
+      })
+      .rpc();
+
+    await harness.core.methods
+      .restoreDao(new anchor.BN(0), new anchor.BN(0))
+      .accounts({
+        founder: harness.founder.publicKey,
+        globalConfig: harness.globalConfig,
+        daoRegistry: dao.daoRegistry,
+        daoLifecycle,
+        daoStakeLock: null,
+        naveMint: null,
+        founderNaveAccount: null,
+        stakeEscrow: null,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const lifecycle = await harness.core.account.daoLifecycle.fetch(daoLifecycle);
+    assert.equal(lifecycle.status, 0, "stake-less treasury restored to Active");
+    const founderAfter = await getAccount(harness.provider.connection, founderNaveAta);
+    assert.equal(
+      founderAfter.amount.toString(),
+      founderBefore.amount.toString(),
+      "stake-less restore does not pull NAVE",
+    );
   });
 });

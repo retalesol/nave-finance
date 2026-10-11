@@ -7,11 +7,9 @@
  * wallet. Run this before deploying a new DAO or adding a new asset to an
  * existing one.
  *
- * The performance-fee skim (8.5% of realized yield) and the management fee
- * (0.65%/yr of idle balance) both transfer to the revenue wallet's ATA for the
- * relevant mint. If the ATA does not exist:
- *   - A withdrawal that realizes yield will FAIL (performance-fee skim).
- *   - A management-fee collection tick will be silently skipped (non-fatal).
+ * The 15% realized-yield skim transfers to the revenue wallet's ATA for the
+ * relevant mint. The annual management fee is 0, so there is no collect tick.
+ * If the ATA does not exist, a withdrawal that realizes yield will FAIL.
  *
  * Usage:
  *   npx tsx scripts/provision-revenue-atas.ts [--dry-run]

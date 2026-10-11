@@ -75,7 +75,7 @@ on the live hosts.
 - Yield testers can use Solana Jito, Sepolia Compound, and Base Sepolia Aave. Sepolia Aave is over the pool supply cap. Robinhood and Arc can create a treasury, deposit, and govern. They have no lending venue.
 - Agents watch. `NAVE_AUTOPROPOSE_ENABLED` stays false. A second guardian is required to close a proposal. New treasuries use a one-minute review window. Treasuries created before the timelock upgrade still have 24-hour delays.
 - Four roles, in order: Executive, Financial, Operational (final signer; stored key oversight), Oversight (monitor, does not sign; stored key operational). Leave the stored key names as they are.
-- Devnet DAO creation uses the built-in $10 NAVE price (about 9.9 devnet NAVE). Ethereum and Base testnet stake is 0.1 wNAVE. Robinhood and Arc have no NAVE stake.
+- Forming a treasury costs only network gas (and account rent) on every beta chain. There is no protocol formation fee and no NAVE or wNAVE creation stake. A founder may deposit their own assets as a seed. That deposit is their capital, not a fee. The only protocol treasury fee is 15% of realized yield on strategy withdrawal. Principal is not charged. Frozen treasuries use the same 15%. There is no annual management fee.
 - Testnet gas comes from the site banner. **Network** selects the chain. **Faucet** opens QuickNode for Solana, Sepolia, Base Sepolia, and Robinhood. Arc uses Circle’s faucet.
 
 ### What testers can do

@@ -15,7 +15,6 @@ import {NaveTreasury} from "./NaveTreasury.sol";
 import {TreasuryAdminLib} from "./libraries/TreasuryAdminLib.sol";
 import {NaveGovernor} from "./NaveGovernor.sol";
 import {NaveExecution} from "./NaveExecution.sol";
-import {NaveDaoStake} from "./NaveDaoStake.sol";
 
 /// @title NaveDAOFactory
 /// @notice Deploys each DAO as three ERC1967 UUPS proxies (treasury, governor,
@@ -91,9 +90,11 @@ contract NaveDAOFactory is Initializable, Ownable2StepUpgradeable, UUPSUpgradeab
         emit TokenDeployerUpdated(tokenDeployer_);
     }
 
-    /// Form a DAO. `msg.value` must cover `protocol.formationFee()`; any excess
-    /// is refunded into the treasury seed. Returns the assigned id and the three
-    /// proxy addresses.
+    /// Form a DAO. `DEVNET_FORMATION_FEE_WEI` is 0 and the protocol formation
+    /// fee stays 0 unless an owner sets one. While that fee is 0, all of
+    /// `msg.value` is the founder's own treasury seed, not a protocol charge.
+    /// Creation does not lock NAVE, even when `requiredNaveStake` is still
+    /// non-zero. Returns the assigned id and the three proxy addresses.
     function createDao(CreateDaoParams calldata params)
         external
         payable
@@ -163,13 +164,6 @@ contract NaveDAOFactory is Initializable, Ownable2StepUpgradeable, UUPSUpgradeab
         if (protocolPortion > 0) {
             (bool ok,) = protocol.protocolTreasury().call{value: protocolPortion}("");
             if (!ok) revert NaveErrors.InsufficientFormationFee();
-        }
-
-        address stakeModule = protocol.daoStake();
-        uint256 stakeAmount = protocol.requiredNaveStake();
-        address stakeToken = protocol.naveStakeToken();
-        if (stakeModule != address(0) && stakeAmount > 0 && stakeToken != address(0)) {
-            NaveDaoStake(stakeModule).lockStake(treasury, msg.sender, stakeToken, stakeAmount, 0);
         }
 
         emit DaoCreated(daoId, msg.sender, treasury, governor, execution);

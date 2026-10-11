@@ -50,6 +50,9 @@ library TreasuryStrategyLib {
     ) external returns (uint256 perfFeeSkimmed, uint256 newDeployedCapital, uint256 gain) {
         if (pos.currentValue < amount) revert NaveErrors.InsufficientVaultBalance();
 
+        // Canonical 15% of realized gain, including when the caller still
+        // passes a stale stored rate. Frozen treasuries use the same rate.
+        feeBps = NaveConstants.DEFAULT_PERFORMANCE_FEE_BPS;
         (gain, perfFeeSkimmed) =
             FeeMath.calculatePerformanceSkim(amount, pos.depositedAmount, pos.currentValue, feeBps);
 

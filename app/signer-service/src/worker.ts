@@ -6,7 +6,7 @@
  *      execution requests (approvals, post-review execute_strategy, halts).
  *   2. Triggers snapshot-treasury to refresh treasury NAV snapshots.
  *   3. Proactively replenishes agent wallets using a 3-tier hysteresis model
- *      funded from the protocol ops/revenue wallet (the on-chain 8.5% yield-fee
+ *      funded from the protocol ops/revenue wallet (the on-chain 15% yield-fee
  *      recipient): refill toward a 0.25 SOL ceiling whenever a wallet drops to
  *      ≤ 0.10 SOL, surface an URGENT signal below 0.05 SOL, and otherwise leave
  *      wallets alone between 0.10 and 0.25 SOL (hysteresis). Thresholds are
@@ -24,7 +24,7 @@
  *   NAVE_SIGNER_URL               Signer service base URL (required for replenishment)
  *   NAVE_SIGNER_SECRET            Signer service auth secret (required for replenishment)
  *   NAVE_OPS_WALLET_SECRET        Protocol operations keypair (base64 or comma-separated
- *                                 bytes). Funded from Nave's 8.5% yield fee revenue.
+ *                                 bytes). Funded from Nave's 15% yield fee revenue.
  *                                 Required for automatic agent wallet replenishment.
  *   NAVE_AGENT_SOL_REQUEST_THRESHOLD  Critically-low REQUEST tier in SOL (default 0.05).
  *                                 Below this an agent is flagged urgent + refilled.
@@ -55,7 +55,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { collectManagementFees, readDaoAgentGate, replenishAgentWallets } from './index.js';
+import { readDaoAgentGate, replenishAgentWallets } from './index.js';
 import { readStakingMirrorConfig, runStakingMirror } from './stakingMirror.js';
 import { readBridgeWatcherConfig, runBridgeWatcher } from './bridgeWatcher.js';
 import { reconcileStakeClaimWraps, runStakeClaimAccrualTick } from './stakeClaims.js';
@@ -78,12 +78,6 @@ const POLICY_INTERVAL_MS = Number(process.env.POLICY_INTERVAL_MS ?? 600_000);
 const PROPOSAL_INTERVAL_MS = Number(process.env.PROPOSAL_INTERVAL_MS ?? 600_000);
 // Adaptive agent wallet replenishment: every 6 hours by default.
 const REPLENISH_INTERVAL_MS = Number(process.env.REPLENISH_INTERVAL_MS ?? 6 * 60 * 60 * 1000);
-// Discrete annual management-fee collection. The on-chain fee is due once per
-// year per asset (UTC-midnight anchored); we check HOURLY by default so a due
-// asset is collected shortly after its midnight boundary. Each tick is a cheap
-// no-op for assets that aren't due yet (the instruction errs cleanly and we
-// swallow it), so a tight cadence is safe.
-const MANAGEMENT_FEE_INTERVAL_MS = Number(process.env.MANAGEMENT_FEE_INTERVAL_MS ?? 60 * 60 * 1000);
 // Staking global-parity mirror (stakingMirror.ts): splits the bridge's 1%
 // staking-fee collector across the Solana + EVM drip pools by stake weight.
 // Every 10 minutes by default; disabled unless STAKING_MIRROR_ENABLED=true.
@@ -222,7 +216,7 @@ async function filterAgentActiveDaos(daos: string[], label: string): Promise<str
  * the 0.25 SOL ceiling whenever a wallet drops to ≤ 0.10 SOL, flag an URGENT
  * replenish-needed signal below 0.05 SOL, and leave wallets untouched between
  * 0.10 and 0.25 SOL (hysteresis). Funded entirely from the protocol ops wallet,
- * which receives Nave's on-chain 8.5% yield fee revenue. Thresholds are
+ * which receives Nave's on-chain 15% yield fee revenue. Thresholds are
  * overridable via NAVE_AGENT_SOL_* on the signer service.
  *
  * Runs every REPLENISH_INTERVAL_MS (default 6 hours) so wallets are proactively
@@ -287,68 +281,6 @@ async function runReplenishAgentWallets(): Promise<void> {
   } else {
     console.log(
       `[worker] replenish complete: all agent wallets within the operating band (no refill needed).${urgentNote}`,
-    );
-  }
-}
-
-/**
- * Discrete annual management-fee scheduler.
- *
- * Enumerates active DAOs (same source as replenishment) and asks the signer to
- * collect the per-asset annual management fee for each. The on-chain instruction
- * is permissionless-but-validated and a cheap no-op when an asset isn't due yet
- * (NoManagementFeeDue / zero fee), so this can run on a tight (hourly) cadence
- * to catch each asset's UTC-midnight annual boundary without double-charging.
- *
- * Requires the ops wallet (NAVE_OPS_WALLET_SECRET) as the permissionless
- * fee_collector/payer; skipped entirely when it isn't configured.
- */
-async function runCollectManagementFees(): Promise<void> {
-  if (!process.env.NAVE_OPS_WALLET_SECRET) {
-    // Ops wallet doubles as the permissionless fee_collector/payer.
-    return;
-  }
-
-  let daos: string[] = [];
-  try {
-    const { data, error } = await supabase
-      .from('dao_registry')
-      .select('dao_onchain_address')
-      .not('dao_onchain_address', 'is', null);
-    if (error) throw error;
-    daos = (data ?? []).map((r: { dao_onchain_address: string }) => r.dao_onchain_address).filter(Boolean);
-  } catch (err) {
-    console.error('[worker] management-fee: failed to fetch DAO list:', err instanceof Error ? err.message : err);
-    return;
-  }
-
-  if (daos.length === 0) return;
-
-  // H4: only attempt fee collection for DAOs whose on-chain agents are active.
-  daos = await filterAgentActiveDaos(daos, 'management-fee');
-  if (daos.length === 0) return;
-
-  let collected = 0;
-  let skipped = 0;
-  for (const daoAddress of daos) {
-    try {
-      const results = await collectManagementFees(daoAddress);
-      for (const r of results) {
-        if (r.collected) collected++;
-        else skipped++;
-      }
-    } catch (err) {
-      console.error(
-        `[worker] management-fee ${daoAddress}:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  if (collected > 0) {
-    console.log(
-      `[worker] management-fee tick: ${collected} asset fee(s) collected, ${skipped} not due / skipped ` +
-      `across ${daos.length} DAO(s).`,
     );
   }
 }
@@ -428,7 +360,7 @@ async function runBridgeWatcherTick(): Promise<void> {
 }
 
 // Guard against overlapping runs if a cycle takes longer than its interval.
-const running = { orchestrator: false, snapshot: false, policy: false, proposal: false, replenish: false, managementFee: false, stakingMirror: false, bridgeWatcher: false, stakeClaimAccrual: false };
+const running = { orchestrator: false, snapshot: false, policy: false, proposal: false, replenish: false, stakingMirror: false, bridgeWatcher: false, stakeClaimAccrual: false };
 
 async function safe(label: keyof typeof running, fn: () => Promise<void>): Promise<void> {
   if (running[label]) {
@@ -447,8 +379,7 @@ async function safe(label: keyof typeof running, fn: () => Promise<void>): Promi
  * Run a money-moving loop under BOTH the in-process mutex AND a cross-replica DB
  * lease (M8). The lease TTL is sized to ~2x the loop's interval so it survives a
  * slow tick but expires quickly if a replica dies. Only the replica that wins
- * the lease runs this tick; others skip — preventing e.g. double management-fee
- * collection at the annual boundary or double agent-wallet replenishment.
+ * the lease runs this tick; others skip — preventing double agent-wallet replenishment.
  */
 async function safeLeased(
   label: keyof typeof running,
@@ -479,7 +410,7 @@ console.log(
     (POLICY_SECRET ? `, policy-eval every ${POLICY_INTERVAL_MS}ms` : `. policy-eval disabled (NAVE_POLICY_SECRET unset)`) +
     (PROPOSER_SECRET ? `, proposal-creator every ${PROPOSAL_INTERVAL_MS}ms` : `. proposal-creator disabled (NAVE_PROPOSER_SECRET unset)`) +
     (opsConfigured ? `, wallet replenishment (hysteresis: refill ≤0.10→0.25 SOL) every ${REPLENISH_INTERVAL_MS}ms` : `. wallet replenishment disabled (NAVE_OPS_WALLET_SECRET unset)`) +
-    (opsConfigured ? `, management-fee collection every ${MANAGEMENT_FEE_INTERVAL_MS}ms` : `. management-fee collection disabled (NAVE_OPS_WALLET_SECRET unset)`) +
+    `. Yield fee is skimmed on withdrawal; there is no management-fee collector` +
     (readStakingMirrorConfig().enabled ? `, staking mirror every ${STAKING_MIRROR_INTERVAL_MS}ms.` : `. staking mirror disabled (STAKING_MIRROR_ENABLED unset).`) +
     (readBridgeWatcherConfig().enabled ? ` bridge watcher every ${BRIDGE_WATCHER_INTERVAL_MS}ms.` : ` bridge watcher disabled (BRIDGE_WATCHER_ENABLED unset).`),
 );
@@ -497,12 +428,10 @@ void safe('proposal', runProposalCreator);
 // interval (in seconds) so a slow tick keeps its lease but a dead replica's
 // lease expires promptly.
 const REPLENISH_LEASE_TTL_S = Math.ceil((REPLENISH_INTERVAL_MS * 2) / 1000);
-const MANAGEMENT_FEE_LEASE_TTL_S = Math.ceil((MANAGEMENT_FEE_INTERVAL_MS * 2) / 1000);
 const STAKING_MIRROR_LEASE_TTL_S = Math.ceil((STAKING_MIRROR_INTERVAL_MS * 2) / 1000);
 const BRIDGE_WATCHER_LEASE_TTL_S = Math.ceil((BRIDGE_WATCHER_INTERVAL_MS * 2) / 1000);
 
 void safeLeased('replenish', REPLENISH_LEASE_TTL_S, runReplenishAgentWallets);
-void safeLeased('managementFee', MANAGEMENT_FEE_LEASE_TTL_S, runCollectManagementFees);
 void safeLeased('stakingMirror', STAKING_MIRROR_LEASE_TTL_S, runStakingMirrorTick);
 void safeLeased('bridgeWatcher', BRIDGE_WATCHER_LEASE_TTL_S, runBridgeWatcherTick);
 void safeLeased('stakeClaimAccrual', STAKING_MIRROR_LEASE_TTL_S, runStakeClaimAccrual);
@@ -512,7 +441,6 @@ setInterval(() => void safe('snapshot', runSnapshot), SNAPSHOT_INTERVAL_MS);
 setInterval(() => void safe('policy', runPolicyEval), POLICY_INTERVAL_MS);
 setInterval(() => void safe('proposal', runProposalCreator), PROPOSAL_INTERVAL_MS);
 setInterval(() => void safeLeased('replenish', REPLENISH_LEASE_TTL_S, runReplenishAgentWallets), REPLENISH_INTERVAL_MS);
-setInterval(() => void safeLeased('managementFee', MANAGEMENT_FEE_LEASE_TTL_S, runCollectManagementFees), MANAGEMENT_FEE_INTERVAL_MS);
-setInterval(() => void safeLeased('stakingMirror', STAKING_MIRROR_LEASE_TTL_S, runStakingMirrorTick), STAKING_MIRROR_INTERVAL_MS);
+setInterval(() => void safeLeased('stakingMirror', STAKING_MIRROR_LEASE_TTL_S, runStakingMirrorTick), STAKING_MIRROR_INTERVAL_MS)
 setInterval(() => void safeLeased('bridgeWatcher', BRIDGE_WATCHER_LEASE_TTL_S, runBridgeWatcherTick), BRIDGE_WATCHER_INTERVAL_MS);
 setInterval(() => void safeLeased('stakeClaimAccrual', STAKING_MIRROR_LEASE_TTL_S, runStakeClaimAccrual), STAKING_MIRROR_INTERVAL_MS);

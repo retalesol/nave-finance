@@ -32,10 +32,7 @@ Capital moves are refused unless they pass the treasury’s on-chain constitutio
 
 - A wallet for the network you will use. Phantom in devnet mode for Solana. An EVM wallet for Ethereum Sepolia, Base Sepolia, Robinhood Testnet, or Arc Testnet. Arc gas is native USDC (18 decimals). Treasury USDC on Arc is a separate 6-decimal token.
 - Testnet gas from the site banner. **Network** selects the chain and, on EVM, asks the wallet to add or switch to it. Solana Devnet opens Phantom’s devnet instructions. **Faucet** opens a QuickNode faucet for Solana devnet SOL, Ethereum Sepolia ETH, Base Sepolia ETH, or Robinhood Testnet ETH. Arc uses Circle’s faucet.
-- The creation stake, which is recoverable and returned if the treasury winds down:
-  - Solana devnet prices NAVE at a built-in $10. Creation stakes about 9.9 devnet NAVE. That is the devnet amount. It is not a $99 mainnet stake.
-  - Ethereum Sepolia and Base Sepolia stake 0.1 wNAVE.
-  - Robinhood Testnet and Arc Testnet require no NAVE stake. Value sent with creation on those chains is a treasury seed, not a fee.
+- Nothing else from the protocol. Forming a treasury costs only network gas (and account rent). There is no protocol formation fee and no NAVE or wNAVE creation stake on any chain. A founder may deposit their own assets as a seed. That deposit is their capital, not a fee. Value sent with creation is that seed, not a fee.
 
 > Nave is unaudited. Agents watch. They do not move capital until a constitution check passes and a second guardian closes the proposal. Keep mainnet balances out of this beta.
 
@@ -77,4 +74,4 @@ The left sidebar’s primary items are:
 
 - Readiness, the closed bridge, and the capital-verdict gate: [Product Maturity](/docs/product-maturity).
 - Terminology: [FAQ & Glossary](/docs/faq).
-- The stake and the closed bridge: [Tokenomics & Bridge](/docs/tokenomics).
+- The yield fee, formation, and the closed bridge: [Tokenomics & Bridge](/docs/tokenomics).

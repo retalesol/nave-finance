@@ -6,15 +6,12 @@ use crate::constants::{
     TREASURY_ASSET_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
-use crate::events::{ManagementFeeCollected, VaultDeposited};
+use crate::events::VaultDeposited;
 use crate::state::{
     AssetConfig, DaoRegistry, FeeConfig, NaveGlobalConfig, TreasuryAsset, TreasuryVault,
     VaultAuthority,
 };
-use crate::utils::{
-    annual_management_fee, floor_to_utc_midnight, management_fee_due, require_dao_active,
-    require_not_paused, transfer_escrow_to_account, validate_dao_ownership, value_stable,
-};
+use crate::utils::{require_dao_active, require_not_paused, validate_dao_ownership, value_stable};
 use anchor_spl::token::{self, Transfer};
 
 pub fn deposit_to_vault_handler(ctx: Context<DepositToVault>, amount: u64) -> Result<()> {
@@ -22,7 +19,10 @@ pub fn deposit_to_vault_handler(ctx: Context<DepositToVault>, amount: u64) -> Re
     require_dao_active(&ctx.accounts.dao_registry)?;
     require!(amount > 0, NaveError::MathOverflow);
 
-    validate_dao_ownership(&ctx.accounts.treasury_vault.dao, &ctx.accounts.dao_registry.key())?;
+    validate_dao_ownership(
+        &ctx.accounts.treasury_vault.dao,
+        &ctx.accounts.dao_registry.key(),
+    )?;
 
     // Legacy single-mint deposit path. `current_nav`/`total_deposited` are
     // micro-USD aggregates; this handler adds the deposit's USD value directly
@@ -81,25 +81,26 @@ pub fn withdraw_from_vault_handler(_ctx: Context<WithdrawFromVault>, _amount: u6
     Err(NaveError::ExecutionRequestRequired.into())
 }
 
-/// Collect the discrete annual management fee for ONE registered asset.
+/// Management-fee instruction kept so older transactions still land.
 ///
-/// Permissionless-but-validated: anyone may call (the off-chain worker triggers
-/// it at/after the midnight-UTC boundary once due), but the rate, destination,
-/// and due-window are enforced on-chain. Multi-asset DAOs collect by calling
-/// this once per mint; each `TreasuryAsset` carries its own midnight-aligned
-/// `last_management_fee_at` anchor, so per-asset annual cycles are independent.
-///
-/// Behaviour: when due (`now >= last_management_fee_at + SECONDS_PER_YEAR`),
-/// transfer `fee_bps` (default 65 = 0.65%) of the asset's idle treasury balance
-/// (the `asset_vault` token balance) to the protocol revenue wallet's ATA for
-/// the mint, then advance the anchor to `floor_to_utc_midnight(now)`.
+/// The canonical rate is 0. This transfers nothing and does not advance
+/// `last_management_fee_at` (moving that anchor would look like a fee was
+/// taken). It clears stored management and performance bps to the canonical
+/// 0 / 1500 pair, including the frozen rates. Account checks stay so a
+/// mismatched mint or revenue wallet is still rejected.
 pub fn collect_management_fee_handler(ctx: Context<CollectManagementFee>) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
 
-    validate_dao_ownership(&ctx.accounts.treasury_asset.dao, &ctx.accounts.dao_registry.key())?;
-    validate_dao_ownership(&ctx.accounts.fee_config.dao, &ctx.accounts.dao_registry.key())?;
+    validate_dao_ownership(
+        &ctx.accounts.treasury_asset.dao,
+        &ctx.accounts.dao_registry.key(),
+    )?;
+    validate_dao_ownership(
+        &ctx.accounts.fee_config.dao,
+        &ctx.accounts.dao_registry.key(),
+    )?;
     // Destination must be a token account owned by the configured protocol
-    // revenue wallet, for this asset's mint.
+    // revenue wallet, for this asset's mint. Nothing is transferred.
     require!(
         ctx.accounts.revenue_token_account.owner == ctx.accounts.fee_config.protocol_revenue_wallet,
         NaveError::InvalidFeeRecipient
@@ -109,49 +110,7 @@ pub fn collect_management_fee_handler(ctx: Context<CollectManagementFee>) -> Res
         NaveError::MintMismatch
     );
 
-    let now = Clock::get()?.unix_timestamp;
-    require!(
-        management_fee_due(ctx.accounts.treasury_asset.last_management_fee_at, now),
-        NaveError::NoManagementFeeDue
-    );
-
-    let frozen = ctx.accounts.dao_registry.frozen;
-    let fee_bps = if frozen {
-        ctx.accounts.fee_config.frozen_management_fee_bps
-    } else {
-        ctx.accounts.fee_config.management_fee_bps
-    };
-
-    let balance = ctx.accounts.asset_vault.amount;
-    let fee = annual_management_fee(balance, fee_bps)?;
-    // Only advance the anchor when an actual fee is paid, so a zero-balance
-    // window cannot be used to silently reset the year without collecting.
-    require!(fee > 0, NaveError::NoManagementFeeDue);
-    require!(balance >= fee, NaveError::InsufficientFeeAsset);
-
-    let dao_key = ctx.accounts.dao_registry.key();
-    transfer_escrow_to_account(
-        &ctx.accounts.vault_authority,
-        &ctx.accounts.asset_vault,
-        &ctx.accounts.revenue_token_account,
-        &ctx.accounts.token_program,
-        &dao_key,
-        fee,
-    )?;
-
-    let new_anchor = floor_to_utc_midnight(now);
-    let treasury_asset = &mut ctx.accounts.treasury_asset;
-    treasury_asset.last_management_fee_at = new_anchor;
-
-    emit!(ManagementFeeCollected {
-        dao: dao_key,
-        mint: ctx.accounts.mint.key(),
-        amount: fee,
-        balance,
-        new_anchor,
-        frozen_rate_applied: frozen,
-    });
-
+    ctx.accounts.fee_config.sync_canonical_rates();
     Ok(())
 }
 
@@ -260,6 +219,7 @@ pub struct CollectManagementFee<'info> {
     pub dao_registry: Account<'info, DaoRegistry>,
 
     #[account(
+        mut,
         seeds = [FEE_CONFIG_SEED, dao_registry.key().as_ref()],
         bump = fee_config.bump,
         constraint = fee_config.dao == dao_registry.key() @ NaveError::DaoOwnershipMismatch

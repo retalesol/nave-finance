@@ -565,8 +565,8 @@ contract ExecutionTest is NaveBase {
         g.finalizeProposal(idx);
     }
 
-    // ── Withdraw + 8.5% performance skim ──────────────────────────────────
-    function test_withdrawWithYield_skims85pct() public {
+    // ── Withdraw + 15% performance skim ───────────────────────────────────
+    function test_withdrawWithYield_skims15pct() public {
         uint64 idx = _passStrategyProposal(DEPLOY);
         e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
         _approveToInReview(idx);
@@ -583,15 +583,25 @@ contract ExecutionTest is NaveBase {
         vm.prank(founder);
         e.syncPositionValue(address(adapter));
 
+        // Stale stored rates must not change the skim, and the withdrawal
+        // writes the canonical 0 / 1500 pair back.
+        _writeFeeBps(t, 65, 850, 0, 0);
+        assertEq(t.performanceFeeBps(), 850);
+        assertEq(t.frozenPerformanceFeeBps(), 0);
+
         uint256 revBefore = usdc.balanceOf(revenueWallet);
         uint256 treBefore = usdc.balanceOf(address(t));
         vm.prank(exec);
         e.withdrawFromStrategy(idx, DEPLOY + gain, 1);
 
-        // 8.5% of 10 USDC gain = 0.85 USDC to the revenue wallet.
-        assertEq(usdc.balanceOf(revenueWallet) - revBefore, 850_000);
+        // 15% of 10 USDC gain = 1.5 USDC to the revenue wallet.
+        assertEq(usdc.balanceOf(revenueWallet) - revBefore, 1_500_000);
         // Treasury receives the unwound principal + gain minus the skim.
-        assertEq(usdc.balanceOf(address(t)) - treBefore, DEPLOY + gain - 850_000);
+        assertEq(usdc.balanceOf(address(t)) - treBefore, DEPLOY + gain - 1_500_000);
+        assertEq(t.performanceFeeBps(), 1500);
+        assertEq(t.frozenPerformanceFeeBps(), 1500);
+        assertEq(t.managementFeeBps(), 0);
+        assertEq(t.frozenManagementFeeBps(), 0);
     }
 
     // ── Position marks are read from the adapter, with a daily drift cap ───
@@ -632,11 +642,11 @@ contract ExecutionTest is NaveBase {
         assertEq(t.currentNav(), navAtPrincipal + 10e6);
 
         // Unwinding the position moves value from marked to idle; NAV is unchanged
-        // apart from the 8.5% performance skim on the gain.
+        // apart from the 15% performance skim on the gain.
         vm.prank(exec);
         e.withdrawFromStrategy(idx, DEPLOY + 10e6, 1);
         _revalueTreasury(t);
-        assertEq(t.currentNav(), navAtPrincipal + 10e6 - 850_000);
+        assertEq(t.currentNav(), navAtPrincipal + 10e6 - 1_500_000);
     }
 
     function test_syncPositionValue_roleBoundary() public {

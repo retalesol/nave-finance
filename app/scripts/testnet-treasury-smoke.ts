@@ -268,12 +268,12 @@ function checkLive(chain: SmokeChain) {
     return;
   }
   const note = chain === "robinhood"
-    ? " USDC is unpublished, so the creation stake is 0 and there is no CCTP adapter."
+    ? " USDC is unpublished, and there is no CCTP adapter. Forming a treasury does not lock NAVE."
     : chain === "arc"
-      ? " Creation stake is 0. CCTP to Sepolia is deployed. Arc mainnet 5042 is not in scope."
+      ? " CCTP to Sepolia is deployed. Arc mainnet 5042 is not in scope. Forming a treasury does not lock NAVE."
       : chain === "base"
-        ? " Creation stake is 0.1 wNAVE. Aave V3 is approved."
-        : " Creation stake is 0.1 wNAVE. Aave V3, Compound V3, and CCTP are approved.";
+        ? " Aave V3 is approved. Forming a treasury does not lock NAVE."
+        : " Aave V3, Compound V3, and CCTP are approved. Forming a treasury does not lock NAVE.";
   skip(chain, `${keyNote} Factory ${factory} is recorded. Live create, deposit, vote, and execute from a wallet are skipped.${note}`);
 }
 

@@ -3851,7 +3851,8 @@
                 196
               ]
             }
-          }
+          },
+          "writable": true
         },
         {
           "name": "revenue_token_account",

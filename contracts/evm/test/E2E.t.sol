@@ -98,7 +98,7 @@ contract E2ETest is NaveBase {
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed), "executed");
         assertEq(usdc.balanceOf(address(adapter)), DEPLOY, "capital deployed to adapter");
 
-        // 6. Simulate yield, mark the position up, withdraw with the 8.5% skim.
+        // 6. Simulate yield, mark the position up, withdraw with the 15% skim.
         adapter.accrue(address(e), address(usdc), GAIN);
         vm.warp(block.timestamp + 10 days); // 10% fits the 1%/day mark drift cap
         vm.prank(founder);
@@ -107,8 +107,8 @@ contract E2ETest is NaveBase {
         vm.prank(exec);
         // Non-zero minOut on the exit too (1:1 mock returns the full amount).
         e.withdrawFromStrategy(idx, DEPLOY + GAIN, DEPLOY + GAIN);
-        // 8.5% of 10 USDC realized gain = 0.85 USDC.
-        assertEq(usdc.balanceOf(revenueWallet) - revBefore, 850_000, "perf fee skimmed 8.5%");
+        // 15% of 10 USDC realized gain = 1.5 USDC.
+        assertEq(usdc.balanceOf(revenueWallet) - revBefore, 1_500_000, "perf fee skimmed 15%");
 
         // 7. Transfer proposal (type 8) -> approvals -> execute disbursement.
         address grantee = makeAddr("grantee");
@@ -173,11 +173,14 @@ contract E2ETest is NaveBase {
         (, uint8 mStatusAfter,,,) = g.proposalCore(mIdx);
         assertEq(mStatusAfter, uint8(ProposalStatus.Executed), "token-mint proposal consumed");
 
-        // 9. Management fee collection (0.65%/yr, in-kind to the revenue wallet).
+        // 9. Management fee is 0 even after a year. The call succeeds and
+        // moves no tokens.
         vm.warp(block.timestamp + 366 days);
         uint256 revBeforeMgmt = usdc.balanceOf(revenueWallet);
+        uint256 treasuryBeforeMgmt = usdc.balanceOf(address(t));
         t.collectManagementFee(address(usdc));
-        assertGt(usdc.balanceOf(revenueWallet), revBeforeMgmt, "management fee collected");
+        assertEq(usdc.balanceOf(revenueWallet), revBeforeMgmt, "management fee is zero");
+        assertEq(usdc.balanceOf(address(t)), treasuryBeforeMgmt, "idle balance unchanged");
     }
 
     /// Unified DAO creation flow: formation fee to protocol; user seed via surplus;

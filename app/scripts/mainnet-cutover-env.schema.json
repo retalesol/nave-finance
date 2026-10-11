@@ -272,22 +272,22 @@
     },
     "NAVE_PROTOCOL_REVENUE_WALLET": {
       "type": "string",
-      "description": "Server-side mirror of the protocol revenue wallet (perf-fee skim + annual management-fee destination). Defaults to VITE_NAVE_PROTOCOL_FEE_WALLET when unset. Must be a real funded mainnet wallet.",
+      "description": "Server-side mirror of the protocol revenue wallet (15% realized-yield skim destination). Defaults to VITE_NAVE_PROTOCOL_FEE_WALLET when unset. Must be a real funded mainnet wallet. There is no annual management fee.",
       "minLength": 32
     },
     "NAVE_PERFORMANCE_FEE_BPS": {
       "type": "string",
-      "description": "Performance fee in bps (8.5% yield skim taken inline on strategy withdrawal). Default 850. On-chain FeeConfig is authoritative; this is for preflight surfacing.",
+      "description": "Performance fee in bps (15% of realized yield, skimmed on strategy withdrawal). Must be 1500. Cutover refuses any other value. On-chain FeeConfig is authoritative; this is for preflight surfacing.",
       "pattern": "^[0-9]+$"
     },
     "NAVE_MANAGEMENT_FEE_BPS": {
       "type": "string",
-      "description": "Annual management fee in bps (0.65% of idle balance, discrete per-asset). Default 65. On-chain FeeConfig is authoritative; this is for preflight surfacing.",
+      "description": "Annual management fee in bps. Must be 0. Cutover refuses any other value. The signer does not collect a management fee.",
       "pattern": "^[0-9]+$"
     },
     "FORMATION_FEE_LAMPORTS": {
       "type": "string",
-      "description": "OPTIONAL Solana formation fee in lamports (written to global_config.formation_fee_lamports). Creation is now FEE-FREE: canonical value is 0 on all networks and initialize_dao charges nothing (the value is inert). The DAO creation gate is the recoverable $99-of-NAVE stake (stake_dao_creation), not a SOL fee. When set, the cutover REFUSES any value other than 0.",
+      "description": "OPTIONAL Solana formation fee in lamports (written to global_config.formation_fee_lamports). Canonical value is 0: initialize_dao charges no protocol fee (gas and rent only). When set, the cutover REFUSES any value other than 0.",
       "pattern": "^[0-9]+$"
     },
     "TREASURY_SEED_LAMPORTS": {
@@ -297,22 +297,22 @@
     },
     "MAINNET_NAVE_MINT": {
       "type": "string",
-      "description": "OPTIONAL re-confirmation of the canonical mainnet NAVE SPL mint used for the recoverable $99 DAO creation stake (EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory). Pinned on-chain by the contracts cutover via set_nave_mint. When set it MUST equal the canonical mint; the devnet replica mint (GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa) is REFUSED anywhere on the mainnet path.",
+      "description": "OPTIONAL re-confirmation of the canonical mainnet NAVE SPL mint (EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory). New treasuries do not lock NAVE. When set it MUST equal the canonical mint; the devnet replica mint (GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa) is REFUSED anywhere on the mainnet path.",
       "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
     },
     "NAVE_STAKE_TOKEN": {
       "type": "string",
-      "description": "OPTIONAL wrapped-NAVE ERC-20 address for the EVM DAO creation stake (NaveProtocol.setNaveStakeConfig). Consumed by the CONTRACTS EVM cutover `--phase stake`. When unset, EVM creation stays fee-free with NO stake gate until the Safe configures it post-handoff.",
+      "description": "OPTIONAL wrapped-NAVE ERC-20 address recorded by NaveProtocol.setNaveStakeConfig. New treasuries lock nothing. The stake phase may still set the moonlight module so an existing lock can be released. REQUIRED_NAVE_STAKE must be 0.",
       "pattern": "^0x[0-9a-fA-F]{40}$"
     },
     "REQUIRED_NAVE_STAKE": {
       "type": "string",
-      "description": "OPTIONAL required wrapped-NAVE creation stake in token base units (the $99-equivalent from the off-chain price oracle), paired with NAVE_STAKE_TOKEN for NaveProtocol.setNaveStakeConfig on the EVM cutover `--phase stake`.",
+      "description": "Required wrapped-NAVE amount for NaveProtocol.setNaveStakeConfig, in token base units. Must be 0 or unset. Forming a treasury does not require NAVE. A non-zero value fails the cutover.",
       "pattern": "^[0-9]+$"
     },
     "DAO_STAKE_MODULE": {
       "type": "string",
-      "description": "OPTIONAL NaveDaoStake escrow/moonlight module address wired via NaveProtocol.setDaoStake on the EVM cutover `--phase stake`. Zero/unset disables the EVM stake + moonlight path.",
+      "description": "OPTIONAL NaveDaoStake escrow/moonlight module address wired via NaveProtocol.setDaoStake. Kept so an existing locked stake can be released. New treasuries do not lock NAVE, and reopening does not require a new stake.",
       "pattern": "^0x[0-9a-fA-F]{40}$"
     },
     "NAVE_AGENT_SOL_REQUEST_THRESHOLD": {
@@ -337,12 +337,12 @@
     },
     "MANAGEMENT_FEE_INTERVAL_MS": {
       "type": "string",
-      "description": "Management-fee scheduler cadence (ms). Default 3600000 (hourly) so the worker catches each asset's UTC-midnight annual boundary. Each tick is a cheap no-op when no asset is due.",
+      "description": "Unused. The signer no longer runs a management-fee collector. Leave unset. A stale value is ignored and is not required for cutover.",
       "pattern": "^[0-9]+$"
     },
     "NAVE_OPS_WALLET_SECRET": {
       "type": "string",
-      "description": "Protocol operations keypair (base64 or comma-separated bytes) used by the worker as the permissionless management-fee fee_collector/payer and for agent-wallet replenishment. Funded from protocol fee revenue.",
+      "description": "Protocol operations keypair (base64 or comma-separated bytes) used by the worker for agent-wallet replenishment. Funded from the 15% yield skim. It is not a management-fee collector.",
       "minLength": 40
     },
     "NAVE_CLUSTER": {
@@ -743,7 +743,7 @@
     },
     "FORMATION_FEE_WEI": {
       "type": "string",
-      "description": "Optional NaveProtocol DAO formation fee in wei. Creation is now FEE-FREE (mirrors Solana): default 0, and the EVM mainnet cutover REFUSES any non-zero value. The recoverable $99-of-NAVE stake (setNaveStakeConfig) is the creation gate. Constructor arg for contracts/evm script/Deploy.s.sol.",
+      "description": "Optional NaveProtocol DAO formation fee in wei. Must be 0. The EVM mainnet cutover refuses any non-zero value. Forming a treasury does not lock NAVE. Constructor arg for contracts/evm script/Deploy.s.sol.",
       "pattern": "^[0-9]+$"
     },
     "TOKEN_MINT_FEE_WEI": {

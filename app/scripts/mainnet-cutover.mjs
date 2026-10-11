@@ -24,20 +24,19 @@ const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 // Fee-model defaults (mirror nave_core constants + signer/worker defaults). The
 // on-chain rates are the authoritative source; these are surfaced in preflight
 // and the launch artifact so the operator confirms the posture before cutover.
-const DEFAULT_PERFORMANCE_FEE_BPS = 850; // 8.5% of realized yield (withdrawal skim)
-const DEFAULT_MANAGEMENT_FEE_BPS = 65; // 0.65%/yr of idle balance (discrete annual)
+const DEFAULT_PERFORMANCE_FEE_BPS = 1500; // 15% of realized yield (withdrawal skim)
+const DEFAULT_MANAGEMENT_FEE_BPS = 0; // no annual management fee
 const DEFAULT_AGENT_SOL = { request: 0.05, operate: 0.1, fillCeiling: 0.25, refillTrigger: 0.1 };
-const DEFAULT_MANAGEMENT_FEE_INTERVAL_MS = 3_600_000; // hourly check for the annual boundary
 // Solana system-program default pubkey (Pubkey::default()); a revenue wallet
 // must never be this all-zeros key.
 const SYSTEM_PROGRAM_PUBKEY = "11111111111111111111111111111111";
 
-// ── Unified DAO creation flow (FEE-FREE + recoverable NAVE stake + user seed +
+// ── Unified DAO creation flow (gas and rent only + optional founder seed +
 // bootstrap). Mirrors nave_core constants built with `--features mainnet` and
-// the contracts cutover: creation is FEE-FREE (FORMATION_FEE_LAMPORTS = 0;
-// initialize_dao charges nothing) and gated instead by a recoverable `$99`-of-
-// NAVE stake locked via stake_dao_creation. The user treasury seed is a separate
-// wizard input (wrapped to wSOL, deposited client-side — not a fee carve-out).
+// the contracts cutover: creation charges no protocol fee (FORMATION_FEE_LAMPORTS
+// = 0; initialize_dao charges nothing) and does not lock NAVE. The user treasury
+// seed is a separate wizard input (wrapped to wSOL, deposited client-side — not
+// a fee).
 const MAINNET_FORMATION_FEE_LAMPORTS = 0; // fee-free creation (value is inert on-chain)
 const MAINNET_TREASURY_SEED_LAMPORTS = 0; // no fee carve-out; user seed is separate
 const CREATION_FLOW = {
@@ -50,20 +49,19 @@ const CREATION_FLOW = {
   reviewWindowSecs: { default: 86_400, min: 60, max: 604_800 },
 };
 
-// Canonical mainnet NAVE SPL mint accepted for the recoverable `$99` DAO
-// creation stake (mirrors deployments/devnet.json naveToken.mainnetMint and the
-// app SOLANA_NAVE_MINT default). Pinned on-chain by the CONTRACTS cutover via
-// set_nave_mint; surfaced here for the launch artifact + the stake-gate posture.
-// The devnet replica mint (GmBM…) MUST NEVER appear on the mainnet path.
+// Canonical mainnet NAVE SPL mint. New treasuries do not lock it. The mint stays
+// pinned so an existing lock can still be identified and released. The devnet
+// replica mint (GmBM…) MUST NEVER appear on the mainnet path.
 const MAINNET_NAVE_MINT = "EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory";
 const DEVNET_REPLICA_NAVE_MINT = "GmBMZuXsXpe7TZK27PTcXUyNGcuw9Ew8v3fxys7wM9Wa";
-const DAO_STAKE_TARGET_USD = 99;
+const DAO_STAKE_TARGET_USD = 0;
 const NAVE_STAKE_FLOW = {
   mint: MAINNET_NAVE_MINT,
   stakeTargetUsd: DAO_STAKE_TARGET_USD,
-  pinnedVia: "contracts cutover set_nave_mint (global_config.authority-gated, pre-handoff)",
-  amountSource: "off-chain price oracle (nave-price-oracle) accepted quote",
-  moonlighting: "record_moonlight_request → set_moonlight_distribution → execute_moonlight_distribution → finalize_moonlight; restore_dao re-stakes to reopen",
+  requiredStake: "0",
+  pinnedVia: "contracts cutover set_nave_mint still records the canonical mint; new treasuries lock nothing",
+  amountSource: "none — forming a treasury does not require NAVE",
+  moonlighting: "an existing lock, if any, is released on moonlight; restore_dao reopens without a new stake",
 };
 
 // Cluster the signer/edge MUST resolve to for the mainnet cutover. NAVE_CLUSTER
@@ -124,8 +122,8 @@ const MAINNET_EVM_TOKEN_MINT_FEE_WEI = "50000000000000000"; // 0.05 ETH
 // seed carve-out from a fee. The CONTRACTS EVM cutover
 // (contracts/solana/scripts/evm-mainnet-cutover.mjs) is authoritative and enforces
 // FORMATION_FEE_WEI = 0 / TREASURY_SEED_WEI = 0 on its mainnet path; the app
-// cutover surfaces it for the launch artifact. The $99-of-NAVE stake (wrapped
-// NAVE via NaveProtocol.setNaveStakeConfig) is the creation gate.
+// cutover surfaces it for the launch artifact. Forming a treasury does not
+// require a NAVE stake. REQUIRED_NAVE_STAKE must be 0.
 const MAINNET_EVM_TREASURY_SEED_WEI = "0"; // fee-free creation; no carve-out
 const EVM_ADAPTERS = [
   { key: "aaveV3", env: "AAVE_ADAPTER_ADDRESS", artifact: "aaveV3Adapter", readinessId: "aave" },
@@ -952,16 +950,14 @@ function printAgentAutonomySummary(env) {
   console.log(`  compound min gain (bps):     ${a.compoundMinGainBps}`);
 }
 
-// Resolve the post-redesign fee-model posture from env, applying the on-chain /
-// signer defaults. `protocolRevenueWallet` is the destination for BOTH the 8.5%
-// performance-fee skim (taken inline on strategy withdrawal) and the discrete
-// annual 0.65% management fee (collected per-asset by the worker scheduler).
+// Resolve the yield-only fee posture from env. `protocolRevenueWallet` receives
+// the 15% realized-yield skim taken on strategy withdrawal. The management fee
+// is 0, and the signer no longer runs a collector.
 function resolveFeeModel(env) {
   return {
     protocolRevenueWallet: (env.NAVE_PROTOCOL_REVENUE_WALLET || env.VITE_NAVE_PROTOCOL_FEE_WALLET || "").trim(),
     performanceFeeBps: Number(env.NAVE_PERFORMANCE_FEE_BPS ?? DEFAULT_PERFORMANCE_FEE_BPS),
     managementFeeBps: Number(env.NAVE_MANAGEMENT_FEE_BPS ?? DEFAULT_MANAGEMENT_FEE_BPS),
-    managementFeeIntervalMs: Number(env.MANAGEMENT_FEE_INTERVAL_MS ?? DEFAULT_MANAGEMENT_FEE_INTERVAL_MS),
     agentSol: {
       request: Number(env.NAVE_AGENT_SOL_REQUEST_THRESHOLD ?? DEFAULT_AGENT_SOL.request),
       operate: Number(env.NAVE_AGENT_SOL_OPERATE_LEVEL ?? DEFAULT_AGENT_SOL.operate),
@@ -973,9 +969,8 @@ function resolveFeeModel(env) {
 
 // Mainnet SAFETY GATE for the fee redesign. The protocol revenue wallet is
 // REQUIRED and validated non-zero (it is bound into every DAO at creation and
-// receives all protocol fees); fee bps must be sane; the agent-SOL hysteresis
-// thresholds must be ordered and positive; the management-fee cadence must be a
-// positive integer.
+// receives the yield skim); fee bps must be the yield-only model (1500 / 0);
+// the agent-SOL hysteresis thresholds must be ordered and positive.
 function assertFeeModelSafety(env) {
   const f = resolveFeeModel(env);
 
@@ -985,7 +980,7 @@ function assertFeeModelSafety(env) {
   if (!w) {
     throw new Error(
       "Protocol revenue wallet is required: set VITE_NAVE_PROTOCOL_FEE_WALLET " +
-        "(and/or NAVE_PROTOCOL_REVENUE_WALLET). It receives the 8.5% performance skim and the annual 0.65% management fee.",
+        "(and/or NAVE_PROTOCOL_REVENUE_WALLET). It receives the 15% yield skim.",
     );
   }
   if (w.length < 32 || w.length > 44) {
@@ -999,6 +994,16 @@ function assertFeeModelSafety(env) {
     if (!Number.isInteger(val) || val < 0 || val > 10_000) {
       throw new Error(`${key} fee bps must be an integer in [0, 10000] (got ${val}).`);
     }
+  }
+  if (f.performanceFeeBps !== DEFAULT_PERFORMANCE_FEE_BPS) {
+    throw new Error(
+      `NAVE_PERFORMANCE_FEE_BPS must be ${DEFAULT_PERFORMANCE_FEE_BPS} (15% of realized yield). Got ${f.performanceFeeBps}.`,
+    );
+  }
+  if (f.managementFeeBps !== DEFAULT_MANAGEMENT_FEE_BPS) {
+    throw new Error(
+      `NAVE_MANAGEMENT_FEE_BPS must be ${DEFAULT_MANAGEMENT_FEE_BPS} (no annual management fee). Got ${f.managementFeeBps}.`,
+    );
   }
 
   const s = f.agentSol;
@@ -1015,9 +1020,6 @@ function assertFeeModelSafety(env) {
     );
   }
 
-  if (!Number.isInteger(f.managementFeeIntervalMs) || f.managementFeeIntervalMs <= 0) {
-    throw new Error(`MANAGEMENT_FEE_INTERVAL_MS must be a positive integer in ms (got ${f.managementFeeIntervalMs}).`);
-  }
 }
 
 // On mainnet the revenue wallet must be a REAL, funded account: it pays rent for
@@ -1045,11 +1047,10 @@ async function assertRevenueWalletFunded(env) {
 // Surface the resolved fee-model posture in the preflight summary.
 function printFeeModelSummary(env) {
   const f = resolveFeeModel(env);
-  console.log("\nFee model (post-redesign):");
+  console.log("\nFee model (yield only):");
   console.log(`  protocol revenue wallet:     ${f.protocolRevenueWallet}`);
-  console.log(`  performance fee (yield skim): ${f.performanceFeeBps} bps (${(f.performanceFeeBps / 100).toFixed(2)}%)`);
-  console.log(`  management fee (annual):      ${f.managementFeeBps} bps (${(f.managementFeeBps / 100).toFixed(2)}%/yr, per-asset)`);
-  console.log(`  management-fee check cadence: ${f.managementFeeIntervalMs} ms`);
+  console.log(`  performance fee (yield skim): ${f.performanceFeeBps} bps (${(f.performanceFeeBps / 100).toFixed(2)}% of realized yield)`);
+  console.log(`  management fee:               ${f.managementFeeBps} bps (no annual fee; signer does not collect)`);
   console.log(
     `  agent SOL tiers (SOL):       request ${f.agentSol.request} / operate ${f.agentSol.operate} ` +
       `/ refill-trigger ${f.agentSol.refillTrigger} / fill-ceiling ${f.agentSol.fillCeiling}`,
@@ -1080,8 +1081,9 @@ function resolveCreationFlow(env) {
 // Creation is now FEE-FREE: initialize_dao charges nothing and the on-chain
 // FORMATION_FEE_LAMPORTS constant is 0. If an operator pins these env values
 // they MUST be exact (fail closed):
-//   - FORMATION_FEE_LAMPORTS (if set) MUST equal 0 (fee-free; NAVE stake is the gate).
+//   - FORMATION_FEE_LAMPORTS (if set) MUST equal 0 (no protocol fee at formation).
 //   - TREASURY_SEED_LAMPORTS (if set) MUST equal 0 (user seed is separate).
+//   - REQUIRED_NAVE_STAKE (if set) MUST equal 0 (forming a treasury does not lock NAVE).
 //   - MAINNET_NAVE_MINT (if set) MUST equal the canonical mainnet NAVE mint, and
 //     the devnet replica mint MUST NEVER appear anywhere on the mainnet path.
 // All OPTIONAL: a Solana-only cutover with none set still passes.
@@ -1094,8 +1096,7 @@ function assertFeeSplitConfig(env) {
     if (Number(feeRaw) !== MAINNET_FORMATION_FEE_LAMPORTS) {
       throw new Error(
         `FORMATION_FEE_LAMPORTS ${feeRaw} must equal ${MAINNET_FORMATION_FEE_LAMPORTS} ` +
-          "(creation is fee-free; the protocol takes no profit at formation — the " +
-          "recoverable $99-of-NAVE stake is the gate).",
+          "(creation charges no protocol fee; gas and rent only).",
       );
     }
   }
@@ -1112,6 +1113,12 @@ function assertFeeSplitConfig(env) {
     }
   }
   assertNaveMintConfig(env);
+  const stakeRaw = (env.REQUIRED_NAVE_STAKE ?? "").trim();
+  if (stakeRaw && stakeRaw !== "0") {
+    throw new Error(
+      `REQUIRED_NAVE_STAKE must be 0 or unset (forming a treasury does not require NAVE). Got "${stakeRaw}".`,
+    );
+  }
 }
 
 // Refuse a mismatched mainnet NAVE stake mint, and refuse the devnet replica
@@ -1121,7 +1128,7 @@ function assertNaveMintConfig(env) {
   if (raw && raw !== MAINNET_NAVE_MINT) {
     throw new Error(
       `Mainnet NAVE mint ${raw} must equal the canonical mainnet NAVE mint ${MAINNET_NAVE_MINT}. ` +
-        "The DAO creation stake mint is fixed on mainnet; refusing a mismatched mint.",
+        "The canonical NAVE mint is fixed on mainnet; refusing a mismatched mint.",
     );
   }
   for (const [k, v] of Object.entries(env)) {
@@ -1138,9 +1145,9 @@ function assertNaveMintConfig(env) {
 function printCreationFlowSummary(env) {
   const f = resolveCreationFlow(env);
   const sol = (lamports) => (lamports / 1_000_000_000).toFixed(3);
-  console.log("\nUnified DAO creation flow (FEE-FREE; $99 NAVE stake + user seed + bootstrap):");
-  console.log(`  formation fee (protocol):    ${f.protocolFeeLamports} lamports (${sol(f.protocolFeeLamports)} SOL) — FEE-FREE (initialize_dao charges nothing; value is inert)`);
-  console.log(`  NAVE creation stake:         $${NAVE_STAKE_FLOW.stakeTargetUsd} of NAVE (mint ${NAVE_STAKE_FLOW.mint}); amount from ${NAVE_STAKE_FLOW.amountSource}; recoverable via moonlighting`);
+  console.log("\nUnified DAO creation flow (gas and rent only; no NAVE lock; optional founder seed + bootstrap):");
+  console.log(`  formation fee (protocol):    ${f.protocolFeeLamports} lamports (${sol(f.protocolFeeLamports)} SOL) — no protocol fee (initialize_dao charges nothing)`);
+  console.log(`  NAVE creation stake:         none (required amount 0). An existing lock, if any, is released on moonlight.`);
   console.log(`  treasury seed (per DAO):     ${f.treasurySeedLamports} lamports (${sol(f.treasurySeedLamports)} SOL) — user-chosen ${f.treasurySeedAsset}`);
   console.log(`  bootstrap activation:        founder-gated create_execution_request(bootstrap=true) snapshots review_window=0 (immediate first action); ${f.bootstrapLatch} blocks reuse`);
   console.log(`  review window (editable):    default ${f.reviewWindowSecs.default}s, bounds ${f.reviewWindowSecs.min}s..${f.reviewWindowSecs.max}s via set_review_window`);
@@ -1639,11 +1646,11 @@ function upsertSupabaseSecrets(env) {
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     VITE_NAVE_PROTOCOL_FEE_WALLET: env.VITE_NAVE_PROTOCOL_FEE_WALLET,
     NAVE_PROTOCOL_FEE_WALLET: env.VITE_NAVE_PROTOCOL_FEE_WALLET,
-    // Fee-redesign config: the protocol revenue wallet receives the perf-fee skim
-    // + annual management fee. Default the server-side mirror to the fee wallet.
+    // Fee-redesign config: the protocol revenue wallet receives the 15% yield skim.
+    // Management fee is 0. Default unset bps to the yield-only model.
     NAVE_PROTOCOL_REVENUE_WALLET: env.NAVE_PROTOCOL_REVENUE_WALLET || env.VITE_NAVE_PROTOCOL_FEE_WALLET,
-    NAVE_PERFORMANCE_FEE_BPS: env.NAVE_PERFORMANCE_FEE_BPS,
-    NAVE_MANAGEMENT_FEE_BPS: env.NAVE_MANAGEMENT_FEE_BPS,
+    NAVE_PERFORMANCE_FEE_BPS: env.NAVE_PERFORMANCE_FEE_BPS ?? String(DEFAULT_PERFORMANCE_FEE_BPS),
+    NAVE_MANAGEMENT_FEE_BPS: env.NAVE_MANAGEMENT_FEE_BPS ?? String(DEFAULT_MANAGEMENT_FEE_BPS),
     // Cluster + Jupiter program IDs drive the edge functions' on-chain Jupiter
     // program-id assertion; the cluster flips the signer/edge to the prod path.
     NAVE_CLUSTER: env.NAVE_CLUSTER,
@@ -1753,9 +1760,7 @@ function writeAppArtifact(env, checks) {
     agentAutonomy: resolveAgentAutonomy(env),
     feeModel: resolveFeeModel(env),
     creationFlow: resolveCreationFlow(env),
-    // Recoverable $99-of-NAVE creation stake (replaces the formation fee). The
-    // mint is pinned on-chain by the contracts cutover (set_nave_mint); the
-    // amount comes from the off-chain price oracle. Moonlighting releases it.
+    // New treasuries lock no NAVE. An existing lock, if any, is released on moonlight.
     naveStake: NAVE_STAKE_FLOW,
     signerInfra: resolveSignerInfra(env),
     navFreshness: {
@@ -1778,9 +1783,7 @@ function writeAppArtifact(env, checks) {
               mintWei: c.tokenMintFeeWei,
               revokeRewardWei: c.tokenRevokeRewardWei,
             },
-            // EVM creation is FEE-FREE (mirrors Solana): feeWei + treasurySeedWei
-            // must be 0 on the mainnet path (contracts EVM cutover enforces this).
-            // The $99-of-NAVE stake (NaveProtocol.setNaveStakeConfig) is the gate.
+            // EVM creation charges no protocol fee. REQUIRED_NAVE_STAKE is 0.
             formationFee: {
               feeWei: c.formationFeeWei,
               treasurySeedWei: c.treasurySeedWei,
@@ -1788,7 +1791,7 @@ function writeAppArtifact(env, checks) {
             },
             naveStake: {
               token: (env.NAVE_STAKE_TOKEN || "").trim(),
-              requiredStake: (env.REQUIRED_NAVE_STAKE || "").trim(),
+              requiredStake: (env.REQUIRED_NAVE_STAKE || "0").trim() || "0",
               daoStakeModule: (env.DAO_STAKE_MODULE || "").trim(),
               stakeTargetUsd: DAO_STAKE_TARGET_USD,
             },
@@ -1834,18 +1837,18 @@ function printHostEnvHints(env) {
     if (v) console.log(`${k}=${v}`);
   }
 
-  // Signer/worker host (Railway): fee-model + agent-SOL + management-fee cadence.
-  // These are read by the signer-service and the management-fee scheduler, not
-  // the Supabase edge functions, so surface them for the worker host env.
+  // Signer/worker host (Railway): yield-fee wallet + agent-SOL hysteresis.
+  // The management-fee collector is gone; do not set a collect interval.
   const f = resolveFeeModel(env);
   console.log("\nApply these to the signer/worker host (Railway):");
   const workerHints = {
     NAVE_PROTOCOL_REVENUE_WALLET: f.protocolRevenueWallet,
+    NAVE_PERFORMANCE_FEE_BPS: String(DEFAULT_PERFORMANCE_FEE_BPS),
+    NAVE_MANAGEMENT_FEE_BPS: String(DEFAULT_MANAGEMENT_FEE_BPS),
     NAVE_AGENT_SOL_REQUEST_THRESHOLD: env.NAVE_AGENT_SOL_REQUEST_THRESHOLD ?? String(DEFAULT_AGENT_SOL.request),
     NAVE_AGENT_SOL_OPERATE_LEVEL: env.NAVE_AGENT_SOL_OPERATE_LEVEL ?? String(DEFAULT_AGENT_SOL.operate),
     NAVE_AGENT_SOL_FILL_CEILING: env.NAVE_AGENT_SOL_FILL_CEILING ?? String(DEFAULT_AGENT_SOL.fillCeiling),
     NAVE_AGENT_SOL_REFILL_TRIGGER: env.NAVE_AGENT_SOL_REFILL_TRIGGER ?? String(DEFAULT_AGENT_SOL.refillTrigger),
-    MANAGEMENT_FEE_INTERVAL_MS: env.MANAGEMENT_FEE_INTERVAL_MS ?? String(DEFAULT_MANAGEMENT_FEE_INTERVAL_MS),
   };
   for (const [k, v] of Object.entries(workerHints)) {
     if (v) console.log(`${k}=${v}`);

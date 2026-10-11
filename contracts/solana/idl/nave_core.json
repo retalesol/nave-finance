@@ -1044,14 +1044,12 @@
     {
       "name": "collect_management_fee",
       "docs": [
-        "Collect the discrete annual management fee (0.65%/yr of idle balance) for",
-        "one registered asset, paid in-kind to the protocol revenue wallet. Call",
-        "once per mint. Replaces the prior continuous time-prorated model.",
+        "Retained instruction. Transfers nothing and does not advance the",
+        "management-fee anchor. Writes the canonical 0 management / 1500",
+        "performance bps pair (normal and frozen) when the stored rates differ.",
         "",
-        "NOTE: the performance fee is no longer a standalone instruction. It is an",
-        "8.5%-of-realized-yield skim taken inline on `record_strategy_withdrawal`",
-        "(the audited strategy-withdrawal path); the old high-water-mark",
-        "`collect_performance_fee` was inert (Finding C) and has been removed."
+        "The performance fee is not a standalone instruction. It is a",
+        "15%-of-realized-yield skim taken inline on `record_strategy_withdrawal`."
       ],
       "discriminator": [
         110,
@@ -1142,7 +1140,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "vault_authority",
@@ -3227,7 +3226,10 @@
       "name": "execute_moonlight_distribution",
       "docs": [
         "Distribution wizard step 2: after the bound `MoonlightDistribution`",
-        "proposal passes, release the staked NAVE to the approved recipient."
+        "proposal passes, release an already-locked NAVE stake to the approved",
+        "recipient. Pass the nave_core program id for `dao_stake_lock`,",
+        "`stake_escrow`, and `recipient_nave_account` when this treasury never",
+        "created a DaoStakeLock; distribution still completes."
       ],
       "discriminator": [
         197,
@@ -3353,15 +3355,18 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "stake_escrow",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "recipient_nave_account",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "distribution_proposal",
@@ -9295,8 +9300,9 @@
         {
           "name": "fee_config",
           "docs": [
-            "Fee configuration — supplies `performance_fee_bps` and the",
-            "`protocol_revenue_wallet` skim destination."
+            "Fee configuration. The skim rate is the canonical 1500 bps,",
+            "not the stored value. Writable so a stale rate is corrected.",
+            "`protocol_revenue_wallet` is the skim destination."
           ],
           "pda": {
             "seeds": [
@@ -9320,7 +9326,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "revenue_token_account",
@@ -10252,8 +10259,10 @@
     {
       "name": "restore_dao",
       "docs": [
-        "Founder-only reopen: restake the current `$99` of NAVE and return the DAO",
-        "to `Active`."
+        "Founder-only reopen. Does not lock new NAVE. `amount` and",
+        "`price_usd_micro` stay in the signature and are ignored. Pass the",
+        "nave_core program id for the optional stake accounts when this",
+        "treasury never created a DaoStakeLock. An existing lock stays released."
       ],
       "discriminator": [
         119,
@@ -10384,14 +10393,17 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
-          "name": "nave_mint"
+          "name": "nave_mint",
+          "optional": true
         },
         {
           "name": "founder_nave_account",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "stake_escrow",
@@ -10420,7 +10432,8 @@
                 "path": "dao_registry"
               }
             ]
-          }
+          },
+          "optional": true
         },
         {
           "name": "token_program",
@@ -11858,11 +11871,11 @@
     {
       "name": "stake_dao_creation",
       "docs": [
-        "Lock the recoverable `$99`-of-NAVE creation stake into escrow. Called in",
-        "the same creation flow, immediately after `initialize_dao_governance`.",
-        "`amount` is the oracle-derived required NAVE (base units); the handler",
-        "enforces the escrow receives the full, non-zero transfer. Formation",
-        "itself charges NO protocol fee. `price_usd_micro` is recorded as",
+        "Optional legacy lock of recoverable NAVE into escrow. New treasuries",
+        "are not required to call this after init. The instruction still locks",
+        "when invoked, so an existing lock can later be released by moonlight.",
+        "`amount` must meet the minimum; the handler enforces a full receipt.",
+        "Formation itself charges NO protocol fee. `price_usd_micro` is",
         "price-snapshot metadata only."
       ],
       "discriminator": [
@@ -15490,7 +15503,7 @@
         "the existing governance transfer instructions) and the staked NAVE are",
         "released to the recipient.",
         "- `Moonlighted`: distribution complete; the DAO is hidden from participants",
-        "and can only be restored by the founder restaking the current `$99`."
+        "and can be restored by the founder without locking new NAVE."
       ],
       "type": {
         "kind": "struct",
@@ -15568,7 +15581,7 @@
           {
             "name": "restored_at",
             "docs": [
-              "Unix timestamp the founder restored the DAO (restaked)."
+              "Unix timestamp the founder restored the DAO (no new stake)."
             ],
             "type": "i64"
           },
@@ -15802,13 +15815,13 @@
       "docs": [
         "Per-DAO recoverable creation stake. Companion PDA to `DaoRegistry`",
         "(seeds `[\"dao_stake_lock\", dao]`) so the registry byte layout consumed by",
-        "off-chain decoders / IDL clients is untouched. Holds the bookkeeping for the",
-        "`$99`-of-NAVE the founder locks at creation; the NAVE itself lives in the",
+        "off-chain decoders / IDL clients is untouched. New treasuries do not",
+        "create this account. When it exists, it bookkeeps NAVE held in the",
         "dedicated `stake_escrow` token account whose authority is this PDA.",
         "",
-        "Formation takes NO protocol profit: this stake is fully recoverable and is",
-        "released to the approved recipient during an approved moonlight distribution",
-        "(see `DaoLifecycle`), or back to the founder on wind-down."
+        "Formation takes NO protocol profit: an existing lock is fully",
+        "recoverable and is released to the approved recipient during an",
+        "approved moonlight distribution (see `DaoLifecycle`)."
       ],
       "type": {
         "kind": "struct",
@@ -15993,16 +16006,14 @@
       "docs": [
         "Fee configuration with normal and frozen rates.",
         "",
-        "Fee model (post-redesign):",
-        "- Performance fee = `performance_fee_bps` (default 850 = 8.5%) of realized",
-        "yield, skimmed on the strategy-withdrawal path straight into the",
-        "`protocol_revenue_wallet`'s ATA for the withdrawn mint (it never touches",
-        "the treasury balance). Replaces the old high-water-mark",
-        "`collect_performance_fee` instruction, which was inert (Finding C).",
-        "- Management fee = `management_fee_bps` (default 65 = 0.65%) of each",
-        "registered treasury asset's idle balance, collected at most once per",
-        "`SECONDS_PER_YEAR` and paid in-kind to the same",
-        "`protocol_revenue_wallet` ATA for that mint."
+        "Yield-only fee model:",
+        "- Performance fee = 1500 bps (15%) of realized yield, skimmed on",
+        "`record_strategy_withdrawal` into the `protocol_revenue_wallet` ATA.",
+        "Frozen treasuries use the same rate. A stale stored value is corrected",
+        "on that path.",
+        "- Management fee = 0. `collect_management_fee` transfers nothing and",
+        "does not advance the annual anchor. The field is retained so the",
+        "account layout does not move."
       ],
       "type": {
         "kind": "struct",

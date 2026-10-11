@@ -14,6 +14,10 @@ import {
   NAVE_BRIDGE_EVM_CONFIRMATIONS,
   NAVE_DECIMALS,
   defaultGuardianThreshold,
+  MANAGEMENT_FEE_BPS_NORMAL,
+  MANAGEMENT_FEE_BPS_FROZEN,
+  PERFORMANCE_FEE_BPS,
+  FROZEN_PERFORMANCE_FEE_BPS,
 } from '../../src/lib/programConfig';
 
 test('config constants: 2.5% fee split 1% / 1% / 0.5%, 6-decimal NAVE, bridge enabled', () => {
@@ -83,4 +87,11 @@ test('defaultGuardianThreshold: a custodied guardian never completes a quorum of
   assert.equal(defaultGuardianThreshold(1), 1);
   assert.equal(defaultGuardianThreshold(2), 2);
   assert.equal(defaultGuardianThreshold(5), 3);
+});
+
+test('treasury fees: no management fee, 15% of realized yield, frozen matches', () => {
+  assert.equal(MANAGEMENT_FEE_BPS_NORMAL, 0);
+  assert.equal(MANAGEMENT_FEE_BPS_FROZEN, 0);
+  assert.equal(PERFORMANCE_FEE_BPS, 1500);
+  assert.equal(FROZEN_PERFORMANCE_FEE_BPS, 1500);
 });

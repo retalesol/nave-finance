@@ -23,7 +23,7 @@ Capital signatures share one gate. `callSigner` in `supabase/functions/agent-orc
 - Permission proposals that execute guardian set/threshold changes; EVM founder guardian edit is one-shot bootstrap only.
 - EVM guardian recovery (queue/execute/cancel) wired in Settings when a DAO is frozen.
 - The governed treasury wind-down ("moonlighting") lifecycle (Solana + EVM Settings wizard; EVM also hard-halts deposit / new strategy requests while moonlighting).
-- EVM operator surfaces: fee collect, live strategy positions, guardian M-of-N freeze, strategy withdraw + minOut, manual agent dispatch.
+- EVM operator surfaces: live strategy positions, guardian M-of-N freeze, strategy withdraw + minOut, manual agent dispatch. Strategy withdrawal skims 15% of realized yield. There is no annual management-fee collect.
 
 ## What remains before calling this production
 

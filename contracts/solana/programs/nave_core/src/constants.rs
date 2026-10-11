@@ -172,12 +172,11 @@ pub const SPL_STAKE_POOL_DEPOSIT_SOL_TAG: u8 = 14;
 /// SPL Stake Pool `WithdrawSol` Borsh enum tag.
 pub const SPL_STAKE_POOL_WITHDRAW_SOL_TAG: u8 = 16;
 
-/// DEPRECATED economics: DAO formation no longer charges a SOL profit fee.
-/// Creation is fee-free; the protocol takes no profit at formation. Instead the
-/// founder locks a recoverable `$99`-of-NAVE stake via `stake_dao_creation`
-/// (see `DaoStakeLock`). This constant is retained as `0` on every network so
-/// any lingering references compile, and `initialize_dao_handler` performs NO
-/// SOL transfer. Management + yield fees in `FeeConfig` are unchanged.
+/// DAO formation charges no SOL profit fee and does not require a NAVE stake.
+/// This constant is retained as `0` on every network so any lingering
+/// references compile, and `initialize_dao_handler` performs NO SOL transfer.
+/// `stake_dao_creation` is no longer part of creation; it remains only so a
+/// treasury that already locked NAVE can still be released on moonlight.
 pub const FORMATION_FEE_LAMPORTS: u64 = 0;
 
 /// SEC-M2: durable on-chain minimum for the DAO creation stake, in NAVE base
@@ -264,16 +263,17 @@ pub const AGENT_ROTATION_DELAY_SECONDS: i64 = 172_800;
 #[cfg(not(feature = "mainnet"))]
 pub const AGENT_ROTATION_DELAY_SECONDS: i64 = DEV_DELAY_SECS;
 
-/// Default performance fee: 8.5% (850 bps) of realized yield, skimmed on the
-/// strategy-withdrawal path before the gain reaches the treasury balance. The
-/// live rate is read from `FeeConfig.performance_fee_bps` (configurable); this
-/// is the value the integration worker must seed at DAO creation.
-pub const DEFAULT_PERFORMANCE_FEE_BPS: u16 = 850;
-/// Default management fee: 0.65% (65 bps) of each treasury asset's balance,
-/// collected once per `SECONDS_PER_YEAR`. The live rate is read from
-/// `FeeConfig.management_fee_bps` (configurable); this is the value the
-/// integration worker must seed at DAO creation.
-pub const DEFAULT_MANAGEMENT_FEE_BPS: u16 = 65;
+/// Performance fee: 15% (1500 bps) of realized yield, skimmed on the
+/// strategy-withdrawal path before the gain reaches the treasury balance.
+/// Normal and frozen treasuries use this same rate. Creation must write it,
+/// and `record_strategy_withdrawal` charges it even when `FeeConfig` still
+/// stores an older value.
+pub const DEFAULT_PERFORMANCE_FEE_BPS: u16 = 1500;
+/// Management fee is not charged. The field stays on `FeeConfig` so the
+/// account layout does not move; `collect_management_fee` transfers nothing
+/// and clears any stored non-zero rate back to this value. Frozen treasuries
+/// use the same rate.
+pub const DEFAULT_MANAGEMENT_FEE_BPS: u16 = 0;
 pub const DEFAULT_QUORUM_BPS: u16 = 1_000;
 
 /// Default minimum Claude reasoning confidence (0-100) for agent signing.
@@ -558,7 +558,7 @@ impl StakeStatus {
 /// DAO moonlighting lifecycle state machine (see `DaoLifecycle`).
 ///
 /// `Active → Requested → DistributionPending → Distributing → Moonlighted`,
-/// with `Moonlighted → Active` only via founder restake (`restore_dao`).
+/// with `Moonlighted → Active` only via founder `restore_dao` (no new stake).
 #[repr(u8)]
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MoonlightStatus {
@@ -573,7 +573,7 @@ pub enum MoonlightStatus {
     /// The distribution proposal passed and asset/stake release is underway.
     Distributing = 3,
     /// Distribution complete: the DAO is moonlighted/hidden from participants.
-    /// Only the founder can restore it by restaking the current `$99` of NAVE.
+    /// Only the founder can restore it, and reopening does not lock new NAVE.
     Moonlighted = 4,
 }
 

@@ -213,12 +213,11 @@
     },
     "feeModel": {
       "type": "object",
-      "description": "Resolved fee-model posture at cutover (post-redesign): 8.5% performance skim on realized yield + discrete annual 0.65% management fee, both paid to the protocol revenue wallet. On-chain FeeConfig is authoritative.",
+      "description": "Resolved fee-model posture at cutover: 15% of realized yield, skimmed on withdrawal, paid to the protocol revenue wallet. Management fee is 0. There is no collector interval.",
       "required": [
         "protocolRevenueWallet",
         "performanceFeeBps",
         "managementFeeBps",
-        "managementFeeIntervalMs",
         "agentSol"
       ],
       "properties": {
@@ -249,7 +248,7 @@
     },
     "creationFlow": {
       "type": "object",
-      "description": "Unified DAO creation flow posture: creation is FEE-FREE (protocolFeeLamports = 0; initialize_dao charges nothing) and gated by the recoverable $99-of-NAVE stake. User treasury seed is a separate wizard input (wrapped to wSOL and deposited client-side, not a fee carve-out). treasurySeedLamports is 0 on all networks.",
+      "description": "DAO creation charges no protocol fee (protocolFeeLamports = 0; initialize_dao charges nothing) and does not lock NAVE. User treasury seed is a separate wizard input (wrapped to wSOL and deposited client-side, not a fee). treasurySeedLamports is 0.",
       "required": [
         "protocolFeeLamports",
         "treasurySeedLamports",
@@ -277,7 +276,7 @@
     },
     "naveStake": {
       "type": "object",
-      "description": "Recoverable $99-of-NAVE DAO creation stake (replaces the formation fee). The mainnet NAVE mint is pinned on-chain by the contracts cutover via set_nave_mint; the staked amount derives from the off-chain price oracle. The moonlighting lifecycle releases the stake to an approved recipient on DAO shutdown.",
+      "description": "NAVE mint recorded for an existing lock, if any. New treasuries require 0. An existing lock is released on moonlight. Reopening does not require a new stake.",
       "properties": {
         "mint": { "type": "string" },
         "stakeTargetUsd": { "type": "number" },
@@ -358,7 +357,7 @@
         },
         "formationFee": {
           "type": "object",
-          "description": "EVM creation is FEE-FREE (mirrors Solana): feeWei and treasurySeedWei are 0 on the mainnet path (the contracts EVM cutover enforces this). The recoverable $99-of-NAVE stake (naveStake below) is the creation gate.",
+          "description": "EVM creation charges no protocol fee: feeWei and treasurySeedWei are 0. Forming a treasury does not lock NAVE.",
           "properties": {
             "feeWei": { "type": "string" },
             "treasurySeedWei": { "type": "string" },
@@ -367,7 +366,7 @@
         },
         "naveStake": {
           "type": "object",
-          "description": "EVM wrapped-NAVE DAO creation stake wired via NaveProtocol.setNaveStakeConfig(token, requiredStake) + setDaoStake(module) on the contracts EVM cutover `--phase stake`. Empty token/requiredStake ⇒ creation stays fee-free with NO stake gate until the Safe configures it.",
+          "description": "EVM wrapped-NAVE record via NaveProtocol.setNaveStakeConfig(token, 0) + setDaoStake(module). requiredStake is 0. The module can release an existing lock.",
           "properties": {
             "token": { "type": "string" },
             "requiredStake": { "type": "string" },

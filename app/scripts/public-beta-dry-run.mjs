@@ -259,34 +259,18 @@ function daoParams(name, founder, guardians, agents) {
     guardianWallets: guardians,
     guardianThreshold: 2,
     agentAuthorities: agents,
-    managementFeeBps: 65,
-    performanceFeeBps: 0,
-    frozenManagementFeeBps: 35,
-    frozenPerformanceFeeBps: 0,
+    managementFeeBps: 0,
+    performanceFeeBps: 1500,
+    frozenManagementFeeBps: 0,
+    frozenPerformanceFeeBps: 1500,
     protocolRevenueWallet: founder,
     quorumBps: 3500,
     governanceType: 0,
   };
 }
 
-async function ensureStake(wallet, publicClient, protocol, founder) {
-  const required = await read(publicClient, protocol, "requiredNaveStake");
-  if (required === 0n) return { required: "0" };
-  const token = await read(publicClient, protocol, "naveStakeToken");
-  const module = await read(publicClient, protocol, "daoStake");
-  if (token === ZERO || module === ZERO) throw new Error("stake is required but the module is unset");
-  const balance = await read(publicClient, token, "balanceOf", [founder]);
-  if (balance < required) throw new Error(`stake balance ${balance} is below ${required}`);
-  const allowance = await read(publicClient, token, "allowance", [founder, module]);
-  if (allowance < required) {
-    await send(wallet, publicClient, {
-      address: token,
-      abi: ABI,
-      functionName: "approve",
-      args: [module, required],
-    });
-  }
-  return { required: required.toString(), token, module };
+async function ensureStake() {
+  return { required: "0" };
 }
 
 async function createDao(wallet, publicClient, spec, founder, guardians, agents) {

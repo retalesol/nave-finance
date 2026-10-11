@@ -18,13 +18,13 @@ const MAINNET_LAUNCH_ARTIFACT_PATH = join(DEPLOYMENTS_DIR, "mainnet-launch-artif
 const PROGRAM_ENV_PATH = join(DEPLOYMENTS_DIR, "mainnet-program-ids.env");
 const KNOWN_MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 // ── Formation fee (unified DAO creation flow) ─────────────────────────────────
-// DEPRECATED ECONOMICS — creation is now FEE-FREE. The protocol takes no SOL
-// profit at DAO creation: `initialize_dao` performs NO SOL transfer and
-// `nave_core::FORMATION_FEE_LAMPORTS` is 0 on every network. Formation is gated
-// instead by a recoverable `$99`-of-NAVE stake locked via `stake_dao_creation`
-// (see `DaoStakeLock`). The constant below is retained ONLY so this script keeps
-// writing a value to `global_config.formation_fee_lamports` (the field still
-// exists for layout compatibility); that value is now INERT (never charged).
+// DEPRECATED ECONOMICS — creation charges no protocol fee. The protocol takes no
+// SOL profit at DAO creation: `initialize_dao` performs NO SOL transfer and
+// `nave_core::FORMATION_FEE_LAMPORTS` is 0 on every network. Forming a treasury
+// does not lock NAVE. Gas and rent only. A founder may still deposit their own
+// assets as a seed; that is not a fee. The constant below is retained ONLY so
+// this script keeps writing a value to `global_config.formation_fee_lamports`
+// (the field still exists for layout compatibility); that value is INERT.
 //
 // NAVE STAKE GATE: this script now pins the canonical mainnet NAVE mint via
 // `set_nave_mint(EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory)` in the
@@ -47,21 +47,11 @@ const MAINNET_TREASURY_SEED_LAMPORTS = 0; // no fee carve-out; user seed is sepa
 const DEFAULT_FORMATION_FEE_LAMPORTS = MAINNET_FORMATION_FEE_LAMPORTS;
 const DEFAULT_MAX_SIGN_ATTEMPTS = 100;
 
-// Canonical mainnet NAVE SPL mint accepted for the recoverable `$99` DAO
-// creation stake (mirrors `naveToken.mainnetMint` in deployments/devnet.json and
-// the app's SOLANA_NAVE_MINT default). Pinned on-chain via `set_nave_mint`; the
-// devnet replica mint (GmBM…) MUST NEVER appear on the mainnet path. The stake
-// USD target ($99) and the exact NAVE amount are owned by the off-chain price
-// oracle; on-chain (audit SEC-M2, Batch 3) the rule enforces the staked mint, a
-// positive fully-received transfer, AND a hard 1.0-NAVE floor
-// (`MIN_DAO_STAKE_NAVE_BASE_UNITS = 1_000_000`) so dust stakes are rejected. An
-// optional Pyth NAVE/USD verification of the full $99 value exists in
-// `stake_dao_creation` but stays DORMANT until `nave_core::NAVE_USD_PYTH_FEED_ID`
-// is pinned to a trusted feed (a program upgrade — no cutover step until then).
-// The moonlighting lifecycle (record/​set/​execute/​finalize/​restore) releases the
-// stake to an approved recipient on DAO shutdown.
+// Canonical mainnet NAVE SPL mint. New treasuries do not lock it. The mint stays
+// pinned so an existing lock can still be identified. The devnet replica mint
+// (GmBM…) MUST NEVER appear on the mainnet path. Required stake is 0.
 const MAINNET_NAVE_MINT = "EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory";
-const DAO_STAKE_TARGET_USD = 99;
+const DAO_STAKE_TARGET_USD = 0;
 
 // BPF Upgradeable Loader — owner of every upgradeable program's ProgramData
 // account. `initialize_global_config` now requires the program + its ProgramData
@@ -97,21 +87,20 @@ const ACCOUNT_SIZE_GROWTH = {
   TreasuryVault: 8,
 };
 
-// Redesigned treasury fee model (set per-DAO at creation, NOT by this script —
+// Yield-only treasury fee model (set per-DAO at creation, NOT by this script —
 // recorded here so the app-side integration worker wires the right values):
-//   - performance fee = 8.5% (850 bps) of realized yield, skimmed on
+//   - performance fee = 15% (1500 bps) of realized yield, skimmed on
 //     record_strategy_withdrawal to the protocol revenue wallet's ATA.
-//   - management fee   = 0.65% (65 bps) of each asset's idle balance, collected
-//     once per 365 days (midnight-UTC-aligned) in-kind to the same wallet.
+//   - management fee   = 0. There is no annual collect.
 // New required on-chain config the app/cutover must set at DAO creation:
 //   InitializeDaoParams.protocol_revenue_wallet (non-zero Pubkey),
-//   management_fee_bps = 65, performance_fee_bps = 850. The revenue wallet must
-//   have an ATA for each registered mint to receive both fees.
+//   management_fee_bps = 0, performance_fee_bps = 1500. The revenue wallet must
+//   have an ATA for each registered mint to receive the yield skim.
 const FEE_MODEL = {
-  performanceFeeBps: 850,
-  managementFeeBps: 65,
-  managementFeePeriodSecs: 365 * 86_400,
-  managementFeeAnchor: "utc-midnight",
+  performanceFeeBps: 1500,
+  managementFeeBps: 0,
+  managementFeePeriodSecs: 0,
+  managementFeeAnchor: "none",
   // The protocol revenue wallet doubles as the protocol fee wallet env var.
   revenueWalletEnvVar: "VITE_NAVE_PROTOCOL_FEE_WALLET",
   paidInKind: true,
@@ -139,16 +128,15 @@ const CREATION_FLOW = {
   reviewWindowSecs: { default: 86_400, min: 60, max: 604_800 },
 };
 
-// DAO creation NAVE stake posture (recorded in the manifest/artifact + surfaced
-// in the summary). The mint is pinned on-chain by this script (`set_nave_mint`);
-// the $99 USD target + the NAVE amount are owned by the off-chain price oracle.
-// The moonlighting lifecycle releases the locked stake on approved DAO shutdown.
+// DAO creation does not lock NAVE. The mint may still be pinned so an existing
+// lock can be released. Required amount is 0. Reopening does not restake.
 const NAVE_STAKE = {
   mint: MAINNET_NAVE_MINT,
   stakeTargetUsd: DAO_STAKE_TARGET_USD,
+  requiredStake: "0",
   pinnedVia: "set_nave_mint (global_config.authority-gated, pre-handoff)",
-  amountSource: "off-chain price oracle (accepted quote) — on-chain enforces mint + positive transfer",
-  moonlighting: "record_moonlight_request → set_moonlight_distribution → execute_moonlight_distribution → finalize_moonlight; restore_dao re-stakes to reopen",
+  amountSource: "none — forming a treasury does not require NAVE",
+  moonlighting: "an existing lock, if any, is released on moonlight; restore_dao reopens without a new stake",
 };
 
 // Cutover scope: `bridge-stake` (default) ships ONLY nave_bridge + nave_staking
@@ -342,8 +330,7 @@ function assertRevalueKeeperCoverage(env) {
 // is now FEE-FREE: `initialize_dao` performs no SOL transfer and the on-chain
 // constant is 0, so `global_config.formation_fee_lamports` is inert. If an
 // operator pins these env values they MUST be exact, fail closed otherwise:
-//   - FORMATION_FEE_LAMPORTS (if set) MUST equal 0 (fee-free creation; the
-//     founder instead locks a recoverable `$99`-of-NAVE stake).
+//   - FORMATION_FEE_LAMPORTS (if set) MUST equal 0 (no protocol fee at formation).
 //   - TREASURY_SEED_LAMPORTS (if set) MUST equal 0 (user seed is separate).
 // Both are OPTIONAL: when unset the script writes 0 to the global config.
 function assertFeeSplitConfig(env) {
@@ -355,8 +342,7 @@ function assertFeeSplitConfig(env) {
     if (Number(feeRaw) !== MAINNET_FORMATION_FEE_LAMPORTS) {
       throw new Error(
         `FORMATION_FEE_LAMPORTS ${feeRaw} must equal ${MAINNET_FORMATION_FEE_LAMPORTS} ` +
-          "(creation is fee-free; the protocol takes no profit at formation). The DAO " +
-          "creation gate is the recoverable $99-of-NAVE stake, not a SOL fee.",
+          "(creation charges no protocol fee; gas and rent only. Forming a treasury does not lock NAVE).",
       );
     }
   }
@@ -384,7 +370,7 @@ function assertNaveMintConfig(env) {
   if (raw && raw !== MAINNET_NAVE_MINT) {
     throw new Error(
       `MAINNET_NAVE_MINT ${raw} must equal the canonical mainnet NAVE mint ${MAINNET_NAVE_MINT}. ` +
-        "The DAO creation stake mint is fixed on mainnet; refusing a mismatched mint.",
+        "The canonical NAVE mint is fixed on mainnet; refusing a mismatched mint.",
     );
   }
   for (const [k, v] of Object.entries(env)) {
@@ -979,16 +965,16 @@ async function main() {
     // config is set at DAO creation, app-side).
     console.log("\nFee model — per-DAO on-chain config the integration worker MUST set:");
     console.log(`  protocol_revenue_wallet = ${env.VITE_NAVE_PROTOCOL_FEE_WALLET ?? "<unset>"} (${FEE_MODEL.revenueWalletEnvVar})`);
-    console.log(`  performance_fee_bps     = ${FEE_MODEL.performanceFeeBps} (8.5% of realized yield, skimmed on withdrawal)`);
-    console.log(`  management_fee_bps      = ${FEE_MODEL.managementFeeBps} (0.65%/yr of each asset balance, ${FEE_MODEL.managementFeeAnchor})`);
-    console.log("  + an ATA of protocol_revenue_wallet for each registered mint (receives both fees).");
+    console.log(`  performance_fee_bps     = ${FEE_MODEL.performanceFeeBps} (15% of realized yield, skimmed on withdrawal)`);
+    console.log(`  management_fee_bps      = ${FEE_MODEL.managementFeeBps} (no annual fee)`);
+    console.log("  + an ATA of protocol_revenue_wallet for each registered mint (receives the yield skim).");
 
     const sol = (lamports) => (lamports / 1_000_000_000).toFixed(3);
-    console.log("\nUnified DAO creation flow (FEE-FREE; $99 NAVE stake + user seed + bootstrap):");
+    console.log("\nUnified DAO creation flow (gas and rent only; no NAVE lock; optional founder seed + bootstrap):");
     console.log(
       `  formation fee (protocol):    ${CREATION_FLOW.formationFeeLamports} lamports (${sol(CREATION_FLOW.formationFeeLamports)} SOL) ` +
-        "— FEE-FREE: written to global_config.formation_fee_lamports but INERT (initialize_dao charges nothing). " +
-        "Creation is gated by the recoverable $99-of-NAVE stake (stake_dao_creation), not a SOL fee.",
+        "— no protocol fee: written to global_config.formation_fee_lamports but INERT (initialize_dao charges nothing). " +
+        "Forming a treasury does not lock NAVE.",
     );
     console.log(
       `  treasury seed (per DAO):     ${CREATION_FLOW.treasurySeedLamports} lamports (${sol(CREATION_FLOW.treasurySeedLamports)} SOL) ` +
@@ -1009,22 +995,20 @@ async function main() {
     );
 
     const stakePinned = Boolean(checks.naveStakePinned) || deployment?.naveStake?.pinned;
-    console.log("\nDAO creation NAVE stake (recoverable; replaces the formation fee):");
+    console.log("\nDAO creation NAVE stake (none for new treasuries):");
     console.log(
       `  stake mint (mainnet):    ${NAVE_STAKE.mint} ` +
         `— ${stakePinned ? "PINNED on-chain via set_nave_mint" : "NOT YET PINNED: run `--phase set-nave-mint` (authority-gated, pre-handoff)"}.`,
     );
     console.log(
-      `  stake target:            $${NAVE_STAKE.stakeTargetUsd} of NAVE — amount derived from the off-chain price oracle quote; ` +
-        "on-chain enforces the staked mint + a positive, fully-received transfer (NOT a fixed amount).",
+      `  required stake:          ${NAVE_STAKE.requiredStake} ($${NAVE_STAKE.stakeTargetUsd}). Forming a treasury does not require NAVE.`,
     );
     console.log(
-      "  moonlighting release:    record_moonlight_request → set_moonlight_distribution → execute_moonlight_distribution → " +
-        "finalize_moonlight distributes assets + the staked NAVE to the approved recipient; restore_dao re-stakes to reopen.",
+      "  moonlighting release:    an existing lock, if any, is released with the distribution. restore_dao reopens without a new stake.",
     );
     console.log(
       "  EVM parity:              run `node scripts/evm-mainnet-cutover.mjs --phase stake` per chain to set " +
-        "NaveProtocol.setNaveStakeConfig(wrappedNave, requiredStake) + setDaoStake(module) BEFORE the Safe handoff.",
+        "NaveProtocol.setNaveStakeConfig(wrappedNave, 0) + setDaoStake(module) BEFORE the Safe handoff.",
     );
 
     console.log("\nAudit-revision on-chain behaviors (authoritative on-chain):");

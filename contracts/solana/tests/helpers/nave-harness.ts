@@ -283,10 +283,10 @@ export class NaveTestHarness {
       guardianWallets: guardians.map((g) => g.publicKey),
       guardianThreshold: config.guardianThreshold,
       agentAuthorities: agents.map((a) => a.publicKey),
-      managementFeeBps: 100,
-      performanceFeeBps: 200,
-      frozenManagementFeeBps: 50,
-      frozenPerformanceFeeBps: 100,
+      managementFeeBps: 0,
+      performanceFeeBps: 1500,
+      frozenManagementFeeBps: 0,
+      frozenPerformanceFeeBps: 1500,
       privacyMode: 0,
       feeRecipient: feeRecipientAta,
       // Audit ABI: `initialize_dao` now requires a non-default protocol revenue
@@ -1594,7 +1594,7 @@ export class NaveTestHarness {
         executionRequest,
         strategyEscrow,
         strategyPosition,
-        // Audit ABI: withdrawal now skims the 8.5% performance fee on realized
+        // Audit ABI: withdrawal now skims the 15% performance fee on realized
         // yield to the protocol revenue wallet's ATA, so the fee config and the
         // revenue token account (founder ATA == feeRecipientAta in the harness)
         // are required accounts.

@@ -907,7 +907,7 @@ async function handleCreateProposal(
 // ── Agent wallet replenishment — 3-tier hysteresis model ──────────────────────
 //
 // Agent fee budgets are funded from the protocol ops/revenue wallet
-// (NAVE_OPS_WALLET_SECRET) — the SAME wallet that receives the on-chain 8.5%
+// (NAVE_OPS_WALLET_SECRET) — the SAME wallet that receives the on-chain 15%
 // yield fee. Replenishment uses a fixed three-tier band with hysteresis so a
 // wallet that has just been filled is not topped up again on every cycle:
 //
@@ -980,7 +980,7 @@ interface AgentWalletResult {
 
 /**
  * Load the protocol operations keypair from `NAVE_OPS_WALLET_SECRET`.
- * This wallet is funded from Nave's 8.5% protocol fee revenue and is used
+ * This wallet is funded from Nave's 15% protocol fee revenue and is used
  * exclusively to replenish agent wallets.
  * Returns null if the env var is not configured.
  */
@@ -1113,7 +1113,7 @@ function solStr(lamports: number): string {
  *
  * The fill target is always CEILING and the refill trigger is balance ≤ TRIGGER,
  * which is exactly the hysteresis the spec requires. Funded entirely from the
- * protocol ops/revenue wallet (the on-chain 8.5% yield-fee recipient).
+ * protocol ops/revenue wallet (the on-chain 15% yield-fee recipient).
  */
 export async function replenishAgentWallets(
   daoAddress: string,
@@ -1178,104 +1178,6 @@ export async function replenishAgentWallets(
     } catch (err) {
       console.error(`[signer] replenishAgentWallets ${role}@${daoAddress}:`, err instanceof Error ? err.message : err);
       results.push({ role, balance: -1, toppedUp: false, topUpLamports: 0, requestedUrgent: false });
-    }
-  }
-
-  return results;
-}
-
-export interface ManagementFeeResult {
-  mint: string;
-  collected: boolean;
-  signature?: string;
-  /** Present when collection was skipped (usually "not yet due" — expected). */
-  skippedReason?: string;
-}
-
-/**
- * Discrete annual management-fee collection for one DAO. Permissionless-but-
- * validated on-chain: the 0.65%/yr in-kind fee on each registered asset's idle
- * balance is due only once per SECONDS_PER_YEAR, anchored to a UTC-midnight
- * boundary per asset. The worker calls this on a regular cadence (default
- * hourly) so collection fires shortly after each asset's annual boundary.
- *
- * Iterates the DAO's registered mints (discovered from on-chain TreasuryAsset
- * accounts) and sends `collect_management_fee` per mint. When an asset is not
- * yet due (or the computed fee rounds to zero), the on-chain instruction errs
- * cleanly (NoManagementFeeDue / InsufficientFeeAsset) and we swallow it as a
- * graceful skip — mirroring the auto-finalize "not yet eligible" handling, so a
- * routine no-op tick is never treated as a failure.
- *
- * Each fee is paid in-kind to the protocol revenue wallet's ATA for the mint;
- * that ATA must already exist (provisioned by the revenue-wallet operator — see
- * RUNBOOKS). The ops wallet (NAVE_OPS_WALLET_SECRET) is the permissionless
- * fee_collector and pays the (tiny) tx fee.
- */
-export async function collectManagementFees(daoAddress: string): Promise<ManagementFeeResult[]> {
-  const ops = loadOpsWallet();
-  if (!ops) return []; // no permissionless collector/payer configured → skip
-  const conn = getConnection();
-  const programs = programsForAgent(ops, conn);
-  const dao = new PublicKey(daoAddress);
-  const results: ManagementFeeResult[] = [];
-
-  // Authoritative revenue-wallet destination is read once from FeeConfig.
-  const feeConfigPda = pdas.feeConfig(dao);
-  let protocolRevenueWallet: PublicKey;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fc = await (programs.core.account as any).feeConfig.fetch(feeConfigPda);
-    protocolRevenueWallet = new PublicKey(fc.protocolRevenueWallet);
-  } catch {
-    return []; // fee_config missing/unreadable → nothing to collect
-  }
-  if (protocolRevenueWallet.equals(PublicKey.default)) return [];
-
-  // Discover registered assets (one TreasuryAsset per mint). dao field sits at
-  // offset 9 (8 disc + 1 bump).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let assets: any[] = [];
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    assets = await (programs.core.account as any).treasuryAsset.all([
-      { memcmp: { offset: 9, bytes: dao.toBase58() } },
-    ]);
-  } catch (err) {
-    console.error(
-      `[signer] collectManagementFees ${daoAddress}: asset discovery failed:`,
-      err instanceof Error ? err.message : err,
-    );
-    return [];
-  }
-
-  for (const a of assets) {
-    const mint = new PublicKey(a.account.mint);
-    const revenueTokenAccount = getAssociatedTokenAddressSync(mint, protocolRevenueWallet, true);
-    try {
-      const sig = await programs.core.methods
-        .collectManagementFee()
-        .accountsPartial({
-          feeCollector: ops.publicKey,
-          globalConfig: pdas.globalConfig(),
-          daoRegistry: dao,
-          feeConfig: feeConfigPda,
-          vaultAuthority: pdas.vaultAuthority(dao),
-          mint,
-          treasuryAsset: pdas.treasuryAsset(dao, mint),
-          assetVault: pdas.assetVault(dao, mint),
-          revenueTokenAccount,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
-      results.push({ mint: mint.toBase58(), collected: true, signature: sig });
-      console.log(`[signer] management fee collected ${daoAddress}/${mint.toBase58()}: ${sig}`);
-    } catch (err) {
-      // Expected most ticks: not due / zero fee / missing revenue ATA. Swallow.
-      results.push({
-        mint: mint.toBase58(),
-        collected: false,
-        skippedReason: err instanceof Error ? err.message : String(err),
-      });
     }
   }
 
@@ -1795,7 +1697,7 @@ async function handleToggleAgents(
 
     // Ensure the executive keypair has enough SOL to pay transaction fees.
     // If below threshold, tops up from the protocol ops wallet (funded by
-    // Nave's 8.5% yield fee revenue). No airdrop — production-safe.
+    // Nave's 15% yield fee revenue). No airdrop — production-safe.
     await ensureFundedFromOpsWallet(executive.publicKey);
 
     const programs = programsForAgent(executive, getConnection());
@@ -3821,7 +3723,7 @@ app.post('/sign', async (req, res) => {
     // ── replenish_agents — proactive agent wallet top-up from ops wallet ──
     // Called by the worker on a regular cadence. Checks all 4 agent wallets
     // and tops up any below AGENT_MIN_LAMPORTS using the protocol ops wallet,
-    // which is funded from Nave's 8.5% yield fee revenue.
+    // which is funded from Nave's 15% yield fee revenue.
     if (action === 'replenish_agents') {
       const results = await replenishAgentWallets(dao_address, effectiveAesKey);
       return res.json({ success: true, dao_address, wallets: results });
@@ -3928,7 +3830,7 @@ app.post('/sign', async (req, res) => {
 
     const agent = await loadAgentKeypair(dao_address, agent_role, effectiveAesKey);
     // Ensure the signing agent has enough SOL for fees; top up from the
-    // protocol ops wallet (funded from Nave's 8.5% yield fee) if needed.
+    // protocol ops wallet (funded from Nave's 15% yield fee) if needed.
     await ensureFundedFromOpsWallet(agent.publicKey);
     const programs = programsForAgent(agent, getConnection());
 
@@ -4027,7 +3929,7 @@ app.post('/sign', async (req, res) => {
             return res.status(400).json({ error: 'withdraw_from_strategy requires a positive integer amount (base units)' });
           }
 
-          // Fee redesign: the withdrawal path now skims the 8.5% performance fee
+          // Fee redesign: the withdrawal path now skims the 15% performance fee
           // on realized yield straight into the protocol revenue wallet's ATA for
           // the withdrawn mint. Resolve the FeeConfig PDA and read the authoritative
           // `protocol_revenue_wallet` from chain, then derive the revenue ATA.

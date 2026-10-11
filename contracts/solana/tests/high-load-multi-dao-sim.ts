@@ -154,7 +154,7 @@ describe("high-load: multi-DAO deploy/compound/withdraw stays consistent", () =>
     }
   });
 
-  it("PHASE 4 — withdraws full marked value; skims 8.5% fee; nets to zero per DAO", async function () {
+  it("PHASE 4 — withdraws full marked value; skims 15% fee; nets to zero per DAO", async function () {
     this.timeout(180_000);
     for (let i = 0; i < N; i++) {
       const revBefore = BigInt(

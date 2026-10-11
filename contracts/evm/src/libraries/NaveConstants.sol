@@ -82,10 +82,12 @@ library NaveConstants {
     uint256 internal constant MAX_TIER3_TOTAL_BPS = 1_500;
 
     // ── Fees ──────────────────────────────────────────────────────────────
-    /// 8.5% of realized yield, skimmed on the strategy-withdrawal path.
-    uint16 internal constant DEFAULT_PERFORMANCE_FEE_BPS = 850;
-    /// 0.65% annual management fee on each asset's idle balance.
-    uint16 internal constant DEFAULT_MANAGEMENT_FEE_BPS = 65;
+    /// 15% of realized yield, skimmed on the strategy-withdrawal path.
+    /// Frozen treasuries use the same rate.
+    uint16 internal constant DEFAULT_PERFORMANCE_FEE_BPS = 1500;
+    /// Management fee is not charged. The storage field stays so existing
+    /// treasury slots do not move. `collectManagementFee` transfers nothing.
+    uint16 internal constant DEFAULT_MANAGEMENT_FEE_BPS = 0;
 
     // ── Formation-fee split (treasury-seed carve-out) ─────────────────────
     // The formation fee a founder pays at DAO creation is split into a protocol
@@ -95,9 +97,11 @@ library NaveConstants {
     // `treasurySeed`); the constants below document the canonical per-network
     // values used by the deploy/cutover scripts.
     //
-    /// Devnet (Sepolia / Base Sepolia): minimal formation fee to protocol; user
-    /// treasury seed is supplied as msg.value surplus (not a fee carve-out).
-    uint256 internal constant DEVNET_FORMATION_FEE_WEI = 0.01 ether;
+    /// Devnet (Sepolia / Base Sepolia): no native formation fee. Any `msg.value`
+    /// on `createDao` is the founder's own treasury seed, not a protocol charge.
+    /// Kept at 0 so a cutover script cannot reintroduce a formation fee by
+    /// reading this constant.
+    uint256 internal constant DEVNET_FORMATION_FEE_WEI = 0;
     uint256 internal constant DEVNET_TREASURY_SEED_WEI = 0;
     /// Mainnet treasury-seed fraction of the formation fee (bps). NOT FINALIZED:
     /// mirrors the Solana mainnet carve-out ratio (0.3 SOL seed / 1.8 SOL fee =

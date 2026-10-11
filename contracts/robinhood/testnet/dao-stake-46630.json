@@ -1,7 +1,7 @@
 {
   "chainId": 46630,
   "daoStake": "0x0F1F15d712A60D4d9D4e06D2a238bD209fcb822a",
-  "daoStakeImplementation": "0xa92c892802c5384026369514ef3Fe8090b3271bc",
+  "daoStakeImplementation": "0x6a17150f46e395d59246a36b1bf1226218eea250",
   "owner": "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca",
   "protocol": "0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093",
   "requiredStake": 0,

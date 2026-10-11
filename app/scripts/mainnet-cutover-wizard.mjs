@@ -78,7 +78,7 @@ const DEFAULT_STATE_PATH = join(STATE_DIR, "cutover-wizard-state.json");
 // EVM scope is fenced (mirrors the delegated scripts): Ethereum + Base + Robinhood.
 // Robinhood Chain (Arbitrum Nitro L2) is BRIDGE/STAKE-ONLY (`bridgeOnly`): its
 // deploy phase ships ONLY the hardened bridge stack (WrappedNave + NaveBridge
-// lockbox + NaveStaking) and the DAO-stack steps (adapters, $99 stake) do not
+// lockbox + NaveStaking) and the DAO-stack steps (adapters, zero-stake module) do not
 // exist for it — the delegated EVM script hard-rejects those phases on 4663/46630.
 const EVM_MAINNET_CHAINS = [
   { chainId: 1, label: "Ethereum", segment: "ETHEREUM" },
@@ -592,15 +592,15 @@ function buildSteps(ctx) {
 
       steps.push({
         id: `evm-${c}-stake`,
-        title: `EVM ${L}: pin $99 NAVE creation stake (setNaveStakeConfig + setDaoStake)`,
+        title: `EVM ${L}: record zero NAVE stake (setNaveStakeConfig + setDaoStake)`,
         group: "EVM",
         kind: "irreversible",
         buildPlan: () => ({
           summary: [
-            `onlyOwner STATE CHANGE (pre-handoff): NaveProtocol.setNaveStakeConfig(NAVE_STAKE_TOKEN, REQUIRED_NAVE_STAKE) + setDaoStake(DAO_STAKE_MODULE) on ${L}.`,
-            `token=${safeEnvValue("NAVE_STAKE_TOKEN", ctx.env)}  requiredStake=${safeEnvValue("REQUIRED_NAVE_STAKE", ctx.env)}  daoStakeModule=${safeEnvValue("DAO_STAKE_MODULE", ctx.env)}`,
+            `onlyOwner STATE CHANGE (pre-handoff): NaveProtocol.setNaveStakeConfig(NAVE_STAKE_TOKEN, 0) + setDaoStake(DAO_STAKE_MODULE) on ${L}.`,
+            `token=${safeEnvValue("NAVE_STAKE_TOKEN", ctx.env)}  requiredStake=0  daoStakeModule=${safeEnvValue("DAO_STAKE_MODULE", ctx.env)}`,
             "The delegated script reads the config back on-chain and fails closed on mismatch.",
-            "MUST run before the Safe handoff (onlyOwner). Loud-skips if stake env unset → creation stays fee-free with no stake gate.",
+            "New treasuries lock nothing. The module stays so an existing lock can be released. MUST run before the Safe handoff (onlyOwner).",
           ],
           command: evmPhaseCmd(ctx, c, "stake"),
           confirm: `STAKE ${chain.segment} ${c}`,
@@ -608,7 +608,7 @@ function buildSteps(ctx) {
         }),
         skip: () => {
           if (chainIsBridgeOnly(chain, ctx)) {
-            return { skip: true, reason: "bridge/stake-only chain — no NaveProtocol, so no $99 creation-stake phase (the delegated EVM script rejects it)" };
+            return { skip: true, reason: "bridge/stake-only chain — no NaveProtocol, so no stake-module phase (the delegated EVM script rejects it)" };
           }
           return evmStakeConfigured(c)
             ? { skip: true, reason: `evm-launch-${c}.json already records naveStake` }

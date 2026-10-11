@@ -73,7 +73,7 @@ Written for readers who are not in the code. The in-app docs site serves these p
 | [`GENLAYER.md`](app/docs/GENLAYER.md) | Independent review above Solana, Ethereum, Base, and Robinhood. A finished check can stop a signature. It cannot approve a transfer |
 | [`ALIGNMENT_VERIFICATION.md`](app/docs/ALIGNMENT_VERIFICATION.md) | Frontend, backend, signer, and on-chain instruction alignment |
 | [`TREASURY_CAPITAL_BRIDGES.md`](app/docs/TREASURY_CAPITAL_BRIDGES.md) | Agent hops of USDC, ETH, and WETH between Base, Ethereum, and Robinhood |
-| [`SAFE_DAO_STAKE_WIRING.md`](app/docs/SAFE_DAO_STAKE_WIRING.md) | Safe steps to set the NAVE DAO-creation stake on Base and Robinhood |
+| [`SAFE_DAO_STAKE_WIRING.md`](app/docs/SAFE_DAO_STAKE_WIRING.md) | Safe follow-up to set the Base and Robinhood creation-stake amount to zero |
 | [`SAFE_WNAVE_MINTER_ROTATION.md`](app/docs/SAFE_WNAVE_MINTER_ROTATION.md) | Safe steps to rotate the wNAVE minter and accept UUPS ownership |
 | [`AUDIT_FINDINGS.md`](app/docs/AUDIT_FINDINGS.md) | Consolidated product-audit ledger and what was re-verified |
 | [`PLATFORM_STATE_AND_REDEPLOY_PLAN_2026-09-05.md`](app/docs/PLATFORM_STATE_AND_REDEPLOY_PLAN_2026-09-05.md) | Snapshot of app, Supabase, signer, and indexer, plus the redeploy plan |
@@ -110,7 +110,7 @@ Written for readers who are not in the code. The in-app docs site serves these p
 | [`contracts/solana/deployments/README.md`](contracts/solana/deployments/README.md) | Sanitized Solana deployment records. RPC URLs are placeholders |
 | [`contracts/solana/BRIDGE_RELAYER_MVP.md`](contracts/solana/BRIDGE_RELAYER_MVP.md) | Why the bridge is a verifying relayer |
 | [`contracts/solana/BRIDGE_NTT_FEE_VALIDATION.md`](contracts/solana/BRIDGE_NTT_FEE_VALIDATION.md) | Wormhole NTT fee-validation notes. This does not deploy NTT |
-| [`contracts/solana/STAKE_QUOTE_ORACLE_CONTRACT.md`](contracts/solana/STAKE_QUOTE_ORACLE_CONTRACT.md) | Oracle interface for the DAO-creation stake quote |
+| [`contracts/solana/STAKE_QUOTE_ORACLE_CONTRACT.md`](contracts/solana/STAKE_QUOTE_ORACLE_CONTRACT.md) | Oracle interface written for the former DAO-creation stake quote. Forming a treasury does not use it |
 
 ### Chain deployment records
 
@@ -158,14 +158,13 @@ Deployment JSON and Foundry broadcast logs for each EVM network live in that cha
 
 ### Fees
 
-On-chain `FeeConfig` is authoritative. The launch posture surfaced by cutover preflight is:
+On-chain `FeeConfig` is authoritative. The only protocol treasury fee is **15% of realized yield** (`performance_fee_bps = 1500`). Realized yield is the gain above principal when a strategy position is withdrawn. The skim is taken inline on that withdrawal and paid in-kind to the protocol revenue wallet. Principal is not charged. Yield that is still deployed is charged when it is withdrawn. Frozen treasuries use the same 15%. There is no annual management fee (`management_fee_bps = 0`).
 
-- **Performance fee:** 8.5% of realized yield (`performance_fee_bps = 850`), skimmed inline on strategy withdrawal. Principal is not taxed.
-- **Management fee:** 0.65% per year of idle balance (`management_fee_bps = 65`), collected in-kind per registered asset on an annual UTC boundary.
+The revenue wallet needs a token account for every mint the treasury holds, or the skim fails on-chain.
 
-Both pay a single protocol revenue wallet. That wallet needs a token account for every mint the treasury holds, or the skim fails on-chain.
+Forming a treasury costs only network gas (and account rent). There is no protocol formation fee and no NAVE or wNAVE creation stake on any chain. A founder may still deposit their own assets into the treasury as a seed. That deposit is their capital, not a fee. An existing locked creation stake, from a treasury formed before this change, is still returned when that treasury moonlights. New treasuries have nothing to return. Reopening does not require a new stake.
 
-Bridge fees are separate and enforced inside `nave_bridge` / the EVM lockbox (per-tx cap, rolling daily cap, pause, replay guard).
+Bridge fees are separate and enforced inside `nave_bridge` / the EVM lockbox (per-tx cap, rolling daily cap, pause, replay guard). Token-mint fees are separate and are not a cost of forming a treasury.
 
 ---
 
@@ -314,7 +313,7 @@ Admin ownership (Solana upgrade authority, bridge `owner`, EVM Safe) is meant to
 | Policy / proposal ticks | POST `policy-evaluator` and `proposal-creator` |
 | Bridge watcher | Re-drive `pending` / `failed` bridge rows, then park `stuck`. Scan for lock/burn events that never got a row. |
 | Staking mirror | Split the Solana staking-fee collector by live stake weight into the Solana reward vault and each EVM `notifyReward` |
-| Management fee | After `NAVE_OPS_WALLET_SECRET` is set, collect the annual management fee shortly after each asset's UTC boundary (`MANAGEMENT_FEE_INTERVAL_MS`, default 1 hour). A tick with nothing due is a no-op. |
+| Yield skim | Taken inline on strategy withdrawal (15% of realized gain). There is no annual management-fee collector. `NAVE_OPS_WALLET_SECRET` still funds agent SOL top-up. |
 | Agent SOL top-up | Refill agent keypairs from the ops wallet when they fall through the request / operate / fill thresholds |
 
 Public HTTP on the signer (`/bridge-relay`, `/faucet-claim`) does not accept the signer secret. Those routes re-read the source transaction on-chain. `/sign` requires `X-Signer-Secret`.

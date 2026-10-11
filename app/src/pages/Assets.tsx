@@ -16,7 +16,7 @@ import { DepositFlowModal } from '../components/DepositFlow';
 import NaveModal from '../components/NaveModal';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
-import { buildRegisterAssetEvm, buildCollectManagementFeeEvm, type EvmBuildResult } from '../lib/evm/writers';
+import { buildRegisterAssetEvm, type EvmBuildResult } from '../lib/evm/writers';
 import {
   buildInitStrategyPosition,
   buildInitStrategyEscrow,
@@ -655,10 +655,10 @@ function AssetCard({ asset, canManage, onAction, hidden = false }: {
               <Fi icon="bolt" style={{ fontSize: 10 }} /> Enable
             </button>
           )}
-          {asset.onChainRegistered && asset.isStablecoin && (
+          {chainKind !== 'evm' && asset.onChainRegistered && asset.isStablecoin && (
             <button onClick={() => onAction('feeAsset', asset)} disabled={tx.status === 'signing'} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
               style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>
-              <Fi icon="receipt" style={{ fontSize: 10 }} /> {chainKind === 'evm' ? 'Collect fee' : 'Set as fee asset'}
+              <Fi icon="receipt" style={{ fontSize: 10 }} /> Set as fee asset
             </button>
           )}
           <button
@@ -754,7 +754,7 @@ export default function Assets() {
   const { daoAddress, isMockMode } = useDaoContext();
   const { publicKey } = useWallet();
   const { address: evmAddress } = useAccount();
-  const { chainKind, evmChainId } = useChain();
+  const { chainKind } = useChain();
   const tx = useSendTransaction();
   const { assets, visibleAssets, hiddenAssets, onchainNavUsd, deployedUsd, loading, error, refetch, hideAsset, unhideAsset } = useTreasuryAssets(daoAddress);
   const { nfts, loading: nftsLoading, error: nftsError, unsupported: nftsUnsupported, refetch: refetchNfts } = useTreasuryNfts(daoAddress);
@@ -811,14 +811,7 @@ export default function Assets() {
       return;
     }
     if (action === 'feeAsset') {
-      if (chainKind === 'evm') {
-        // EVM: collectManagementFee is permissionless in-kind per registered asset.
-        if (!evmChainId || !daoAddress) return;
-        const built = buildCollectManagementFeeEvm(evmChainId, daoAddress, asset.mint);
-        const out = await tx.sendEvm(built, { successLabel: `Management fee collected (${asset.symbol})` });
-        if (out.status === 'success') refetch();
-        return;
-      }
+      if (chainKind === 'evm') return;
       const r = await buildSetFeeAsset(new PublicKey(daoAddress!), publicKey!, new PublicKey(asset.mint));
       const out = await tx.send(r, { successLabel: 'Fee asset set' });
       if (out.status === 'success') refetch();

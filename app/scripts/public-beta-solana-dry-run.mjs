@@ -32,8 +32,6 @@ const WALLET_PATH = `${ROOT}contracts/solana/.deploy-wallet-ej9-devnet.json`;
 const STATE_PATH = "/tmp/nave-public-beta-solana.json";
 const GUARDIAN_PATH = "/tmp/nave-public-beta-solana-guardians.json";
 const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
-const STAKE_AMOUNT = 9_900_000n;
-const PRICE_USD_MICRO = 10_000_000n;
 const DEPOSIT_LAMPORTS = 200_000_000n;
 const DEPLOY_LAMPORTS = 50_000_000n;
 const STAKE_POOL = new PublicKey("azFVdHtAJN8BX3sbGAYkXvtdjdrT5U6rj9rovvUFos9");
@@ -172,8 +170,6 @@ async function main() {
   }
   vite.VITE_USE_MOCKS = "false";
   vite.VITE_NAVE_BOOTSTRAP_DEPLOYED = "true";
-  vite.VITE_NAVE_DEVNET_PRICE_USD = "10";
-  vite.VITE_NAVE_DAO_CREATION_STAKE_USD = "99";
   if (!vite.VITE_SOLANA_RPC_URL || /mainnet/i.test(vite.VITE_SOLANA_RPC_URL)) {
     throw new Error("refusing to run without a non-mainnet Solana RPC");
   }
@@ -182,7 +178,6 @@ async function main() {
     buildInitializeDao,
     buildInitializeDaoExtensions,
     buildInitializeDaoGovernance,
-    buildStakeDaoCreation,
     buildSeedTreasuryWsol,
     buildUpdateConstitution,
     buildSetPolicyParameters,
@@ -200,11 +195,12 @@ async function main() {
   const {
     NAVE_PROTOCOL_FEE_WALLET,
     NAVE_JITO_ADAPTER_ID,
-    SOLANA_NAVE_MINT,
     SUPABASE_FUNCTIONS_URL,
     SUPABASE_ANON_KEY,
     MANAGEMENT_FEE_BPS_NORMAL,
     MANAGEMENT_FEE_BPS_FROZEN,
+    PERFORMANCE_FEE_BPS,
+    FROZEN_PERFORMANCE_FEE_BPS,
   } = await import("../src/lib/programConfig.ts");
   const { getNavePrograms } = await import("../src/lib/naveProgram.ts");
   const {
@@ -239,9 +235,9 @@ async function main() {
     guardianThreshold: 2,
     agentAuthorities: agentKeys,
     managementFeeBps: MANAGEMENT_FEE_BPS_NORMAL,
-    performanceFeeBps: 0,
+    performanceFeeBps: PERFORMANCE_FEE_BPS,
     frozenManagementFeeBps: MANAGEMENT_FEE_BPS_FROZEN,
-    frozenPerformanceFeeBps: 0,
+    frozenPerformanceFeeBps: FROZEN_PERFORMANCE_FEE_BPS,
     privacyMode: 0,
     feeRecipient: getAssociatedTokenAddressSync(NATIVE_MINT, founder.publicKey, true),
     protocolRevenueWallet: NAVE_PROTOCOL_FEE_WALLET,
@@ -314,21 +310,6 @@ async function main() {
   state.reviewWindowSecs = Number(constitution.reviewWindowSecs);
   console.log(`  agentsEnabled ${state.agentsEnabledAtCreate} reviewWindow ${state.reviewWindowSecs}`);
   saveState(state);
-
-  if (!state.sigs.stake) {
-    const naveAta = getAssociatedTokenAddressSync(SOLANA_NAVE_MINT, founder.publicKey, false);
-    const balance = await connection.getTokenAccountBalance(naveAta).catch(() => null);
-    const raw = BigInt(balance?.value?.amount || "0");
-    if (raw < STAKE_AMOUNT) throw new Error(`founder NAVE balance ${raw} is below ${STAKE_AMOUNT}`);
-    const stake = await buildStakeDaoCreation(
-      founder.publicKey,
-      daoId,
-      SOLANA_NAVE_MINT,
-      STAKE_AMOUNT,
-      PRICE_USD_MICRO,
-    );
-    await note("stake", await sendTx(connection, founder, [stake]));
-  }
 
   for (const guardian of guardians) {
     const balance = await connection.getBalance(guardian.publicKey);
