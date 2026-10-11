@@ -14,6 +14,7 @@ RUN npm install --omit=dev
 COPY tsconfig.json ./
 COPY src ./src
 COPY idl ./idl
+COPY start.sh ./
 
 ENV NODE_ENV=production
 ENV PORT=8787
@@ -23,4 +24,4 @@ EXPOSE 8787
 # The HTTP relayer (index.ts) and the background worker (worker.ts — staking
 # mirror + bridge watcher + agent loops) share one container; the worker's
 # money-moving ticks are cross-replica leased so multiple replicas stay safe.
-CMD ["sh", "-c", "npx tsx src/worker.ts & exec npx tsx src/index.ts"]
+CMD ["sh", "start.sh"]

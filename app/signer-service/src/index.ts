@@ -4133,7 +4133,9 @@ app.post('/sign', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// worker.ts imports helpers from this module; the worker process must not bind
+// PORT or it races the HTTP server for the socket and one of them crashes.
+if (process.env.NAVE_WORKER_PROCESS !== '1') app.listen(PORT, () => {
   console.log(`[signer] Nave signer service listening on :${PORT}`);
 
   // Fee-bps drift preflight (non-fatal): the fee is duplicated across the
