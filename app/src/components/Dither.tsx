@@ -47,6 +47,9 @@ uniform float ditherGain;
 uniform float ditherBias;
 uniform vec3 paletteA;
 uniform vec3 paletteB;
+uniform sampler2D markMap;
+uniform float markEnabled;
+uniform float markAspect;
 
 vec4 mod289(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
 vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -204,6 +207,28 @@ void main() {
       float line = 1.0 - smoothstep(0.0, max(isoLineWidth, 0.0001), edge);
       v = mix(band, isoLineValue, line);
     }
+    // Homepage sail: the mark is the same grey/white field, lifted so the
+    // cloth reads pale, with the live contour lines still running through it.
+    if (markEnabled > 0.5) {
+      float heave = sin(time * 0.52) * 0.02;
+      float sway = sin(time * 0.24) * 0.012;
+      float lean = sin(time * 0.36) * 0.045;
+      vec2 p = sampleUv - vec2(sway, heave);
+      p.x += lean * p.y;
+      float markH = 0.68;
+      float markW = markH * markAspect;
+      vec2 mu = vec2(p.x / markW + 0.5, p.y / markH + 0.5);
+      float mark = 0.0;
+      if (mu.x > 0.0 && mu.x < 1.0 && mu.y > 0.0 && mu.y < 1.0) {
+        mark = texture2D(markMap, mu).a;
+      }
+      float inside = smoothstep(0.55, 0.9, mark);
+      float edge = smoothstep(0.28, 0.55, mark) * (1.0 - smoothstep(0.72, 0.95, mark));
+      float body = 0.84 + 0.08 * sin(time * 0.7 + mu.y * 5.0);
+      float cloth = mix(body, clamp(v, 0.0, 1.0), 0.16);
+      v = mix(v, cloth, inside);
+      v = mix(v, 0.05, edge);
+    }
     if (paletteEnabled > 0.5) {
       float q = quantizeScalar(v);
       gl_FragColor = vec4(mix(paletteA, paletteB, q), 1.0);
@@ -356,6 +381,9 @@ interface WaveUniforms {
   ditherBias: THREE.Uniform<number>;
   paletteA: THREE.Uniform<THREE.Color>;
   paletteB: THREE.Uniform<THREE.Color>;
+  markMap: THREE.Uniform<THREE.Texture>;
+  markEnabled: THREE.Uniform<number>;
+  markAspect: THREE.Uniform<number>;
 }
 
 interface DitheredWavesProps {
@@ -382,7 +410,15 @@ interface DitheredWavesProps {
   scroll: number;
   scrollRef: { current: number } | null;
   scrollParallax: number;
+  showMark: boolean;
 }
+
+const MARK_PLACEHOLDER = (() => {
+  const data = new Uint8Array([0, 0, 0, 0]);
+  const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+  tex.needsUpdate = true;
+  return tex;
+})();
 
 const BOAT_X_CLAMP = 0.62;
 const SAIL_LERP = 0.045;
@@ -420,6 +456,7 @@ function DitheredWaves({
   scroll,
   scrollRef,
   scrollParallax,
+  showMark,
 }: DitheredWavesProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const mouseRef = useRef(new THREE.Vector2());
@@ -433,6 +470,7 @@ function DitheredWaves({
   const lightStrengthRef = useRef(lightStrength);
   const smoothAngleRef = useRef(lightAngle);
   const smoothStrengthRef = useRef(lightStrength);
+  const markTextureRef = useRef<THREE.Texture | null>(null);
   const { viewport, size, gl } = useThree();
   const isOcean = variant === 'ocean';
   const sceneMode = variant === 'ocean' ? 1 : variant === 'isolines' ? 2 : 0;
@@ -468,6 +506,9 @@ function DitheredWaves({
     ditherBias: new THREE.Uniform(bias),
     paletteA: new THREE.Uniform(new THREE.Color(...(paletteA ?? [0, 0, 0]))),
     paletteB: new THREE.Uniform(new THREE.Color(...(paletteB ?? waveColor))),
+    markMap: new THREE.Uniform(MARK_PLACEHOLDER),
+    markEnabled: new THREE.Uniform(0),
+    markAspect: new THREE.Uniform(597 / 722),
   });
 
   useEffect(() => {
@@ -514,6 +555,33 @@ function DitheredWaves({
     return () => window.removeEventListener('pointermove', onMove);
   }, [tiltWithPointer, disableAnimation, gl, lightAngle, lightStrength]);
 
+  useEffect(() => {
+    if (!showMark) {
+      markTextureRef.current = null;
+      return;
+    }
+    let disposed = false;
+    const loader = new THREE.TextureLoader();
+    loader.load('/brand/nave-mark.png', (texture) => {
+      if (disposed) {
+        texture.dispose();
+        return;
+      }
+      texture.flipY = true;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      markTextureRef.current = texture;
+    });
+    return () => {
+      disposed = true;
+      markTextureRef.current?.dispose();
+      markTextureRef.current = null;
+    };
+  }, [showMark]);
+
   const prevColor = useRef([...waveColor]);
   useFrame(({ clock }) => {
     const mat = materialRef.current;
@@ -538,6 +606,16 @@ function DitheredWaves({
     u.ditherGain.value = gain;
     u.ditherBias.value = bias;
     u.paletteEnabled.value = paletteOn ? 1 : 0;
+    const markTexture = markTextureRef.current;
+    if (showMark && markTexture) {
+      const image = markTexture.image as { width?: number; height?: number } | undefined;
+      if (image?.width && image?.height) u.markAspect.value = image.width / image.height;
+      u.markMap.value = markTexture;
+      u.markEnabled.value = 1;
+    } else {
+      u.markEnabled.value = 0;
+      u.markMap.value = MARK_PLACEHOLDER;
+    }
     u.scroll.value = scrollRef ? scrollRef.current : scroll;
     if (paletteA) (u.paletteA.value as THREE.Color).setRGB(paletteA[0], paletteA[1], paletteA[2]);
     if (paletteB) (u.paletteB.value as THREE.Color).setRGB(paletteB[0], paletteB[1], paletteB[2]);
@@ -669,6 +747,8 @@ export interface DitherProps {
   scrollRef?: { current: number } | null;
   /** How far `scroll` shifts noise vertically, in uv units. 0 leaves sampling unchanged. */
   scrollParallax?: number;
+  /** Draw the sail mark in the centre of an isoline field, in the same dither. */
+  showMark?: boolean;
   className?: string;
 }
 
@@ -696,6 +776,7 @@ export default function Dither({
   scroll = 0,
   scrollRef = null,
   scrollParallax = 0,
+  showMark = false,
   className,
 }: DitherProps) {
   // Ocean wind and the hero light use a window listener — keep those canvases
@@ -743,6 +824,7 @@ export default function Dither({
         scroll={scroll}
         scrollRef={scrollRef}
         scrollParallax={scrollParallax}
+        showMark={showMark}
       />
     </Canvas>
   );

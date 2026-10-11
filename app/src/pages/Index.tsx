@@ -9,6 +9,7 @@ import Fi from '../components/Fi';
 import DevnetBanner from '../components/DevnetBanner';
 import WalletNetworkMenu from '../components/WalletNetworkMenu';
 import DitherGlyph from '../components/homepage/DitherGlyph';
+import NaveMark from '../components/NaveMark';
 import HomeRoute from '../components/homepage/ChartedRoute';
 import { useAfterFirstPaint, usePrefersReducedMotion } from '../components/homepage/useHomeMotion';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
@@ -105,7 +106,10 @@ function NavBar() {
   return (
     <>
       <header className={`home-nav${deep ? ' is-deep' : ''}`}>
-        <span className="text-display home-brand">Nave</span>
+        <span className="text-display home-brand">
+          <NaveMark />
+          Nave
+        </span>
         <nav className="home-nav-links">
           {NAV_ITEMS.map((item) => (
             <a key={item.label} href={item.href} className="home-nav-link">
@@ -279,6 +283,7 @@ function Hero() {
                 waveSpeed={0.03}
                 waveFrequency={2.4}
                 waveAmplitude={0.3}
+                showMark
                 lightAngle={Math.PI * 0.75}
                 lightStrength={prefersReducedMotion ? 0 : 0.12}
                 tiltWithPointer={!prefersReducedMotion}

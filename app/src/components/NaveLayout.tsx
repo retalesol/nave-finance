@@ -6,6 +6,7 @@ import Fi from './Fi';
 import WalletNetworkMenu from './WalletNetworkMenu';
 import NotificationFeed from './NotificationFeed';
 import RobinhoodTreasuryNotice from './RobinhoodTreasuryNotice';
+import NaveMark from './NaveMark';
 
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
@@ -202,7 +203,8 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
           className="flex items-center justify-between px-5 py-4 border-b"
           style={{ borderColor: 'hsl(var(--border))' }}
         >
-          <Link to="/" className="no-underline">
+          <Link to="/" className="no-underline flex items-center gap-2">
+            <NaveMark />
             <span className="text-display" style={{ fontSize: '19px', color: 'hsl(var(--foreground))' }}>
               Nave
             </span>
