@@ -101,6 +101,8 @@ export interface OracleConfig {
   tokens: Partial<Record<MarketChain, string>>;
   /** Optional direct Meteora DLMM pair address (Solana). */
   meteoraPair?: string;
+  /** CoinGecko coin id (empty string disables the CoinGecko source). */
+  coingeckoId: string;
 }
 
 export function loadOracleConfig(): OracleConfig {
@@ -130,6 +132,7 @@ export function loadOracleConfig(): OracleConfig {
       base: envStr("NAVE_ORACLE_BASE_TOKEN"),
     },
     meteoraPair: envStr("NAVE_ORACLE_METEORA_POOL"),
+    coingeckoId: Deno.env.get("NAVE_ORACLE_COINGECKO_ID")?.trim() ?? "nave-shares",
   };
 }
 
@@ -144,6 +147,11 @@ export interface MarketSample {
   /** Epoch seconds for the sample (now() for live aggregator reads). */
   updatedAt: number;
   source: string;
+  /**
+   * Cross-market aggregator price (CoinGecko). It has no single-pool
+   * liquidity, so the per-pool liquidity floor does not apply; freshness does.
+   */
+  aggregated?: boolean;
 }
 
 async function fetchJson(url: string, headers?: Record<string, string>): Promise<unknown> {
@@ -268,6 +276,33 @@ export async function sampleMeteoraPair(
   };
 }
 
+/** Sample the CoinGecko cross-market NAVE/USD price. */
+export async function sampleCoinGecko(coinId: string): Promise<MarketSample | null> {
+  const base = envStr("NAVE_ORACLE_COINGECKO_API_URL") ?? "https://api.coingecko.com/api/v3";
+  const url = `${base.replace(/\/$/, "")}/simple/price?ids=${encodeURIComponent(coinId)}` +
+    "&vs_currencies=usd&include_24hr_vol=true&include_last_updated_at=true";
+  const apiKey = envStr("COINGECKO_API_KEY");
+  const raw = (await fetchJson(url, apiKey ? { "x-cg-demo-api-key": apiKey } : undefined)) as Record<
+    string,
+    { usd?: number; usd_24h_vol?: number; last_updated_at?: number } | undefined
+  >;
+  const entry = raw?.[coinId];
+  const priceUsd = Number(entry?.usd);
+  const updatedAt = Number(entry?.last_updated_at);
+  if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return null;
+
+  return {
+    market: "coingecko",
+    chain: "solana",
+    priceUsd,
+    liquidityUsd: Number(entry?.usd_24h_vol) || 0,
+    updatedAt: Math.trunc(updatedAt),
+    source: url,
+    aggregated: true,
+  };
+}
+
 export interface SampleAttempt {
   market: string;
   ok: boolean;
@@ -314,6 +349,9 @@ export async function gatherMainnetSamples(cfg: OracleConfig): Promise<SampleRes
     if (pool && token) {
       await push(`${chain}-gt`, () => sampleGeckoTerminalPool(chain, pool, token));
     }
+  }
+  if (cfg.coingeckoId) {
+    await push("coingecko", () => sampleCoinGecko(cfg.coingeckoId));
   }
 
   return { samples, attempts };
@@ -362,7 +400,7 @@ export function aggregateSamples(cfg: OracleConfig, samples: MarketSample[]): Ag
       dropped.push({ ...s, reason: "non-positive price" });
       continue;
     }
-    if (s.liquidityUsd < cfg.minLiquidityUsd) {
+    if (!s.aggregated && s.liquidityUsd < cfg.minLiquidityUsd) {
       dropped.push({ ...s, reason: `liquidity $${s.liquidityUsd} < min $${cfg.minLiquidityUsd}` });
       continue;
     }

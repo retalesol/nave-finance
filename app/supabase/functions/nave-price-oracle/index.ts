@@ -141,6 +141,7 @@ Deno.serve(async (req: Request) => {
         attestationSigned: Boolean(Deno.env.get("NAVE_ORACLE_ATTESTATION_SECRET")),
         pools: cfg.pools,
         meteoraPair: cfg.meteoraPair ?? null,
+        coingeckoId: cfg.coingeckoId || null,
       },
     });
   }

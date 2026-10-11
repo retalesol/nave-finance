@@ -4,6 +4,12 @@ import Fi from './Fi';
 import { useChain } from '../hooks/useChain';
 import type { ChainFamily } from '../lib/chain/types';
 import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 type EthProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -168,16 +174,31 @@ const BANNER_SUMMARY = EVM_DEPLOYMENT_MODE === 'testnet'
     ? 'Base & Robinhood mainnet —'
     : 'Solana Devnet · Ethereum Sepolia · Base & Robinhood Mainnet —';
 
-const LINKS = EVM_DEPLOYMENT_MODE === 'mainnet'
-  ? []
-  : [
-      { label: 'Sepolia ETH (PoW Faucet)', url: 'https://sepolia-faucet.pk910.de/' },
-      {
-        label: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Bridge ETH to Base Sepolia' : 'Bridge ETH to Base',
-        url: 'https://bridge.base.org/',
-      },
-      { label: 'Solana Devnet Faucets', url: 'https://solana.com/developers/guides/getstarted/solana-token-airdrop-and-faucets' },
-    ];
+type Faucet = { label: string; url: string };
+
+const SOLANA_DEVNET_FAUCET: Faucet = { label: 'Solana Devnet SOL', url: 'https://faucet.quicknode.com/solana/devnet' };
+const SEPOLIA_FAUCET: Faucet = { label: 'Ethereum Sepolia ETH', url: 'https://faucet.quicknode.com/ethereum/sepolia' };
+const BASE_SEPOLIA_FAUCET: Faucet = { label: 'Base Sepolia ETH', url: 'https://faucet.quicknode.com/base/sepolia' };
+const ROBINHOOD_TESTNET_FAUCET: Faucet = { label: 'Robinhood Testnet ETH', url: 'https://faucet.quicknode.com/robinhood/testnet' };
+// QuickNode has no Arc faucet; Circle issues Arc testnet USDC (the gas token).
+const ARC_TESTNET_FAUCET: Faucet = { label: 'Arc Testnet USDC (Circle)', url: 'https://faucet.circle.com/' };
+
+const FAUCETS: Faucet[] = EVM_DEPLOYMENT_MODE === 'testnet'
+  ? [SOLANA_DEVNET_FAUCET, SEPOLIA_FAUCET, BASE_SEPOLIA_FAUCET, ROBINHOOD_TESTNET_FAUCET, ARC_TESTNET_FAUCET]
+  : EVM_DEPLOYMENT_MODE === 'mainnet'
+    ? []
+    : [SOLANA_DEVNET_FAUCET, SEPOLIA_FAUCET, ARC_TESTNET_FAUCET];
+
+const DROPDOWN_TRIGGER_STYLE: React.CSSProperties = {
+  fontSize: '11.5px',
+  fontWeight: 500,
+  color: '#78350f',
+  border: '1px solid #fbbf24',
+  backgroundColor: '#fffbeb',
+  padding: '3px 8px',
+  borderRadius: '5px',
+  cursor: 'pointer',
+};
 
 const PERSIST_KEY = 'nave_network_banner_hidden_v5';
 
@@ -251,48 +272,54 @@ export default function DevnetBanner() {
           </div>
         </div>
 
-        {/* Row 2: Network buttons */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1.5">
-          {NETWORKS.map(({ label, family, action, tooltip }) => {
-            const loading = loadingKey === label;
-            const active = chainFamily === family;
-            return (
-              <button
-                key={label}
-                type="button"
-                disabled={loading || active}
-                onClick={() => handleNetwork(label, family, action)}
-                title={tooltip}
-                className="flex items-center gap-1 flex-shrink-0 transition-colors"
-                style={{ fontSize: '11.5px', fontWeight: 500, color: '#78350f', border: '1px solid #fbbf24', backgroundColor: active || loading ? '#fde68a' : '#fffbeb', padding: '3px 7px', borderRadius: '5px', cursor: loading ? 'wait' : active ? 'default' : 'pointer', opacity: loading ? 0.8 : 1 }}
-                onMouseEnter={e => { if (!loading) { e.currentTarget.style.backgroundColor = '#fef3c7'; e.currentTarget.style.borderColor = '#d97706'; } }}
-                onMouseLeave={e => { if (!loading) { e.currentTarget.style.backgroundColor = '#fffbeb'; e.currentTarget.style.borderColor = '#fbbf24'; } }}
-              >
-                <Fi icon={loading ? 'circle-notch' : 'plus'} style={{ fontSize: '9px', color: '#d97706' }} className={loading ? 'animate-spin' : ''} />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Row 3: Resource links — hidden on mobile to keep the banner compact */}
-        <div className="hidden sm:flex flex-wrap items-center gap-x-3 mt-1.5">
-          <span style={{ color: '#fbbf24' }}>·</span>
-          {LINKS.map(({ label, url }) => (
-            <a
-              key={url}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 flex-shrink-0 no-underline transition-colors"
-              style={{ color: '#b45309', fontSize: '11.5px' }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#78350f')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#b45309')}
+        {/* Row 2: Network + Faucet dropdowns */}
+        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="flex items-center gap-1 flex-shrink-0"
+              style={{ ...DROPDOWN_TRIGGER_STYLE, cursor: loadingKey ? 'wait' : 'pointer' }}
+              disabled={loadingKey !== null}
             >
-              <Fi icon="arrow-up-right-from-square" style={{ fontSize: '9px' }} />
-              {label}
-            </a>
-          ))}
+              <Fi icon={loadingKey ? 'circle-notch' : 'globe'} style={{ fontSize: '9px', color: '#d97706' }} className={loadingKey ? 'animate-spin' : ''} />
+              Network
+              <Fi icon="chevron-down" style={{ fontSize: '8px', color: '#d97706' }} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {NETWORKS.map(({ label, family, action, tooltip }) => (
+                <DropdownMenuItem
+                  key={label}
+                  title={tooltip}
+                  onSelect={() => handleNetwork(label, family, action)}
+                  className="text-xs cursor-pointer"
+                >
+                  {label}
+                  {chainFamily === family && <Fi icon="check" style={{ fontSize: '9px', marginLeft: 'auto' }} />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {FAUCETS.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1 flex-shrink-0" style={DROPDOWN_TRIGGER_STYLE}>
+                <Fi icon="droplet" style={{ fontSize: '9px', color: '#d97706' }} />
+                Faucet
+                <Fi icon="chevron-down" style={{ fontSize: '8px', color: '#d97706' }} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {FAUCETS.map(({ label, url }) => (
+                  <DropdownMenuItem
+                    key={url}
+                    onSelect={() => { window.open(url, '_blank', 'noopener,noreferrer'); }}
+                    className="text-xs cursor-pointer"
+                  >
+                    {label}
+                    <Fi icon="arrow-up-right-from-square" style={{ fontSize: '9px', marginLeft: 'auto' }} />
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
       </div>
