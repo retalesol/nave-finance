@@ -1,0 +1,10 @@
+{
+  "chainId": 5042002,
+  "daoStake": "0xEb4de98665723760ea286B6C9B34A10a301b7087",
+  "daoStakeImplementation": "0x771BD72c66418234f1Eb8014725301bC12c2c985",
+  "owner": "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca",
+  "protocol": "0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255",
+  "requiredStake": 0,
+  "stakeToken": "0x0000000000000000000000000000000000000000",
+  "wired": true
+}

@@ -1,8 +1,10 @@
 {
-  "aaveV3Adapter": "0xc4d8185e7F6779eC41FA8890302e3a17BE8386E8",
+  "aaveV3Adapter": "0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426",
   "balancerAdapter": "0x0000000000000000000000000000000000000000",
   "chainId": 11155111,
-  "compoundV3Adapter": "0xc50F5886a739aF267C164ACaef38036e61C21625",
-  "protocol": "0x678e69c53E53904ca6D060040E14DFc56003BC11",
-  "_notes": "Balancer intentionally 0x0: Sepolia has no Balancer v2 getRate() pool target compatible with BalancerAdapter (v3 Vault ABI differs). Deploy with DEPLOY_BALANCER only after pinning BALANCER_* to a validated v2 pool."
+  "compoundV3Adapter": "0x845d8310A861A95Ed1644643D1BAe086944B1AA0",
+  "pendingAaveV3Adapter": "0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B",
+  "pendingApprovalEffectiveAt": 1791737076,
+  "pendingCompoundV3Adapter": "0xa675dC4A02304ce069D98760DcF64B0cf3530A80",
+  "protocol": "0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1"
 }

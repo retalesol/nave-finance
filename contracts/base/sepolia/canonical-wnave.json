@@ -1,0 +1,10 @@
+{
+  "chainId": 84532,
+  "wrappedNave": "0xC286e67D59F643a725cf4998af6Bb4f8D1354280",
+  "source": "contracts/base/sepolia/hardened-bridge-84532.json",
+  "rejected": {
+    "portal": "0xa2DF37f136CA9eaFBA2c3D3D84834E5cb0113B1F",
+    "olderStaking": "0x8412cba812593CC8f9Fb510Cd983f79EA2D5fc50"
+  },
+  "note": "Canonical Base Sepolia wNAVE for NaveDaoStake. Portal and older staking tokens are not interchangeable with this token."
+}

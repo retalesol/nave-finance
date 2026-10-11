@@ -1,0 +1,6 @@
+{
+  "chainId": 46630,
+  "wrappedNave": "0x7860FF876b49a5A992a7F3a4a6043ea57f17eD96",
+  "source": "contracts/robinhood/testnet/hardened-bridge-46630.json",
+  "note": "Canonical Robinhood testnet wNAVE from the hardened-bridge deployment. USDC is unpublished on this chain; do not substitute USDG."
+}

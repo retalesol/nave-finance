@@ -1,8 +1,9 @@
 {
-  "aaveV3Adapter": "0x536e2EB2f96fe419a893CDbE39E41e44326E60dA",
+  "aaveV3Adapter": "0x33D19799EBac88FFDc4e5BF61c199c71963470A6",
   "balancerAdapter": "0x0000000000000000000000000000000000000000",
   "chainId": 84532,
   "compoundV3Adapter": "0x0000000000000000000000000000000000000000",
-  "protocol": "0x9Ca6632083f86E72C301959A0d96CBfeFB412aCa",
-  "_notes": "Compound + Balancer intentionally 0x0: Base Sepolia has no Comet USDC in NaveAddressRegistry and no Balancer v2 getRate() pool. Supply registry addresses then redeploy with DEPLOY_COMPOUND / DEPLOY_BALANCER."
+  "pendingAaveV3Adapter": "0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093",
+  "pendingApprovalEffectiveAt": 1791736600,
+  "protocol": "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6"
 }
