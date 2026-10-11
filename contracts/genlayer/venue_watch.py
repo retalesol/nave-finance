@@ -2,7 +2,7 @@
 """VenueWatch reads a public status or incident page and stores fine, watch, or stop.
 
 Prices and yields are not evidence. The same contract covers Solana, Ethereum,
-Base, and Robinhood. It does not hold treasury tokens, and it does not change
+Base, Robinhood, and Arc. It does not hold treasury tokens, and it does not change
 the allowlist on the treasury chain.
 """
 
@@ -73,7 +73,7 @@ def _venue_id(value):
 
 
 def _family_network(chain_family, network):
-    family = _enum("chain_family", chain_family, ("solana", "ethereum", "base", "robinhood"))
+    family = _enum("chain_family", chain_family, ("solana", "ethereum", "base", "robinhood", "arc"))
     net = _enum("network", network, ("mainnet", "testnet", "devnet"))
     return family, net
 

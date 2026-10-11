@@ -1,0 +1,22 @@
+{
+  "network": "testnet-bradbury",
+  "chainId": "4221",
+  "rpc": "https://rpc-bradbury.genlayer.com",
+  "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
+  "deployed": false,
+  "account": "0xb82acb2eb8a1c76805b6fac55cfc8797f00fcc10",
+  "balance": "0 GEN",
+  "faucet": "https://testnet-faucet.genlayer.foundation/",
+  "gas": {
+    "networkMax": 16777216,
+    "charterEstimate": 16355900,
+    "note": "genlayer 0.39.2 has no --gas flag. deploy sends the eth_estimateGas result as the transaction gas. Bradbury rejects gas above 16777216 (2^24). The previous charter estimate was 18308639 and was rejected as gas limit too high. charter_adjudicator.py is indented with tabs so the estimate is 16355900, which eth_call accepts and which the network will broadcast. Expanding that file back to spaces pushes the estimate over 16777216."
+  },
+  "command": "genlayer network set testnet-bradbury && genlayer deploy --contract contracts/genlayer/charter_adjudicator.py",
+  "contracts": {
+    "charter_adjudicator": null,
+    "venue_watch": null,
+    "halt_appeal": null
+  },
+  "blocker": "No contract address was created. After the gas change, charter deploy used gas 16355900 and Bradbury rejected the broadcast because 0xb82acb2eb8a1c76805b6fac55cfc8797f00fcc10 has 0 GEN: eth_sendRawTransaction [0xd563aa0ea3857fe69736f66e3b210bc5daf29696edc922bee6f1f65c31fd735c]: sender does not have enough funds (0) to cover transaction fees: 2090840938395000. That hash is a rejected broadcast, not a contract address. Fund the account at the faucet, then run command. venue_watch and halt_appeal were not retried; they already fit under the gas cap and failed only for the same 0 GEN balance."
+}

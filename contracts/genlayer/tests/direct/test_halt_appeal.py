@@ -40,7 +40,7 @@ def _appeal(contract, fix, **overrides):
 def test_empty_new_evidence_keeps_the_pause(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(HALT)
     direct_vm.sender = direct_alice
-    for name in ("solana", "ethereum", "base", "robinhood"):
+    for name in ("solana", "ethereum", "base", "robinhood", "arc"):
         fix = load_fixture(name)
         result = _appeal(contract, fix, counterevidence="   ")
         assert result["decision"] == "keep_pause"

@@ -31,7 +31,7 @@ def _review(direct_vm, contract, fix, page, status, score=70):
 def test_status_page_is_judged_for_every_family(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(VENUE)
     direct_vm.sender = direct_alice
-    for name in ("solana", "ethereum", "base", "robinhood"):
+    for name in ("solana", "ethereum", "base", "robinhood", "arc"):
         fix = load_fixture(name)
         result = _review(direct_vm, contract, fix, fix["status_page"], "fine", 75)
         assert result["venue_id"] == fix["venue"]

@@ -114,7 +114,7 @@ def _canonical_treasury(chain_family, treasury):
 
 
 def _identity(chain_family, network, treasury, action_hash):
-    family = _enum("chain_family", chain_family, ("solana", "ethereum", "base", "robinhood"))
+    family = _enum("chain_family", chain_family, ("solana", "ethereum", "base", "robinhood", "arc"))
     net = _enum("network", network, ("mainnet", "testnet", "devnet"))
     return family, net, _canonical_treasury(family, treasury), _canonical_hash("action_hash", action_hash)
 

@@ -14,7 +14,7 @@ from evidence import (
 )
 
 CHARTER = contract_path("charter_adjudicator.py")
-FAMILIES = ("solana", "ethereum", "base", "robinhood")
+FAMILIES = ("solana", "ethereum", "base", "robinhood", "arc")
 
 
 def test_same_pass_on_every_family(direct_vm, direct_deploy, direct_alice):
