@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
@@ -8,6 +8,9 @@ import { useScrollReveal } from '../hooks/useScrollReveal';
 import Fi from '../components/Fi';
 import DevnetBanner from '../components/DevnetBanner';
 import WalletNetworkMenu from '../components/WalletNetworkMenu';
+import DitherGlyph from '../components/homepage/DitherGlyph';
+import HomeRoute from '../components/homepage/ChartedRoute';
+import { useAfterFirstPaint, usePrefersReducedMotion } from '../components/homepage/useHomeMotion';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS } from '../lib/chain/types';
@@ -15,178 +18,124 @@ import { EVM_DEPLOYMENT_MODE, NAVE_DAO_CREATION_STAKE_USD } from '../lib/program
 import { usePlatformTreasuryStats, formatHeroProtocolUsd } from '../hooks/usePlatformTreasuryStats';
 import { useNaveTokenStats, formatNavePrice, formatNaveMarketCap, formatNaveHolders } from '../hooks/useNaveTokenStats';
 
-// The three.js/postprocessing wave background is ~1MB and purely decorative —
-// lazy-load it off the critical path so the landing page's hero/copy render
-// before the WebGL bundle finishes downloading/parsing.
 const Dither = lazy(() => import('../components/Dither'));
 
-/* ── Reduced-motion hook (shared by Hero + Tokenomics Dither) ── */
-/** Decorative WebGL stays off the first paint so the hero CTA is not waiting on the Three.js chunk. */
-function useAfterFirstPaint() {
-  const [ready, setReady] = useState(false);
+const INK: [number, number, number] = [0x0b / 255, 0x12 / 255, 0x20 / 255];
+const PAPER: [number, number, number] = [0xfa / 255, 0xf8 / 255, 0xf3 / 255];
+const DEEP_DOT_SOFT: [number, number, number] = [0x4a / 255, 0x5a / 255, 0x7e / 255];
+
+function useNavOnDeep() {
+  const [deep, setDeep] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    const start = () => {
-      if (!cancelled) setReady(true);
+    const ids = ['protocol', 'governance', 'pricing'];
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      let next = false;
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.top < 56 && rect.bottom > 0) {
+          next = true;
+          break;
+        }
+      }
+      setDeep((prev) => (prev === next ? prev : next));
     };
-    const idle = window.requestIdleCallback?.(start, { timeout: 1500 });
-    const timer = idle == null ? window.setTimeout(start, 200) : undefined;
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
     return () => {
-      cancelled = true;
-      if (idle != null) window.cancelIdleCallback?.(idle);
-      if (timer != null) window.clearTimeout(timer);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, []);
-  return ready;
+  return deep;
 }
 
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return prefersReducedMotion;
-}
-
-/* ── Reveal wrapper ─────────────────────────────────────── */
 function Reveal({
   children,
   className = '',
   variant = 'up',
   stagger = false,
-  threshold,
-  rootMargin,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
   variant?: 'up' | 'scale' | 'left' | 'right';
   stagger?: boolean;
-  threshold?: number;
-  rootMargin?: string;
 }) {
-  const { ref, visible } = useScrollReveal<HTMLDivElement>({ threshold, rootMargin });
-
+  const { ref, visible } = useScrollReveal<HTMLDivElement>();
   const variantClass =
-    variant === 'scale'
-      ? 'sr-visible-scale'
-      : variant === 'left'
-      ? 'sr-visible-left'
-      : variant === 'right'
-      ? 'sr-visible-right'
-      : 'sr-visible';
+    variant === 'scale' ? 'sr-visible-scale'
+    : variant === 'left' ? 'sr-visible-left'
+    : variant === 'right' ? 'sr-visible-right'
+    : 'sr-visible';
 
   return (
-    <div
-      ref={ref}
-      className={`${stagger ? 'sr-stagger' : ''} ${
-        visible ? variantClass : 'sr-hidden'
-      } ${className}`}
-    >
+    <div ref={ref} className={`${stagger ? 'sr-stagger' : ''} ${visible ? variantClass : 'sr-hidden'} ${className}`}>
       {children}
     </div>
   );
 }
 
-/* ── NavBar ─────────────────────────────────────────────── */
+const NAV_ITEMS = [
+  { label: 'Product', href: '#product' },
+  { label: 'Protocol', href: '#protocol' },
+  { label: 'Governance', href: '#governance' },
+  { label: 'Tokenomics', href: '#tokenomics' },
+  { label: 'Pricing', href: '#pricing' },
+  { label: 'Bridge & Stake', href: '/bridge' },
+  { label: 'Documentation', href: '/docs' },
+];
+
 function NavBar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const deep = useNavOnDeep();
   const { chainFamily, setChainFamily } = useChain();
-  // Homepage only offers Base + Robinhood — coerce leftover Solana/Ethereum selection.
   useEffect(() => {
     if (!APP_WALLET_CHAINS.includes(chainFamily)) {
       setChainFamily('base');
     }
   }, [chainFamily, setChainFamily]);
-  const navItems = [
-    { label: 'Product', href: '#product' },
-    { label: 'Protocol', href: '#protocol' },
-    { label: 'Governance', href: '#governance' },
-    { label: 'Tokenomics', href: '#tokenomics' },
-    { label: 'Pricing', href: '#pricing' },
-    { label: 'Bridge & Stake', href: '/bridge' },
-    { label: 'Documentation', href: '/docs' },
-  ];
 
   return (
     <>
-      <header
-        className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 sm:px-6 md:px-10"
-        style={{
-          height: '56px',
-          backgroundColor: 'hsla(0, 0%, 100%, 0.92)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid hsl(var(--border))',
-        }}
-      >
-        <span
-          className="text-display"
-          style={{ fontSize: '22px', color: 'hsl(var(--foreground))' }}
-        >
-          Nave
-        </span>
-
-        <nav className="hidden md:flex items-center gap-7">
-          {navItems.map(item => (
-            <a
-              key={item.label}
-              href={item.href}
-              className="transition-colors no-underline"
-              style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
-            >
+      <header className={`home-nav${deep ? ' is-deep' : ''}`}>
+        <span className="text-display home-brand">Nave</span>
+        <nav className="home-nav-links">
+          {NAV_ITEMS.map((item) => (
+            <a key={item.label} href={item.href} className="home-nav-link">
               {item.label}
             </a>
           ))}
         </nav>
-
-        <div className="flex items-center gap-2">
-          {/* Unified wallet + network control (same as Bridge/Stake). Stays a
-              dropdown when connected instead of turning into an "Open App"
-              button — app entry lives in the nav links and hero CTAs. */}
-          <WalletNetworkMenu chains={APP_WALLET_CHAINS} />
-
-          {/* Mobile hamburger */}
+        <div className="home-nav-actions">
+          <div className="home-wallet">
+            <WalletNetworkMenu chains={APP_WALLET_CHAINS} />
+          </div>
           <button
-            className="md:hidden p-1.5 rounded-lg"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="home-menu-btn"
+            onClick={() => setMobileMenuOpen((open) => !open)}
             aria-label="Toggle menu"
-            style={{ color: 'hsl(var(--muted-foreground))' }}
+            type="button"
           >
             <Fi icon={mobileMenuOpen ? 'xmark' : 'bars'} style={{ fontSize: '18px' }} />
           </button>
         </div>
       </header>
-
-      {/* Devnet banner — fixed directly below the nav bar */}
-      <div className="fixed inset-x-0 z-40" style={{ top: '56px' }}>
+      <div className="home-banner-slot">
         <DevnetBanner />
       </div>
-
-      {/* Mobile slide-down menu — sits below banner (~56px nav + ~38px banner) */}
       {mobileMenuOpen && (
-        <div
-          className="fixed inset-x-0 z-[45] md:hidden border-b animate-fade-in"
-          style={{
-            top: '94px',
-            backgroundColor: 'hsl(var(--surface-0))',
-            borderColor: 'hsl(var(--border))',
-            boxShadow: 'var(--shadow-lg)',
-          }}
-        >
-          <nav className="flex flex-col px-4 py-3 space-y-1">
-            {navItems.map(item => (
-              <a
-                key={item.label}
-                href={item.href}
-                className="px-3 py-2.5 rounded-lg no-underline transition-colors"
-                style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
+        <div className={`home-mobile-nav${deep ? ' is-deep' : ''}`}>
+          <nav>
+            {NAV_ITEMS.map((item) => (
+              <a key={item.label} href={item.href} onClick={() => setMobileMenuOpen(false)}>
                 {item.label}
               </a>
             ))}
@@ -197,7 +146,20 @@ function NavBar() {
   );
 }
 
-/* ── Hero ───────────────────────────────────────────────── */
+function Compass() {
+  return (
+    <svg className="home-compass" viewBox="0 -8 64 72" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden>
+      <circle cx="32" cy="32" r="22" strokeDasharray="1.5 3" />
+      <circle cx="32" cy="32" r="3" />
+      <path d="M32 6 L36 30 L32 32 L28 30 Z" fill="currentColor" />
+      <path d="M32 58 L36 34 L32 32 L28 34 Z" />
+      <path d="M6 32 L30 28 L32 32 L30 36 Z" />
+      <path d="M58 32 L34 28 L32 32 L34 36 Z" />
+      <text x="32" y="4" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="7" fill="currentColor" stroke="none">N</text>
+    </svg>
+  );
+}
+
 function Hero() {
   const navigate = useNavigate();
   const { publicKey, connected: solanaConnected } = useWallet();
@@ -225,14 +187,12 @@ function Hero() {
     }
   }, [evmAddress, publicKey, isEvm, navigate]);
   const { stats, loading: statsLoading, error: statsError } = usePlatformTreasuryStats();
-
   const prefersReducedMotion = usePrefersReducedMotion();
   const showDither = useAfterFirstPaint();
 
   const treasuriesDisplay = statsError ? '—' : statsLoading ? '…' : (stats?.treasuryCount ?? 0).toLocaleString();
   const tvlDisplay = statsError ? '—' : statsLoading ? '…' : formatHeroProtocolUsd(stats?.tvlUsd ?? 0);
   const yieldDisplay = statsError ? '—' : statsLoading ? '…' : formatHeroProtocolUsd(stats?.yieldGeneratedUsd ?? 0);
-
   const heroStats = [
     { value: treasuriesDisplay, label: 'Treasuries' },
     { value: tvlDisplay, label: 'TVL' },
@@ -240,172 +200,89 @@ function Hero() {
   ];
 
   return (
-    <section
-      className="relative flex flex-col items-center justify-center text-center px-6 pt-44 pb-28 overflow-hidden"
-      style={{ minHeight: '94vh' }}
-    >
-      {/* Dither wave background */}
-      <div
-        className="absolute inset-0 z-0 pointer-events-none"
-        style={{
-          opacity: 0.38,
-          mixBlendMode: 'multiply',
-        }}
-        aria-hidden
-      >
-        {showDither && (
-        <Suspense fallback={null}>
-          <Dither
-            variant="ocean"
-            waveColor={[0.86, 0.85, 0.83]}
-            colorNum={5}
-            pixelSize={2}
-            waveAmplitude={0.3}
-            waveFrequency={3}
-            waveSpeed={0.08}
-            disableAnimation={prefersReducedMotion}
-            enableMouseInteraction={false}
-            mouseRadius={0.25}
-          />
-        </Suspense>
-        )}
-      </div>
-
-      {/* Soft vignette — keeps headline readable on white */}
-      <div
-        className="absolute inset-0 z-[1] pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 50% at 50% 45%, hsl(var(--background)) 30%, transparent 85%)',
-        }}
-      />
-
-      {/* Headline */}
-      <h1
-        className="relative z-10 text-display hero-h1 mb-6"
-        style={{
-          fontSize: 'clamp(34px, 6.5vw, 76px)',
-          lineHeight: 1.05,
-          letterSpacing: '-0.02em',
-          color: 'hsl(var(--foreground))',
-          maxWidth: '820px',
-          fontWeight: '400',
-        }}
-      >
-        The autonomous treasury{' '}
-        <span className="hidden sm:inline"><br /></span>
-        <span style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-          operating system
-        </span>
-      </h1>
-
-      {/* Subhead */}
-      <p
-        className="relative z-10 hero-sub max-w-xl"
-        style={{
-          fontSize: '16.5px',
-          lineHeight: 1.7,
-          color: 'hsl(var(--muted-foreground))',
-          fontWeight: '400',
-        }}
-      >
-        Nave enables internet-native organizations to govern, grow, and deploy capital
-        through soulbound policy-driven AI agents
-        {EVM_DEPLOYMENT_MODE === 'testnet'
-          ? ' — launch a testnet treasury on Solana, Ethereum, Base, Robinhood, or Arc.'
-          : ' — create a treasury on Base or Robinhood.'}
-      </p>
-
-      {/* CTAs */}
-      <div className="relative z-10 flex flex-wrap items-center justify-center gap-3 mt-10 hero-cta">
-        <button
-          onClick={launchTreasury}
-          className="flex items-center gap-2 px-7 py-3 rounded-lg font-medium transition-all"
-          style={{
-            backgroundColor: 'hsl(var(--primary))',
-            color: 'hsl(var(--primary-foreground))',
-            fontSize: '14px',
-            boxShadow: 'var(--shadow-md)',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = '';
-            e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-          }}
-        >
-          <Fi icon="castle" style={{ fontSize: '13px' }} />
-          Launch a Treasury
-        </button>
-        <button
-          onClick={() => {
-            if (connected) {
-              if (DEMO_TREASURY_NAV_ENABLED) {
-                navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } });
+    <section className="home-hero">
+      <div className="home-hero-copy">
+        <h1 className="text-display home-hero-title hero-h1">
+          From treasury to treasure,
+          <br />
+          <span className="home-ital">on a charted course.</span>
+        </h1>
+        <p className="home-hero-sub hero-sub">
+          Nave enables internet-native organizations to govern, grow, and deploy capital
+          through soulbound policy-driven AI agents
+          {EVM_DEPLOYMENT_MODE === 'testnet'
+            ? ' — launch a testnet treasury on Solana, Ethereum, Base, Robinhood, or Arc.'
+            : ' — create a treasury on Base or Robinhood.'}
+        </p>
+        <div className="home-hero-ctas hero-cta">
+          <button type="button" className="home-brass-btn" onClick={launchTreasury}>
+            <Fi icon="castle" style={{ fontSize: '13px' }} />
+            Launch a Treasury
+          </button>
+          <button
+            type="button"
+            className="home-btn-secondary"
+            onClick={() => {
+              if (connected) {
+                if (DEMO_TREASURY_NAV_ENABLED) {
+                  navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } });
+                } else {
+                  navigate('/treasuries');
+                }
               } else {
-                navigate('/treasuries');
+                openConnect();
               }
-            } else {
-              openConnect();
-            }
-          }}
-          className="flex items-center gap-2 px-7 py-3 rounded-lg font-medium transition-all border"
-          style={{
-            fontSize: '14px',
-            color: 'hsl(var(--foreground))',
-            borderColor: 'hsl(var(--border-strong))',
-            backgroundColor: 'hsl(var(--surface-0))',
-          }}
-          onMouseEnter={e =>
-            (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')
-          }
-          onMouseLeave={e =>
-            (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))')
-          }
-        >
-          <Fi icon="arrow-right-to-bracket" style={{ fontSize: '13px' }} />
-          {connected && !DEMO_TREASURY_NAV_ENABLED ? 'Open App' : 'View Dashboard'}
-        </button>
+            }}
+          >
+            <Fi icon="arrow-right-to-bracket" style={{ fontSize: '13px' }} />
+            {connected && !DEMO_TREASURY_NAV_ENABLED ? 'Open App' : 'View Dashboard'}
+          </button>
+        </div>
+        <div className="home-stats">
+          {heroStats.map((stat) => (
+            <div key={stat.label} className="hero-stat">
+              <div className={`text-display home-stat-value${stat.label === 'Yield Generated' ? ' home-brass' : ''}`}>
+                {stat.value}
+              </div>
+              <div className="home-stat-label">{stat.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
-
-      {/* Decorative line */}
-      <div
-        className="relative z-10 hero-line mx-auto mt-14"
-        style={{ height: '1px', backgroundColor: 'hsl(var(--border-strong))' }}
-      />
-
-      {/* Live protocol aggregates (Supabase RPC `get_platform_treasury_stats`). */}
-      <div className="relative z-10 flex flex-wrap justify-center gap-8 sm:gap-12 md:gap-16 mt-10 max-w-3xl mx-auto">
-        {heroStats.map(s => (
-          <div key={s.label} className="text-center hero-stat min-w-[100px]">
-            <div
-              className="text-display"
-              style={{ fontSize: '28px', color: 'hsl(var(--foreground))' }}
-            >
-              {s.value}
-            </div>
-            <div
-              style={{
-                fontSize: '11px',
-                color: 'hsl(var(--muted-foreground))',
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                marginTop: '4px',
-              }}
-            >
-              {s.label}
-            </div>
-          </div>
-        ))}
+      <div className="home-hero-map" aria-hidden>
+        <div className="home-map-canvas">
+          {showDither && (
+            <Suspense fallback={null}>
+              <Dither
+                variant="isolines"
+                paletteA={INK}
+                paletteB={PAPER}
+                gain={0.62}
+                bias={-0.34}
+                isoLevels={6}
+                isoLineWidth={0.05}
+                isoLineValue={-0.8}
+                colorNum={5}
+                pixelSize={2}
+                waveSpeed={0.03}
+                waveFrequency={2.4}
+                waveAmplitude={0.3}
+                lightAngle={Math.PI * 0.75}
+                lightStrength={prefersReducedMotion ? 0 : 0.12}
+                tiltWithPointer={!prefersReducedMotion}
+                disableAnimation={prefersReducedMotion}
+                enableMouseInteraction={false}
+                mouseRadius={0}
+              />
+            </Suspense>
+          )}
+        </div>
+        <Compass />
       </div>
     </section>
   );
 }
 
-/* ── Feature pill data ──────────────────────────────────── */
 const FEATURES = [
   {
     icon: 'book',
@@ -449,228 +326,35 @@ const FEATURES = [
 
 function Features() {
   return (
-    <section id="product" className="px-6 md:px-10 py-28 max-w-6xl mx-auto">
-      <Reveal className="text-center mb-16">
-        <div className="nave-section-label mb-4">Phase 1 Product</div>
-        <h2
-          className="text-display"
-          style={{ fontSize: 'clamp(28px, 4vw, 44px)', letterSpacing: '-0.02em', fontWeight: '400' }}
-        >
-          Autonomous treasury coordination
-        </h2>
-        <p
-          style={{
-            color: 'hsl(var(--muted-foreground))',
-            maxWidth: '520px',
-            margin: '14px auto 0',
-            fontSize: '15.5px',
-            lineHeight: 1.7,
-          }}
-        >
-          From constitutional policy enforcement to multi-agent execution —
-          institutional-grade treasury infrastructure in one protocol.
-        </p>
-      </Reveal>
-
-      <Reveal stagger className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {FEATURES.map(({ icon, title, desc, tag }) => (
-          <div key={title} className="nave-card nave-card-hover p-6 flex flex-col gap-4">
-            <div className="flex items-start justify-between">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{
-                  backgroundColor: 'hsl(var(--surface-1))',
-                  border: '1px solid hsl(var(--border))',
-                }}
-              >
-                <Fi icon={icon} style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }} />
-              </div>
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: '500',
-                  letterSpacing: '0.08em',
-                  color: 'hsl(var(--muted-foreground))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '4px',
-                  padding: '2px 6px',
-                }}
-              >
-                {tag}
-              </span>
-            </div>
-            <div>
-              <div
-                style={{
-                  fontSize: '15px',
-                  color: 'hsl(var(--foreground))',
-                  fontWeight: '600',
-                  marginBottom: '6px',
-                }}
-              >
-                {title}
-              </div>
-              <p style={{ fontSize: '13.5px', lineHeight: 1.65, color: 'hsl(var(--muted-foreground))' }}>
-                {desc}
-              </p>
-            </div>
-          </div>
-        ))}
-      </Reveal>
-    </section>
-  );
-}
-
-/* ── Agent architecture ─────────────────────────────────── */
-const AGENTS = [
-  {
-    icon: 'crown',
-    role: 'Executive Agent',
-    tag: 'Strategic Coordinator',
-    desc: 'Interprets governance proposals, coordinates treasury intent, validates constitutional alignment, and signs first multisig approval.',
-  },
-  {
-    icon: 'money-bill-wave',
-    role: 'Financial Agent',
-    tag: 'Operations Layer',
-    desc: 'Handles treasury execution, yield optimization, capital deployment, transaction preparation, and signs second multisig approval.',
-  },
-  {
-    icon: 'eye',
-    role: 'Oversight Agent',
-    tag: 'Safeguard Layer',
-    desc: 'Enforces constitutional compliance, reviews all agent decisions, validates execution safety, and signs final multisig approval.',
-  },
-  {
-    icon: 'gear',
-    role: 'Operational Agent',
-    tag: 'Monitoring Layer',
-    desc: 'Continuous treasury monitoring, accounting, analytics, optimization recommendations, suspicious activity detection, and emergency halt capabilities.',
-  },
-];
-
-function AgentArchitecture() {
-  return (
-    <section
-      id="protocol"
-      className="px-6 md:px-10 py-28"
-      style={{
-        backgroundColor: 'hsl(var(--surface-1))',
-        borderTop: '1px solid hsl(var(--border))',
-        borderBottom: '1px solid hsl(var(--border))',
-      }}
-    >
-      <div className="max-w-6xl mx-auto">
-        <Reveal className="text-center mb-16">
-          <div className="nave-section-label mb-4">Protocol Architecture</div>
-          <h2
-            className="text-display"
-            style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', letterSpacing: '-0.02em', fontWeight: '400' }}
-          >
-            Multi-Agent Constitutional
-            <br />
-            <span style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-              Treasury Governance
-            </span>
-          </h2>
-          <p
-            style={{
-              color: 'hsl(var(--muted-foreground))',
-              maxWidth: '560px',
-              margin: '14px auto 0',
-              fontSize: '15px',
-              lineHeight: 1.7,
-            }}
-          >
-            Every Nave DAO operates through four permanent soulbound AI agents —
-            identity-bound fiduciary operators acting under constitutional mandates.
+    <section id="product" className="home-section home-features">
+      <div className="home-wrap">
+        <Reveal className="home-sec-head center">
+          <div className="nave-section-label">Phase 1 Product</div>
+          <h2 className="text-display">Autonomous treasury coordination</h2>
+          <p className="home-muted">
+            From constitutional policy enforcement to multi-agent execution —
+            institutional-grade treasury infrastructure in one protocol.
           </p>
         </Reveal>
-
-        <Reveal stagger className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {AGENTS.map(({ icon, role, tag, desc }) => (
-            <div key={role} className="nave-card nave-card-hover p-6">
-              <div className="flex items-start gap-4">
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: 'hsl(var(--primary))' }}
-                >
-                  <Fi icon={icon} style={{ fontSize: '16px', color: 'white' }} />
-                </div>
-                <div className="flex-1">
-                  <div
-                    style={{ fontSize: '15px', fontWeight: '600', color: 'hsl(var(--foreground))', marginBottom: '4px' }}
-                  >
-                    {role}
-                  </div>
-                  <span
-                    className="inline-block mb-2"
-                    style={{
-                      fontSize: '10px',
-                      fontFamily: 'var(--font-mono)',
-                      letterSpacing: '0.06em',
-                      color: 'hsl(var(--muted-foreground))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '3px',
-                      padding: '1px 6px',
-                    }}
-                  >
-                    {tag}
-                  </span>
-                  <p style={{ fontSize: '13.5px', lineHeight: 1.65, color: 'hsl(var(--muted-foreground))' }}>
-                    {desc}
-                  </p>
-                </div>
+        <Reveal stagger className="home-grid-3">
+          {FEATURES.map(({ icon, title, desc, tag }) => (
+            <div key={title} className="nave-card nave-card-hover home-feature">
+              <div className="home-feature-top">
+                <DitherGlyph name={icon} />
+                <span className="home-tag">{tag}</span>
+              </div>
+              <div>
+                <h3>{title}</h3>
+                <p>{desc}</p>
               </div>
             </div>
           ))}
-        </Reveal>
-
-        {/* Execution flow */}
-        <Reveal variant="scale" className="mt-12">
-          <div className="nave-card p-6">
-            <div className="nave-section-label mb-5" style={{ fontSize: '10px' }}>
-              Execution Flow
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { step: '01', label: 'Governance Vote', desc: 'DAO token holders approve proposal' },
-                { step: '02', label: 'Executive Review', desc: 'Constitutional alignment validated, first signature' },
-                { step: '03', label: 'Financial Execution', desc: 'Transaction prepared, profitability verified, second signature' },
-                { step: '04', label: 'Oversight Approval', desc: 'Compliance validated, final signature, treasury executes' },
-              ].map(({ step, label, desc }) => (
-                <div key={step} className="flex items-start gap-3">
-                  <span
-                    style={{
-                      fontSize: '22px',
-                      fontFamily: 'var(--font-display)',
-                      color: 'hsl(var(--border-strong))',
-                      lineHeight: 1,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {step}
-                  </span>
-                  <div>
-                    <div style={{ fontSize: '13.5px', fontWeight: '600', color: 'hsl(var(--foreground))', marginBottom: '2px' }}>
-                      {label}
-                    </div>
-                    <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                      {desc}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </Reveal>
       </div>
     </section>
   );
 }
 
-/* ── DAO types ──────────────────────────────────────────── */
 const DAO_TYPES = [
   { icon: 'code', title: 'Protocol Treasuries', desc: 'Institutional-grade reserve management for protocol capital.' },
   { icon: 'users', title: 'Creator Economies', desc: 'Revenue-sharing treasuries for creator communities.' },
@@ -681,154 +365,116 @@ const DAO_TYPES = [
 
 function DAOTypes() {
   return (
-    <section className="px-6 md:px-10 py-24 max-w-6xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-12 gap-4">
-        <Reveal variant="left">
-          <div className="nave-section-label mb-3">Supported Treasuries</div>
-          <h2
-            className="text-display"
-            style={{ fontSize: 'clamp(24px, 3.5vw, 36px)', letterSpacing: '-0.02em', fontWeight: '400' }}
-          >
+    <section className="home-section">
+      <div className="home-wrap home-dao">
+        <Reveal variant="left" className="home-dao-copy">
+          <div className="nave-section-label">Supported Treasuries</div>
+          <h2 className="text-display">
             Any organization.
             <br />
-            <span style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-              Any treasury.
-            </span>
+            <span className="home-ital">Any treasury.</span>
           </h2>
-        </Reveal>
-        <Reveal variant="right">
-          <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', maxWidth: '340px', lineHeight: 1.6 }}>
+          <p className="home-muted">
             Purpose-built to support every model of internet-native organization
             managing collective capital.
           </p>
         </Reveal>
+        <Reveal stagger className="home-dao-list">
+          {DAO_TYPES.map(({ icon, title, desc }) => (
+            <div key={title} className="home-dao-row">
+              <DitherGlyph name={icon} />
+              <div>
+                <h3>{title}</h3>
+                <p>{desc}</p>
+              </div>
+            </div>
+          ))}
+        </Reveal>
       </div>
-
-      <Reveal stagger className="flex flex-wrap gap-3">
-        {DAO_TYPES.map(({ icon, title, desc }) => (
-          <div
-            key={title}
-            className="flex items-start gap-3 px-4 py-3.5 rounded-xl border transition-colors"
-            style={{
-              flex: '1 1 240px',
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'hsl(var(--border-strong))')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-          >
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-            >
-              <Fi icon={icon} style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: '13.5px', fontWeight: '500', marginBottom: '3px' }}>{title}</div>
-              <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>{desc}</div>
-            </div>
-          </div>
-        ))}
-      </Reveal>
     </section>
   );
 }
 
-/* ── Constitution showcase ──────────────────────────────── */
+const CONSTITUTION_BULLETS = [
+  'Approved protocols and asset whitelist',
+  'Treasury reserve ratios and deployment limits',
+  'Risk tolerances and liquidity requirements',
+  'Rebalancing frequency and allocation mandates',
+  'Emergency governance controls',
+];
+
+const CONSTITUTION_ROWS = [
+  { label: 'Minimum Stablecoin Reserve', value: '35%' },
+  { label: 'Maximum Deployment', value: '65%' },
+  { label: 'Liquidity Requirement', value: '15%' },
+  { label: 'Rebalancing Frequency', value: 'Weekly' },
+];
+
 function ConstitutionShowcase() {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const showDither = useAfterFirstPaint();
   return (
-    <section
-      id="governance"
-      className="px-6 md:px-10 py-28"
-      style={{
-        backgroundColor: 'hsl(var(--surface-1))',
-        borderTop: '1px solid hsl(var(--border))',
-        borderBottom: '1px solid hsl(var(--border))',
-      }}
-    >
-      <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-14 items-center">
-        <Reveal variant="left">
-          <div className="nave-section-label mb-4">Treasury Constitution</div>
-          <h2
-            className="text-display mb-5"
-            style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', letterSpacing: '-0.02em', lineHeight: 1.1, fontWeight: '400' }}
-          >
+    <section id="governance" className="home-section home-deep home-constitution">
+      <div className="home-const-sea" aria-hidden>
+        {showDither && (
+          <Suspense fallback={null}>
+            <Dither
+              variant="isolines"
+              paletteA={INK}
+              paletteB={DEEP_DOT_SOFT}
+              gain={0.9}
+              bias={0.1}
+              isoLevels={6}
+              isoLineWidth={0.08}
+              isoLineValue={1}
+              colorNum={4}
+              pixelSize={2}
+              waveSpeed={0.02}
+              waveFrequency={2.6}
+              waveAmplitude={0.42}
+              disableAnimation={prefersReducedMotion}
+              enableMouseInteraction={false}
+              mouseRadius={0}
+            />
+          </Suspense>
+        )}
+      </div>
+      <div className="home-const-wash" aria-hidden />
+      <div className="home-wrap home-const-grid">
+        <Reveal variant="left" className="home-const-copy">
+          <div className="nave-section-label">Treasury Constitution</div>
+          <h2 className="text-display">
             Programmable treasury policy,
             <br />
-            <span style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-              not governance scripting.
-            </span>
+            <span className="home-ital">not governance scripting.</span>
           </h2>
-          <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'hsl(var(--muted-foreground))', marginBottom: '28px' }}>
+          <p className="home-muted">
             DAO members configure treasury rules through an institutional visual interface. The
             four autonomous agents are then constitutionally bound to operate exclusively
             within those parameters.
           </p>
-          <div className="space-y-3">
-            {[
-              'Approved protocols and asset whitelist',
-              'Treasury reserve ratios and deployment limits',
-              'Risk tolerances and liquidity requirements',
-              'Rebalancing frequency and allocation mandates',
-              'Emergency governance controls',
-            ].map(item => (
-              <div key={item} className="flex items-center gap-2.5">
-                <Fi icon="angle-right" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0 }} />
-                <span style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>{item}</span>
+          <ul className="home-bullets">
+            {CONSTITUTION_BULLETS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </Reveal>
+        <Reveal variant="right" className="home-chart-wrap">
+          <div className="home-lamp" aria-hidden />
+          <div className="home-chart-card">
+            <h3>Treasury Constitution</h3>
+            {CONSTITUTION_ROWS.map(({ label, value }) => (
+              <div key={label} className="home-const-row">
+                <span>{label}</span>
+                <span>{value}</span>
               </div>
             ))}
-          </div>
-        </Reveal>
-
-        <Reveal variant="right">
-          <div className="nave-card p-0 overflow-hidden">
-            <div className="px-5 py-3.5 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
-              <span style={{ fontSize: '13px', fontWeight: '600' }}>Treasury Constitution</span>
-            </div>
-            <div className="p-5 space-y-4">
-              {[
-                { label: 'Minimum Stablecoin Reserve', value: '35%' },
-                { label: 'Maximum Deployment', value: '65%' },
-                { label: 'Liquidity Requirement', value: '15%' },
-                { label: 'Rebalancing Frequency', value: 'Weekly' },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between">
-                  <span style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>{label}</span>
-                  <span
-                    className="px-2 py-0.5 rounded"
-                    style={{
-                      fontSize: '12px',
-                      fontFamily: 'var(--font-mono)',
-                      backgroundColor: 'hsl(var(--surface-1))',
-                      border: '1px solid hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                      fontWeight: '500',
-                    }}
-                  >
-                    {value}
-                  </span>
-                </div>
-              ))}
-              <div className="h-px" style={{ backgroundColor: 'hsl(var(--border))' }} />
-              <div>
-                <div className="nave-label mb-2" style={{ fontSize: '10px' }}>Approved Protocols</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {['Jito', 'Kamino', 'MarginFi'].map(p => (
-                    <span
-                      key={p}
-                      className="px-2.5 py-1 rounded-md"
-                      style={{
-                        fontSize: '11.5px',
-                        fontFamily: 'var(--font-mono)',
-                        backgroundColor: 'hsl(var(--surface-1))',
-                        border: '1px solid hsl(var(--border))',
-                        color: 'hsl(var(--foreground))',
-                      }}
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
+            <div className="home-approved">
+              <div className="nave-label">Approved Protocols</div>
+              <div className="chips">
+                {['Jito', 'Kamino', 'MarginFi'].map((protocol) => (
+                  <span key={protocol} className="home-chip">{protocol}</span>
+                ))}
               </div>
             </div>
           </div>
@@ -838,10 +484,6 @@ function ConstitutionShowcase() {
   );
 }
 
-/* ── Brand icons (DexScreener, GeckoTerminal) ──────────────
-   Inline so they inherit `color` like a normal icon font — both render
-   solid black on the homepage per design. Stroke paths sourced from the
-   Arcticons set (CC BY-SA 4.0), matching outline style for both marks. */
 function DexScreenerIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ color: '#000' }}>
@@ -866,9 +508,6 @@ function GeckoTerminalIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-/* ── 24h price line chart — black line, white glow, no axes/labels ──
-   Deliberately minimal: just the shape of the last 24h, meant to be seen
-   "through" the dither behind it, not read as a working chart. */
 function TokenPriceChart({ data }: { data: { t: number; price: number }[] }) {
   if (data.length < 2) return null;
   const w = 400;
@@ -886,12 +525,7 @@ function TokenPriceChart({ data }: { data: { t: number; price: number }[] }) {
     .join(' ');
 
   return (
-    <svg
-      viewBox={`0 0 ${w} ${h}`}
-      preserveAspectRatio="none"
-      style={{ width: '100%', height: '100%', display: 'block' }}
-      aria-hidden
-    >
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }} aria-hidden>
       <polyline
         points={points}
         fill="none"
@@ -908,7 +542,6 @@ function TokenPriceChart({ data }: { data: { t: number; price: number }[] }) {
   );
 }
 
-/* ── Tokenomics ─────────────────────────────────────────── */
 const TOKEN_UTILITIES = [
   {
     icon: 'wand-magic-sparkles',
@@ -945,33 +578,29 @@ function Tokenomics() {
     setTimeout(() => setAddressCopied(false), 1800);
   }
 
+  const liveStats = [
+    { label: 'Price', value: formatNavePrice(stats?.priceUsd ?? null) },
+    { label: 'Market Cap', value: formatNaveMarketCap(stats?.marketCapUsd ?? null) },
+    { label: 'Holders', value: formatNaveHolders(stats?.holders ?? null) },
+  ];
+
   return (
-    <section id="tokenomics" className="px-6 md:px-10 py-28">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid lg:grid-cols-2 gap-14 items-center">
-          {/* Left: headline + narrative */}
-          <Reveal variant="left">
-            <div className="nave-section-label mb-4">
-              <Fi icon="coins" style={{ fontSize: '11px', marginRight: '6px' }} />
-              Tokenomics
-            </div>
-            <h2
-              className="text-display mb-5"
-              style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', letterSpacing: '-0.02em', lineHeight: 1.1, fontWeight: '400' }}
-            >
+    <section id="tokenomics" className="home-section">
+      <div className="home-wrap">
+        <div className="home-tok">
+          <Reveal variant="left" className="home-tok-copy">
+            <div className="nave-section-label">Tokenomics</div>
+            <h2 className="text-display">
               Nave Shares align treasury
               <br />
-              <span style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-                creation and governance.
-              </span>
+              <span className="home-ital">creation and governance.</span>
             </h2>
-            <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'hsl(var(--muted-foreground))', marginBottom: '20px' }}>
-              <span style={{ color: 'hsl(var(--foreground))' }}>Nave Shares</span> (ticker{' '}
-              <span style={{ fontFamily: 'var(--font-mono)', color: 'hsl(var(--foreground))' }}>$NAVE</span>) are the
+            <p className="home-muted">
+              <strong>Nave Shares</strong> (ticker <strong>$NAVE</strong>) are the
               protocol token of Nave, capped at a fixed maximum supply. Holders stake Nave Shares to form DAOs,
               activate treasury infrastructure, and participate in governance where it is enabled.
             </p>
-            <div className="space-y-3">
+            <ul className="home-check-list">
               {[
                 'Fixed maximum supply of 500,000 $NAVE',
                 EVM_DEPLOYMENT_MODE === 'testnet'
@@ -979,140 +608,60 @@ function Tokenomics() {
                   : `Recoverable $${NAVE_DAO_CREATION_STAKE_USD} NAVE staked to form a DAO`,
                 'Governance over DAO votes and treasury decisions',
                 'Fully fair launched — no team allocation or supply',
-              ].map(item => (
-                <div key={item} className="flex items-center gap-2.5">
-                  <Fi icon="angle-right" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0 }} />
-                  <span style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>{item}</span>
-                </div>
+              ].map((item) => (
+                <li key={item}>{item}</li>
               ))}
-            </div>
+            </ul>
           </Reveal>
-
-          {/* Right: Dither-backed supply card */}
           <Reveal variant="right">
-            <div className="nave-card p-0 overflow-hidden relative" style={{ minHeight: '300px' }}>
-              {/* Contained Dither visual */}
-              <div className="absolute inset-0 z-0 pointer-events-none" style={{ opacity: 0.4, mixBlendMode: 'multiply' }} aria-hidden>
+            <div className="nave-card home-supply">
+              <div className="home-supply-sea" aria-hidden>
                 {showDither && (
-                <Suspense fallback={null}>
-                  <Dither
-                    waveColor={[0.82, 0.81, 0.79]}
-                    colorNum={5}
-                    pixelSize={2}
-                    waveAmplitude={0.28}
-                    waveFrequency={3}
-                    waveSpeed={0.06}
-                    disableAnimation={prefersReducedMotion}
-                    enableMouseInteraction={false}
-                    mouseRadius={0.25}
-                  />
-                </Suspense>
+                  <Suspense fallback={null}>
+                    <Dither
+                      waveColor={[0.82, 0.81, 0.79]}
+                      colorNum={5}
+                      pixelSize={2}
+                      waveAmplitude={0.28}
+                      waveFrequency={3}
+                      waveSpeed={0.06}
+                      disableAnimation={prefersReducedMotion}
+                      enableMouseInteraction={false}
+                      mouseRadius={0.25}
+                    />
+                  </Suspense>
                 )}
               </div>
-              {/* 24h price chart — shown "through" the dither, not meant to be read precisely */}
               {stats && stats.chain.length > 1 && (
-                <div className="absolute pointer-events-none" style={{ zIndex: 1, inset: '8% 4% 30% 4%', opacity: 0.8 }} aria-hidden>
+                <div className="home-supply-chart" aria-hidden>
                   <TokenPriceChart data={stats.chain} />
                 </div>
               )}
-              {/* Soft wash to keep figures readable */}
-              <div
-                className="absolute inset-0 z-[2] pointer-events-none"
-                style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 45%, hsl(var(--surface-0)) 20%, transparent 90%)' }}
-              />
-              <div className="relative z-10 flex flex-col items-center justify-center text-center px-6 py-14">
-                <div className="nave-label mb-3" style={{ fontSize: '10px' }}>
-                  Max Supply
-                </div>
-                <div
-                  className="text-display"
-                  style={{ fontSize: 'clamp(44px, 8vw, 72px)', letterSpacing: '-0.02em', lineHeight: 1, color: 'hsl(var(--foreground))' }}
-                >
-                  500,000
-                </div>
-                <div
-                  className="mt-3 px-2.5 py-0.5 rounded"
-                  style={{
-                    fontSize: '13px',
-                    fontFamily: 'var(--font-mono)',
-                    backgroundColor: 'hsl(var(--surface-1))',
-                    border: '1px solid hsl(var(--border))',
-                    color: 'hsl(var(--foreground))',
-                    fontWeight: '500',
-                  }}
-                >
-                  $NAVE
-                </div>
-                <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '12px', maxWidth: '260px', lineHeight: 1.6 }}>
+              <div className="home-supply-wash" aria-hidden />
+              <div className="home-supply-body">
+                <div className="nave-label">Max Supply</div>
+                <div className="text-display home-supply-figure">500,000</div>
+                <span className="home-chip" style={{ marginTop: 14, fontSize: 13 }}>$NAVE</span>
+                <div className="home-supply-caption">
                   Nave Shares — the protocol token, fixed and fully fair launched.
                 </div>
-
-                {/* Live price / market cap / holders */}
-                <div className="flex items-center gap-5 mt-6">
-                  {[
-                    { label: 'Price', value: formatNavePrice(stats?.priceUsd ?? null) },
-                    { label: 'Market Cap', value: formatNaveMarketCap(stats?.marketCapUsd ?? null) },
-                    { label: 'Holders', value: formatNaveHolders(stats?.holders ?? null) },
-                  ].map((stat) => (
-                    <div key={stat.label}>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '3px' }}>
-                        {stat.label}
-                      </div>
-                      <div
-                        className="text-display"
-                        style={{ fontSize: '16px', color: 'hsl(var(--foreground))', fontFamily: 'var(--font-mono)' }}
-                      >
-                        {stat.value}
-                      </div>
+                <div className="home-supply-stats">
+                  {liveStats.map((stat) => (
+                    <div key={stat.label} className={stat.label === 'Price' ? 'home-price' : undefined}>
+                      <div className="nave-label" style={{ fontSize: 9, marginBottom: 4 }}>{stat.label}</div>
+                      <div className={stat.label === 'Price' ? 'home-price-value' : 'home-stat-figure'}>{stat.value}</div>
                     </div>
                   ))}
                 </div>
-
-                {/* Contract address — copy to clipboard */}
-                <button
-                  type="button"
-                  onClick={copyAddress}
-                  title={contractAddress}
-                  className="flex items-center gap-2 mt-5 px-3 py-1.5 rounded-full transition-colors"
-                  style={{
-                    fontSize: '11.5px',
-                    fontFamily: 'var(--font-mono)',
-                    backgroundColor: 'hsl(var(--surface-1))',
-                    border: '1px solid hsl(var(--border))',
-                    color: 'hsl(var(--muted-foreground))',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border-strong))')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-                >
+                <button type="button" className="home-contract" onClick={copyAddress} title={contractAddress}>
                   {addressCopied ? 'Copied!' : `Solana: ${shortAddress}`}
                   <Fi icon={addressCopied ? 'check' : 'copy'} style={{ fontSize: '10px' }} />
                 </button>
-
-                {/* DexScreener / GeckoTerminal backlinks */}
-                <div className="flex items-center gap-3 mt-4">
-                  <a
-                    href={dexscreenerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="View on DexScreener"
-                    className="flex items-center justify-center rounded-full transition-opacity"
-                    style={{ width: '30px', height: '30px', backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                  >
+                <div className="home-markets">
+                  <a href={dexscreenerUrl} target="_blank" rel="noopener noreferrer" title="View on DexScreener">
                     <DexScreenerIcon size={15} />
                   </a>
-                  <a
-                    href={geckoterminalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="View on GeckoTerminal"
-                    className="flex items-center justify-center rounded-full transition-opacity"
-                    style={{ width: '30px', height: '30px', backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                  >
+                  <a href={geckoterminalUrl} target="_blank" rel="noopener noreferrer" title="View on GeckoTerminal">
                     <GeckoTerminalIcon size={15} />
                   </a>
                 </div>
@@ -1120,24 +669,13 @@ function Tokenomics() {
             </div>
           </Reveal>
         </div>
-
-        {/* Utility cards */}
-        <Reveal stagger className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
+        <Reveal stagger className="home-grid-3 home-util-grid">
           {TOKEN_UTILITIES.map(({ icon, title, desc }) => (
-            <div key={title} className="nave-card nave-card-hover p-6 flex flex-col gap-4">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-              >
-                <Fi icon={icon} style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }} />
-              </div>
+            <div key={title} className="nave-card nave-card-hover home-util">
+              <DitherGlyph name={icon} />
               <div>
-                <div style={{ fontSize: '15px', color: 'hsl(var(--foreground))', fontWeight: '600', marginBottom: '6px' }}>
-                  {title}
-                </div>
-                <p style={{ fontSize: '13.5px', lineHeight: 1.65, color: 'hsl(var(--muted-foreground))' }}>
-                  {desc}
-                </p>
+                <h3>{title}</h3>
+                <p>{desc}</p>
               </div>
             </div>
           ))}
@@ -1147,115 +685,71 @@ function Tokenomics() {
   );
 }
 
-/* ── Pricing ────────────────────────────────────────────── */
+const PRICING = [
+  {
+    title: 'DAO Formation',
+    icon: 'wand-magic-sparkles',
+    price: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Stake set by the chain' : `$${NAVE_DAO_CREATION_STAKE_USD} NAVE staked`,
+    period: 'recoverable — not a fee',
+    brass: false,
+    items: ['Recoverable NAVE stake, not a protocol fee', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agent deployment', 'Governance structure configuration'],
+  },
+  {
+    title: 'Treasury Management',
+    icon: 'landmark',
+    price: '0.65%',
+    period: 'annualized',
+    brass: false,
+    items: ['Continuous agent coordination', 'Constitutional policy enforcement', 'Multisig execution layer', 'Treasury monitoring and accounting'],
+  },
+  {
+    title: 'Yield Performance',
+    icon: 'signal',
+    price: '8.5%',
+    period: 'on generated yield',
+    brass: true,
+    items: ['SOL staking via Jito & Kamino', 'EVM lending via Aave & Compound', 'Stablecoin yield optimization', 'Auto-compounding across chains'],
+  },
+];
+
 function Pricing() {
   return (
-    <section id="pricing" className="px-6 md:px-10 py-28 max-w-5xl mx-auto">
-      <Reveal className="text-center mb-14">
-        <div className="nave-section-label mb-4">Business Model</div>
-        <h2
-          className="text-display"
-          style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', letterSpacing: '-0.02em', fontWeight: '400' }}
-        >
-          Aligned with treasury growth
-        </h2>
-        <p style={{ color: 'hsl(var(--muted-foreground))', maxWidth: '440px', margin: '12px auto 0', fontSize: '15px', lineHeight: 1.7 }}>
-          Simple, transparent pricing designed for long-term treasury retention and TVL growth.
-        </p>
-      </Reveal>
-
-      <Reveal stagger className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          {
-            title: 'DAO Formation',
-            titleIcon: 'wand-magic-sparkles',
-            price: EVM_DEPLOYMENT_MODE === 'testnet' ? 'Stake set by the chain' : `$${NAVE_DAO_CREATION_STAKE_USD} NAVE staked`,
-            altPrice: null,
-            altLabel: null,
-            period: 'recoverable — not a fee',
-            items: ['Recoverable NAVE stake, not a protocol fee', 'Treasury vault initialization', 'Constitution engine setup', 'Four soulbound agent deployment', 'Governance structure configuration'],
-          },
-          {
-            title: 'Treasury Management',
-            titleIcon: 'landmark',
-            price: '0.65%',
-            altPrice: null,
-            altLabel: null,
-            period: 'annualized',
-            items: ['Continuous agent coordination', 'Constitutional policy enforcement', 'Multisig execution layer', 'Treasury monitoring and accounting'],
-          },
-          {
-            title: 'Yield Performance',
-            titleIcon: 'signal',
-            price: '8.5%',
-            altPrice: null,
-            altLabel: null,
-            period: 'on generated yield',
-            items: ['SOL staking via Jito & Kamino', 'EVM lending via Aave & Compound', 'Stablecoin yield optimization', 'Auto-compounding across chains'],
-          },
-        ].map(({ title, titleIcon, price, altPrice, altLabel, period, items }) => (
-          <div key={title} className="nave-card nave-card-hover p-6 flex flex-col">
-            <div className="nave-label mb-3 flex items-center gap-1.5" style={{ fontSize: '10px' }}>
-              <Fi icon={titleIcon} style={{ fontSize: '11px' }} />
-              {title}
-            </div>
-            <span className="text-display" style={{ fontSize: '32px', color: 'hsl(var(--foreground))' }}>
-              {price}
-            </span>
-            {altPrice && (
-              <div className="flex items-center gap-1.5 mt-1 mb-0.5">
-                <span style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-display)' }}>
-                  {altPrice}
-                </span>
-                <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}>
-                  {altLabel}
-                </span>
+    <section id="pricing" className="home-section home-deep">
+      <div className="home-wrap">
+        <Reveal className="home-sec-head">
+          <div className="nave-section-label">Business Model</div>
+          <h2 className="text-display">Aligned with treasury growth</h2>
+          <p className="home-muted">
+            Simple, transparent pricing designed for long-term treasury retention and TVL growth.
+          </p>
+        </Reveal>
+        <Reveal stagger className="home-price-grid">
+          {PRICING.map(({ title, icon, price, period, brass, items }) => (
+            <div key={title} className={`nave-card nave-card-hover home-price-card${brass ? ' is-brass' : ''}`}>
+              <div className="top">
+                <h3>{title}</h3>
+                <DitherGlyph name={icon} small />
               </div>
-            )}
-            <div
-              style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)', marginBottom: '20px', marginTop: altPrice ? '4px' : '0' }}
-            >
-              {period}
+              <div>
+                <div className="text-display home-price-amount">{price}</div>
+                <div className="period">{period}</div>
+              </div>
+              <ul>
+                {items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
-            <div className="space-y-2 flex-1">
-              {items.map(item => (
-                <div key={item} className="flex items-start gap-2">
-                  <Fi
-                    icon="angle-right"
-                    style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '2px' }}
-                  />
-                  <span style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </Reveal>
+          ))}
+        </Reveal>
+      </div>
     </section>
   );
 }
 
-/* ── Footer ─────────────────────────────────────────────── */
-function FooterSocialIcon({
-  href,
-  label,
-  children,
-}: {
-  href: string;
-  label: string;
-  children: React.ReactNode;
-}) {
+function FooterSocialIcon({ href, label, children }: { href: string; label: string; children: ReactNode }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={label}
-      className="inline-flex items-center justify-center transition-opacity hover:opacity-70"
-      style={{ color: '#000' }}
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" aria-label={label}>
       {children}
     </a>
   );
@@ -1263,19 +757,17 @@ function FooterSocialIcon({
 
 function Footer() {
   return (
-    <footer className="px-6 md:px-10 py-12 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+    <footer className="home-footer">
+      <div className="home-wrap home-footer-grid">
         <div>
-          <span className="text-display" style={{ fontSize: '20px', color: 'hsl(var(--foreground))' }}>
-            Nave
-          </span>
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '6px', maxWidth: '340px', lineHeight: 1.6 }}>
+          <span className="text-display brand">Nave</span>
+          <p>
             Autonomous institutional infrastructure for internet-native capital.
             {EVM_DEPLOYMENT_MODE === 'testnet'
               ? ' Testnet treasuries run on Solana Devnet, Ethereum Sepolia, Base Sepolia, Robinhood Testnet, and Arc Testnet.'
               : ' Create a treasury on Base or Robinhood. Bridge and Stake still cover Solana and Ethereum.'}
           </p>
-          <div className="flex items-center gap-4 mt-5">
+          <div className="home-socials">
             <FooterSocialIcon href="https://x.com/navedotfinance" label="Nave on X">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
@@ -1288,33 +780,29 @@ function Footer() {
             </FooterSocialIcon>
           </div>
         </div>
-        <a
-          href="https://orynth.dev/projects/nave-finance"
-          target="_blank"
-          rel="noopener"
-          className="inline-block"
-        >
-          <img
-            src="https://orynth.dev/api/badge/nave-finance?theme=light&style=default"
-            alt="Featured on Orynth"
-            width={260}
-            height={80}
-            className="max-w-full h-auto"
-          />
-        </a>
+        <div className="home-footer-badge">
+          <a href="https://orynth.dev/projects/nave-finance" target="_blank" rel="noopener" className="inline-block">
+            <img
+              src="https://orynth.dev/api/badge/nave-finance?theme=light&style=default"
+              alt="Featured on Orynth"
+              width={260}
+              height={80}
+              className="max-w-full h-auto"
+            />
+          </a>
+        </div>
       </div>
     </footer>
   );
 }
 
-/* ── Page ───────────────────────────────────────────────── */
 export default function Index() {
   return (
-    <div style={{ backgroundColor: 'hsl(var(--background))' }} className="min-h-screen">
+    <div className="home min-h-screen">
       <NavBar />
       <Hero />
       <Features />
-      <AgentArchitecture />
+      <HomeRoute />
       <DAOTypes />
       <ConstitutionShowcase />
       <Tokenomics />

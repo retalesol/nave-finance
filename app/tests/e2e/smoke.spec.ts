@@ -39,7 +39,7 @@ test('home page responds', async ({ page }) => {
   test.skip(!hasCoreViteEnv(), 'Set VITE_NAVE_CORE_PROGRAM_ID, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (e.g. from .env.local)');
   const res = await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   expect(res?.ok() ?? false).toBeTruthy();
-  await expect(page.getByRole('heading', { level: 1, name: /The autonomous treasury/i })).toBeVisible({
+  await expect(page.getByRole('heading', { level: 1, name: /From treasury to treasure/i })).toBeVisible({
     timeout: 15_000,
   });
 });
