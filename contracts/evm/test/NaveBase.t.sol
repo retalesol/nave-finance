@@ -16,6 +16,7 @@ import {MockPyth} from "@pythnetwork/pyth-sdk-solidity/MockPyth.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockWETH} from "./mocks/MockWETH.sol";
 import {NaveConstants} from "../src/libraries/NaveConstants.sol";
+import {TreasuryGuardianLib} from "../src/libraries/TreasuryGuardianLib.sol";
 
 /// @notice Shared deployment + helpers for the Nave EVM test suite.
 contract NaveBase is Test {
@@ -167,6 +168,14 @@ contract NaveBase is Test {
         return (NaveTreasury(payable(t)), NaveGovernor(g), NaveExecution(e));
     }
 
+    /// Switch to Ethereum mainnet so production delays apply, and lift the DAO's
+    /// review window (stamped with the dev delay at creation) to the default.
+    function _useProductionDelays(NaveTreasury treasury) internal {
+        vm.chainId(1);
+        vm.prank(founder);
+        treasury.setReviewWindow(NaveConstants.DEFAULT_REVIEW_WINDOW_SECONDS);
+    }
+
     /// Create a DAO forwarding `value` to cover a non-zero formation fee.
     function _createDaoWithValue(uint8 governanceType, uint256 value)
         internal
@@ -225,6 +234,19 @@ contract NaveBase is Test {
         pyth.updatePriceFeeds{value: fee}(upd);
     }
 
+    function _gp(
+        uint8 actionType,
+        uint8 agentSlot,
+        uint8 newStatus,
+        address newKey,
+        uint64 nonce,
+        uint64 deadline
+    ) internal pure returns (TreasuryGuardianLib.GuardianActionParams memory) {
+        return TreasuryGuardianLib.GuardianActionParams(
+            actionType, agentSlot, newStatus, newKey, nonce, deadline
+        );
+    }
+
     function _sign(uint256 key, bytes32 digest) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return abi.encodePacked(r, s, v);
@@ -255,9 +277,14 @@ contract NaveBase is Test {
 
     /// Put `adapter` on the protocol-level adapter allowlist (required before
     /// any DAO constitution may reference it — pre-redeploy hardening).
+    /// Once a DAO exists the approval is queued, so warp past the delay.
     function _protocolApproveAdapter(address adapter) internal {
         vm.prank(owner);
         protocol.setAdapterApproved(adapter, true);
+        if (!protocol.isApprovedAdapter(adapter)) {
+            vm.warp(block.timestamp + NaveConstants.ADAPTER_APPROVAL_DELAY_SECS);
+            protocol.applyAdapterApproval(adapter);
+        }
     }
 
     /// Approve a single adapter (100% cap) in `treasury`'s constitution, taking

@@ -87,6 +87,16 @@ library NaveErrors {
     error AgentsDisableRequiresGuardians();
     error NoPendingAgentRotation();
     error AgentRotationNotReady();
+    /// Guardians disabled the pipeline; only a guardian ENABLE_AGENTS quorum
+    /// may re-enable it.
+    error AgentsLockedByGuardians();
+    /// Agent keys must be nonzero, pairwise distinct, and distinct from the
+    /// founder and every guardian wallet.
+    error AgentKeyConflict();
+    /// Adapter position value grew by less than the deposit slippage floor.
+    error DepositSlippageExceeded();
+    /// A queued protocol adapter approval has not reached its effective time.
+    error AdapterApprovalNotReady();
 
     // ── Constitution / policy ─────────────────────────────────────────────
     error TooManyProtocols();
@@ -224,6 +234,30 @@ library NaveErrors {
     /// The very first deposit into an adapter must exceed the locked dead-share
     /// floor (ERC-4626 first-depositor inflation guard).
     error DepositBelowMinimum();
+    /// The venue pays out through a queue or cooldown: call
+    /// `requestStrategyExit` first, then withdraw once the claim is ready.
+    error ExitNotReady();
+    /// Queued-exit adapters run one venue exit at a time; retry after the
+    /// pending one is ready.
+    error ExitInProgress();
+    /// The adapter has no queued exit (its venue redeems synchronously).
+    error ExitNotQueued();
+    /// A Pendle PT position cannot exit before maturity without a guardian
+    /// quorum approval for that DAO.
+    error PtNotMatured();
+    /// Guardian approval signatures are missing, duplicated, expired or below
+    /// the DAO's guardian threshold.
+    error InvalidGuardianApproval();
+    /// The Pendle market's TWAP oracle lacks the cardinality or history for
+    /// the adapter's TWAP window.
+    error PendleOracleNotReady();
+    /// Risk tier must be 1, 2 or 3.
+    error InvalidRiskTier();
+    /// An approved adapter's tier can only be raised; lowering it (loosening
+    /// DAO caps) goes through revoke + the delayed re-approval.
+    error RiskTierLowerRequiresReapproval();
+    /// Approved Tier 2 caps may total at most 30% and Tier 3 caps 15%.
+    error RiskTierCapExceeded();
 
     // ── Upgradeability ────────────────────────────────────────────────────
     /// Target implementation is not on the protocol approved list for that role.

@@ -12,6 +12,7 @@ import {NaveGovernor} from "../src/NaveGovernor.sol";
 import {NaveExecution} from "../src/NaveExecution.sol";
 import {NaveTokenDeployer} from "../src/NaveTokenDeployer.sol";
 import {PythOracle} from "../src/oracle/PythOracle.sol";
+import {TestnetPegOracle} from "../src/oracle/TestnetPegOracle.sol";
 import {Ownable2StepUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {NaveConstants} from "../src/libraries/NaveConstants.sol";
@@ -23,13 +24,17 @@ import {NaveAddressRegistry} from "./config/NaveAddressRegistry.sol";
 /// implementations, `NaveTokenDeployer`, `PythOracle`, and `NaveDAOFactory`,
 /// then wires the factory into the protocol. Designed for Ethereum (1) / Base
 /// (8453) / Robinhood (4663) mainnets and Sepolia (11155111) / Base Sepolia
-/// (84532) / Robinhood Testnet (46630) — the chain-id guard hard-rejects any
-/// other EVM network (e.g. BSC 56).
+/// (84532) / Robinhood Testnet (46630) / Arc Testnet (5042002). Arc mainnet
+/// 5042 is not supported. The chain-id guard hard-rejects any other EVM
+/// network (e.g. BSC 56).
 ///
 /// Configure via env:
 ///   - PROTOCOL_OWNER, PROTOCOL_TREASURY (fee recipient)
 ///   - FORMATION_FEE_WEI, TOKEN_MINT_FEE_WEI
-///   - PYTH_ADDRESS (per-chain Pyth contract)
+///   - PYTH_ADDRESS (per-chain Pyth Core contract). Arc defaults to the
+///       published testnet Core proxy. Robinhood testnet has no Core Pyth
+///       (the Pro contract is the wrong interface) and deploys TestnetPegOracle.
+///       Do not set PYTH_ADDRESS to 0xACeA761c27A909d4D3895128EBe6370FDE2dF481.
 ///   - WRAPPED_NATIVE (optional override; defaults from NaveAddressRegistry)
 ///   - SAFE_ADDRESS + HANDOFF_TO_SAFE=true (optional one-shot Ownable2Step
 ///       authority handoff: starts transferOwnership(protocol+oracle) → Safe;
@@ -42,8 +47,9 @@ contract Deploy is Script {
     function _assertSupportedChain() internal view {
         uint256 id = block.chainid;
         require(
-            id == 1 || id == 8453 || id == 4663 || id == 11_155_111 || id == 84_532 || id == 46_630,
-            "Deploy: unsupported EVM chain id (Nave supports 1, 8453, 4663, 11155111, 84532, 46630)"
+            id == 1 || id == 8453 || id == 4663 || id == 11_155_111 || id == 84_532 || id == 46_630
+                || id == 5_042_002,
+            "Deploy: unsupported EVM chain id (Nave supports 1, 8453, 4663, 11155111, 84532, 46630, 5042002)"
         );
     }
 
@@ -58,9 +64,15 @@ contract Deploy is Script {
         // DAO treasury at creation). Devnet: 0.01 ETH all-to-seed; mainnet split
         // is configured at cutover (must be <= FORMATION_FEE_WEI).
         uint256 treasurySeed = vm.envOr("TREASURY_SEED_WEI", uint256(0));
-        address pyth = vm.envAddress("PYTH_ADDRESS");
+        address pyth = vm.envOr("PYTH_ADDRESS", NaveAddressRegistry.pyth(block.chainid));
         bool handoff = vm.envOr("HANDOFF_TO_SAFE", false);
         address safe = vm.envOr("SAFE_ADDRESS", address(0));
+        // Peg oracle only when this chain has no live Pyth Core contract.
+        // Sepolia and mainnet still require PYTH_ADDRESS (registry pyth() is zero).
+        bool pegChain = block.chainid == 46_630 || block.chainid == 5_042_002;
+        bool pythHasCode = pyth != address(0) && pyth.code.length > 0;
+        bool usePeg = pegChain && !pythHasCode;
+        if (!usePeg && pyth == address(0)) revert("Deploy: PYTH_ADDRESS missing");
 
         vm.startBroadcast();
 
@@ -81,18 +93,25 @@ contract Deploy is Script {
         }
         // Wire WETH so native treasury seeds / top-ups wrap instead of locking.
         address wrappedNative = vm.envOr("WRAPPED_NATIVE", NaveAddressRegistry.weth(block.chainid));
-        if (wrappedNative != address(0)) {
+        if (wrappedNative != address(0) && wrappedNative.code.length > 0) {
             protocol.setWrappedNative(wrappedNative, NaveConstants.PYTH_ETH_USD_FEED_ID);
         }
         NaveTokenDeployer tokenDeployer = new NaveTokenDeployer();
-        PythOracle oracleImplementation = new PythOracle();
-        PythOracle oracle = PythOracle(
-            address(
+        address oracleAddress;
+        address oracleImplAddress;
+        if (usePeg) {
+            TestnetPegOracle peg = new TestnetPegOracle(NaveAddressRegistry.config(block.chainid).usdc);
+            oracleAddress = address(peg);
+            oracleImplAddress = address(peg);
+        } else {
+            PythOracle oracleImplementation = new PythOracle();
+            oracleImplAddress = address(oracleImplementation);
+            oracleAddress = address(
                 new ERC1967Proxy(
-                    address(oracleImplementation), abi.encodeCall(PythOracle.initialize, (pyth, owner))
+                    oracleImplAddress, abi.encodeCall(PythOracle.initialize, (pyth, owner))
                 )
-            )
-        );
+            );
+        }
 
         address treasuryImpl = address(new NaveTreasury());
         address governorImpl = address(new NaveGovernor());
@@ -108,7 +127,7 @@ contract Deploy is Script {
                     address(factoryImplementation),
                     abi.encodeCall(
                         NaveDAOFactory.initialize,
-                        (owner, address(protocol), address(oracle), address(tokenDeployer))
+                        (owner, address(protocol), oracleAddress, address(tokenDeployer))
                     )
                 )
             )
@@ -123,7 +142,7 @@ contract Deploy is Script {
         if (handoff) {
             require(safe != address(0), "Deploy: HANDOFF_TO_SAFE set but SAFE_ADDRESS is zero");
             protocol.transferOwnership(safe);
-            oracle.transferOwnership(safe);
+            if (!usePeg) PythOracle(oracleAddress).transferOwnership(safe);
             factory.transferOwnership(safe);
         }
 
@@ -134,8 +153,9 @@ contract Deploy is Script {
         console2.log("protocolImpl      ", address(protocolImplementation));
         console2.log("NaveDAOFactory    ", address(factory));
         console2.log("factoryImpl       ", address(factoryImplementation));
-        console2.log("PythOracle        ", address(oracle));
-        console2.log("oracleImpl        ", address(oracleImplementation));
+        console2.log("oracle             ", oracleAddress);
+        console2.log("oracleImpl         ", oracleImplAddress);
+        console2.log("oracleKind         ", usePeg ? "testnet-peg" : "pyth");
         console2.log("NaveTokenDeployer ", address(tokenDeployer));
         console2.log("Treasury impl     ", treasuryImpl);
         console2.log("Governor impl     ", governorImpl);
@@ -149,8 +169,8 @@ contract Deploy is Script {
             address(protocolImplementation),
             address(factory),
             address(factoryImplementation),
-            address(oracle),
-            address(oracleImplementation),
+            oracleAddress,
+            oracleImplAddress,
             address(tokenDeployer),
             treasuryImpl,
             governorImpl,

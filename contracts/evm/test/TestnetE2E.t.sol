@@ -235,7 +235,7 @@ contract TestnetE2ETest is Test {
 
         // EVM-C2: execute() is gated to the DAO's own registered agents.
         vm.prank(agentExec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
 
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed), "executed");
         _assertCapitalDeployed(adapterAddr, usdc);
@@ -245,7 +245,7 @@ contract TestnetE2ETest is Test {
         uint256 dead = BaseStrategyAdapter(adapterAddr).MIN_DEAD_SHARES();
         uint256 withdrawAmt = DEPLOY > dead + 100 ? DEPLOY - dead - 100 : DEPLOY / 2;
         vm.prank(agentExec);
-        e.withdrawFromStrategy(idx, withdrawAmt, 0);
+        e.withdrawFromStrategy(idx, withdrawAmt, 1);
         assertGt(IERC20(usdc).balanceOf(tAddr), beforeBal, "withdrawn to treasury");
 
         // Transfer proposal (type 8)

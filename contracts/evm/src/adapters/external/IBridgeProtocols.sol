@@ -12,6 +12,20 @@ interface ITokenMessenger {
     ) external returns (uint64 nonce);
 }
 
+/// Circle TokenMessengerV2. `minFinalityThreshold` 2000 is standard finality.
+/// `maxFee` of 0 can revert on routes that charge a fee.
+interface ITokenMessengerV2 {
+    function depositForBurn(
+        uint256 amount,
+        uint32 destinationDomain,
+        bytes32 mintRecipient,
+        address burnToken,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 minFinalityThreshold
+    ) external returns (uint64 nonce);
+}
+
 interface IMessageTransmitter {
     function receiveMessage(bytes calldata message, bytes calldata attestation)
         external

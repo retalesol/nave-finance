@@ -12,6 +12,7 @@ pragma solidity 0.8.28;
 ///   - Sepolia testnet       (chain id 11155111)
 ///   - Base Sepolia testnet  (chain id 84532)
 ///   - Robinhood Testnet     (chain id 46630)
+///   - Arc Testnet           (chain id 5042002; Arc mainnet 5042 is not supported)
 ///
 /// Only the *protocol singletons* are pinned here (Aave v3 Pool, Compound v3
 /// Comet/USDC market, Balancer v2 Vault). The *pool-specific* args for Balancer
@@ -31,11 +32,16 @@ library NaveAddressRegistry {
     uint256 internal constant SEPOLIA = 11_155_111;
     uint256 internal constant BASE_SEPOLIA = 84_532;
     uint256 internal constant ROBINHOOD_TESTNET = 46_630;
+    /// Arc Testnet. Mainnet chain id 5042 is intentionally absent.
+    uint256 internal constant ARC_TESTNET = 5_042_002;
 
     // Circle CCTP TokenMessenger (v1) — identical proxy on Eth/Base mainnet.
     address internal constant CCTP_TOKEN_MESSENGER = 0xbd3fA81b58bA92A82136038b25aDEC7066af1865;
+    /// TokenMessengerV2 on Arc Testnet and Sepolia (Circle domain 26 → domain 0).
+    address internal constant CCTP_TOKEN_MESSENGER_V2 = 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA;
     uint32 internal constant CCTP_DOMAIN_ETHEREUM = 0;
     uint32 internal constant CCTP_DOMAIN_BASE = 6;
+    uint32 internal constant CCTP_DOMAIN_ARC = 26;
 
     // OP Stack StandardBridge
     address internal constant BASE_L2_STANDARD_BRIDGE = 0x4200000000000000000000000000000000000010;
@@ -111,6 +117,17 @@ library NaveAddressRegistry {
     address internal constant ROBINHOOD_USDC = address(0);
     address internal constant ROBINHOOD_WETH = 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73;
 
+    // Robinhood testnet WETH from docs.robinhood.com/chain/contracts/.
+    // USDC is not published there (USDG is a different token — do not substitute).
+    address internal constant ROBINHOOD_TESTNET_WETH = 0x7943e237c7F95DA44E0301572D358911207852Fa;
+
+    // ── Arc Testnet (5042002) ─────────────────────────────────────────────
+    // ERC-20 USDC, 6 decimals. Native gas is a separate 18-decimal USDC.
+    // Aave on Arc is V4; this registry keeps the V3 pool at zero (no V4 adapter).
+    // Pyth Core proxy (getPriceNoOlderThan), verified to have code on the testnet RPC.
+    address internal constant ARC_TESTNET_USDC = 0x3600000000000000000000000000000000000000;
+    address internal constant ARC_TESTNET_PYTH = 0x2880aB155794e7179c9eE2e38200202908C17B43;
+
     // ── Resolution ────────────────────────────────────────────────────────
     /// Resolve the config for `chainId`. Reverts on an unsupported chain so a
     /// mis-targeted deploy fails loudly rather than deploying with zeros.
@@ -173,13 +190,32 @@ library NaveAddressRegistry {
             return ChainConfig({
                 chainId: ROBINHOOD_TESTNET,
                 usdc: address(0),
+                weth: ROBINHOOD_TESTNET_WETH,
+                aaveV3Pool: address(0),
+                compoundCometUsdc: address(0),
+                balancerVault: address(0)
+            });
+        }
+        if (chainId == ARC_TESTNET) {
+            return ChainConfig({
+                chainId: ARC_TESTNET,
+                usdc: ARC_TESTNET_USDC,
                 weth: address(0),
                 aaveV3Pool: address(0),
                 compoundCometUsdc: address(0),
                 balancerVault: address(0)
             });
         }
-        revert("NaveAddressRegistry: unsupported chain id (1, 8453, 4663, 11155111, 84532, 46630)");
+        revert(
+            "NaveAddressRegistry: unsupported chain id (1, 8453, 4663, 11155111, 84532, 46630, 5042002)"
+        );
+    }
+
+    /// Pyth Core contract for `chainId`, or zero when this chain has none.
+    /// Robinhood Pyth Pro is a different interface and is intentionally not returned.
+    function pyth(uint256 chainId) internal pure returns (address) {
+        if (chainId == ARC_TESTNET) return ARC_TESTNET_PYTH;
+        return address(0);
     }
 
     /// Convenience: wrapped-native address for `chainId` (zero if unknown).

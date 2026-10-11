@@ -149,7 +149,7 @@ contract NaveGovernor is INaveGovernor, Initializable, UUPSUpgradeable, Reentran
             revert NaveErrors.InvalidProposalType();
         }
         if (
-            p.votingPeriodSeconds < NaveConstants.MIN_VOTING_PERIOD
+            p.votingPeriodSeconds < NaveConstants.minVotingPeriodSecs()
                 || p.votingPeriodSeconds > NaveConstants.MAX_VOTING_PERIOD
         ) {
             revert NaveErrors.InvalidVotingPeriod();

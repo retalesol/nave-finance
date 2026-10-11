@@ -140,4 +140,11 @@ library GuardianActionType {
     /// `nullify_agent` (guardian M-of-N). Discriminant differs from Solana's
     /// byte 5 — see library note above.
     uint8 internal constant NULLIFY_AGENT = 6;
+    /// Clear the guardian lock set by DISABLE_AGENTS and re-enable the pipeline.
+    /// The Executive cannot undo a guardian disable on its own.
+    uint8 internal constant ENABLE_AGENTS = 7;
+    /// Restore a nullified agent slot (does not unfreeze).
+    uint8 internal constant RESTORE_AGENT = 8;
+    /// Cancel a pending agent rotation (guardian veto of a founder rotation).
+    uint8 internal constant CANCEL_AGENT_ROTATION = 9;
 }

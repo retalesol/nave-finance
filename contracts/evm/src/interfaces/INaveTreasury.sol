@@ -28,6 +28,7 @@ interface INaveTreasury {
     // ── Guardians / agents ────────────────────────────────────────────────
     function guardianCount() external view returns (uint8);
     function isGuardian(address wallet) external view returns (bool);
+    function guardianThreshold() external view returns (uint8);
     function getGuardians() external view returns (address[] memory wallets, uint8 threshold);
     function guardiansBootstrapped() external view returns (bool);
     function linkedTreasury(uint256 destChainId) external view returns (address);
@@ -107,6 +108,7 @@ interface INaveTreasury {
         uint256 amount,
         uint256 amountUsd
     ) external returns (uint256 perfFeeSkimmed);
+    function syncPositionValue(address adapter, uint256 observed) external returns (uint256 applied);
     function executeTransfer(address asset, address recipient, uint256 amount) external;
     /// Governor-only: direct disbursement after a passed Transfer proposal vote.
     function executeGovernanceTransfer(address asset, address recipient, uint256 amount) external;

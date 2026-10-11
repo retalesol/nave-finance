@@ -45,13 +45,19 @@ contract DeployBridgeAdapters is Script {
 
         if (doCctp) {
             require(cfg.usdc != address(0), "DeployBridgeAdapters: no USDC on this chain");
-            address messenger = vm.envOr(
-                "CCTP_TOKEN_MESSENGER", NaveAddressRegistry.CCTP_TOKEN_MESSENGER
-            );
             (uint256[] memory destIds, uint32[] memory domains) = _cctpDestinations(chainId);
             require(destIds.length > 0, "DeployBridgeAdapters: no CCTP destinations");
+            bool defaultV2 = chainId == NaveAddressRegistry.ARC_TESTNET
+                || chainId == NaveAddressRegistry.SEPOLIA;
+            bool messengerV2 = vm.envOr("CCTP_MESSENGER_V2", defaultV2);
+            address defaultMessenger = messengerV2
+                ? NaveAddressRegistry.CCTP_TOKEN_MESSENGER_V2
+                : NaveAddressRegistry.CCTP_TOKEN_MESSENGER;
+            address messenger = vm.envOr("CCTP_TOKEN_MESSENGER", defaultMessenger);
             out.cctp = address(
-                new CctpBridgeAdapter(protocol, messenger, cfg.usdc, chainId, destIds, domains)
+                new CctpBridgeAdapter(
+                    protocol, messenger, cfg.usdc, chainId, destIds, domains, messengerV2
+                )
             );
         }
 
@@ -131,7 +137,24 @@ contract DeployBridgeAdapters is Script {
             domains[0] = NaveAddressRegistry.CCTP_DOMAIN_ETHEREUM;
             return (destIds, domains);
         }
-        // Robinhood CCTP when USDC + domain are live — empty until then.
+        // Arc burns USDC toward Sepolia (CCTP domain 0). Domain 0 is valid.
+        if (chainId == NaveAddressRegistry.ARC_TESTNET) {
+            destIds = new uint256[](1);
+            domains = new uint32[](1);
+            destIds[0] = NaveAddressRegistry.SEPOLIA;
+            domains[0] = NaveAddressRegistry.CCTP_DOMAIN_ETHEREUM;
+            return (destIds, domains);
+        }
+        // Return leg: Sepolia burns toward Arc (domain 26), then Aave V3 stays on Sepolia.
+        if (chainId == NaveAddressRegistry.SEPOLIA) {
+            destIds = new uint256[](1);
+            domains = new uint32[](1);
+            destIds[0] = NaveAddressRegistry.ARC_TESTNET;
+            domains[0] = NaveAddressRegistry.CCTP_DOMAIN_ARC;
+            return (destIds, domains);
+        }
+        // Robinhood testnet USDC is unpublished, so CCTP stays empty (cfg.usdc == 0
+        // also skips the deploy). Do not invent a domain.
         destIds = new uint256[](0);
         domains = new uint32[](0);
     }

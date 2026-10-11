@@ -14,6 +14,8 @@ import {AssetKind} from "../../src/libraries/NaveEnums.sol";
 contract LossyStrategyAdapter is IStrategyAdapter {
     INaveProtocol public immutable protocol;
     uint16 public lossBps;
+    /// Share of a deposit that never shows up in `positionValue` (join slippage).
+    uint16 public depositLossBps;
     mapping(address => mapping(address => uint256)) public deposited; // caller=>asset=>amount
     mapping(address => mapping(address => uint256)) public marked; // caller=>asset=>marked value
 
@@ -28,6 +30,10 @@ contract LossyStrategyAdapter is IStrategyAdapter {
 
     function setLossBps(uint16 bps) external {
         lossBps = bps;
+    }
+
+    function setDepositLossBps(uint16 bps) external {
+        depositLossBps = bps;
     }
 
     function assetKind() external pure returns (AssetKind) {
@@ -47,9 +53,10 @@ contract LossyStrategyAdapter is IStrategyAdapter {
         onlyExecution
         returns (uint256)
     {
-        deposited[msg.sender][asset] += amount;
-        marked[msg.sender][asset] += amount;
-        return amount;
+        uint256 booked = amount - (amount * depositLossBps) / 10_000;
+        deposited[msg.sender][asset] += booked;
+        marked[msg.sender][asset] += booked;
+        return booked;
     }
 
     function withdraw(address asset, uint256 amount, address to, uint256)

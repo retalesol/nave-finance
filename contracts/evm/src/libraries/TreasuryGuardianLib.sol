@@ -30,7 +30,9 @@ library TreasuryGuardianLib {
     event AgentsToggled(bool enabled);
     event AgentNullified(uint8 role, address agent);
     event AgentStatusChanged(uint8 slot, uint8 oldStatus, uint8 newStatus);
-    event AgentKeyRotated(uint8 slot, address oldKey, address newKey);
+    event AgentChangeQueued(uint8 slot, address newKey, uint256 effectiveAt);
+    event AgentRestored(uint8 role, address agent);
+    event AgentRotationCancelled(uint8 role, address by);
 
     bytes32 internal constant EIP712_DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -133,9 +135,121 @@ library TreasuryGuardianLib {
         return -1;
     }
 
-    /// @return newFrozenAt Anchored freeze timestamp (unchanged if already frozen).
-    function _freezeAt(uint256 frozenAt) private view returns (uint256) {
-        return frozenAt == 0 ? block.timestamp : frozenAt;
+    /// Facade side effects returned by {guardianAction}. Scalar treasury state
+    /// cannot be passed as a storage reference, so the facade applies these.
+    uint8 internal constant EFFECT_NONE = 0;
+    uint8 internal constant EFFECT_FREEZE = 1;
+    uint8 internal constant EFFECT_UNFREEZE = 2;
+    uint8 internal constant EFFECT_DISABLE_AGENTS = 3;
+    uint8 internal constant EFFECT_ENABLE_AGENTS = 4;
+
+    /// The fields signed in the GuardianAction EIP-712 struct.
+    struct GuardianActionParams {
+        uint8 actionType;
+        uint8 slot;
+        uint8 newStatus;
+        address newKey;
+        uint64 nonce;
+        uint64 deadline;
+    }
+
+    /// Single guardian M-of-N entry point (EIP-170 headroom for the facade).
+    /// Every action is bound to its own `actionType` in the signed digest.
+    ///  - FREEZE / UNFREEZE (unfreeze also clears a pending recovery)
+    ///  - NULLIFY_AGENT: nullify `slot` and freeze
+    ///  - DISABLE_AGENTS: disable and lock the pipeline (Executive cannot undo)
+    ///  - ENABLE_AGENTS: clear the lock and re-enable
+    ///  - CANCEL_RECOVERY: veto a founder-queued guardian recovery
+    ///  - UPDATE_AGENT_STATUS: pause/revoke now; return to Active is queued
+    ///  - ROTATE_AGENT_KEY: queued for GUARDIAN_AGENT_CHANGE_DELAY_SECS
+    ///  - RESTORE_AGENT: un-nullify `slot` (does not unfreeze)
+    ///  - CANCEL_AGENT_ROTATION: veto any pending rotation for `slot`
+    function guardianAction(
+        mapping(bytes32 => bool) storage usedDigest,
+        address[] storage guardianWallets,
+        uint8 guardianThreshold,
+        TreasuryAdminLib.AgentSlot[4] storage agents,
+        TreasuryAdminLib.PendingRotation[4] storage pendingRotations,
+        RecoveryState storage recovery,
+        address founder,
+        GuardianActionParams calldata c,
+        bytes[] calldata signatures
+    ) external returns (uint8 effect) {
+        verifyGuardianAction(
+            usedDigest,
+            guardianWallets,
+            guardianThreshold,
+            address(this),
+            c.actionType,
+            c.slot,
+            c.newStatus,
+            c.newKey,
+            c.nonce,
+            c.deadline,
+            signatures
+        );
+        uint8 a = c.actionType;
+        if (a == GuardianActionType.FREEZE) {
+            emit DaoEmergencyFrozen(msg.sender);
+            return EFFECT_FREEZE;
+        }
+        if (a == GuardianActionType.UNFREEZE) {
+            _clearRecoveryOnUnfreeze(recovery);
+            emit DaoEmergencyUnfrozen(msg.sender);
+            return EFFECT_UNFREEZE;
+        }
+        if (a == GuardianActionType.DISABLE_AGENTS) {
+            emit AgentsToggled(false);
+            return EFFECT_DISABLE_AGENTS;
+        }
+        if (a == GuardianActionType.ENABLE_AGENTS) {
+            emit AgentsToggled(true);
+            return EFFECT_ENABLE_AGENTS;
+        }
+        if (a == GuardianActionType.CANCEL_RECOVERY) {
+            clearRecovery(recovery);
+            emit GuardianRecoveryCancelled(msg.sender);
+            return EFFECT_NONE;
+        }
+        uint8 slot = c.slot;
+        if (slot >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentSlot();
+        if (a == GuardianActionType.NULLIFY_AGENT) {
+            emit AgentNullified(slot, TreasuryAdminLib.nullifyAgent(agents, slot));
+            return EFFECT_FREEZE;
+        }
+        if (a == GuardianActionType.UPDATE_AGENT_STATUS) {
+            uint8 newStatus = c.newStatus;
+            if (newStatus > uint8(AgentStatus.Rotating)) revert NaveErrors.InvalidAgentStatus();
+            uint8 oldStatus = agents[slot].status;
+            if (newStatus == uint8(AgentStatus.Active) && oldStatus != newStatus) {
+                address current = agents[slot].authority;
+                emit AgentChangeQueued(
+                    slot,
+                    current,
+                    TreasuryAdminLib.queueGuardianAgentChange(
+                        agents, pendingRotations, guardianWallets, founder, slot, current
+                    )
+                );
+            } else {
+                agents[slot].status = newStatus;
+                emit AgentStatusChanged(slot, oldStatus, newStatus);
+            }
+        } else if (a == GuardianActionType.ROTATE_AGENT_KEY) {
+            emit AgentChangeQueued(
+                slot,
+                c.newKey,
+                TreasuryAdminLib.queueGuardianAgentChange(
+                    agents, pendingRotations, guardianWallets, founder, slot, c.newKey
+                )
+            );
+        } else if (a == GuardianActionType.RESTORE_AGENT) {
+            emit AgentRestored(slot, TreasuryAdminLib.restoreAgent(agents, slot));
+        } else if (a == GuardianActionType.CANCEL_AGENT_ROTATION) {
+            TreasuryAdminLib.cancelAgentRotation(pendingRotations, slot);
+            emit AgentRotationCancelled(slot, msg.sender);
+        } else {
+            revert NaveErrors.InvalidAgentStatus();
+        }
     }
 
     function _clearRecoveryOnUnfreeze(RecoveryState storage recovery) private {
@@ -143,88 +257,6 @@ library TreasuryGuardianLib {
             clearRecovery(recovery);
             emit GuardianRecoveryCancelled(msg.sender);
         }
-    }
-
-    function nullifyAgent(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        TreasuryAdminLib.AgentSlot[4] storage agents,
-        uint256 frozenAt,
-        uint8 role,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external returns (uint256 newFrozenAt) {
-        if (role >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentRole();
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.NULLIFY_AGENT),
-            role,
-            0,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        address authority = TreasuryAdminLib.nullifyAgent(agents, role);
-        newFrozenAt = _freezeAt(frozenAt);
-        emit AgentNullified(role, authority);
-    }
-
-    function emergencyFreeze(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        uint256 frozenAt,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external returns (uint256 newFrozenAt) {
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.FREEZE),
-            0,
-            0,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        newFrozenAt = _freezeAt(frozenAt);
-        emit DaoEmergencyFrozen(msg.sender);
-    }
-
-    function emergencyUnfreeze(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        RecoveryState storage recovery,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external {
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.UNFREEZE),
-            0,
-            0,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        _clearRecoveryOnUnfreeze(recovery);
-        emit DaoEmergencyUnfrozen(msg.sender);
     }
 
     function queueGuardianRecovery(
@@ -255,32 +287,6 @@ library TreasuryGuardianLib {
         emit GuardianRecoveryCancelled(msg.sender);
     }
 
-    function guardianVetoRecovery(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        RecoveryState storage recovery,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external {
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.CANCEL_RECOVERY),
-            0,
-            0,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        clearRecovery(recovery);
-        emit GuardianRecoveryCancelled(msg.sender);
-    }
-
     function forceUnfreeze(
         INaveProtocol protocol,
         bool frozen,
@@ -289,97 +295,11 @@ library TreasuryGuardianLib {
     ) external {
         if (msg.sender != protocol.owner()) revert NaveErrors.Unauthorized();
         if (!frozen) revert NaveErrors.DaoNotFrozen();
-        if (block.timestamp < frozenAt + NaveConstants.PROTOCOL_FORCE_UNFREEZE_TIMELOCK_SECS) {
+        if (block.timestamp < frozenAt + NaveConstants.protocolForceUnfreezeTimelockSecs()) {
             revert NaveErrors.RecoveryTimelockActive();
         }
         _clearRecoveryOnUnfreeze(recovery);
         emit DaoForceUnfrozen(msg.sender);
-    }
-
-    function guardianDisableAgents(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external {
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.DISABLE_AGENTS),
-            0,
-            0,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        emit AgentsToggled(false);
-    }
-
-    function updateAgentStatus(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        TreasuryAdminLib.AgentSlot[4] storage agents,
-        uint8 slot,
-        uint8 newStatus,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external {
-        if (slot >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentSlot();
-        if (newStatus > uint8(AgentStatus.Rotating)) revert NaveErrors.InvalidAgentStatus();
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.UPDATE_AGENT_STATUS),
-            slot,
-            newStatus,
-            address(0),
-            nonce,
-            deadline,
-            signatures
-        );
-        uint8 oldStatus = agents[slot].status;
-        agents[slot].status = newStatus;
-        emit AgentStatusChanged(slot, oldStatus, newStatus);
-    }
-
-    function rotateAgentKey(
-        mapping(bytes32 => bool) storage usedDigest,
-        address[] storage guardianWallets,
-        uint8 guardianThreshold,
-        TreasuryAdminLib.AgentSlot[4] storage agents,
-        TreasuryAdminLib.PendingRotation[4] storage pendingRotations,
-        uint8 slot,
-        address newKey,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external {
-        if (slot >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentSlot();
-        if (newKey == address(0)) revert NaveErrors.ZeroAddress();
-        verifyGuardianAction(
-            usedDigest,
-            guardianWallets,
-            guardianThreshold,
-            address(this),
-            uint8(GuardianActionType.ROTATE_AGENT_KEY),
-            slot,
-            0,
-            newKey,
-            nonce,
-            deadline,
-            signatures
-        );
-        address oldKey = TreasuryAdminLib.rotateAgentKey(agents, pendingRotations, slot, newKey);
-        emit AgentKeyRotated(slot, oldKey, newKey);
     }
 
     function recoveryPending(RecoveryState storage r)
@@ -416,7 +336,7 @@ library TreasuryGuardianLib {
             r.pendingWallets.push(wallets[i]);
         }
         r.pendingThreshold = threshold;
-        executableAt = block.timestamp + NaveConstants.GUARDIAN_RECOVERY_TIMELOCK_SECS;
+        executableAt = block.timestamp + NaveConstants.guardianRecoveryTimelockSecs();
         r.executableAt = executableAt;
     }
 

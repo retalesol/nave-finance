@@ -40,5 +40,8 @@ library NaveStructs {
         uint256 lastValuedUsd;
         uint256 lastValuedAt;
         uint256 lastManagementFeeAt;
+        /// Sum of this asset's position marks (base units); NAV counts it
+        /// instead of principal so yield and losses show up.
+        uint256 markedValueBase;
     }
 }

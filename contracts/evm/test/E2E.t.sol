@@ -100,8 +100,9 @@ contract E2ETest is NaveBase {
 
         // 6. Simulate yield, mark the position up, withdraw with the 8.5% skim.
         adapter.accrue(address(e), address(usdc), GAIN);
+        vm.warp(block.timestamp + 10 days); // 10% fits the 1%/day mark drift cap
         vm.prank(founder);
-        t.updateStrategyPositionValue(address(adapter), DEPLOY + GAIN);
+        e.syncPositionValue(address(adapter));
         uint256 revBefore = usdc.balanceOf(revenueWallet);
         vm.prank(exec);
         // Non-zero minOut on the exit too (1:1 mock returns the full amount).

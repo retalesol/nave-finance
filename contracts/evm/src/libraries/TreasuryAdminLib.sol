@@ -77,7 +77,7 @@ library TreasuryAdminLib {
     }
 
     /// Revert unless `caller` is `founder` or an active, non-nullified Operational agent.
-    /// Used by revalueTreasury and updateStrategyPositionValue.
+    /// Used by revalueTreasury.
     function requireFounderOrOperational(
         AgentSlot[4] storage agents,
         address founder,
@@ -90,14 +90,52 @@ library TreasuryAdminLib {
         if (!operational) revert NaveErrors.Unauthorized();
     }
 
-    function initAgents(AgentSlot[4] storage agents, address[4] calldata authorities) external {
+    function initAgents(
+        AgentSlot[4] storage agents,
+        address[4] calldata authorities,
+        address founder,
+        address[] calldata guardianWallets
+    ) external {
         for (uint256 i; i < NaveConstants.AGENT_COUNT; i++) {
+            _requireAgentKeyOutsideRoles(authorities[i], founder, guardianWallets);
+            for (uint256 j = i + 1; j < NaveConstants.AGENT_COUNT; j++) {
+                if (authorities[i] == authorities[j]) revert NaveErrors.AgentKeyConflict();
+            }
             agents[i] = AgentSlot({
                 authority: authorities[i],
                 active: true,
                 nullified: false,
                 status: uint8(AgentStatus.Active)
             });
+        }
+    }
+
+    /// One key per role: an agent key may not be zero, the founder, a guardian,
+    /// or the current authority of any other slot.
+    function requireAgentKeyAllowed(
+        AgentSlot[4] storage agents,
+        address[] storage guardianWallets,
+        address founder,
+        uint256 slot,
+        address key
+    ) public view {
+        if (key == address(0) || key == founder) revert NaveErrors.AgentKeyConflict();
+        for (uint256 g; g < guardianWallets.length; g++) {
+            if (guardianWallets[g] == key) revert NaveErrors.AgentKeyConflict();
+        }
+        for (uint256 j; j < NaveConstants.AGENT_COUNT; j++) {
+            if (j != slot && agents[j].authority == key) revert NaveErrors.AgentKeyConflict();
+        }
+    }
+
+    function _requireAgentKeyOutsideRoles(
+        address key,
+        address founder,
+        address[] calldata guardianWallets
+    ) private pure {
+        if (key == address(0) || key == founder) revert NaveErrors.AgentKeyConflict();
+        for (uint256 g; g < guardianWallets.length; g++) {
+            if (guardianWallets[g] == key) revert NaveErrors.AgentKeyConflict();
         }
     }
 
@@ -110,9 +148,22 @@ library TreasuryAdminLib {
     function scheduleAgentRotations(
         AgentSlot[4] storage agents,
         PendingRotation[4] storage pendingRotations,
-        address[4] calldata authorities
+        address[4] calldata authorities,
+        address founder,
+        address[] storage guardianWallets
     ) external returns (uint256 effectiveAt) {
-        effectiveAt = block.timestamp + uint256(int256(NaveConstants.AGENT_ROTATION_DELAY_SECONDS));
+        effectiveAt = block.timestamp + NaveConstants.agentRotationDelaySecs();
+        for (uint256 i; i < NaveConstants.AGENT_COUNT; i++) {
+            if (authorities[i] == address(0) || authorities[i] == founder) {
+                revert NaveErrors.AgentKeyConflict();
+            }
+            for (uint256 g; g < guardianWallets.length; g++) {
+                if (guardianWallets[g] == authorities[i]) revert NaveErrors.AgentKeyConflict();
+            }
+            for (uint256 j = i + 1; j < NaveConstants.AGENT_COUNT; j++) {
+                if (authorities[i] == authorities[j]) revert NaveErrors.AgentKeyConflict();
+            }
+        }
         for (uint256 i; i < NaveConstants.AGENT_COUNT; i++) {
             if (agents[i].nullified) continue;
             if (agents[i].authority == authorities[i]) {
@@ -123,9 +174,15 @@ library TreasuryAdminLib {
         }
     }
 
+    /// Apply a matured rotation (founder 48h or guardian 24h). Permissionless:
+    /// authorization happened when it was queued. A pending authority equal to
+    /// the current one is a queued re-activation. Re-checks key uniqueness
+    /// because the guardian set or other slots may have changed meanwhile.
     function applyAgentRotation(
         AgentSlot[4] storage agents,
         PendingRotation[4] storage pendingRotations,
+        address[] storage guardianWallets,
+        address founder,
         uint8 role
     ) external returns (address newAuthority) {
         if (role >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentRole();
@@ -133,10 +190,22 @@ library TreasuryAdminLib {
         if (pending.pendingAuthority == address(0)) revert NaveErrors.NoPendingAgentRotation();
         if (block.timestamp < pending.effectiveAt) revert NaveErrors.AgentRotationNotReady();
         if (agents[role].nullified) revert NaveErrors.AgentNullified();
+        requireAgentKeyAllowed(agents, guardianWallets, founder, role, pending.pendingAuthority);
         agents[role].authority = pending.pendingAuthority;
         agents[role].active = true;
+        agents[role].status = uint8(AgentStatus.Active);
         pendingRotations[role] = PendingRotation(address(0), 0);
         newAuthority = pending.pendingAuthority;
+    }
+
+    function cancelAgentRotation(PendingRotation[4] storage pendingRotations, uint8 role)
+        public
+    {
+        if (role >= NaveConstants.AGENT_COUNT) revert NaveErrors.InvalidAgentRole();
+        if (pendingRotations[role].pendingAuthority == address(0)) {
+            revert NaveErrors.NoPendingAgentRotation();
+        }
+        pendingRotations[role] = PendingRotation(address(0), 0);
     }
 
     function nullifyAgent(AgentSlot[4] storage agents, uint8 role)
@@ -163,18 +232,21 @@ library TreasuryAdminLib {
         authority = s.authority;
     }
 
-    function rotateAgentKey(
+    /// Guardian-initiated rotation (or re-activation when `newKey` is the
+    /// current authority). Queued behind GUARDIAN_AGENT_CHANGE_DELAY_SECS so
+    /// the founder can cancel a hostile guardian quorum's change.
+    function queueGuardianAgentChange(
         AgentSlot[4] storage agents,
         PendingRotation[4] storage pendingRotations,
+        address[] storage guardianWallets,
+        address founder,
         uint8 slot,
         address newKey
-    ) external returns (address oldKey) {
+    ) public returns (uint256 effectiveAt) {
         if (agents[slot].nullified) revert NaveErrors.AgentNullified();
-        oldKey = agents[slot].authority;
-        agents[slot].authority = newKey;
-        agents[slot].active = true;
-        agents[slot].status = uint8(AgentStatus.Active);
-        pendingRotations[slot] = PendingRotation(address(0), 0);
+        requireAgentKeyAllowed(agents, guardianWallets, founder, slot, newKey);
+        effectiveAt = block.timestamp + NaveConstants.guardianAgentChangeDelaySecs();
+        pendingRotations[slot] = PendingRotation(newKey, effectiveAt);
     }
 
     // ── Constitution ──────────────────────────────────────────────────────
@@ -222,7 +294,29 @@ library TreasuryAdminLib {
             });
             approvedAdapters.push(adapters[i]);
         }
+        _enforceRiskTierTotals(protocol, adapters, maxAllocationBps, approved);
         return uint8(n);
+    }
+
+    /// Approved caps summed per venue tier must fit the tier ceilings, so the
+    /// combined exposure to riskier venues stays bounded however agents allocate.
+    function _enforceRiskTierTotals(
+        INaveProtocol protocol,
+        address[] calldata adapters,
+        uint16[] calldata maxAllocationBps,
+        bool[] calldata approved
+    ) private view {
+        uint256 tier2;
+        uint256 tier3;
+        for (uint256 i; i < adapters.length; i++) {
+            if (!approved[i]) continue;
+            uint8 tier = protocol.riskTierOf(adapters[i]);
+            if (tier == 2) tier2 += maxAllocationBps[i];
+            else if (tier == 3) tier3 += maxAllocationBps[i];
+        }
+        if (tier2 > NaveConstants.MAX_TIER2_TOTAL_BPS || tier3 > NaveConstants.MAX_TIER3_TOTAL_BPS) {
+            revert NaveErrors.RiskTierCapExceeded();
+        }
     }
 
     // ── Guardians ─────────────────────────────────────────────────────────
@@ -237,10 +331,16 @@ library TreasuryAdminLib {
     }
 
     function updateGuardianConfig(
+        AgentSlot[4] storage agents,
         address[] storage guardianWallets,
         address[] calldata wallets,
         uint8 threshold
     ) external {
+        for (uint256 i; i < wallets.length; i++) {
+            for (uint256 j; j < NaveConstants.AGENT_COUNT; j++) {
+                if (agents[j].authority == wallets[i]) revert NaveErrors.AgentKeyConflict();
+            }
+        }
         if (wallets.length == 0 || wallets.length > NaveConstants.MAX_GUARDIAN_WALLETS) {
             revert NaveErrors.TooManyGuardianWallets();
         }
@@ -293,7 +393,8 @@ library TreasuryAdminLib {
             deployedCapitalBase: 0,
             lastValuedUsd: 0,
             lastValuedAt: 0,
-            lastManagementFeeAt: FeeMath.floorToUtcMidnight(block.timestamp)
+            lastManagementFeeAt: FeeMath.floorToUtcMidnight(block.timestamp),
+            markedValueBase: 0
         });
         registeredAssets.push(asset);
     }
@@ -479,9 +580,9 @@ library TreasuryAdminLib {
         }
     }
 
-    function validateReviewWindow(int64 secs) public pure {
+    function validateReviewWindow(int64 secs) public view {
         if (
-            secs < NaveConstants.MIN_REVIEW_WINDOW_SECONDS
+            secs < NaveConstants.minReviewWindowSecs()
                 || secs > NaveConstants.MAX_REVIEW_WINDOW_SECONDS
         ) {
             revert NaveErrors.InvalidReviewWindow();

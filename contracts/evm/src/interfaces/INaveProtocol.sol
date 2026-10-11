@@ -58,6 +58,7 @@ interface INaveProtocol {
     /// Protocol-level adapter allowlist; every adapter in a DAO constitution
     /// must be approved here.
     function isApprovedAdapter(address adapter) external view returns (bool);
+    function riskTierOf(address adapter) external view returns (uint8);
 
     /// Owner-registered sister treasury on another chain (bridge destination).
     function isRemoteTreasury(uint256 chainId, address treasury) external view returns (bool);

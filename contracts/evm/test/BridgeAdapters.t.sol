@@ -47,12 +47,32 @@ contract BridgeAdaptersTest is Test {
         dest[0] = NaveAddressRegistry.BASE;
         domains[0] = NaveAddressRegistry.CCTP_DOMAIN_BASE;
         CctpBridgeAdapter a = new CctpBridgeAdapter(
-            address(protocol), MESSENGER, USDC, NaveAddressRegistry.ETHEREUM, dest, domains
+            address(protocol), MESSENGER, USDC, NaveAddressRegistry.ETHEREUM, dest, domains, false
         );
         assertEq(a.protocolId(), "cctp");
         assertTrue(a.supportsRoute(USDC, NaveAddressRegistry.BASE));
         assertFalse(a.supportsRoute(USDC, NaveAddressRegistry.ROBINHOOD));
         assertFalse(a.supportsRoute(WETH, NaveAddressRegistry.BASE));
+    }
+
+    function test_cctp_domainZeroIsARealRoute() public {
+        uint256[] memory dest = new uint256[](1);
+        uint32[] memory domains = new uint32[](1);
+        dest[0] = NaveAddressRegistry.SEPOLIA;
+        domains[0] = NaveAddressRegistry.CCTP_DOMAIN_ETHEREUM;
+        CctpBridgeAdapter a = new CctpBridgeAdapter(
+            address(protocol),
+            MESSENGER,
+            USDC,
+            NaveAddressRegistry.ARC_TESTNET,
+            dest,
+            domains,
+            true
+        );
+        assertTrue(a.messengerV2());
+        assertTrue(a.hasDomain(NaveAddressRegistry.SEPOLIA));
+        assertEq(a.domainForChain(NaveAddressRegistry.SEPOLIA), 0);
+        assertTrue(a.supportsRoute(USDC, NaveAddressRegistry.SEPOLIA));
     }
 
     function test_opBridge_protocolIdAndRoute() public {

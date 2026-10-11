@@ -11,6 +11,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {INaveProtocol} from "./interfaces/INaveProtocol.sol";
 import {DaoImplRole} from "./libraries/NaveEnums.sol";
 import {NaveErrors} from "./libraries/NaveErrors.sol";
+import {NaveConstants} from "./libraries/NaveConstants.sol";
 
 /// @title NaveProtocol
 /// @notice Singleton protocol configuration + DAO registry (UUPS upgradeable).
@@ -62,6 +63,10 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     /// Populated by the protocol owner from the sibling chain's factory
     /// deployments; `NaveTreasury.setLinkedTreasury` targets must be listed.
     mapping(uint256 => mapping(address => bool)) internal _remoteTreasury;
+    /// Queued adapter approvals (0 when none). See {setAdapterApproved}.
+    mapping(address => uint256) public adapterApprovalEffectiveAt;
+    /// Venue risk tier per adapter (0 = unset, read as Tier 1). See {riskTierOf}.
+    mapping(address => uint8) public adapterRiskTier;
 
     event Paused(bool paused);
     event FormationFeeUpdated(uint256 fee);
@@ -78,7 +83,9 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     event ImplementationApproved(uint8 indexed role, address indexed implementation, bool approved);
     event LatestImplementationSet(uint8 indexed role, address indexed implementation);
     event AdapterApprovalSet(address indexed adapter, bool approved);
+    event AdapterApprovalQueued(address indexed adapter, uint256 effectiveAt);
     event RemoteTreasurySet(uint256 indexed chainId, address indexed treasury, bool registered);
+    event AdapterRiskTierSet(address indexed adapter, uint8 tier);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -226,14 +233,52 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     }
 
     // ── Adapter allowlist ─────────────────────────────────────────────────
-    /// Owner-managed protocol allowlist of strategy / bridge adapters. Revoking
-    /// an adapter does NOT retroactively edit existing DAO constitutions (the
-    /// founder must re-submit one without it), but a founder can never ADD an
-    /// adapter that is not approved here.
+    /// Owner-managed protocol allowlist of strategy / bridge adapters.
+    /// Revocation is immediate and `NaveExecution` re-checks it at execute
+    /// time, so existing constitutions cannot keep routing into a revoked
+    /// adapter. Approval is immediate only while no DAO exists (initial
+    /// deployment); afterwards it is queued for ADAPTER_APPROVAL_DELAY_SECS and
+    /// applied with {applyAdapterApproval}, so DAOs can see a new venue coming.
     function setAdapterApproved(address adapter, bool approved) external onlyOwner {
         if (adapter == address(0)) revert NaveErrors.ZeroAddress();
+        if (approved && daoCount != 0) {
+            uint256 effectiveAt = block.timestamp + NaveConstants.adapterApprovalDelaySecs();
+            adapterApprovalEffectiveAt[adapter] = effectiveAt;
+            emit AdapterApprovalQueued(adapter, effectiveAt);
+            return;
+        }
+        adapterApprovalEffectiveAt[adapter] = 0;
         isApprovedAdapter[adapter] = approved;
         emit AdapterApprovalSet(adapter, approved);
+    }
+
+    function applyAdapterApproval(address adapter) external {
+        uint256 effectiveAt = adapterApprovalEffectiveAt[adapter];
+        if (effectiveAt == 0 || block.timestamp < effectiveAt) {
+            revert NaveErrors.AdapterApprovalNotReady();
+        }
+        adapterApprovalEffectiveAt[adapter] = 0;
+        isApprovedAdapter[adapter] = true;
+        emit AdapterApprovalSet(adapter, true);
+    }
+
+    /// Classify a venue: 1 lending/savings, 2 curated or higher-utilization
+    /// vaults, 3 credit / synthetic-dollar / fixed-term. Constitutions cap the
+    /// combined allocation per tier. Raising a tier is immediate; lowering it on
+    /// an approved adapter requires revoking and re-approving (delayed).
+    function setAdapterRiskTier(address adapter, uint8 tier) external onlyOwner {
+        if (adapter == address(0)) revert NaveErrors.ZeroAddress();
+        if (tier == 0 || tier > NaveConstants.MAX_RISK_TIER) revert NaveErrors.InvalidRiskTier();
+        if (isApprovedAdapter[adapter] && tier < riskTierOf(adapter)) {
+            revert NaveErrors.RiskTierLowerRequiresReapproval();
+        }
+        adapterRiskTier[adapter] = tier;
+        emit AdapterRiskTierSet(adapter, tier);
+    }
+
+    function riskTierOf(address adapter) public view returns (uint8) {
+        uint8 tier = adapterRiskTier[adapter];
+        return tier == 0 ? 1 : tier;
     }
 
     // ── Sister (remote-chain) treasury registry ───────────────────────────
@@ -279,6 +324,7 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     /// Receive native fees forwarded by the factory / treasuries.
     receive() external payable {}
 
-    /// Was 40; two slots consumed by `isApprovedAdapter` + `_remoteTreasury`.
-    uint256[38] private __gap;
+    /// Was 40; slots consumed by `isApprovedAdapter`, `_remoteTreasury`,
+    /// `adapterApprovalEffectiveAt`, `adapterRiskTier`.
+    uint256[36] private __gap;
 }

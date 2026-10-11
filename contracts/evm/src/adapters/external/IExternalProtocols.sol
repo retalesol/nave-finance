@@ -114,3 +114,132 @@ interface IBalancerVault {
 interface IRateProviderPool {
     function getRate() external view returns (uint256);
 }
+
+/// Ethena staked USDe (ERC-4626 with a cooldown-gated exit). While
+/// `cooldownDuration > 0`, `withdraw`/`redeem` revert and exits go through
+/// `cooldownAssets` -> wait -> `unstake`.
+interface IStakedUSDe {
+    function cooldownDuration() external view returns (uint24);
+    function cooldowns(address owner)
+        external
+        view
+        returns (uint104 cooldownEnd, uint152 underlyingAmount);
+    function cooldownAssets(uint256 assets) external returns (uint256 shares);
+    function unstake(address receiver) external;
+}
+
+/// Maple pool (syrupUSDC): ERC-4626 deposits, queued redemptions processed by
+/// the pool's withdrawal manager straight to the owner.
+interface IMaplePool {
+    function manager() external view returns (address);
+    function convertToExitAssets(uint256 shares) external view returns (uint256);
+    function convertToExitShares(uint256 assets) external view returns (uint256);
+    function requestRedeem(uint256 shares, address owner) external returns (uint256 escrowedShares);
+}
+
+interface IMaplePoolManager {
+    function withdrawalManager() external view returns (address);
+}
+
+interface IMapleWithdrawalManager {
+    function requestIds(address owner) external view returns (uint128);
+}
+
+/// Pendle standardized yield token.
+interface IPendleSY {
+    function deposit(address receiver, address tokenIn, uint256 amountTokenToDeposit, uint256 minSharesOut)
+        external
+        payable
+        returns (uint256 amountSharesOut);
+    function redeem(
+        address receiver,
+        uint256 amountSharesToRedeem,
+        address tokenOut,
+        uint256 minTokenOut,
+        bool burnFromInternalBalance
+    ) external returns (uint256 amountTokenOut);
+    function previewDeposit(address tokenIn, uint256 amountTokenToDeposit) external view returns (uint256);
+    function previewRedeem(address tokenOut, uint256 amountSharesToRedeem) external view returns (uint256);
+    function isValidTokenIn(address token) external view returns (bool);
+    function isValidTokenOut(address token) external view returns (bool);
+}
+
+interface IPendleMarket {
+    function readTokens() external view returns (address sy, address pt, address yt);
+    function expiry() external view returns (uint256);
+}
+
+interface IPendlePYLpOracle {
+    function getPtToSyRate(address market, uint32 duration) external view returns (uint256);
+    function getOracleState(address market, uint32 duration)
+        external
+        view
+        returns (bool increaseCardinalityRequired, uint16 cardinalityRequired, bool oldestObservationSatisfied);
+}
+
+library PendleTypes {
+    struct ApproxParams {
+        uint256 guessMin;
+        uint256 guessMax;
+        uint256 guessOffchain;
+        uint256 maxIteration;
+        uint256 eps;
+    }
+
+    enum OrderType {
+        SY_FOR_PT,
+        PT_FOR_SY,
+        SY_FOR_YT,
+        YT_FOR_SY
+    }
+
+    struct Order {
+        uint256 salt;
+        uint256 expiry;
+        uint256 nonce;
+        OrderType orderType;
+        address token;
+        address YT;
+        address maker;
+        address receiver;
+        uint256 makingAmount;
+        uint256 lnImpliedRate;
+        uint256 failSafeRate;
+        bytes permit;
+    }
+
+    struct FillOrderParams {
+        Order order;
+        bytes signature;
+        uint256 makingAmount;
+    }
+
+    struct LimitOrderData {
+        address limitRouter;
+        uint256 epsSkipMarket;
+        FillOrderParams[] normalFills;
+        FillOrderParams[] flashFills;
+        bytes optData;
+    }
+}
+
+interface IPendleRouter {
+    function swapExactSyForPt(
+        address receiver,
+        address market,
+        uint256 exactSyIn,
+        uint256 minPtOut,
+        PendleTypes.ApproxParams calldata guessPtOut,
+        PendleTypes.LimitOrderData calldata limit
+    ) external returns (uint256 netPtOut, uint256 netSyFee);
+    function swapExactPtForSy(
+        address receiver,
+        address market,
+        uint256 exactPtIn,
+        uint256 minSyOut,
+        PendleTypes.LimitOrderData calldata limit
+    ) external returns (uint256 netSyOut, uint256 netSyFee);
+    function redeemPyToSy(address receiver, address YT, uint256 netPyIn, uint256 minSyOut)
+        external
+        returns (uint256 netSyOut);
+}

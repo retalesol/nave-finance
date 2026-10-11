@@ -81,7 +81,8 @@ library TreasuryValuationLib {
             address asset = registeredAssets[i];
             NaveStructs.AssetRecord storage a = assets[asset];
             uint256 idle = IERC20(asset).balanceOf(treasury);
-            uint256 holdings = idle + a.deployedCapitalBase;
+            // Deployed funds count at their marked value (yield and losses).
+            uint256 holdings = idle + a.markedValueBase;
             uint256 usd = valueAsset(oracle, a, asset, holdings);
             uint256 deployedAssetUsd = valueAsset(oracle, a, asset, a.deployedCapitalBase);
             a.lastValuedUsd = usd;

@@ -315,12 +315,12 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         frozenPerformanceFeeBps = p.frozenPerformanceFeeBps;
         protocolRevenueWallet = p.protocolRevenueWallet;
 
-        TreasuryAdminLib.initAgents(_agents, p.agentAuthorities);
+        TreasuryAdminLib.initAgents(_agents, p.agentAuthorities, p.founder, p.guardianWallets);
         guardianThreshold = p.guardianThreshold;
         TreasuryAdminLib.initGuardians(_guardianWallets, p.guardianWallets);
 
         confidenceThreshold = NaveConstants.DEFAULT_CONFIDENCE_THRESHOLD;
-        _reviewWindowSecs = NaveConstants.DEFAULT_REVIEW_WINDOW_SECONDS;
+        _reviewWindowSecs = NaveConstants.defaultReviewWindowSecs();
         minStablecoinReserveBps = NaveConstants.DEFAULT_MIN_STABLECOIN_RESERVE_BPS;
         maxTotalDeployedBps = NaveConstants.DEFAULT_MAX_TOTAL_DEPLOYED_BPS;
         minLiquidityBps = NaveConstants.DEFAULT_MIN_LIQUIDITY_BPS;
@@ -470,7 +470,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     /// into force only after the CURRENT window has elapsed (no extra tx: see
     /// {reviewWindowSecs}), so the founder cannot shorten the window and
     /// immediately push a request through the shorter one. Floor is
-    /// `NaveConstants.MIN_REVIEW_WINDOW_SECONDS` (1 hour).
+    /// `NaveConstants.minReviewWindowSecs()` (1 hour on mainnet, 1 minute elsewhere).
     function setReviewWindow(int64 secs) external notPaused notFrozen onlyFounder {
         (_reviewWindowSecs, _pendingReviewWindowSecs, _pendingReviewWindowEffectiveAt) =
             TreasuryAdminLib.setReviewWindow(reviewWindowSecs(), secs);
@@ -514,7 +514,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         onlyFounder
     {
         if (guardiansBootstrapped) revert NaveErrors.GuardiansAlreadyBootstrapped();
-        TreasuryAdminLib.updateGuardianConfig(_guardianWallets, wallets, threshold);
+        TreasuryAdminLib.updateGuardianConfig(_agents, _guardianWallets, wallets, threshold);
         guardianThreshold = threshold;
         guardiansBootstrapped = true;
         emit GuardiansBootstrapped(threshold, uint8(wallets.length));
@@ -529,7 +529,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         notFrozen
         onlyGovernor
     {
-        TreasuryAdminLib.updateGuardianConfig(_guardianWallets, wallets, threshold);
+        TreasuryAdminLib.updateGuardianConfig(_agents, _guardianWallets, wallets, threshold);
         guardianThreshold = threshold;
         if (!guardiansBootstrapped) {
             guardiansBootstrapped = true;
@@ -563,98 +563,51 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         notFrozen
         onlyFounder
     {
-        uint256 effectiveAt =
-            TreasuryAdminLib.scheduleAgentRotations(_agents, _pendingRotations, authorities);
+        uint256 effectiveAt = TreasuryAdminLib.scheduleAgentRotations(
+            _agents, _pendingRotations, authorities, founder, _guardianWallets
+        );
         emit AgentRotationScheduled(effectiveAt);
     }
 
-    function applyAgentRotation(uint8 role) external notPaused onlyFounder {
-        address newAuthority = TreasuryAdminLib.applyAgentRotation(_agents, _pendingRotations, role);
+    /// Permissionless once the queued delay has passed (founder 48h, guardian 24h).
+    function applyAgentRotation(uint8 role) external notPaused {
+        address newAuthority = TreasuryAdminLib.applyAgentRotation(
+            _agents, _pendingRotations, _guardianWallets, founder, role
+        );
         emit AgentRotationApplied(role, newAuthority);
     }
 
+    /// Founder veto of a pending rotation (including guardian-queued ones).
+    function cancelAgentRotation(uint8 role) external notPaused onlyFounder {
+        TreasuryAdminLib.cancelAgentRotation(_pendingRotations, role);
+    }
+
+    function pendingAgentRotation(uint8 role)
+        external
+        view
+        returns (address pendingAuthority, uint256 effectiveAt)
+    {
+        TreasuryAdminLib.PendingRotation storage p = _pendingRotations[role];
+        return (p.pendingAuthority, p.effectiveAt);
+    }
+
     // ── Agent enable / nullify / restore ──────────────────────────────────
-    /// Enabling the pipeline is an Executive op. Disabling goes through the
-    /// guardian M-of-N {guardianDisableAgents} (NE-6).
+    /// The Executive may make the FIRST enable. Once guardians disable the
+    /// pipeline (DISABLE_AGENTS via {guardianAction}), only a guardian
+    /// ENABLE_AGENTS quorum can turn it back on.
     function toggleAgents(bool enabled) external notPaused {
         if (!enabled) revert NaveErrors.AgentsDisableRequiresGuardians();
-        _requireAgentAuthority(msg.sender, AgentRole.Executive);
+        if (agentsGuardianLocked) revert NaveErrors.AgentsLockedByGuardians();
+        TreasuryAdminLib.requireAgentAuthority(_agents, msg.sender, uint8(AgentRole.Executive));
         agentsEnabled = true;
         emit AgentsToggled(true);
     }
 
-    /// Nullify an agent slot and freeze the DAO. Parity with Solana
-    /// `nullify_agent` (SOL-H2): guardian M-of-N only — Executive cannot
-    /// unilaterally nullify → freeze and then break-glass-execute a
-    /// pre-approval request. `agentSlot` is the role index (0–3).
-    function nullifyAgent(
-        uint8 role,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external notPaused {
-        frozenAt = TreasuryGuardianLib.nullifyAgent(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            _agents,
-            frozenAt,
-            role,
-            nonce,
-            deadline,
-            signatures
-        );
-        frozen = true;
-    }
-
-    /// Executive may restore a previously nullified slot. Does NOT unfreeze —
-    /// guardians must explicitly {emergencyUnfreeze}.
-    function restoreAgent(uint8 role) external notPaused {
-        _requireAgentAuthority(msg.sender, AgentRole.Executive);
-        address authority = TreasuryAdminLib.restoreAgent(_agents, role);
-        emit AgentRestored(role, authority);
-    }
-
-    // NOTE: the single-actor `emergencyPauseAgents()` (founder OR any one
-    // guardian) was removed. Disabling agents unlocks the Executive break-glass
-    // `NaveExecution.executeDirect` path, so a single key could manufacture the
-    // condition that bypasses the live agent pipeline. Agent-disable now
-    // requires the guardian M-of-N {guardianDisableAgents} (NE-6).
+    // Disabling agents unlocks the Executive break-glass
+    // `NaveExecution.executeDirect` path, so agent-disable requires the
+    // guardian M-of-N (DISABLE_AGENTS via {guardianAction}) (NE-6).
 
     // ── Guardian M-of-N (EIP-712 + bitmask aggregation) ───────────────────
-    function emergencyFreeze(uint64 nonce, uint64 deadline, bytes[] calldata signatures)
-        external
-        notPaused
-    {
-        frozenAt = TreasuryGuardianLib.emergencyFreeze(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            frozenAt,
-            nonce,
-            deadline,
-            signatures
-        );
-        frozen = true;
-    }
-
-    function emergencyUnfreeze(uint64 nonce, uint64 deadline, bytes[] calldata signatures)
-        external
-        notPaused
-    {
-        TreasuryGuardianLib.emergencyUnfreeze(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            _guardianRecovery,
-            nonce,
-            deadline,
-            signatures
-        );
-        frozen = false;
-        frozenAt = 0;
-    }
-
     function queueGuardianRecovery(address[] calldata wallets, uint8 threshold)
         external
         notPaused
@@ -673,21 +626,6 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         TreasuryGuardianLib.cancelGuardianRecovery(_guardianRecovery);
     }
 
-    function guardianVetoRecovery(uint64 nonce, uint64 deadline, bytes[] calldata signatures)
-        external
-        notPaused
-    {
-        TreasuryGuardianLib.guardianVetoRecovery(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            _guardianRecovery,
-            nonce,
-            deadline,
-            signatures
-        );
-    }
-
     function guardianRecoveryPending()
         external
         view
@@ -702,60 +640,38 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         frozenAt = 0;
     }
 
-    function guardianDisableAgents(uint64 nonce, uint64 deadline, bytes[] calldata signatures)
-        external
-        notPaused
-    {
-        TreasuryGuardianLib.guardianDisableAgents(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            nonce,
-            deadline,
-            signatures
-        );
-        agentsEnabled = false;
-    }
-
-    function updateAgentStatus(
-        uint8 slot,
-        uint8 newStatus,
-        uint64 nonce,
-        uint64 deadline,
+    /// Guardian M-of-N entry point for every guardian action (freeze,
+    /// unfreeze, nullify, disable/enable agents, recovery veto, agent status,
+    /// key rotation, restore, rotation veto). See
+    /// `TreasuryGuardianLib.guardianAction` for per-action semantics.
+    function guardianAction(
+        TreasuryGuardianLib.GuardianActionParams calldata params,
         bytes[] calldata signatures
     ) external notPaused {
-        TreasuryGuardianLib.updateAgentStatus(
-            _usedGuardianDigest,
-            _guardianWallets,
-            guardianThreshold,
-            _agents,
-            slot,
-            newStatus,
-            nonce,
-            deadline,
-            signatures
-        );
-    }
-
-    function rotateAgentKey(
-        uint8 slot,
-        address newKey,
-        uint64 nonce,
-        uint64 deadline,
-        bytes[] calldata signatures
-    ) external notPaused {
-        TreasuryGuardianLib.rotateAgentKey(
+        uint8 effect = TreasuryGuardianLib.guardianAction(
             _usedGuardianDigest,
             _guardianWallets,
             guardianThreshold,
             _agents,
             _pendingRotations,
-            slot,
-            newKey,
-            nonce,
-            deadline,
+            _guardianRecovery,
+            founder,
+            params,
             signatures
         );
+        if (effect == TreasuryGuardianLib.EFFECT_FREEZE) {
+            frozen = true;
+            if (frozenAt == 0) frozenAt = block.timestamp;
+        } else if (effect == TreasuryGuardianLib.EFFECT_UNFREEZE) {
+            frozen = false;
+            frozenAt = 0;
+        } else if (effect == TreasuryGuardianLib.EFFECT_DISABLE_AGENTS) {
+            agentsEnabled = false;
+            agentsGuardianLocked = true;
+        } else if (effect == TreasuryGuardianLib.EFFECT_ENABLE_AGENTS) {
+            agentsEnabled = true;
+            agentsGuardianLocked = false;
+        }
     }
 
     // ── Tokens ────────────────────────────────────────────────────────────
@@ -875,7 +791,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     /// (shared guard with {deposit}) so a hook-bearing token can never reenter
     /// a revalue mid-deposit and double-count NAV.
     function revalueTreasury() external nonReentrant notPaused {
-        _requireFounderOrOperational();
+        TreasuryAdminLib.requireFounderOrOperational(_agents, founder, msg.sender);
         (uint256 nav, uint256 deployedUsd) =
             TreasuryValuationLib.revalueAll(address(this), oracle, _assets, _registeredAssets);
         currentNav = nav;
@@ -885,12 +801,16 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         emit TreasuryRevalued(nav, deployedUsd);
     }
 
-    /// Mark a strategy position's value (reflecting accrued yield). Founder or
-    /// Operational agent. Mirrors `update_strategy_position_value`.
-    function updateStrategyPositionValue(address adapter, uint256 newValue) external notPaused {
-        _requireFounderOrOperational();
-        TreasuryStrategyLib.updatePositionValue(_positions[adapter], newValue);
-        emit StrategyPositionValueUpdated(adapter, newValue);
+    /// Book a position mark that `NaveExecution` read from the adapter itself
+    /// (no caller-supplied values). Upward drift is capped in the library.
+    function syncPositionValue(address adapter, uint256 observed)
+        external
+        onlyExecution
+        returns (uint256 applied)
+    {
+        TreasuryStrategyLib.Position storage pos = _positions[adapter];
+        applied = TreasuryStrategyLib.syncPositionValue(pos, _assets[pos.asset], observed);
+        emit StrategyPositionValueUpdated(adapter, applied);
     }
 
     // ── Holder annotations ────────────────────────────────────────────────
@@ -1013,25 +933,6 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         emit HolderAnnotationReviewed(holder, status);
     }
 
-    function _requireAgentAuthority(address signer, AgentRole role) internal view {
-        TreasuryAdminLib.AgentSlot storage s = _agents[uint8(role)];
-        if (!_operational(s)) revert NaveErrors.AgentNullified();
-        if (signer != s.authority) revert NaveErrors.Unauthorized();
-    }
-
-    function _requireFounderOrOperational() internal view {
-        if (msg.sender != founder && !_isOperationalAgent(AgentRole.Operational, msg.sender)) {
-            revert NaveErrors.Unauthorized();
-        }
-    }
-
-    function _isOperationalAgent(AgentRole role, address signer) internal view returns (bool) {
-        TreasuryAdminLib.AgentSlot storage s = _agents[uint8(role)];
-        return _operational(s) && signer == s.authority;
-    }
-
-    /// Single definition of "operational" shared by {agent},
-    /// {_requireAgentAuthority} and {_isOperationalAgent} (bytecode).
     function _operational(TreasuryAdminLib.AgentSlot storage s) internal view returns (bool) {
         return s.active && !s.nullified && s.status == uint8(AgentStatus.Active)
             && s.authority != address(0);
@@ -1055,7 +956,10 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         return TreasuryViewLib.needsUpgrade(address(protocolContract), governor, execution);
     }
 
+    /// Set by a guardian DISABLE_AGENTS action; cleared only by ENABLE_AGENTS.
+    bool public agentsGuardianLocked;
+
     /// Was 40; two slots consumed by `pendingReviewWindowSecs` +
-    /// `pendingReviewWindowEffectiveAt` (appended after `_guardianRecovery`).
-    uint256[38] private __gap;
+    /// `pendingReviewWindowEffectiveAt`, one by `agentsGuardianLocked`.
+    uint256[37] private __gap;
 }

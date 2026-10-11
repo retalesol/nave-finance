@@ -432,11 +432,12 @@ contract SecurityTest is NaveBase {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        t.emergencyFreeze(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
         assertTrue(t.frozen(), "frozen");
     }
 
     function test_EVMH1_queueRecovery_requiresFrozenAndFounder() public {
+        vm.chainId(1);
         (NaveTreasury t,,) = _createDao(0);
         address[] memory newSet = new address[](1);
         newSet[0] = makeAddr("newGuardian");
@@ -501,7 +502,7 @@ contract SecurityTest is NaveBase {
         bytes[] memory sigs = new bytes[](2);
         sigs[0] = _sign(n1Key, digest);
         sigs[1] = _sign(n2Key, digest);
-        t.emergencyUnfreeze(7, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.UNFREEZE, 0, 0, address(0), 7, d), sigs);
         assertFalse(t.frozen(), "new guardians unfroze the DAO");
         assertEq(t.frozenAt(), 0, "freeze anchor cleared");
     }
@@ -520,7 +521,7 @@ contract SecurityTest is NaveBase {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(t, GuardianActionType.CANCEL_RECOVERY, 0, 0, address(0), 2, d);
-        t.guardianVetoRecovery(2, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.CANCEL_RECOVERY, 0, 0, address(0), 2, d), sigs);
 
         (uint256 executableAt,,) = t.guardianRecoveryPending();
         assertEq(executableAt, 0, "queue cleared by veto");
@@ -545,7 +546,7 @@ contract SecurityTest is NaveBase {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(t, GuardianActionType.UNFREEZE, 0, 0, address(0), 3, d);
-        t.emergencyUnfreeze(3, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.UNFREEZE, 0, 0, address(0), 3, d), sigs);
 
         (uint256 executableAt,,) = t.guardianRecoveryPending();
         assertEq(executableAt, 0, "unfreeze cleared the queued recovery");

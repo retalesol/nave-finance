@@ -33,6 +33,7 @@ sepolia = "${ETH_SEPOLIA_RPC_URL}"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 robinhood = "${EVM_ROBINHOOD_RPC_URL}"
 robinhood_testnet = "${EVM_ROBINHOOD_TESTNET_RPC_URL}"
+arc_testnet = "${EVM_ARC_TESTNET_RPC_URL}"
 
 # Robinhood Chain verification runs against Blockscout (no Etherscan instance).
 # Blockscout's etherscan-compatible API ignores the key, so a non-secret

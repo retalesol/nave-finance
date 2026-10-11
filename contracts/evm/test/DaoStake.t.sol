@@ -285,12 +285,12 @@ contract DaoStakeTest is NaveBase {
         bytes[] memory sigs = _guardianSigs(
             treasury, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 1, d
         );
-        treasury.guardianDisableAgents(1, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 1, d), sigs);
         assertFalse(treasury.agentsEnabled());
 
         vm.prank(exec);
         vm.expectRevert(NaveErrors.DaoMoonlighting.selector);
-        execution.executeDirect(0, 0);
+        execution.executeDirect(0, 1);
     }
 
     /// Only the protocol-registered DaoStake module may consume moonlight

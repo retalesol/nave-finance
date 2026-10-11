@@ -34,6 +34,7 @@ library TreasuryStrategyLib {
         pos.currentValue += amount;
         pos.lastUpdated = block.timestamp;
         a.deployedCapitalBase += amount;
+        a.markedValueBase += amount;
     }
 
     /// @return perfFeeSkimmed Performance fee taken in asset base units.
@@ -62,33 +63,31 @@ library TreasuryStrategyLib {
         a.deployedCapitalBase -= principalUnwound < a.deployedCapitalBase
             ? principalUnwound
             : a.deployedCapitalBase;
+        a.markedValueBase -= amount < a.markedValueBase ? amount : a.markedValueBase;
         newDeployedCapital = deployedCapital > amountUsd ? deployedCapital - amountUsd : 0;
     }
 
-    /// SEC-M5 (parity with the audited Solana M8 fix): manual marks feed the
-    /// allocation cap, the realized-yield withdrawal cap, and the perf-fee
-    /// gain/principal split, so an unbounded single call could hide deployed
-    /// capital or inflate fictitious gains. Bound each mark to a
-    /// MAX_POSITION_MARK_STEP_BPS (50%) step from the pre-update value (or
-    /// depositedAmount if never marked) and enforce a 5-minute cooldown so the
-    /// step bound also bounds total drift per unit time.
-    function updatePositionValue(Position storage pos, uint256 newValue) external {
+    /// Apply a mark read from the adapter by `NaveExecution.syncPositionValue`.
+    /// Marks feed the allocation cap, the realized-yield withdrawal cap and the
+    /// performance-fee split, so upward moves are capped at
+    /// MAX_POSITION_DRIFT_BPS_PER_DAY of max(currentValue, principal) per day
+    /// since the last update (a manipulated adapter read cannot mint fictitious
+    /// gains). Losses are applied in full.
+    /// @return applied The value actually booked.
+    function syncPositionValue(
+        Position storage pos,
+        NaveStructs.AssetRecord storage a,
+        uint256 observed
+    ) external returns (uint256 applied) {
         if (!pos.initialized) revert NaveErrors.ProtocolNotApproved();
-        if (
-            pos.lastMarkedAt > 0
-                && block.timestamp - pos.lastMarkedAt < NaveConstants.POSITION_MARK_COOLDOWN_SECS
-        ) {
-            revert NaveErrors.PositionMarkOutOfBounds();
-        }
-        uint256 base = pos.currentValue > 0 ? pos.currentValue : pos.depositedAmount;
-        if (base > 0) {
-            uint256 step = (base * NaveConstants.MAX_POSITION_MARK_STEP_BPS)
-                / NaveConstants.BPS_DENOMINATOR;
-            if (newValue > base + step || newValue + step < base) {
-                revert NaveErrors.PositionMarkOutOfBounds();
-            }
-        }
-        pos.currentValue = newValue;
+        uint256 base = pos.currentValue > pos.depositedAmount ? pos.currentValue : pos.depositedAmount;
+        uint256 maxUp = base
+            + (base * NaveConstants.MAX_POSITION_DRIFT_BPS_PER_DAY * (block.timestamp - pos.lastUpdated))
+                / (NaveConstants.BPS_DENOMINATOR * uint256(int256(NaveConstants.SECONDS_PER_DAY)));
+        applied = observed > maxUp ? maxUp : observed;
+        uint256 previous = pos.currentValue;
+        a.markedValueBase = a.markedValueBase - (previous < a.markedValueBase ? previous : a.markedValueBase) + applied;
+        pos.currentValue = applied;
         pos.lastUpdated = block.timestamp;
         pos.lastMarkedAt = block.timestamp;
     }

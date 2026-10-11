@@ -13,6 +13,7 @@ import {INaveProtocol} from "./interfaces/INaveProtocol.sol";
 import {INaveDaoStake} from "./interfaces/INaveDaoStake.sol";
 import {IStrategyAdapter} from "./interfaces/IStrategyAdapter.sol";
 import {IBridgeAdapter} from "./interfaces/IBridgeAdapter.sol";
+import {IQueuedExitAdapter} from "./interfaces/IQueuedExitAdapter.sol";
 import {NaveConstants} from "./libraries/NaveConstants.sol";
 import {NaveErrors} from "./libraries/NaveErrors.sol";
 import {BpsGates} from "./libraries/BpsGates.sol";
@@ -75,7 +76,8 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
     event FinancialApproved(uint64 indexed index, address approver, bytes32 txPayloadHash);
     event OversightApproved(uint64 indexed index, address approver, uint256 reviewEnd);
     event OperationalHalt(uint64 indexed index, bytes32 reasonHash);
-    event OperationalClear(uint64 indexed index);
+    event OperationalClear(uint64 indexed index, bytes32 reasonHash);
+    event PositionSynced(address indexed adapter, uint256 observed, uint256 applied);
     event ExecutionExpired(uint64 indexed index);
     event StrategyExecuted(uint64 indexed index, uint256 amount);
     event DirectStrategyExecuted(uint64 indexed index, uint256 amount);
@@ -84,6 +86,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         uint64 indexed index, address adapter, address destTreasury, uint256 destChainId, bytes32 correlationId
     );
     event StrategyWithdrawn(uint64 indexed index, uint256 amount);
+    event StrategyExitRequested(uint64 indexed index, uint256 amount, uint256 readyAt);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -174,19 +177,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         address recipient,
         uint256 amount
     ) external notPaused {
-        _createTransferRequest(proposalIndex, asset, recipient, amount, false);
-    }
-
-    /// One-time, founder-gated bootstrap Transfer variant (zero review window).
-    function createTransferRequestBootstrap(
-        uint64 proposalIndex,
-        address asset,
-        address recipient,
-        uint256 amount
-    ) external notPaused {
-        _requireBootstrapFounder();
-        _createTransferRequest(proposalIndex, asset, recipient, amount, true);
-        emit BootstrapExecutionRequest(proposalIndex, uint8(ExecutionKind.Transfer), msg.sender);
+        _createTransferRequest(proposalIndex, asset, recipient, amount);
     }
 
     /// Create a Bridge execution request bound to a passed Strategy proposal
@@ -240,8 +231,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         uint64 proposalIndex,
         address asset,
         address recipient,
-        uint256 amount,
-        bool bootstrap
+        uint256 amount
     ) internal {
         if (treasuryContract.frozen()) revert NaveErrors.DaoFrozen();
         if (amount == 0) revert NaveErrors.MathOverflow();
@@ -260,7 +250,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
             recipient,
             amount,
             payloadHash,
-            bootstrap
+            false
         );
         emit ExecutionRequestCreated(
             proposalIndex, uint8(ExecutionKind.Transfer), address(0), asset, amount
@@ -353,7 +343,9 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         _validateAgentSigner(AgentRole.Oversight);
         if (reasoningHash == bytes32(0)) revert NaveErrors.ReasoningHashRequired();
         ExecutionRequest storage r = _requests[index];
-        if (txPayloadHash != r.txPayloadHash) revert NaveErrors.PayloadHashMismatch();
+        if (txPayloadHash == bytes32(0) || txPayloadHash != r.txPayloadHash) {
+            revert NaveErrors.PayloadHashMismatch();
+        }
         _transition(index, ExecutionStatus.FinancialApproved, ExecutionStatus.OversightApproved);
 
         // Bootstrap requests force a 0 window (reviewEnd == now → immediately
@@ -361,7 +353,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         // back to the default if it was somehow left unset.
         int64 window = r.bootstrap
             ? int64(0)
-            : (r.reviewWindow > 0 ? r.reviewWindow : NaveConstants.DEFAULT_REVIEW_WINDOW_SECONDS);
+            : (r.reviewWindow > 0 ? r.reviewWindow : NaveConstants.defaultReviewWindowSecs());
         r.status = uint8(ExecutionStatus.InReview);
         r.reviewEnd = block.timestamp + uint256(int256(window));
         r.updatedAt = block.timestamp;
@@ -385,13 +377,14 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         emit OperationalHalt(index, reasonHash);
     }
 
-    function operationalClear(uint64 index) external {
+    function operationalClear(uint64 index, bytes32 reasonHash) external {
         _validateAgentSigner(AgentRole.Operational);
+        if (reasonHash == bytes32(0)) revert NaveErrors.ReasoningHashRequired();
         ExecutionRequest storage r = _requests[index];
         if (r.status != uint8(ExecutionStatus.Halted)) revert NaveErrors.InvalidStateTransition();
         r.status = uint8(ExecutionStatus.InReview);
         r.updatedAt = block.timestamp;
-        emit OperationalClear(index);
+        emit OperationalClear(index, reasonHash);
     }
 
     function expireRequest(uint64 index) external {
@@ -407,24 +400,19 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
     }
 
     // ── Execution ─────────────────────────────────────────────────────────
-    /// Post-review execution, gated to the DAO's own registered agents.
-    /// Respects an emergency freeze (frozen DAOs may only move via
+    /// Post-review execution. Executive only, and only while agents are enabled
+    /// and the DAO is not frozen (frozen DAOs may only move via
     /// {executeDirect}). `minOut` is the caller-supplied slippage floor for the
-    /// underlying adapter join (C-3/C-4); it is ignored for Transfer requests.
-    /// On mainnet, slippage-bearing adapters (Balancer/Curve) reject
-    /// `minOut == 0`.
+    /// underlying adapter join; strategy deposits additionally must book at
+    /// least `amount * (1 - DEPOSIT_SLIPPAGE_BPS)` of adapter position value.
+    /// It is ignored for Transfer requests.
     ///
-    /// EVM-C2: previously fully permissionless — combined with a shared
-    /// (one-per-chain) adapter valuing its position from manipulable pool
-    /// state, an arbitrary third party could time a flash loan against their
-    /// own call to dictate `minOut` and the pool's state at execution,
-    /// distorting share pricing at other DAOs' expense. Restricting the
-    /// caller to one of this DAO's own operational agents (already the only
-    /// parties who approved this request through the 4-agent pipeline) closes
-    /// that griefing vector without weakening the review-window guarantee.
+    /// EVM-C2: a permissionless caller could time a flash loan against a
+    /// shared adapter's pool state and dictate `minOut`. Restricting execution
+    /// to the Executive (the role that opened the pipeline) closes that vector
+    /// and keeps Financial / Oversight / Operational within their roles.
     function execute(uint64 index, uint256 minOut) external notPaused nonReentrant {
-        if (treasuryContract.frozen()) revert NaveErrors.DaoFrozen();
-        _requireAnyRegisteredAgent();
+        _validateAgentSigner(AgentRole.Executive);
         ExecutionRequest storage r = _requests[index];
         if (
             r.status != uint8(ExecutionStatus.InReview)
@@ -466,7 +454,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
             revert NaveErrors.DirectExecutionNotAllowed();
         }
         _requireNotMoonlighting();
-        _validateDirectExecuteAuthority();
+        _requireAgentIdentity(AgentRole.Executive);
         ExecutionRequest storage r = _requests[index];
         if (r.kind != uint8(ExecutionKind.Strategy)) {
             revert NaveErrors.DirectExecutionKindNotAllowed();
@@ -499,6 +487,7 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         }
         if (r.kind != uint8(ExecutionKind.Strategy)) revert NaveErrors.InvalidStateTransition();
         if (amount == 0) revert NaveErrors.MathOverflow();
+        if (minOut == 0) revert NaveErrors.SlippageBoundRequired();
 
         (, uint256 posPrincipal, uint256 posValue) = treasuryContract.position(r.adapter);
         uint256 cap = FeeMath.realizedYieldWithdrawCap(r.amount, posPrincipal, posValue);
@@ -532,6 +521,46 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         emit StrategyWithdrawn(index, underlyingOut);
     }
 
+    /// Start a queued exit (Maple redemption queue, Ethena cooldown) for
+    /// `amount` base units of an executed Strategy request. Same Executive gate
+    /// and realized-yield cap as {withdrawFromStrategy}, which pays the claim
+    /// out once the adapter reports it ready. Moves no funds into the treasury,
+    /// so `deployedCapital` still counts the queued amount as illiquid.
+    function requestStrategyExit(uint64 index, uint256 amount)
+        external
+        notPaused
+        nonReentrant
+        returns (uint256 readyAt)
+    {
+        _validateAgentSigner(AgentRole.Executive);
+        ExecutionRequest storage r = _requests[index];
+        if (r.status != uint8(ExecutionStatus.Executed)) {
+            revert NaveErrors.InvalidStateTransition();
+        }
+        if (r.kind != uint8(ExecutionKind.Strategy)) revert NaveErrors.InvalidStateTransition();
+        if (amount == 0) revert NaveErrors.MathOverflow();
+        (, uint256 posPrincipal, uint256 posValue) = treasuryContract.position(r.adapter);
+        uint256 cap = FeeMath.realizedYieldWithdrawCap(r.amount, posPrincipal, posValue);
+        if (r.withdrawnAmount + amount > cap) revert NaveErrors.WithdrawExceedsDeployed();
+        readyAt = IQueuedExitAdapter(r.adapter).requestExit(r.asset, amount);
+        r.updatedAt = block.timestamp;
+        emit StrategyExitRequested(index, amount, readyAt);
+    }
+
+    /// Mark a strategy position from the adapter's own accounting. Adapters
+    /// scope `positionValue` to `msg.sender`, so this contract is the only
+    /// caller that reads this DAO's position. Founder or Operational agent;
+    /// the treasury caps upward drift per day. Accounting only (moves no
+    /// funds), so it stays available while the DAO is frozen or agents are off.
+    function syncPositionValue(address adapter) external notPaused returns (uint256 applied) {
+        if (msg.sender != treasuryContract.founder()) _requireAgentIdentity(AgentRole.Operational);
+        (address asset,,) = _positionValue(adapter);
+        if (asset == address(0)) revert NaveErrors.ProtocolNotApproved();
+        uint256 observed = IStrategyAdapter(adapter).positionValue(asset);
+        applied = treasuryContract.syncPositionValue(adapter, observed);
+        emit PositionSynced(adapter, observed, applied);
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────
     function _runExecution(uint64 index, uint256 minOut) internal {
         ExecutionRequest storage r = _requests[index];
@@ -557,9 +586,19 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         }
 
         // Strategy path: enforce USD caps against a fresh NAV, then deploy.
+        if (minOut == 0) revert NaveErrors.SlippageBoundRequired();
         _prepareStrategyDeposit(r.adapter, r.asset, r.amount);
+        uint256 valueBefore = IStrategyAdapter(r.adapter).positionValue(r.asset);
         treasuryContract.transferForStrategy(r.asset, r.adapter, r.amount);
         IStrategyAdapter(r.adapter).deposit(r.asset, r.amount, minOut);
+        uint256 valueAfter = IStrategyAdapter(r.adapter).positionValue(r.asset);
+        if (
+            valueAfter < valueBefore
+                || (valueAfter - valueBefore) * NaveConstants.BPS_DENOMINATOR
+                    < r.amount * (NaveConstants.BPS_DENOMINATOR - NaveConstants.DEPOSIT_SLIPPAGE_BPS)
+        ) {
+            revert NaveErrors.DepositSlippageExceeded();
+        }
         uint256 amountUsd = treasuryContract.valueAssetUsd(r.asset, r.amount);
         treasuryContract.recordStrategyDeposit(r.adapter, r.asset, r.amount, amountUsd);
         _markExecuted(index, r);
@@ -593,9 +632,12 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         uint256 alreadyDeployedUsd = treasuryContract.valueAssetUsd(asset, posValueBase);
 
         if (!treasuryContract.isAdapterApproved(adapter)) revert NaveErrors.ProtocolNotApproved();
-        BpsGates.enforceAllocationCap(
-            nav, treasuryContract.adapterMaxAllocationBps(adapter), alreadyDeployedUsd, amountUsd
-        );
+        // Protocol-level revocation takes effect at execution time, even for
+        // constitutions written before the revoke.
+        if (!protocolContract.isApprovedAdapter(adapter)) {
+            revert NaveErrors.AdapterNotProtocolApproved();
+        }
+        BpsGates.enforceAllocationCap(nav, _tierBoundedCap(adapter), alreadyDeployedUsd, amountUsd);
         (uint16 reserveBps, uint16 maxDeployedBps, uint16 minLiqBps) = treasuryContract.policyBps();
         BpsGates.enforceGlobalLimits(
             nav, treasuryContract.deployedCapital(), amountUsd, maxDeployedBps, minLiqBps
@@ -606,6 +648,18 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         if (idle < amount) revert NaveErrors.InsufficientVaultBalance();
         uint256 idleAfterUsd = treasuryContract.valueAssetUsd(asset, idle - amount);
         BpsGates.enforceStablecoinReserve(nav, reserveBps, isStablecoin, idleAfterUsd);
+    }
+
+    /// The constitution cap, never above the venue tier's ceiling: a venue the
+    /// protocol reclassified upward after the constitution was written cannot
+    /// keep its older, looser cap.
+    function _tierBoundedCap(address adapter) internal view returns (uint16 cap) {
+        cap = treasuryContract.adapterMaxAllocationBps(adapter);
+        uint8 tier = protocolContract.riskTierOf(adapter);
+        uint256 ceiling = tier == 3
+            ? NaveConstants.MAX_TIER3_TOTAL_BPS
+            : tier == 2 ? NaveConstants.MAX_TIER2_TOTAL_BPS : 10_000;
+        if (cap > ceiling) cap = uint16(ceiling);
     }
 
     function _positionValue(address adapter)
@@ -670,25 +724,11 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
         if (msg.sender != authority) revert NaveErrors.Unauthorized();
     }
 
-    /// EVM-C2: true if `msg.sender` is one of this DAO's four registered,
-    /// operational agent authorities (any role) — used to gate {execute} so an
-    /// arbitrary third party cannot dictate its `minOut`.
-    function _requireAnyRegisteredAgent() internal view {
-        (address executive, bool executiveOk) = treasuryContract.agent(AgentRole.Executive);
-        if (executiveOk && msg.sender == executive) return;
-        (address financial, bool financialOk) = treasuryContract.agent(AgentRole.Financial);
-        if (financialOk && msg.sender == financial) return;
-        (address oversight, bool oversightOk) = treasuryContract.agent(AgentRole.Oversight);
-        if (oversightOk && msg.sender == oversight) return;
-        (address operational, bool operationalOk) = treasuryContract.agent(AgentRole.Operational);
-        if (operationalOk && msg.sender == operational) return;
-        revert NaveErrors.Unauthorized();
-    }
-
-    /// Executive signer for break-glass: allowed even when frozen / agents off.
-    function _validateDirectExecuteAuthority() internal view {
+    /// `msg.sender` is the operational authority for `role`, ignoring the
+    /// frozen / agents-disabled gates (break-glass and accounting paths).
+    function _requireAgentIdentity(AgentRole role) internal view {
         if (protocolContract.paused()) revert NaveErrors.GlobalPaused();
-        (address authority, bool operational) = treasuryContract.agent(AgentRole.Executive);
+        (address authority, bool operational) = treasuryContract.agent(role);
         if (!operational) revert NaveErrors.Unauthorized();
         if (msg.sender != authority) revert NaveErrors.Unauthorized();
     }

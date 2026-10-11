@@ -93,7 +93,7 @@ contract ExecutionTest is NaveBase {
         vm.warp(block.timestamp + 1 days + 1);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
 
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));
         assertEq(usdc.balanceOf(address(t)), FUND - DEPLOY);
@@ -145,7 +145,7 @@ contract ExecutionTest is NaveBase {
         // it is immediately executable.
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed), "executed now");
         assertEq(usdc.balanceOf(address(adapter)), DEPLOY, "deployed immediately");
     }
@@ -188,43 +188,20 @@ contract ExecutionTest is NaveBase {
         _revalueTreasury(t);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.ReviewWindowActive.selector);
-        e.execute(idx2, 0);
+        e.execute(idx2, 1);
     }
 
-    function test_bootstrap_transferExecutesImmediately() public {
-        address to = makeAddr("bootstrapGrantee");
-        uint256 amount = 25e6;
-        bytes memory payload = abi.encode(address(usdc), to, amount);
-        vm.prank(g1);
-        uint64 idx = g.createProposal(
-            NaveGovernor.CreateProposalParams({
-                title: "bootstrap-grant",
-                description: "",
-                payload: payload,
-                proposalType: uint8(ProposalType.Transfer),
-                votingPeriodSeconds: 1 days,
-                votingMint: address(0)
-            })
+    function test_bootstrap_transferPathRemoved() public {
+        (bool ok,) = address(e).call(
+            abi.encodeWithSignature(
+                "createTransferRequestBootstrap(uint64,address,address,uint256)",
+                uint64(0),
+                address(usdc),
+                address(1),
+                uint256(1)
+            )
         );
-        vm.prank(g1);
-        g.castVoteWallet(idx, uint8(VoteChoice.For));
-        vm.prank(g2);
-        g.castVoteWallet(idx, uint8(VoteChoice.For));
-        g.finalizeProposal(idx);
-
-        vm.prank(founder);
-        e.createTransferRequestBootstrap(idx, address(usdc), to, amount);
-        bytes32 ph = PayloadHash.transferHash(address(usdc), to, amount);
-        vm.prank(exec);
-        e.executiveApprove(idx, RH);
-        vm.prank(fin);
-        e.financialApprove(idx, ph, RH);
-        vm.prank(over);
-        e.oversightApprove(idx, ph, RH);
-        // No warp — immediate.
-        vm.prank(exec);
-        e.execute(idx, 0);
-        assertEq(usdc.balanceOf(to), amount, "transfer disbursed immediately");
+        assertFalse(ok, "transfers never get a zero review window");
     }
 
     // ── Review window ─────────────────────────────────────────────────────
@@ -235,15 +212,14 @@ contract ExecutionTest is NaveBase {
         _revalueTreasury(t);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.ReviewWindowActive.selector);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
     }
 
-    // ── EVM-C2: execute() is gated to the DAO's own registered agents ──────
-    /// A fully-approved, review-window-cleared request can still only be
-    /// triggered by one of this DAO's four operational agents — not an
-    /// arbitrary third party who would otherwise dictate `minOut` (and, in the
-    /// live Balancer/Curve adapters, time their own flash loan against it).
-    function test_execute_nonAgentThirdPartyReverts() public {
+    // ── EVM-C2: execute() is Executive-only ──────────────────────────────
+    /// A fully-approved, review-window-cleared request can only be triggered
+    /// by the Executive — not a third party who would dictate `minOut`, and not
+    /// the Financial / Oversight / Operational agents (role boundary).
+    function test_execute_onlyExecutive() public {
         uint64 idx = _passStrategyProposal(DEPLOY);
         e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
         _approveToInReview(idx);
@@ -253,11 +229,17 @@ contract ExecutionTest is NaveBase {
         address rando = makeAddr("randoThirdParty");
         vm.prank(rando);
         vm.expectRevert(NaveErrors.Unauthorized.selector);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
 
-        // Any of the four registered agents (not just Executive) may trigger it.
-        vm.prank(oper);
-        e.execute(idx, 0);
+        address[3] memory others = [fin, over, oper];
+        for (uint256 i; i < others.length; i++) {
+            vm.prank(others[i]);
+            vm.expectRevert(NaveErrors.Unauthorized.selector);
+            e.execute(idx, 1);
+        }
+
+        vm.prank(exec);
+        e.execute(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));
     }
 
@@ -270,7 +252,10 @@ contract ExecutionTest is NaveBase {
         e.operationalHalt(idx, RH);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Halted));
         vm.prank(oper);
-        e.operationalClear(idx);
+        vm.expectRevert(NaveErrors.ReasoningHashRequired.selector);
+        e.operationalClear(idx, bytes32(0));
+        vm.prank(oper);
+        e.operationalClear(idx, RH);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.InReview));
     }
 
@@ -295,13 +280,13 @@ contract ExecutionTest is NaveBase {
         // Freeze via guardians.
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        t.emergencyFreeze(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
 
         // Normal execute now blocked; break-glass Executive path works.
         vm.expectRevert(NaveErrors.DaoFrozen.selector);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
         vm.prank(exec);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));
     }
 
@@ -314,12 +299,12 @@ contract ExecutionTest is NaveBase {
 
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 2, d);
-        t.emergencyFreeze(2, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 2, d), sigs);
 
         _revalueTreasury(t);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.InvalidStateTransition.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Pending));
     }
 
@@ -331,12 +316,12 @@ contract ExecutionTest is NaveBase {
 
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 3, d);
-        t.emergencyFreeze(3, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 3, d), sigs);
 
         _revalueTreasury(t);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.InvalidStateTransition.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.ExecutiveApproved));
     }
 
@@ -349,13 +334,13 @@ contract ExecutionTest is NaveBase {
 
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        t.emergencyFreeze(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
         _revalueTreasury(t);
 
         // Still inside the review window → refused, request untouched.
         vm.prank(exec);
         vm.expectRevert(NaveErrors.ReviewWindowActive.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.InReview));
         assertEq(usdc.balanceOf(address(adapter)), 0);
 
@@ -364,11 +349,11 @@ contract ExecutionTest is NaveBase {
         vm.warp(reviewEnd - 1);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.ReviewWindowActive.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         vm.warp(reviewEnd);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));
     }
 
@@ -389,11 +374,11 @@ contract ExecutionTest is NaveBase {
 
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        t.emergencyFreeze(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
 
         vm.prank(exec);
         vm.expectRevert(NaveErrors.DirectExecutionKindNotAllowed.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(usdc.balanceOf(to), 0, "no funds left the treasury");
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.InReview));
     }
@@ -441,11 +426,11 @@ contract ExecutionTest is NaveBase {
 
         uint64 d = _deadline();
         bytes[] memory sigs = _guardianSigs(t, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        t.emergencyFreeze(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
 
         vm.prank(exec);
         vm.expectRevert(NaveErrors.DirectExecutionKindNotAllowed.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(bridge.bridgedOut(), 0, "nothing bridged out");
         assertEq(usdc.balanceOf(address(t)), FUND);
     }
@@ -463,7 +448,7 @@ contract ExecutionTest is NaveBase {
         // Agents enabled + not frozen → direct path closed.
         vm.prank(exec);
         vm.expectRevert(NaveErrors.DirectExecutionNotAllowed.selector);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
 
         // A single guardian (or the founder) cannot disable agents.
         vm.prank(g1);
@@ -478,10 +463,10 @@ contract ExecutionTest is NaveBase {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(t, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 1, d);
-        t.guardianDisableAgents(1, d, sigs);
+        t.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 1, d), sigs);
         assertFalse(t.agentsEnabled());
         vm.prank(exec);
-        e.executeDirect(idx, 0);
+        e.executeDirect(idx, 1);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));
     }
 
@@ -490,6 +475,7 @@ contract ExecutionTest is NaveBase {
     /// through it: requests created before the delay elapses are stamped with
     /// the still-effective long window; only later requests get the short one.
     function test_reviewWindowReduction_notUsableUntilDelayElapses() public {
+        _useProductionDelays(t);
         int64 longWin = t.reviewWindowSecs(); // 24h default
         int64 shortWin = 3600;
         vm.prank(founder);
@@ -507,7 +493,7 @@ contract ExecutionTest is NaveBase {
         _revalueTreasury(t);
         vm.prank(exec);
         vm.expectRevert(NaveErrors.ReviewWindowActive.selector);
-        e.execute(idx1, 0);
+        e.execute(idx1, 1);
 
         // After the delay the short window is live for NEW requests only.
         vm.warp(effectiveAt);
@@ -529,19 +515,19 @@ contract ExecutionTest is NaveBase {
         vm.warp(block.timestamp + 1 days + 1);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
         _assertBalancesCoverDeployed();
         assertEq(_deployedBase(), DEPLOY);
 
         // Partial unwind.
         vm.prank(exec);
-        e.withdrawFromStrategy(idx, DEPLOY / 2, 0);
+        e.withdrawFromStrategy(idx, DEPLOY / 2, 1);
         _assertBalancesCoverDeployed();
         assertEq(_deployedBase(), DEPLOY / 2);
 
         // Full unwind.
         vm.prank(exec);
-        e.withdrawFromStrategy(idx, DEPLOY / 2, 0);
+        e.withdrawFromStrategy(idx, DEPLOY / 2, 1);
         _assertBalancesCoverDeployed();
         assertEq(_deployedBase(), 0);
         assertEq(usdc.balanceOf(address(t)), FUND);
@@ -587,18 +573,20 @@ contract ExecutionTest is NaveBase {
         vm.warp(block.timestamp + 1 days + 1);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
 
-        // Simulate 10 USDC of yield and mark the position up.
+        // Simulate 10 USDC of yield over 10 days and sync the mark from the
+        // adapter (10% fits the 1%/day drift cap after 10 days).
         uint256 gain = 10e6;
         adapter.accrue(address(e), address(usdc), gain);
+        vm.warp(block.timestamp + 10 days);
         vm.prank(founder);
-        t.updateStrategyPositionValue(address(adapter), DEPLOY + gain);
+        e.syncPositionValue(address(adapter));
 
         uint256 revBefore = usdc.balanceOf(revenueWallet);
         uint256 treBefore = usdc.balanceOf(address(t));
         vm.prank(exec);
-        e.withdrawFromStrategy(idx, DEPLOY + gain, 0);
+        e.withdrawFromStrategy(idx, DEPLOY + gain, 1);
 
         // 8.5% of 10 USDC gain = 0.85 USDC to the revenue wallet.
         assertEq(usdc.balanceOf(revenueWallet) - revBefore, 850_000);
@@ -606,36 +594,167 @@ contract ExecutionTest is NaveBase {
         assertEq(usdc.balanceOf(address(t)) - treBefore, DEPLOY + gain - 850_000);
     }
 
-    // ── SEC-M5(b): manual position marks are step- and cooldown-bounded ────
-    function test_SECM5_positionMark_stepAndCooldownBounded() public {
+    // ── Position marks are read from the adapter, with a daily drift cap ───
+    function _deployDefault() internal returns (uint64 idx) {
+        idx = _passStrategyProposal(DEPLOY);
+        e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
+        _approveToInReview(idx);
+        vm.warp(block.timestamp + 1 days + 1);
+        _revalueTreasury(t);
+        vm.prank(exec);
+        e.execute(idx, 1); // position now marked at DEPLOY (100e6)
+    }
+
+    function test_syncPositionValue_capsUpwardDrift() public {
+        _deployDefault();
+        // The adapter reports +50% (e.g. a manipulated read); one day later only
+        // +1% of principal can be booked.
+        adapter.accrue(address(e), address(usdc), 50e6);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(oper);
+        uint256 applied = e.syncPositionValue(address(adapter));
+        assertEq(applied, 101e6);
+        (,, uint256 cur) = t.position(address(adapter));
+        assertEq(cur, 101e6);
+    }
+
+    function test_revalue_countsMarkedPositionValue() public {
+        uint64 idx = _deployDefault();
+        _revalueTreasury(t);
+        uint256 navAtPrincipal = t.currentNav();
+
+        adapter.accrue(address(e), address(usdc), 10e6);
+        vm.warp(block.timestamp + 10 days);
+        vm.prank(oper);
+        e.syncPositionValue(address(adapter));
+        _revalueTreasury(t);
+        // USDC at par: +10 USDC of marked yield = +10e6 micro-USD of NAV.
+        assertEq(t.currentNav(), navAtPrincipal + 10e6);
+
+        // Unwinding the position moves value from marked to idle; NAV is unchanged
+        // apart from the 8.5% performance skim on the gain.
+        vm.prank(exec);
+        e.withdrawFromStrategy(idx, DEPLOY + 10e6, 1);
+        _revalueTreasury(t);
+        assertEq(t.currentNav(), navAtPrincipal + 10e6 - 850_000);
+    }
+
+    function test_syncPositionValue_roleBoundary() public {
+        _deployDefault();
+        address[3] memory denied = [exec, fin, over];
+        for (uint256 i; i < denied.length; i++) {
+            vm.prank(denied[i]);
+            vm.expectRevert(NaveErrors.Unauthorized.selector);
+            e.syncPositionValue(address(adapter));
+        }
+        vm.prank(makeAddr("rando"));
+        vm.expectRevert(NaveErrors.Unauthorized.selector);
+        e.syncPositionValue(address(adapter));
+        // The treasury setter only accepts the execution contract.
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.Unauthorized.selector);
+        t.syncPositionValue(address(adapter), 1);
+        // The old caller-supplied mark is gone.
+        vm.prank(founder);
+        (bool ok,) = address(t).call(
+            abi.encodeWithSignature(
+                "updateStrategyPositionValue(address,uint256)", address(adapter), 150e6
+            )
+        );
+        assertFalse(ok);
+    }
+
+    function test_execute_depositSlippageFloor() public {
+        LossyStrategyAdapter lossy = new LossyStrategyAdapter(address(protocol));
+        lossy.setDepositLossBps(100); // 1% > 0.5% floor
+        _approveAdapterInConstitution(t, address(lossy));
+        bytes memory payload = abi.encode(address(lossy), DEPLOY, address(usdc));
+        vm.prank(g1);
+        uint64 idx = g.createProposal(
+            NaveGovernor.CreateProposalParams({
+                title: "slip",
+                description: "",
+                payload: payload,
+                proposalType: uint8(ProposalType.Strategy),
+                votingPeriodSeconds: 1 days,
+                votingMint: address(0)
+            })
+        );
+        vm.prank(g1);
+        g.castVoteWallet(idx, uint8(VoteChoice.For));
+        vm.prank(g2);
+        g.castVoteWallet(idx, uint8(VoteChoice.For));
+        g.finalizeProposal(idx);
+        e.createStrategyRequest(idx, DEPLOY, address(lossy), address(usdc));
+        bytes32 ph = PayloadHash.strategyHash(address(lossy), DEPLOY, address(usdc));
+        vm.prank(exec);
+        e.executiveApprove(idx, RH);
+        vm.prank(fin);
+        e.financialApprove(idx, ph, RH);
+        vm.prank(over);
+        e.oversightApprove(idx, ph, RH);
+        vm.warp(block.timestamp + 1 days + 1);
+        _revalueTreasury(t);
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.DepositSlippageExceeded.selector);
+        e.execute(idx, 1);
+    }
+
+    function test_execute_protocolRevocationBlocksDeposit() public {
+        uint64 idx = _passStrategyProposal(DEPLOY);
+        e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
+        _approveToInReview(idx);
+        vm.prank(owner);
+        protocol.setAdapterApproved(address(adapter), false);
+        vm.warp(block.timestamp + 1 days + 1);
+        _revalueTreasury(t);
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.AdapterNotProtocolApproved.selector);
+        e.execute(idx, 1);
+    }
+
+    function test_execute_blockedWhenAgentsDisabled() public {
+        uint64 idx = _passStrategyProposal(DEPLOY);
+        e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
+        _approveToInReview(idx);
+        vm.warp(block.timestamp + 1 days + 1);
+        _revalueTreasury(t);
+        uint64 d = _deadline();
+        bytes[] memory sigs =
+            _guardianSigs(t, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 90, d);
+        t.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 90, d), sigs);
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.AgentsDisabled.selector);
+        e.execute(idx, 1);
+    }
+
+    function test_strategy_zeroMinOutReverts() public {
         uint64 idx = _passStrategyProposal(DEPLOY);
         e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
         _approveToInReview(idx);
         vm.warp(block.timestamp + 1 days + 1);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0); // position now marked at DEPLOY (100e6)
+        vm.expectRevert(NaveErrors.SlippageBoundRequired.selector);
+        e.execute(idx, 0);
+        vm.prank(exec);
+        e.execute(idx, DEPLOY);
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.SlippageBoundRequired.selector);
+        e.withdrawFromStrategy(idx, DEPLOY, 0);
+    }
 
-        // A mark beyond +50% of the current value reverts (100e6 -> >150e6).
-        vm.prank(founder);
-        vm.expectRevert(NaveErrors.PositionMarkOutOfBounds.selector);
-        t.updateStrategyPositionValue(address(adapter), 151e6);
-
-        // A within-step mark (+50%) succeeds.
-        vm.prank(founder);
-        t.updateStrategyPositionValue(address(adapter), 150e6);
-
-        // A second mark before the cooldown elapses reverts...
-        vm.prank(founder);
-        vm.expectRevert(NaveErrors.PositionMarkOutOfBounds.selector);
-        t.updateStrategyPositionValue(address(adapter), 160e6);
-
-        // ...but succeeds after the cooldown (and within +50% of 150e6).
-        vm.warp(block.timestamp + NaveConstants.POSITION_MARK_COOLDOWN_SECS + 1);
-        vm.prank(founder);
-        t.updateStrategyPositionValue(address(adapter), 160e6);
-        (,, uint256 cur) = t.position(address(adapter));
-        assertEq(cur, 160e6, "mark applied after cooldown");
+    function test_oversightApprove_rejectsZeroPayloadHash() public {
+        uint64 idx = _passStrategyProposal(DEPLOY);
+        e.createStrategyRequest(idx, DEPLOY, address(adapter), address(usdc));
+        bytes32 ph = PayloadHash.strategyHash(address(adapter), DEPLOY, address(usdc));
+        vm.prank(exec);
+        e.executiveApprove(idx, RH);
+        vm.prank(fin);
+        e.financialApprove(idx, ph, RH);
+        vm.prank(over);
+        vm.expectRevert(NaveErrors.PayloadHashMismatch.selector);
+        e.oversightApprove(idx, bytes32(0), RH);
     }
 
     // ── EVM-H2: lossy exits book the ACTUAL underlying returned ────────────
@@ -691,7 +810,7 @@ contract ExecutionTest is NaveBase {
         vm.warp(block.timestamp + 1 days + 1);
         _revalueTreasury(t);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
     }
 
     /// A within-tolerance lossy exit succeeds and books the underlying that
@@ -708,7 +827,7 @@ contract ExecutionTest is NaveBase {
         uint256 deployedBefore = t.deployedCapital();
 
         vm.prank(exec);
-        e.withdrawFromStrategy(idx, requested, 0);
+        e.withdrawFromStrategy(idx, requested, 1);
 
         // Treasury received exactly the lossy actual-out.
         assertEq(usdc.balanceOf(address(t)) - treBefore, expectedOut, "actual out received");
@@ -732,7 +851,7 @@ contract ExecutionTest is NaveBase {
 
         vm.prank(exec);
         vm.expectRevert(NaveErrors.WithdrawShortfallExceeded.selector);
-        e.withdrawFromStrategy(idx, 50e6, 0);
+        e.withdrawFromStrategy(idx, 50e6, 1);
     }
 
     // ── Transfer proposal (type 8) execution handler ──────────────────────
@@ -796,7 +915,7 @@ contract ExecutionTest is NaveBase {
         e.oversightApprove(idx, ph, RH);
         vm.warp(block.timestamp + 1 days + 1);
         vm.prank(exec);
-        e.execute(idx, 0);
+        e.execute(idx, 1);
 
         assertEq(usdc.balanceOf(to), amount);
         assertEq(uint8(e.requestStatus(idx)), uint8(ExecutionStatus.Executed));

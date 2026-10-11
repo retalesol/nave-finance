@@ -22,6 +22,10 @@ library NaveConstants {
     uint64 internal constant MAX_PROPOSALS_PER_DAO = 88;
 
     // ── Time ──────────────────────────────────────────────────────────────
+    /// The delays below are production values. Off the production chains
+    /// (testnets, local) every one of them is DEV_DELAY_SECS instead; read
+    /// them through the functions at the end of this library.
+    uint256 internal constant DEV_DELAY_SECS = 60;
     int64 internal constant SECONDS_PER_DAY = 86_400;
     int64 internal constant SECONDS_PER_YEAR = 365 * 86_400;
     /// 48-hour agent-rotation timelock.
@@ -59,6 +63,23 @@ library NaveConstants {
     /// between marks on the same position.
     uint256 internal constant MAX_POSITION_MARK_STEP_BPS = 5000;
     uint256 internal constant POSITION_MARK_COOLDOWN_SECS = 5 * 60;
+    /// Max upward drift (bps of max(currentValue, principal) per day) an
+    /// adapter-read position mark may apply. Downward marks are unbounded.
+    uint256 internal constant MAX_POSITION_DRIFT_BPS_PER_DAY = 100;
+    /// Floor on the adapter position-value delta a strategy deposit must book,
+    /// as bps of the deposited amount (independent of the caller's `minOut`).
+    uint256 internal constant DEPOSIT_SLIPPAGE_BPS = 50;
+    /// Delay before a guardian key rotation or agent re-activation applies.
+    /// The founder can cancel during the window.
+    uint256 internal constant GUARDIAN_AGENT_CHANGE_DELAY_SECS = 86_400;
+    /// Delay before a protocol-level adapter approval applies once any DAO
+    /// exists. Revocation is immediate.
+    uint256 internal constant ADAPTER_APPROVAL_DELAY_SECS = 86_400;
+    /// Venue risk tiers (set per adapter on NaveProtocol; unset reads as 1).
+    uint8 internal constant MAX_RISK_TIER = 3;
+    /// Sum of a constitution's approved per-adapter caps within Tier 2 / 3.
+    uint256 internal constant MAX_TIER2_TOTAL_BPS = 3_000;
+    uint256 internal constant MAX_TIER3_TOTAL_BPS = 1_500;
 
     // ── Fees ──────────────────────────────────────────────────────────────
     /// 8.5% of realized yield, skimmed on the strategy-withdrawal path.
@@ -134,4 +155,48 @@ library NaveConstants {
     uint256 internal constant MAX_PROPOSAL_TITLE_LEN = 64;
     uint256 internal constant MAX_PROPOSAL_DESCRIPTION_LEN = 512;
     uint256 internal constant MAX_PROPOSAL_PAYLOAD_LEN = 512;
+
+    // ── Chain-dependent delays ────────────────────────────────────────────
+    /// Ethereum, Base, Robinhood Chain, and Arc mainnet (unsupported, listed so
+    /// an accidental deploy there still gets full delays).
+    function isProductionChain() internal view returns (bool) {
+        uint256 id = block.chainid;
+        return id == 1 || id == 8453 || id == 4663 || id == 5042;
+    }
+
+    function _delay(uint256 production) private view returns (uint256) {
+        return isProductionChain() ? production : DEV_DELAY_SECS;
+    }
+
+    function agentRotationDelaySecs() internal view returns (uint256) {
+        return _delay(uint256(int256(AGENT_ROTATION_DELAY_SECONDS)));
+    }
+
+    function defaultReviewWindowSecs() internal view returns (int64) {
+        return int64(int256(_delay(uint256(int256(DEFAULT_REVIEW_WINDOW_SECONDS)))));
+    }
+
+    function minReviewWindowSecs() internal view returns (int64) {
+        return int64(int256(_delay(uint256(int256(MIN_REVIEW_WINDOW_SECONDS)))));
+    }
+
+    function guardianRecoveryTimelockSecs() internal view returns (uint256) {
+        return _delay(GUARDIAN_RECOVERY_TIMELOCK_SECS);
+    }
+
+    function protocolForceUnfreezeTimelockSecs() internal view returns (uint256) {
+        return _delay(PROTOCOL_FORCE_UNFREEZE_TIMELOCK_SECS);
+    }
+
+    function guardianAgentChangeDelaySecs() internal view returns (uint256) {
+        return _delay(GUARDIAN_AGENT_CHANGE_DELAY_SECS);
+    }
+
+    function adapterApprovalDelaySecs() internal view returns (uint256) {
+        return _delay(ADAPTER_APPROVAL_DELAY_SECS);
+    }
+
+    function minVotingPeriodSecs() internal view returns (uint256) {
+        return _delay(MIN_VOTING_PERIOD);
+    }
 }

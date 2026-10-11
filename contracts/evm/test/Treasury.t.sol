@@ -5,6 +5,7 @@ import {NaveBase} from "./NaveBase.t.sol";
 import {NaveTreasury} from "../src/NaveTreasury.sol";
 import {NaveGovernor} from "../src/NaveGovernor.sol";
 import {NaveExecution} from "../src/NaveExecution.sol";
+import {NaveDAOFactory} from "../src/NaveDAOFactory.sol";
 import {NaveErrors} from "../src/libraries/NaveErrors.sol";
 import {NaveConstants} from "../src/libraries/NaveConstants.sol";
 import {TreasuryAdminLib} from "../src/libraries/TreasuryAdminLib.sol";
@@ -120,7 +121,7 @@ contract TreasuryTest is NaveBase {
         bytes[] memory sigs = _guardianSigs(
             treasury, GuardianActionType.NULLIFY_AGENT, uint8(AgentRole.Operational), 0, address(0), 20, d
         );
-        treasury.nullifyAgent(uint8(AgentRole.Operational), 20, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.NULLIFY_AGENT, uint8(AgentRole.Operational), 0, address(0), 20, d), sigs);
 
         (address authority, bool operational) = treasury.agent(AgentRole.Operational);
         assertEq(authority, oper);
@@ -132,7 +133,10 @@ contract TreasuryTest is NaveBase {
         // Executive alone cannot nullify (SOL-H2 parity).
         vm.prank(exec);
         vm.expectRevert(); // ECDSA / signature verification fails on empty sigs
-        treasury.nullifyAgent(uint8(AgentRole.Operational), 21, _deadline(), new bytes[](0));
+        treasury.guardianAction(
+            _gp(GuardianActionType.NULLIFY_AGENT, uint8(AgentRole.Operational), 0, address(0), 21, _deadline()),
+            new bytes[](0)
+        );
 
         (address authority, bool operational) = treasury.agent(AgentRole.Operational);
         assertEq(authority, oper);
@@ -238,14 +242,14 @@ contract TreasuryTest is NaveBase {
         bytes[] memory one = new bytes[](1);
         one[0] = _sign(g1Key, digest);
         vm.expectRevert(NaveErrors.InvalidGuardianThreshold.selector);
-        treasury.guardianDisableAgents(77, d, one);
+        treasury.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 77, d), one);
 
         assertTrue(treasury.agentsEnabled(), "agents remain enabled");
 
         // The M-of-N path still works.
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 78, d);
-        treasury.guardianDisableAgents(78, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 78, d), sigs);
         assertFalse(treasury.agentsEnabled());
     }
 
@@ -298,6 +302,7 @@ contract TreasuryTest is NaveBase {
 
     // ── Hardening: review-window floor + timelocked reductions ────────────
     function test_setReviewWindow_belowFloorReverts() public {
+        _useProductionDelays(treasury);
         assertEq(NaveConstants.MIN_REVIEW_WINDOW_SECONDS, 3600, "floor is 1 hour");
         vm.prank(founder);
         vm.expectRevert(NaveErrors.InvalidReviewWindow.selector);
@@ -322,6 +327,7 @@ contract TreasuryTest is NaveBase {
     }
 
     function test_setReviewWindow_reductionIsDelayedByCurrentWindow() public {
+        _useProductionDelays(treasury);
         int64 current = treasury.reviewWindowSecs(); // 86_400
         int64 shorter = 3600;
         uint256 queuedAt = block.timestamp;
@@ -351,6 +357,7 @@ contract TreasuryTest is NaveBase {
     }
 
     function test_setReviewWindow_increaseClearsQueuedReduction() public {
+        _useProductionDelays(treasury);
         vm.prank(founder);
         treasury.setReviewWindow(3600); // queued
         (int64 pSecs,) = treasury.pendingReviewWindow();
@@ -447,7 +454,7 @@ contract TreasuryTest is NaveBase {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.FREEZE, 0, 0, address(0), 1, d);
-        treasury.emergencyFreeze(1, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 1, d), sigs);
         assertTrue(treasury.frozen());
     }
 
@@ -458,7 +465,7 @@ contract TreasuryTest is NaveBase {
         bytes[] memory one = new bytes[](1);
         one[0] = _sign(g1Key, digest);
         vm.expectRevert(NaveErrors.InvalidGuardianThreshold.selector);
-        treasury.emergencyFreeze(2, d, one);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 2, d), one);
     }
 
     function test_guardianFreeze_duplicateSignerReverts() public {
@@ -469,7 +476,7 @@ contract TreasuryTest is NaveBase {
         dup[0] = _sign(g1Key, digest);
         dup[1] = _sign(g1Key, digest);
         vm.expectRevert(NaveErrors.DuplicateGuardianSignature.selector);
-        treasury.emergencyFreeze(3, d, dup);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 3, d), dup);
     }
 
     function test_guardianFreeze_nonGuardianReverts() public {
@@ -481,16 +488,16 @@ contract TreasuryTest is NaveBase {
         sigs[0] = _sign(g1Key, digest);
         sigs[1] = _sign(strangerKey, digest);
         vm.expectRevert(NaveErrors.GuardianNotFound.selector);
-        treasury.emergencyFreeze(4, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 4, d), sigs);
     }
 
     function test_guardianFreeze_replayReverts() public {
         uint64 d = _deadline();
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.FREEZE, 0, 0, address(0), 5, d);
-        treasury.emergencyFreeze(5, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 5, d), sigs);
         vm.expectRevert(NaveErrors.InvalidGuardianSignature.selector);
-        treasury.emergencyFreeze(5, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 5, d), sigs);
     }
 
     function test_guardianFreeze_expiredDeadlineReverts() public {
@@ -501,7 +508,7 @@ contract TreasuryTest is NaveBase {
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.FREEZE, 0, 0, address(0), 50, past);
         vm.expectRevert(NaveErrors.GuardianActionExpired.selector);
-        treasury.emergencyFreeze(50, past, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 50, past), sigs);
     }
 
     function test_guardianFreeze_deadlineTooFarReverts() public {
@@ -511,18 +518,18 @@ contract TreasuryTest is NaveBase {
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.FREEZE, 0, 0, address(0), 51, tooFar);
         vm.expectRevert(NaveErrors.GuardianActionExpired.selector);
-        treasury.emergencyFreeze(51, tooFar, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 51, tooFar), sigs);
     }
 
     function test_guardianUnfreeze() public {
         uint64 d = _deadline();
         bytes[] memory f =
             _guardianSigs(treasury, GuardianActionType.FREEZE, 0, 0, address(0), 6, d);
-        treasury.emergencyFreeze(6, d, f);
+        treasury.guardianAction(_gp(GuardianActionType.FREEZE, 0, 0, address(0), 6, d), f);
         assertTrue(treasury.frozen());
         bytes[] memory u =
             _guardianSigs(treasury, GuardianActionType.UNFREEZE, 0, 0, address(0), 7, d);
-        treasury.emergencyUnfreeze(7, d, u);
+        treasury.guardianAction(_gp(GuardianActionType.UNFREEZE, 0, 0, address(0), 7, d), u);
         assertFalse(treasury.frozen());
     }
 
@@ -532,19 +539,179 @@ contract TreasuryTest is NaveBase {
         treasury.toggleAgents(true);
         bytes[] memory sigs =
             _guardianSigs(treasury, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 8, d);
-        treasury.guardianDisableAgents(8, d, sigs);
+        treasury.guardianAction(_gp(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 8, d), sigs);
         assertFalse(treasury.agentsEnabled());
     }
 
-    function test_guardianRotateAgentKey() public {
+    function _guardianAct(uint8 action, uint8 slot, uint8 status, address key, uint64 nonce)
+        internal
+    {
         uint64 d = _deadline();
+        bytes[] memory sigs = _guardianSigs(treasury, action, slot, status, key, nonce, d);
+        treasury.guardianAction(_gp(action, slot, status, key, nonce, d), sigs);
+    }
+
+    function test_guardianRotateAgentKey_isTimelocked() public {
+        vm.chainId(1);
         address newKey = makeAddr("rotatedExec");
-        bytes[] memory sigs = _guardianSigs(
-            treasury, GuardianActionType.ROTATE_AGENT_KEY, uint8(AgentRole.Executive), 0, newKey, 9, d
-        );
-        treasury.rotateAgentKey(uint8(AgentRole.Executive), newKey, 9, d, sigs);
+        uint8 slot = uint8(AgentRole.Executive);
+        _guardianAct(GuardianActionType.ROTATE_AGENT_KEY, slot, 0, newKey, 9);
         (address auth,) = treasury.agent(AgentRole.Executive);
+        assertEq(auth, exec, "rotation is queued, not immediate");
+        (address pending, uint256 at) = treasury.pendingAgentRotation(slot);
+        assertEq(pending, newKey);
+        assertEq(at, block.timestamp + NaveConstants.GUARDIAN_AGENT_CHANGE_DELAY_SECS);
+
+        vm.expectRevert(NaveErrors.AgentRotationNotReady.selector);
+        treasury.applyAgentRotation(slot);
+        vm.warp(at);
+        treasury.applyAgentRotation(slot); // permissionless once matured
+        (auth,) = treasury.agent(AgentRole.Executive);
         assertEq(auth, newKey);
+    }
+
+    function test_testnetDelaysAreOneMinute() public {
+        vm.chainId(84532);
+        (NaveTreasury t,,) = _createDao(0);
+        assertEq(t.reviewWindowSecs(), 60, "dev default review window");
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.InvalidReviewWindow.selector);
+        t.setReviewWindow(59);
+
+        uint8 slot = uint8(AgentRole.Executive);
+        _guardianAct(GuardianActionType.ROTATE_AGENT_KEY, slot, 0, makeAddr("devRotated"), 11);
+        (, uint256 at) = treasury.pendingAgentRotation(slot);
+        assertEq(at, block.timestamp + 60, "dev guardian agent-change delay");
+
+        vm.chainId(1);
+        (NaveTreasury m,,) = _createDao(0);
+        assertEq(m.reviewWindowSecs(), NaveConstants.DEFAULT_REVIEW_WINDOW_SECONDS, "mainnet keeps 24h");
+    }
+
+    function test_founderCanCancelGuardianRotation() public {
+        address newKey = makeAddr("hostileExec");
+        uint8 slot = uint8(AgentRole.Executive);
+        _guardianAct(GuardianActionType.ROTATE_AGENT_KEY, slot, 0, newKey, 10);
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.Unauthorized.selector);
+        treasury.cancelAgentRotation(slot);
+        vm.prank(founder);
+        treasury.cancelAgentRotation(slot);
+        vm.warp(block.timestamp + 2 days);
+        vm.expectRevert(NaveErrors.NoPendingAgentRotation.selector);
+        treasury.applyAgentRotation(slot);
+    }
+
+    function test_guardiansCanCancelFounderRotation() public {
+        address newExec = makeAddr("founderPickedExec");
+        vm.prank(founder);
+        treasury.updateAgentSet([newExec, fin, over, oper]);
+        _guardianAct(
+            GuardianActionType.CANCEL_AGENT_ROTATION, uint8(AgentRole.Executive), 0, address(0), 11
+        );
+        vm.warp(block.timestamp + 48 hours);
+        vm.expectRevert(NaveErrors.NoPendingAgentRotation.selector);
+        treasury.applyAgentRotation(uint8(AgentRole.Executive));
+    }
+
+    function test_agentKeys_mustBeDistinct() public {
+        uint8 slot = uint8(AgentRole.Executive);
+        uint64 d = _deadline();
+        address[3] memory bad = [fin, founder, g1];
+        for (uint256 i; i < bad.length; i++) {
+            bytes[] memory sigs = _guardianSigs(
+                treasury, GuardianActionType.ROTATE_AGENT_KEY, slot, 0, bad[i], uint64(30 + i), d
+            );
+            vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+            treasury.guardianAction(
+                _gp(GuardianActionType.ROTATE_AGENT_KEY, slot, 0, bad[i], uint64(30 + i), d), sigs
+            );
+        }
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+        treasury.updateAgentSet([fin, fin, over, oper]);
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+        treasury.updateAgentSet([founder, fin, over, oper]);
+    }
+
+    function test_createDao_rejectsSharedAgentKeys() public {
+        NaveDAOFactory.CreateDaoParams memory p = _daoParams(0);
+        p.agentAuthorities = [exec, exec, over, oper];
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+        factory.createDao(p);
+        p.agentAuthorities = [exec, fin, over, g2];
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+        factory.createDao(p);
+    }
+
+    function test_guardianDisable_locksExecutiveReEnable() public {
+        vm.prank(exec);
+        treasury.toggleAgents(true);
+        _guardianAct(GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 40);
+        assertTrue(treasury.agentsGuardianLocked());
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.AgentsLockedByGuardians.selector);
+        treasury.toggleAgents(true);
+
+        _guardianAct(GuardianActionType.ENABLE_AGENTS, 0, 0, address(0), 41);
+        assertTrue(treasury.agentsEnabled());
+        assertFalse(treasury.agentsGuardianLocked());
+    }
+
+    function test_restoreAgent_requiresGuardianQuorum() public {
+        uint8 slot = uint8(AgentRole.Operational);
+        _guardianAct(GuardianActionType.NULLIFY_AGENT, slot, 0, address(0), 50);
+        // The Executive restore path no longer exists.
+        vm.prank(exec);
+        (bool ok,) =
+            address(treasury).call(abi.encodeWithSignature("restoreAgent(uint8)", slot));
+        assertFalse(ok);
+
+        _guardianAct(GuardianActionType.RESTORE_AGENT, slot, 0, address(0), 51);
+        (, bool operational) = treasury.agent(AgentRole.Operational);
+        assertTrue(operational);
+        assertTrue(treasury.frozen(), "restore does not unfreeze");
+    }
+
+    function test_agentStatus_pauseImmediate_reactivateQueued() public {
+        uint8 slot = uint8(AgentRole.Financial);
+        _guardianAct(
+            GuardianActionType.UPDATE_AGENT_STATUS, slot, uint8(AgentStatus.Paused), address(0), 60
+        );
+        (, bool operational) = treasury.agent(AgentRole.Financial);
+        assertFalse(operational, "pause applies at once");
+
+        _guardianAct(
+            GuardianActionType.UPDATE_AGENT_STATUS, slot, uint8(AgentStatus.Active), address(0), 61
+        );
+        (, operational) = treasury.agent(AgentRole.Financial);
+        assertFalse(operational, "re-activation is queued");
+        vm.warp(block.timestamp + NaveConstants.GUARDIAN_AGENT_CHANGE_DELAY_SECS);
+        treasury.applyAgentRotation(slot);
+        (, operational) = treasury.agent(AgentRole.Financial);
+        assertTrue(operational);
+    }
+
+    function test_guardianSignature_isBoundToActionType() public {
+        uint64 d = _deadline();
+        bytes[] memory disableSigs =
+            _guardianSigs(treasury, GuardianActionType.DISABLE_AGENTS, 0, 0, address(0), 70, d);
+        vm.expectRevert(NaveErrors.GuardianNotFound.selector);
+        treasury.guardianAction(
+            _gp(GuardianActionType.ENABLE_AGENTS, 0, 0, address(0), 70, d), disableSigs
+        );
+    }
+
+    function test_guardianUpdate_rejectsAgentKeyAsGuardian() public {
+        address[] memory wallets = new address[](2);
+        wallets[0] = g1;
+        wallets[1] = oper;
+        vm.prank(founder);
+        vm.expectRevert(NaveErrors.AgentKeyConflict.selector);
+        treasury.updateGuardianConfig(wallets, 2);
     }
 
     function _fund(uint256 amount) internal {
