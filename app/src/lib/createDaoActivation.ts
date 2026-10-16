@@ -213,10 +213,15 @@ export async function runSolanaAutoActivation(
       solUsdPriceUpdate,
     );
 
-    // Idempotency: only skip when BOTH wSOL is seeded and constitution is ratified.
-    // Using constitutionRatified alone would wrongly skip register/deposit if an
-    // older partial run ratified without seeding.
-    if ((await wsolSeedDeposited(connection, dao)) && (await constitutionRatified(connection, dao))) {
+    // A gas-only create has no seed. deposit_to_asset rejects a zero amount
+    // (MathOverflow), so the deposit is left out instead of sent with 0.
+    const hasSeed = ctx.seedLamports > 0;
+
+    // Idempotency: only skip when the seed (if any) is deposited and the
+    // constitution is ratified. Using constitutionRatified alone would wrongly
+    // skip register/deposit if an older partial run ratified without seeding.
+    const seedDone = !hasSeed || (await wsolSeedDeposited(connection, dao));
+    if (seedDone && (await wsolAssetRegistered(connection, dao)) && (await constitutionRatified(connection, dao))) {
       ctx.onStep('seedAndRatify', 'done', 'Already completed');
     } else {
       const policy = ctx.policyParams;
@@ -247,9 +252,11 @@ export async function runSolanaAutoActivation(
       const confidenceThreshold = policy?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
 
       // Derive agentThresholdUsdMicro: use explicit value, or estimate from seed.
+      const fromSeed = Math.round((ctx.seedLamports / 1e9) * ESTIMATED_SOL_USD_PRICE * 1_000_000);
+      // A gas-only create has no seed. Zero disables the on-chain gate, so
+      // keep the $100 micro-USD floor the program was initialized with.
       const agentThresholdUsdMicro =
-        ctx.agentThresholdUsdMicro ??
-        Math.round((ctx.seedLamports / 1e9) * ESTIMATED_SOL_USD_PRICE * 1_000_000);
+        ctx.agentThresholdUsdMicro ?? (fromSeed > 0 ? fromSeed : 100_000_000);
 
       const updateConstitution = await buildUpdateConstitution(
         dao,
@@ -270,7 +277,7 @@ export async function runSolanaAutoActivation(
       // Build the instruction list. If wSOL is already registered/deposited, skip
       // those instructions so we only retry the remaining ones within this group.
       const alreadyRegistered = await wsolAssetRegistered(connection, dao);
-      const alreadyDeposited = await wsolSeedDeposited(connection, dao);
+      const alreadyDeposited = !hasSeed || (await wsolSeedDeposited(connection, dao));
 
       const group: TransactionBuildResult[] = [
         ...(alreadyRegistered ? [] : [register]),
