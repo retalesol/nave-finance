@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { supabase } from '../lib/supabaseClient';
+import { founderMetadata, type DaoAccessMessageSigner } from '../lib/edgeFunctionClient';
 import { getBalance, readContract } from '@wagmi/core';
 import { formatUnits, getAddress, type Address } from 'viem';
 import { fetchRegisteredAssets, fetchTreasuryVault, getConnection, type RegisteredAssetView } from '../lib/onChainFetcher';
@@ -12,6 +13,7 @@ import { wagmiConfig } from '../lib/evm/wagmi';
 import { evmAllowedAssets, type EvmAllowedAsset } from '../lib/allowedAssets';
 import { isProgramConfigured } from '../lib/programConfig';
 import { chainKindFromAddress, type EvmChainId } from '../lib/chain/types';
+import { recallDaoChainId } from '../lib/chain/daoChainMemory';
 import { useChain } from './useChain';
 import { isMockDaoAddress } from '../lib/mockData';
 import { getVaultAuthorityPDA } from '../lib/pdaDerivation';
@@ -65,16 +67,20 @@ interface UseTreasuryAssetsResult {
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  /** Hide an asset for the whole DAO (founder-gated by RLS). */
-  hideAsset: (identifier: string) => Promise<{ error: string | null }>;
-  /** Unhide a previously-hidden asset. */
-  unhideAsset: (identifier: string) => Promise<{ error: string | null }>;
+  /** Hide an asset for the whole DAO. The founder signs the challenge. */
+  hideAsset: (identifier: string, wallet: string, signChallenge: DaoAccessMessageSigner) => Promise<{ error: string | null }>;
+  /** Unhide a previously-hidden asset. The founder signs the challenge. */
+  unhideAsset: (identifier: string, wallet: string, signChallenge: DaoAccessMessageSigner) => Promise<{ error: string | null }>;
 }
 
 /** Map the active chain to the dao_hidden_assets.chain discriminator. */
 function hiddenChainFor(daoAddress: string, evmChainId: EvmChainId | null): string {
   if (chainKindFromAddress(daoAddress) !== 'evm') return 'solana';
-  return evmChainId === 8453 || evmChainId === 84532 ? 'base' : 'ethereum';
+  const cid = (evmChainId ?? recallDaoChainId(daoAddress)) as number | null;
+  if (cid === 8453 || cid === 84532) return 'base';
+  if (cid === 4663 || cid === 46630) return 'robinhood';
+  if (cid === 5042 || cid === 5042002) return 'arc';
+  return 'ethereum';
 }
 
 function symbolFor(mint: string): { symbol: string; name: string } {
@@ -193,12 +199,22 @@ async function fetchTreasuryAssetsData(
           fetchRegisteredAssetsEvm(chainId, daoAddress),
         ]);
         const allowedByAddress = new Map(allowed.map((asset) => [asset.address.toLowerCase(), asset]));
+        const registeredByAddress = new Map(registeredAssets.map((r) => [r.address.toLowerCase(), r]));
         let rows: TreasuryAssetRow[] = registeredAssets.map((registered) => {
           const asset = allowedByAddress.get(registered.address.toLowerCase());
           const balance = registered.idleBalance;
           const uiBalance = toUiAmount(balance, registered.decimals);
-          const priceUsd = registered.isStablecoin ? 1 : null;
-          const valueUsd = priceUsd != null ? uiBalance * priceUsd : 0;
+          const onchainPriceUsd =
+            registered.unitPriceUsdMicro != null && registered.unitPriceUsdMicro > 0
+              ? registered.unitPriceUsdMicro / 1_000_000
+              : null;
+          const priceUsd = registered.isStablecoin ? 1 : onchainPriceUsd;
+          const valueUsd =
+            registered.valuedUsdMicro != null && registered.valuedUsdMicro > 0
+              ? registered.valuedUsdMicro / 1_000_000
+              : priceUsd != null
+                ? uiBalance * priceUsd
+                : 0;
           const row: TreasuryAssetRow = {
             mint: registered.address,
             decimals: registered.decimals,
@@ -208,7 +224,7 @@ async function fetchTreasuryAssetsData(
             enabled: registered.enabled,
             deposited: 0,
             deployedCapital: 0,
-            lastValuedUsd: Math.round(valueUsd * 1_000_000),
+            lastValuedUsd: registered.valuedUsdMicro ?? Math.round(valueUsd * 1_000_000),
             lastValuedAt: 0,
             vaultBalanceBaseUnits: 0,
             assetVault: daoAddress,
@@ -216,7 +232,11 @@ async function fetchTreasuryAssetsData(
             name: asset?.name ?? 'Registered ERC-20 asset',
             assetKindLabel: ASSET_KIND_LABEL[registered.assetKind] ?? 'Other',
             priceUsd,
-            priceSource: registered.isStablecoin ? 'Stablecoin parity' : 'Unpriced',
+            priceSource: registered.isStablecoin
+              ? 'Stablecoin parity'
+              : priceUsd != null
+                ? 'On-chain valuation'
+                : 'Unpriced',
             uiBalance,
             valueUsd,
             allocationPct: 0,
@@ -410,10 +430,20 @@ async function fetchTreasuryAssetsData(
         for (const row of rows) {
           if (row.mint === 'ETH' && wrappedNative) {
             const p = prices.get(wrappedNative.address.toLowerCase());
+            const wethReg = registeredByAddress.get(wrappedNative.address.toLowerCase());
+            const wethOnchainPrice =
+              wethReg?.unitPriceUsdMicro != null && wethReg.unitPriceUsdMicro > 0
+                ? wethReg.unitPriceUsdMicro / 1_000_000
+                : null;
             if (p && Number.isFinite(p.priceUsd) && p.priceUsd > 0) {
               row.priceUsd = p.priceUsd;
               row.priceSource = 'DexScreener (WETH proxy)';
               row.valueUsd = row.uiBalance * p.priceUsd;
+              row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
+            } else if (wethOnchainPrice != null && wethOnchainPrice > 0) {
+              row.priceUsd = wethOnchainPrice;
+              row.priceSource = 'On-chain valuation';
+              row.valueUsd = row.uiBalance * wethOnchainPrice;
               row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
             }
             continue;
@@ -435,16 +465,54 @@ async function fetchTreasuryAssetsData(
             if (typeof p.name === 'string' && p.name) row.name = p.name;
             row.valueUsd = row.uiBalance * p.priceUsd;
             row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
+            continue;
+          }
+          // Fallback to on-chain treasury valuation (valueAssetUsd / lastValuedUsd)
+          // when DexScreener does not index the token (e.g. Robinhood Testnet WETH).
+          if (row.priceUsd == null && row.uiBalance > 0) {
+            try {
+              const rawUnits = BigInt(Math.round(row.uiBalance * Math.pow(10, row.decimals)));
+              const valuedMicro = (await readContract(wagmiConfig, {
+                address: daoAddress as Address,
+                abi: [
+                  {
+                    type: 'function',
+                    name: 'valueAssetUsd',
+                    stateMutability: 'view',
+                    inputs: [{ type: 'address' }, { type: 'uint256' }],
+                    outputs: [{ type: 'uint256' }],
+                  },
+                ] as const,
+                functionName: 'valueAssetUsd',
+                args: [row.mint as Address, rawUnits],
+                chainId,
+              })) as bigint;
+              if (valuedMicro > 0n) {
+                const valUsd = Number(valuedMicro) / 1_000_000;
+                row.valueUsd = valUsd;
+                row.priceUsd = valUsd / row.uiBalance;
+                row.priceSource = 'On-chain valuation';
+                row.lastValuedUsd = Number(valuedMicro);
+              }
+            } catch {
+              // Asset not registered or oracle unavailable — leave unpriced.
+            }
           }
         }
 
         const totalValue = rows.reduce((sum, row) => sum + row.valueUsd, 0);
+        const resolvedNavUsd =
+          navMicro != null && navMicro > 0
+            ? navMicro / 1_000_000
+            : totalValue > 0
+              ? totalValue
+              : null;
         return {
           assets: rows.map((row) => ({
             ...row,
             allocationPct: totalValue > 0 ? (row.valueUsd / totalValue) * 100 : 0,
           })),
-          onchainNavUsd: navMicro != null && navMicro > 0 ? navMicro / 1_000_000 : null,
+          onchainNavUsd: resolvedNavUsd,
           deployedUsd: deployedMicro != null ? deployedMicro / 1_000_000 : null,
         };
     }
@@ -570,7 +638,7 @@ async function fetchTreasuryAssetsData(
  */
 export function useTreasuryAssets(daoAddress: string | null): UseTreasuryAssetsResult {
   const isMock = isMockDaoAddress(daoAddress);
-  const { evmChainId } = useChain();
+  const { evmChainId, chainFamily } = useChain();
   const queryClient = useQueryClient();
 
   const assetsQuery = useQuery({
@@ -587,10 +655,13 @@ export function useTreasuryAssets(daoAddress: string | null): UseTreasuryAssetsR
   const hiddenQuery = useQuery({
     queryKey: hiddenQueryKey,
     queryFn: async (): Promise<Set<string>> => {
+      const daoKey = chainKindFromAddress(daoAddress as string) === 'evm'
+        ? (daoAddress as string).toLowerCase()
+        : daoAddress as string;
       const { data, error: hErr } = await supabase
         .from('dao_hidden_assets')
         .select('asset_identifier')
-        .eq('dao_onchain_address', daoAddress as string)
+        .eq('dao_onchain_address', daoKey)
         .eq('chain', hiddenChain as string);
       if (hErr) return new Set<string>();
       return new Set((data ?? []).map((r: { asset_identifier: string }) => r.asset_identifier));
@@ -604,30 +675,49 @@ export function useTreasuryAssets(daoAddress: string | null): UseTreasuryAssetsR
     void assetsQuery.refetch();
   }, [assetsQuery]);
 
-  const hideAsset = useCallback(async (identifier: string): Promise<{ error: string | null }> => {
+  const hideAsset = useCallback(async (
+    identifier: string,
+    wallet: string,
+    signChallenge: DaoAccessMessageSigner,
+  ): Promise<{ error: string | null }> => {
     if (!daoAddress) return { error: 'No DAO selected' };
     const chain = hiddenChainFor(daoAddress, evmChainId);
-    const { error: insErr } = await supabase
-      .from('dao_hidden_assets')
-      .insert({ dao_onchain_address: daoAddress, chain, asset_identifier: identifier });
-    if (insErr) return { error: insErr.message };
+    const { error: insErr } = await founderMetadata({
+      action: 'hide_asset',
+      daoAddress,
+      wallet,
+      signChallenge,
+      chain: chainFamily,
+      chainId: evmChainId,
+      assetChain: chain,
+      assetIdentifier: identifier,
+    });
+    if (insErr) return { error: insErr };
     await queryClient.invalidateQueries({ queryKey: ['hiddenTreasuryAssets', daoAddress] });
     return { error: null };
-  }, [daoAddress, evmChainId, queryClient]);
+  }, [daoAddress, evmChainId, chainFamily, queryClient]);
 
-  const unhideAsset = useCallback(async (identifier: string): Promise<{ error: string | null }> => {
+  const unhideAsset = useCallback(async (
+    identifier: string,
+    wallet: string,
+    signChallenge: DaoAccessMessageSigner,
+  ): Promise<{ error: string | null }> => {
     if (!daoAddress) return { error: 'No DAO selected' };
     const chain = hiddenChainFor(daoAddress, evmChainId);
-    const { error: delErr } = await supabase
-      .from('dao_hidden_assets')
-      .delete()
-      .eq('dao_onchain_address', daoAddress)
-      .eq('chain', chain)
-      .eq('asset_identifier', identifier);
-    if (delErr) return { error: delErr.message };
+    const { error: delErr } = await founderMetadata({
+      action: 'unhide_asset',
+      daoAddress,
+      wallet,
+      signChallenge,
+      chain: chainFamily,
+      chainId: evmChainId,
+      assetChain: chain,
+      assetIdentifier: identifier,
+    });
+    if (delErr) return { error: delErr };
     await queryClient.invalidateQueries({ queryKey: ['hiddenTreasuryAssets', daoAddress] });
     return { error: null };
-  }, [daoAddress, evmChainId, queryClient]);
+  }, [daoAddress, evmChainId, chainFamily, queryClient]);
 
   const rawAssets = assetsQuery.data?.assets;
   const assets = useMemo(

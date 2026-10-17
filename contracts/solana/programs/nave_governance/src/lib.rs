@@ -94,6 +94,9 @@ pub mod nave_governance {
                 ctx.accounts.dao_token_mint.key() == voting_token,
                 GovernanceError::VotingMintMismatch
             );
+            // A zero supply falls through to the guardian count at finalize,
+            // so a handful of tokens minted afterward can pass a transfer.
+            require!(ctx.accounts.dao_token_mint.supply > 0, GovernanceError::ZeroVotingSupply);
         }
 
         // Use the DAO's monotonic `next_proposal_index` (never decremented by
@@ -388,6 +391,10 @@ pub mod nave_governance {
         // `release_vote_escrow` (which only requires `status != Active`) return
         // the locked tokens.
         let status = if !voting_closed {
+            // Token weight can be borrowed for one transaction. Early
+            // finalization would let that loan pass a transfer before the
+            // next slot. Wallet votes (snapshot_supply == 0) stay eligible.
+            require!(snapshot_supply == 0, GovernanceError::VotingPeriodNotEnded);
             // Early finalization: allowed only when the outcome is
             // mathematically certain — quorum is met AND the FOR lead exceeds
             // ALL remaining possible votes, so no future vote can change it.

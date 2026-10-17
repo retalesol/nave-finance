@@ -520,6 +520,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chainlink_solana"
+version = "2.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d7593d95e79bd77af1bf2634e7ae8de1567027c0ca8d396a555b84036298dd4"
+dependencies = [
+ "borsh 0.10.4",
+ "bytemuck",
+ "solana-program",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -989,6 +1000,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "chainlink_solana",
  "pyth-solana-receiver-sdk",
  "sha2 0.10.9",
 ]

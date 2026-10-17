@@ -100,6 +100,27 @@ pub mod pyth_receiver_program {
     pub const ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
 }
 
+/// Chainlink Data Feeds OCR2 program. Same address on devnet and mainnet.
+/// https://docs.chain.link/data-feeds/solana/using-data-feeds-solana
+pub mod chainlink_program {
+    use anchor_lang::prelude::*;
+    pub const ID: Pubkey = pubkey!("HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny");
+}
+
+/// SOL/USD transmissions account from the Chainlink feed directory.
+/// Devnet `sol-usd`: 99B2bTij… Mainnet `sol-usd`: CH31Xn… (heartbeat 180s).
+pub mod chainlink_sol_usd {
+    use anchor_lang::prelude::*;
+    #[cfg(not(feature = "mainnet"))]
+    pub const FEED: Pubkey = pubkey!("99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR");
+    #[cfg(feature = "mainnet")]
+    pub const FEED: Pubkey = pubkey!("CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt");
+    #[cfg(not(feature = "mainnet"))]
+    pub const MAX_AGE_SECS: i64 = 86_400;
+    #[cfg(feature = "mainnet")]
+    pub const MAX_AGE_SECS: i64 = 180;
+}
+
 /// Kamino Lending (klend) program. The on-chain Kamino CPIs verify the passed
 /// `klend_program` account equals this id before invoking.
 pub mod kamino_lending_program {

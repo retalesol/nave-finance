@@ -578,8 +578,10 @@ contract NaveExecution is INaveExecution, Initializable, UUPSUpgradeable, Reentr
             treasuryContract.transferForStrategy(r.asset, r.adapter, r.amount);
             bytes32 correlationId =
                 IBridgeAdapter(r.adapter).bridgeOut(r.asset, r.amount, r.destChainId, r.recipient);
-            // Idle already reduced by transferForStrategy; funds leave via the
-            // bridge (no same-chain strategy position to unwind on source).
+            // Idle already left via transferForStrategy. Book the departure
+            // before the next same-block bridge or deploy reads NAV and
+            // deployed capital. Revalue later rebuilds both from balances.
+            treasuryContract.noteCapitalDeparture(r.asset, r.amount);
             _markExecuted(index, r);
             emit BridgeExecuted(index, r.adapter, r.recipient, r.destChainId, correlationId);
             return;

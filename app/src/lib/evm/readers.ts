@@ -17,7 +17,7 @@ import { createPublicClient, formatUnits, http, type Abi, type Address, type Pub
 import { wagmiConfig, WAGMI_CHAIN_BY_ID } from './wagmi';
 import { NaveTreasuryAbi, NaveProtocolAbi, NaveGovernorAbi, NaveExecutionAbi, NaveDaoStakeAbi, Erc20Abi } from './contracts';
 import { getProtocolAddress, getFactoryAddress, toAddress, assertSupportedChain, type DaoContractAddresses } from './addresses';
-import { EVM_RPC_URLS, getConfiguredEvmAdapters, isEvmChainConfigured } from '../programConfig';
+import { EVM_RPC_URLS, getConfiguredEvmAdapters, isEvmChainConfigured, AGENT_ENABLE_PROPOSAL_TITLE } from '../programConfig';
 import type { EvmChainId } from '../chain/types';
 import {
   ProposalStatus,
@@ -424,15 +424,52 @@ export async function fetchRegisteredAssetsEvm(
       const info = infoRaw as unknown as EvmAssetInfoTuple | null;
       if (!info) return null;
       const pythFeed = info.pythFeedId ?? info[4] ?? '0x';
+      const decimals = Number(info.decimals ?? info[5] ?? 18);
+      const idleBalance = (balanceRaw as bigint | null) ?? 0n;
+      const isStablecoin = Boolean(info.isStablecoin ?? info[2]);
+      const oneUnit = 10n ** BigInt(Math.max(0, Math.min(36, decimals)));
+      const [unitValRaw, idleValRaw] = await Promise.all([
+        isStablecoin
+          ? Promise.resolve(1_000_000n)
+          : safeRead(() =>
+              readContract(wagmiConfig, {
+                address: treasury,
+                abi: NaveTreasuryAbi,
+                functionName: 'valueAssetUsd',
+                args: [asset, oneUnit],
+                chainId,
+              }),
+            ),
+        idleBalance > 0n
+          ? safeRead(() =>
+              readContract(wagmiConfig, {
+                address: treasury,
+                abi: NaveTreasuryAbi,
+                functionName: 'valueAssetUsd',
+                args: [asset, idleBalance],
+                chainId,
+              }),
+            )
+          : Promise.resolve(0n),
+      ]);
+      const unitPriceUsdMicro = unitValRaw != null ? Number(unitValRaw as bigint) : null;
+      const valuedUsdMicro =
+        idleValRaw != null
+          ? Number(idleValRaw as bigint)
+          : unitPriceUsdMicro != null && idleBalance > 0n
+            ? Math.round(Number(formatUnits(idleBalance, decimals)) * unitPriceUsdMicro)
+            : 0;
       return {
         address: asset,
         registered: Boolean(info.registered ?? info[0]),
         enabled: Boolean(info.enabled ?? info[1]),
-        isStablecoin: Boolean(info.isStablecoin ?? info[2]),
+        isStablecoin,
         assetKind: Number(info.assetKind ?? info[3] ?? 2),
         pythFeedHex: pythFeed.replace(/^0x/, '').padStart(64, '0'),
-        decimals: Number(info.decimals ?? info[5] ?? 18),
-        idleBalance: (balanceRaw as bigint | null) ?? 0n,
+        decimals,
+        idleBalance,
+        unitPriceUsdMicro,
+        valuedUsdMicro,
       } satisfies EvmRegisteredAsset;
     }),
   );
@@ -541,6 +578,10 @@ export interface EvmRegisteredAsset {
   pythFeedHex: string;
   decimals: number;
   idleBalance: bigint;
+  /** On-chain price for 1 whole token in micro-USD (1e6 = $1), or null. */
+  unitPriceUsdMicro: number | null;
+  /** On-chain valuation of `idleBalance` in micro-USD (1e6 = $1). */
+  valuedUsdMicro: number;
 }
 
 /** Short 0x… label used where no human-readable name is stored on-chain. */
@@ -611,15 +652,39 @@ export async function fetchProposalsEvm(
     ),
   );
 
+  const AGENT_ENABLE_PAYLOAD_HASH =
+    '0x5fe7f977e71dba2ea1a68e21057beebb9be2ac30c6410aa38d4f3fbe41dcffd2';
   const proposals: ProposalInfo[] = [];
   for (const { index, res } of reads) {
     if (res == null) continue;
     const p = res as unknown as EvmProposalTuple;
+    const propType = Number(p.proposalType) as ProposalType;
+    const payloadHashLower = (p.payloadHash ?? '').toLowerCase();
+    let storedIsAgentEnable = false;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(`nave_evm_payload::${daoAddress.toLowerCase()}::${index}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { type?: string; payload?: number[] };
+          if (
+            parsed.type === 'agent-enable' ||
+            (Array.isArray(parsed.payload) && parsed.payload.length === 1 && parsed.payload[0] === 1)
+          ) {
+            storedIsAgentEnable = true;
+          }
+        }
+      }
+    } catch { /* ignore storage errors */ }
+    const isAgentEnable =
+      propType === ProposalType.General &&
+      (payloadHashLower === AGENT_ENABLE_PAYLOAD_HASH ||
+        payloadHashLower === '0x01' ||
+        storedIsAgentEnable);
     proposals.push({
       index,
       proposer: p.proposer,
-      proposalType: Number(p.proposalType) as ProposalType,
-      title: `Proposal #${index + 1}`,
+      proposalType: propType,
+      title: isAgentEnable ? AGENT_ENABLE_PROPOSAL_TITLE : `Proposal #${index + 1}`,
       description: '',
       votesFor: Number(p.votesFor),
       votesAgainst: Number(p.votesAgainst),
@@ -809,7 +874,7 @@ export async function fetchConstitutionEvm(
   if (!treasury || !isEvmChainConfigured(chainId)) return null;
   const t = { address: treasury, abi: NaveTreasuryAbi, chainId } as const;
 
-  const [policyRaw, reviewWindowRaw, rebalanceRaw, maxDeployedRaw, minStableRaw, confidenceRaw, adaptersRaw] = await Promise.all([
+  const [policyRaw, reviewWindowRaw, rebalanceRaw, maxDeployedRaw, minStableRaw, confidenceRaw, adaptersRaw, thresholdRaw] = await Promise.all([
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'policyBps' })),
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'reviewWindowSecs' })),
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'rebalanceFrequencySecs' })),
@@ -817,6 +882,7 @@ export async function fetchConstitutionEvm(
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'minStablecoinReserveBps' })),
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'confidenceThreshold' })),
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'getApprovedAdapters' })),
+    safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'agentThresholdUsd' })),
   ]);
 
   // policyBps() ⇒ [minStableReserveBps, maxTotalDeployedBps_, minLiquidityBps_]
@@ -856,6 +922,7 @@ export async function fetchConstitutionEvm(
     // on-chain liquidity floor, with no stablecoin-reserve substitution.
     minReservesBps: minLiquidityBps || minStablecoinReserveBps,
     minLiquidityBps: policy ? minLiquidityBps : undefined,
+    agentThresholdUsdMicro: thresholdRaw == null ? undefined : Number(thresholdRaw as bigint),
     minStablecoinReserveBps,
     reviewWindowSecs: reviewWindowRaw == null ? 0 : Number(reviewWindowRaw as bigint),
     confidenceThreshold: confidenceRaw == null ? 0 : Number(confidenceRaw as number),

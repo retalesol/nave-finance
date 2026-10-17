@@ -93,12 +93,13 @@ export default function PolicyEngine() {
       if (p.protocolId in protocolMap) protocolMap[p.protocolId] = true;
     }
     const rebalanceSec = constitution.rebalanceFrequencySeconds;
-    let rebalanceLabel = 'Weekly';
-    if (rebalanceSec <= 3600) rebalanceLabel = 'Hourly';
-    else if (rebalanceSec <= 86400) rebalanceLabel = 'Daily';
-    else if (rebalanceSec <= 604800) rebalanceLabel = 'Weekly';
-    else if (rebalanceSec <= 1209600) rebalanceLabel = 'Bi-weekly';
-    else rebalanceLabel = 'Monthly';
+    const rebalanceLabel = rebalanceSec <= 0
+      ? 'Manual'
+      : rebalanceSec <= 3600 ? 'Hourly'
+      : rebalanceSec <= 86400 ? 'Daily'
+      : rebalanceSec <= 604800 ? 'Weekly'
+      : rebalanceSec <= 1209600 ? 'Bi-weekly'
+      : 'Monthly';
 
     setPolicyState(prev => ({
       ...prev,
@@ -106,6 +107,7 @@ export default function PolicyEngine() {
       minStablecoin: bpsToPercent(constitution.minReservesBps),
       maxDeployment: bpsToPercent(constitution.maxTotalDeployedBps),
       maxLending: bpsToPercent(constitution.maxSingleAllocationBps),
+      liquidityReserve: bpsToPercent(constitution.minLiquidityBps ?? constitution.minReservesBps),
       rebalanceFreq: rebalanceLabel,
       approvedProtocols: protocolMap,
       confidenceThreshold:
@@ -114,6 +116,10 @@ export default function PolicyEngine() {
           : constitutionOnChain?.confidenceThreshold != null && constitutionOnChain.confidenceThreshold > 0
             ? constitutionOnChain.confidenceThreshold
           : prev.confidenceThreshold,
+      agentThresholdUsd:
+        constitution.agentThresholdUsdMicro != null && constitution.agentThresholdUsdMicro > 0
+          ? Math.round(constitution.agentThresholdUsdMicro / 1_000_000)
+          : prev.agentThresholdUsd ?? 100,
     }));
   }, [constitution, constitutionOnChain, chainKind, evmAdapterStatuses]);
 
@@ -205,6 +211,14 @@ export default function PolicyEngine() {
 
     let payload: number[];
     try {
+      if (daoAddress && policy.agentThresholdUsd != null && policy.agentThresholdUsd > 0) {
+        try {
+          localStorage.setItem(
+            `nave_agent_threshold_micro::${daoAddress.toLowerCase()}`,
+            String(Math.round(policy.agentThresholdUsd * 1_000_000)),
+          );
+        } catch { /* ignore storage errors */ }
+      }
       payload = encodeConstitutionPayload({
         v: 1,
         protocols,
@@ -305,6 +319,7 @@ export default function PolicyEngine() {
                 { label: 'Max Deploy', value: `${policy.maxDeployment}%` },
                 { label: 'Max Lending', value: `${policy.maxLending}%` },
                 { label: 'Rebalancing', value: policy.rebalanceFreq },
+                { label: 'Agent Threshold', value: `$${(policy.agentThresholdUsd ?? 100).toLocaleString()}` },
                 { label: 'Protocols', value: protocolOptions.filter(p => policy.approvedProtocols[p.key] && (chainKind !== 'evm' || evmStatusByProtocol.get(p.key as EvmAdapterProtocolId)?.configured)).length + ' approved' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between">
@@ -312,6 +327,31 @@ export default function PolicyEngine() {
                   <span className="nave-mono" style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}>{value}</span>
                 </div>
               ))}
+            </div>
+            <div className="pt-3 border-t space-y-1.5" style={{ borderColor: 'hsl(var(--border))' }}>
+              <label className="nave-label" style={{ fontSize: '11px', display: 'block' }}>
+                Agent Deployment Threshold (USD)
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={policy.agentThresholdUsd ?? 100}
+                onChange={(e) => {
+                  const val = Math.max(1, Number(e.target.value) || 1);
+                  setPolicy({ agentThresholdUsd: val });
+                }}
+                className="w-full px-3 py-2 rounded-lg border outline-none nave-mono"
+                style={{
+                  fontSize: '13px',
+                  backgroundColor: 'hsl(var(--surface-0))',
+                  borderColor: 'hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
+                }}
+              />
+              <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.45 }}>
+                Minimum treasury NAV required before autonomous agents deploy capital.
+              </p>
             </div>
           </div>
 
@@ -416,6 +456,9 @@ function ConstitutionReadout({
           : `At least ${formatConstitutionBps(constitution.minReservesBps)} of the treasury stays liquid.`,
         `At most ${formatConstitutionBps(constitution.maxTotalDeployedBps)} of the treasury can be deployed.`,
         `No single venue can hold more than ${formatConstitutionBps(constitution.maxSingleAllocationBps)}.`,
+        ...(constitution.agentThresholdUsdMicro != null && constitution.agentThresholdUsdMicro > 0
+          ? [`Autonomous agents require at least $${(constitution.agentThresholdUsdMicro / 1_000_000).toLocaleString()} in treasury NAV.`]
+          : []),
       ]
     : null;
 

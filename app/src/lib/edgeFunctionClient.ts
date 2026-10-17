@@ -75,6 +75,7 @@ export interface GenerateAgentKeysResponse {
     financial: AgentKeyResult;
     oversight: AgentKeyResult;
     operational: AgentKeyResult;
+    planner?: AgentKeyResult;
   };
   warning: string;
 }
@@ -250,7 +251,13 @@ export async function registerDao(
   const evm = payload.chain !== undefined && payload.chain !== 'solana';
   const daoField = evm ? payload.dao_address.toLowerCase() : payload.dao_address;
   const chainField = evm ? String(payload.chain_id) : 'solana';
-  const message = `nave-register-dao|${daoField}|${chainField}|${Date.now()}|${makeChallengeNonce()}`;
+  const privacyField = payload.privacy_enabled ? '1' : '0';
+  const walletField = (payload.authorized_wallets ?? [])
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const message = `nave-register-dao|${daoField}|${chainField}|${privacyField}|${walletField}|${Date.now()}|${makeChallengeNonce()}`;
   let signature: string;
   try {
     signature = await signChallenge(message);
@@ -794,6 +801,7 @@ export const GUARDIAN_ACTION_TYPE = {
   UPDATE_AGENT_STATUS: 2,
   ROTATE_AGENT_KEY: 3,
   DISABLE_AGENTS: 4,
+  ENABLE_AGENTS: 7,
 } as const;
 
 const ZERO_EVM_ADDRESS = `0x${'0'.repeat(40)}` as `0x${string}`;
@@ -844,7 +852,37 @@ export function buildGuardianDisableAgentsTypedData(
   };
 }
 
-/** Default GuardianAction nonce/deadline for a pause: now (seconds) and now + 1h. */
+/**
+ * Typed data for a guardian ENABLE_AGENTS vote (the M-of-N resume when
+ * `agentsGuardianLocked` is set). Pass straight to wagmi's `signTypedDataAsync`.
+ */
+export function buildGuardianEnableAgentsTypedData(
+  chainId: number,
+  treasury: string,
+  nonce: bigint,
+  deadline: bigint,
+): GuardianActionTypedData {
+  return {
+    domain: {
+      name: 'NaveTreasury',
+      version: '1',
+      chainId,
+      verifyingContract: treasury.toLowerCase() as `0x${string}`,
+    },
+    types: GUARDIAN_ACTION_TYPES,
+    primaryType: 'GuardianAction',
+    message: {
+      actionType: GUARDIAN_ACTION_TYPE.ENABLE_AGENTS,
+      agentSlot: 0,
+      newStatus: 0,
+      newKey: ZERO_EVM_ADDRESS,
+      nonce,
+      deadline,
+    },
+  };
+}
+
+/** Default GuardianAction nonce/deadline for a pause/resume: now (seconds) and now + 1h. */
 export function defaultGuardianDisableAgentsWindow(): { nonce: bigint; deadline: bigint } {
   const nonce = BigInt(Math.floor(Date.now() / 1000));
   return { nonce, deadline: nonce + 3600n };
@@ -856,13 +894,14 @@ export function defaultGuardianDisableAgentsWindow(): { nonce: bigint; deadline:
  * (EIP-191 personal_sign → 0x-hex). agent-admin verifies the signature via
  * viem `verifyMessage`, confirms the founder, and forwards to the signer's
  * `/relay-evm`, which BROADCASTS the on-chain tx from a custodied agent/guardian
- * EOA — resume → Executive `toggleAgents(true)`, pause → guardian M-of-N
+ * EOA — resume → Executive `toggleAgents(true)` (or guardian `ENABLE_AGENTS`
+ * when `agentsGuardianLocked` is set), pause → guardian M-of-N
  * `guardianAction(DISABLE_AGENTS, signatures)`.
  *
- * Pause: the founder wallet is itself a guardian (CreateDAO sets guardians
- * `[founder, custodiedGuardian]` with threshold ≥ 2), so pass
- * `opts.signGuardianAction` (wagmi `signTypedDataAsync`) and the founder's
- * EIP-712 GuardianAction(DISABLE_AGENTS) signature is forwarded as
+ * Pause / Guardian-locked resume: the founder wallet is itself a guardian
+ * (CreateDAO sets guardians `[founder, custodiedGuardian]` with threshold ≥ 2),
+ * so pass `opts.signGuardianAction` (wagmi `signTypedDataAsync`) and the founder's
+ * EIP-712 GuardianAction(DISABLE_AGENTS / ENABLE_AGENTS) signature is forwarded as
  * `guardian_signatures` alongside the matching `guardian_nonce`/`guardian_deadline`;
  * the signer adds every custodied guardian signature and broadcasts.
  * `signMessageHex` is wagmi's `signMessageAsync`.
@@ -875,7 +914,7 @@ export async function setAgentsEnabledViaProxyEvm(
   chainId: number,
   chain: EvmChainFamily,
   opts?: {
-    /** Founder-as-guardian EIP-712 signer (wagmi `signTypedDataAsync`); pause only. */
+    /** Founder-as-guardian EIP-712 signer (wagmi `signTypedDataAsync`). */
     signGuardianAction?: (typedData: GuardianActionTypedData) => Promise<string>;
   },
 ): Promise<{ data: ToggleAgentsResponse | null; error: string | null }> {
@@ -888,12 +927,13 @@ export async function setAgentsEnabledViaProxyEvm(
   }
 
   let guardian: { guardian_signatures: string[]; guardian_nonce: string; guardian_deadline: string } | null = null;
-  if (!enabled && opts?.signGuardianAction) {
+  if (opts?.signGuardianAction) {
     const { nonce, deadline } = defaultGuardianDisableAgentsWindow();
+    const typedData = enabled
+      ? buildGuardianEnableAgentsTypedData(chainId, daoAddress, nonce, deadline)
+      : buildGuardianDisableAgentsTypedData(chainId, daoAddress, nonce, deadline);
     try {
-      const guardianSig = await opts.signGuardianAction(
-        buildGuardianDisableAgentsTypedData(chainId, daoAddress, nonce, deadline),
-      );
+      const guardianSig = await opts.signGuardianAction(typedData);
       guardian = {
         guardian_signatures: [guardianSig],
         guardian_nonce: nonce.toString(),
@@ -904,7 +944,7 @@ export async function setAgentsEnabledViaProxyEvm(
     }
   }
 
-  return callEdgeFunction<ToggleAgentsResponse>('agent-admin', {
+  const res = await callEdgeFunction<ToggleAgentsResponse>('agent-admin', {
     dao_address: daoAddress,
     wallet: walletAddress,
     message,
@@ -914,6 +954,71 @@ export async function setAgentsEnabledViaProxyEvm(
     chain_id: chainId,
     ...(guardian ?? {}),
   });
+  if (res.error) return res;
+  if (res.data && res.data.error) {
+    return { data: res.data, error: res.data.error };
+  }
+  return {
+    data: res.data ? { ...res.data, success: res.data.success ?? true } : null,
+    error: null,
+  };
+}
+
+export interface ClearHaltResponse {
+  success?: boolean;
+  signature?: string;
+  tx_hash?: string;
+  status?: string;
+  error?: string;
+}
+
+/**
+ * Founder-gated clear-halt proxy (`agent-admin` with `action: 'clear_halt'`).
+ * Verifies a fresh founder wallet signature on Solana or EVM, runs the
+ * deterministic operational gate, and submits `operational_clear` /
+ * `operationalClear` via the custodied `operational` agent key.
+ */
+export async function clearHaltViaProxy(input: {
+  daoAddress: string;
+  walletAddress: string;
+  executionRequestAddress: string;
+  signChallenge: DaoAccessMessageSigner;
+  chain?: ChainFamily;
+  chainId?: number | null;
+  executionAddress?: string;
+  index?: number;
+}): Promise<{ data: ClearHaltResponse | null; error: string | null }> {
+  const evm = input.chain !== undefined && input.chain !== 'solana';
+  const daoField = evm ? input.daoAddress.toLowerCase() : input.daoAddress;
+  const targetField = input.executionRequestAddress.trim();
+  const message = `nave-admin|${daoField}|clear_halt|${targetField}|${Date.now()}`;
+  let signature: string;
+  try {
+    signature = await input.signChallenge(message);
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Message signing rejected' };
+  }
+
+  const res = await callEdgeFunction<ClearHaltResponse>('agent-admin', {
+    action: 'clear_halt',
+    dao_address: input.daoAddress,
+    wallet: input.walletAddress,
+    message,
+    signature,
+    execution_request_address: targetField,
+    ...(input.chain ? { chain: input.chain } : {}),
+    ...(input.chainId != null ? { chain_id: input.chainId } : {}),
+    ...(input.executionAddress ? { execution_address: input.executionAddress } : {}),
+    ...(input.index != null ? { index: input.index } : {}),
+  });
+  if (res.error) return res;
+  if (res.data && res.data.error) {
+    return { data: res.data, error: res.data.error };
+  }
+  return {
+    data: res.data ? { ...res.data, success: res.data.success ?? true } : null,
+    error: null,
+  };
 }
 export interface EvmGuardianFreezeResponse {
   success: boolean;
@@ -991,7 +1096,8 @@ export async function withdrawStrategyViaProxyEvm(
 ): Promise<{ data: EvmStrategyWithdrawResponse | null; error: string | null }> {
   const indexStr = String(opts.index);
   const amountStr = opts.amount;
-  const message = `nave-admin|${daoAddress}|withdraw_from_strategy|${indexStr}|${amountStr}|${Date.now()}`;
+  const minOutField = opts.minOut && opts.minOut !== '' ? opts.minOut : '0';
+  const message = `nave-admin|${daoAddress}|withdraw_from_strategy|${indexStr}|${amountStr}|${minOutField}|${Date.now()}`;
   let signature: string;
   try {
     signature = await signMessageHex(message);
@@ -1044,6 +1150,85 @@ export async function dispatchViaProxyEvm(
     chain,
     chain_id: chainId,
     index,
+  });
+}
+
+export interface FounderMetadataResult {
+  success: boolean;
+  public_url?: string;
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/**
+ * Founder-signed logo, token image, or hidden-asset write.
+ * The signed subject is the image hash or `chain:asset`, so the body cannot
+ * be swapped after the wallet signs.
+ */
+export async function founderMetadata(input: {
+  action: 'upload_logo' | 'set_token_image' | 'hide_asset' | 'unhide_asset';
+  daoAddress: string;
+  wallet: string;
+  signChallenge: DaoAccessMessageSigner;
+  chain?: string;
+  chainId?: number | null;
+  image?: Blob;
+  mint?: string;
+  assetChain?: string;
+  assetIdentifier?: string;
+}): Promise<{ data: FounderMetadataResult | null; error: string | null }> {
+  const evm = input.chain !== undefined && input.chain !== 'solana';
+  const dao = evm ? input.daoAddress.toLowerCase() : input.daoAddress;
+  const wallet = evm ? input.wallet.toLowerCase() : input.wallet;
+  let subject = '';
+  let image_base64: string | undefined;
+  let content_type: string | undefined;
+  if (input.action === 'upload_logo' || input.action === 'set_token_image') {
+    if (!input.image) return { data: null, error: 'Image is required' };
+    const raw = await input.image.arrayBuffer();
+    const bytes = new Uint8Array(raw);
+    if (bytes.length === 0 || bytes.length > 1_500_000) {
+      return { data: null, error: 'Image must be under 1.5 MB' };
+    }
+    const hash = await sha256Hex(raw);
+    const type = input.image.type === 'image/png' || input.image.type === 'image/webp'
+      ? input.image.type
+      : 'image/jpeg';
+    subject = input.action === 'set_token_image' ? `${input.mint ?? ''}:${hash}` : hash;
+    image_base64 = bytesToBase64(bytes);
+    content_type = type;
+  } else {
+    subject = `${input.assetChain ?? ''}:${input.assetIdentifier ?? ''}`;
+  }
+  const message = `nave-founder-meta|${input.action}|${dao}|${subject}|${Date.now()}|${makeChallengeNonce()}`;
+  let signature: string;
+  try {
+    signature = await input.signChallenge(message);
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Message signing rejected' };
+  }
+  return callEdgeFunction<FounderMetadataResult>('founder-metadata', {
+    action: input.action,
+    dao_address: dao,
+    wallet,
+    message,
+    signature,
+    chain: input.chain,
+    chain_id: input.chainId ?? undefined,
+    image_base64,
+    content_type,
+    mint: input.mint,
+    asset_chain: input.assetChain,
+    asset_identifier: input.assetIdentifier,
   });
 }
 

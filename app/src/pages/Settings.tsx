@@ -33,6 +33,7 @@ import {
   sisterDestChainIds,
   isEvmChainId,
   type EvmChainId,
+  isTreasuryOpsFamily,
 } from '../lib/chain/types';
 import { supabase, type DaoRegistryRow } from '../lib/supabaseClient';
 import { useWatchedDaos } from '../hooks/useWatchedDaos';
@@ -1182,7 +1183,7 @@ function EmergencyControls({ daoAddress, initialFrozen = false }: { daoAddress: 
       setFreezeError('Connect your EVM founder wallet on Ethereum or Base.');
       return;
     }
-    if (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood') {
+    if (!isTreasuryOpsFamily(chainFamily)) {
       setFreezeError('Select an Ethereum, Base, or Robinhood network.');
       return;
     }
@@ -1596,7 +1597,7 @@ function AgentAdminSection({ daoAddress, frozen }: { daoAddress: string | null; 
       return;
     }
     if (chainKind === 'evm') {
-      if (!evmAddress || !evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
+      if (!evmAddress || !evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
         setDispatchResult({ success: false, message: 'Connect an Ethereum, Base, or Robinhood founder wallet.' });
         return;
       }
@@ -2021,9 +2022,7 @@ function AgentAdminSection({ daoAddress, frozen }: { daoAddress: string | null; 
             >
               <Fi icon="triangle-exclamation" style={{ fontSize: '12px', color: 'hsl(var(--warning))', marginTop: '2px', flexShrink: 0 }} />
               <p style={{ fontSize: '12.5px', color: 'hsl(38 60% 25%)', lineHeight: 1.5 }}>
-                {chainKind === 'evm'
-                  ? 'Manual dispatch is gated off for Ethereum/Base until the EVM orchestrator endpoint is available. EVM requests still use autonomous relayer support.'
-                  : 'Agents run on their own. Use this only if a run got stuck and support asked you to retry it.'}
+                Agents run on their own. Use this only if a run got stuck and support asked you to retry it.
               </p>
             </div>
 
@@ -2080,18 +2079,18 @@ function AgentAdminSection({ daoAddress, frozen }: { daoAddress: string | null; 
             <div className="flex items-center gap-3">
               <button
                 onClick={handleDispatch}
-                disabled={dispatchLoading || !dispatchExecReq.trim() || chainKind === 'evm'}
+                disabled={dispatchLoading || !dispatchExecReq.trim()}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all"
                 style={{
                   fontSize: '13.5px',
-                  backgroundColor: dispatchLoading || !dispatchExecReq.trim() || chainKind === 'evm'
+                  backgroundColor: dispatchLoading || !dispatchExecReq.trim()
                     ? 'hsl(var(--surface-2))'
                     : 'hsl(var(--primary))',
-                  color: dispatchLoading || !dispatchExecReq.trim() || chainKind === 'evm'
+                  color: dispatchLoading || !dispatchExecReq.trim()
                     ? 'hsl(var(--muted-foreground))'
                     : 'hsl(var(--primary-foreground))',
                   opacity: dispatchLoading ? 0.7 : 1,
-                  cursor: dispatchLoading || !dispatchExecReq.trim() || chainKind === 'evm' ? 'not-allowed' : 'pointer',
+                  cursor: dispatchLoading || !dispatchExecReq.trim() ? 'not-allowed' : 'pointer',
                 }}
               >
                 {dispatchLoading ? (
@@ -2963,7 +2962,7 @@ function EvmStrategyWithdrawSection({
   );
 
   async function handleWithdraw() {
-    if (!evmAddress || !evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
+    if (!evmAddress || !evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
       toast({ variant: 'destructive', title: 'Connect founder wallet', description: 'Ethereum, Base, or Robinhood wallet required.' });
       return;
     }
@@ -3109,7 +3108,17 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
   const { address: evmAddress } = useAccount();
   const { evmChainId, chainFamily } = useChain();
   const { dao } = useDaoRegistry(daoAddress);
+  const tokenRegistry = useTokenRegistry(daoAddress);
   const tx = useSendTransaction();
+  const votingTokenCandidate =
+    dao?.governanceType === 'token'
+      ? (tokenRegistry.tokens[0]?.mint ?? null)
+      : null;
+  const resolvedVotingMint: Address = (
+    votingTokenCandidate && /^0x[0-9a-fA-F]{40}$/.test(votingTokenCandidate)
+      ? votingTokenCandidate
+      : `0x${'0'.repeat(40)}`
+  ) as Address;
   const [status, setStatus] = useState(0);
   const [stakeAmount, setStakeAmount] = useState(0n);
   const [recipient, setRecipient] = useState('');
@@ -3166,7 +3175,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
     }
   }
 
-  if (!evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
+  if (!evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
     return (
       <div className="nave-card p-5">
         <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>Connect Ethereum, Base, or Robinhood to manage moonlighting.</p>
@@ -3234,7 +3243,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
               payload: '0x' as `0x${string}`,
               proposalType: 9,
               votingPeriodSeconds: votingPeriodForNetwork(MAINNET_DEFAULT_VOTING_PERIOD_SECONDS, { kind: 'evm', chainId: evmChainId }),
-              votingMint: `0x${'0'.repeat(40)}` as Address,
+              votingMint: resolvedVotingMint,
             });
             const outcome = await tx.sendEvm(built, { successLabel: 'Moonlight request created' });
             if (outcome.status === 'error') throw new Error(outcome.error ?? 'Proposal failed');
@@ -3292,7 +3301,7 @@ function EvmMoonlightSection({ daoAddress }: { daoAddress: string }) {
                   payload,
                   proposalType: 10,
                   votingPeriodSeconds: votingPeriodForNetwork(MAINNET_DEFAULT_VOTING_PERIOD_SECONDS, { kind: 'evm', chainId: evmChainId }),
-                  votingMint: `0x${'0'.repeat(40)}` as Address,
+                  votingMint: resolvedVotingMint,
                 });
                 await tx.sendEvm(prop, { successLabel: 'Distribution proposal created' });
                 setNotice('Vote on the MoonlightDistribution proposal, then execute below.');

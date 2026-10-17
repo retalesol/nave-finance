@@ -104,6 +104,44 @@ contract GovernanceTest is NaveBase {
         g.lockTokensAndVote(idx, amount, choice);
     }
 
+    function test_tokenGov_rejectsOtherRegisteredMint() public {
+        (NaveTreasury t, NaveGovernor g, address mint) = _tokenDao();
+        vm.prank(founder);
+        address other = t.registerDaoToken("Other", "OTH", 18, 1e18, address(this));
+        vm.expectRevert(NaveErrors.VotingMintMismatch.selector);
+        g.createProposal(_proposalParams(uint8(ProposalType.Transfer), other, ""));
+        mint;
+    }
+
+    function test_tokenGov_majorityCannotFinalizeBeforeVotingEnd() public {
+        (, NaveGovernor g, address mint) = _tokenDao();
+        uint64 idx = g.createProposal(_proposalParams(uint8(ProposalType.Transfer), mint, ""));
+        _voteWith(g, mint, idx, 600e18, uint8(VoteChoice.For));
+        vm.expectRevert(NaveErrors.VotingPeriodNotEnded.selector);
+        g.finalizeProposal(idx);
+    }
+
+    function test_tokenGov_transferExecutesOnlyAfterVotingEnd() public {
+        (NaveTreasury t, NaveGovernor g, address mint) = _tokenDao();
+        vm.prank(founder);
+        t.registerAsset(address(usdc), bytes32(0), true, 0);
+        usdc.mint(address(this), 100e6);
+        usdc.approve(address(t), 100e6);
+        t.deposit(address(usdc), 100e6);
+        address to = makeAddr("payee");
+        uint256 amount = 40e6;
+        uint64 idx = g.createProposal(
+            _proposalParams(uint8(ProposalType.Transfer), mint, abi.encode(address(usdc), to, amount))
+        );
+        _voteWith(g, mint, idx, 600e18, uint8(VoteChoice.For));
+        vm.expectRevert(NaveErrors.VotingPeriodNotEnded.selector);
+        g.finalizeProposal(idx);
+        vm.warp(block.timestamp + 2 days);
+        g.finalizeProposal(idx);
+        g.executeTransferProposal(idx, address(usdc), to, amount);
+        assertEq(usdc.balanceOf(to), amount);
+    }
+
     function test_tokenGov_general_passesOnMajorityAndQuorum() public {
         (, NaveGovernor g, address mint) = _tokenDao();
         uint64 idx = g.createProposal(_proposalParams(uint8(ProposalType.General), mint, ""));

@@ -1,6 +1,11 @@
 use anchor_lang::prelude::*;
+use chainlink_solana::v2::read_feed_v2;
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
-use crate::constants::PYTH_MAX_CONFIDENCE_BPS;
+use crate::constants::{
+    chainlink_program, chainlink_sol_usd, pyth_receiver_program, wsol_mint, PYTH_MAX_CONFIDENCE_BPS,
+    PYTH_MAX_PRICE_AGE_SECS,
+};
 use crate::errors::NaveError;
 
 /// Deterministic Pyth confidence-interval guard.
@@ -30,6 +35,60 @@ pub fn confidence_within_bounds(price: i64, conf: u64) -> bool {
 pub fn require_confidence(price: i64, conf: u64) -> Result<()> {
     require!(confidence_within_bounds(price, conf), NaveError::StaleOracle);
     Ok(())
+}
+
+/// Value a non-stable balance from the supplied price account.
+///
+/// Wrapped SOL uses the pinned Chainlink SOL/USD feed. Every other non-stable
+/// still uses its Pyth feed. The two accounts are distinguished by owner, and
+/// the Chainlink account must be the directory feed for this cluster.
+pub fn nonstable_micro_usd(
+    mint: &Pubkey,
+    pyth_feed_id: &[u8; 32],
+    decimals: u8,
+    amount: u64,
+    price_ai: &AccountInfo,
+    clock: &Clock,
+) -> Result<u64> {
+    if *mint == wsol_mint::ID {
+        require!(
+            price_ai.key() == chainlink_sol_usd::FEED
+                && price_ai.owner == &chainlink_program::ID,
+            NaveError::InvalidOracleAccount
+        );
+        let data = price_ai.try_borrow_data()?;
+        let feed = read_feed_v2(data, price_ai.owner.to_bytes())
+            .map_err(|_| error!(NaveError::StaleOracle))?;
+        let round = feed
+            .latest_round_data()
+            .ok_or(error!(NaveError::StaleOracle))?;
+        let age = clock
+            .unix_timestamp
+            .saturating_sub(i64::from(round.timestamp));
+        require!(
+            round.timestamp > 0 && age >= 0 && age <= chainlink_sol_usd::MAX_AGE_SECS,
+            NaveError::StaleOracle
+        );
+        require!(
+            round.answer > 0 && round.answer <= i128::from(i64::MAX),
+            NaveError::InvalidOraclePrice
+        );
+        let exponent = -i32::from(feed.decimals());
+        return value_usd(amount, decimals, round.answer as i64, exponent);
+    }
+
+    require!(
+        price_ai.owner == &pyth_receiver_program::ID,
+        NaveError::InvalidOracleAccount
+    );
+    let data = price_ai.try_borrow_data()?;
+    let price_update = PriceUpdateV2::try_deserialize(&mut &data[..])
+        .map_err(|_| error!(NaveError::InvalidOracleAccount))?;
+    let p = price_update
+        .get_price_no_older_than(clock, PYTH_MAX_PRICE_AGE_SECS, pyth_feed_id)
+        .map_err(|_| error!(NaveError::StaleOracle))?;
+    require_confidence(p.price, p.conf)?;
+    value_usd(amount, decimals, p.price, p.exponent)
 }
 
 /// Convert a token `balance` (base units) into micro-USD (1e6) given a Pyth

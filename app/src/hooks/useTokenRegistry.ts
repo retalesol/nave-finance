@@ -80,6 +80,22 @@ async function fetchTokenRegistryData(
       (row as { voting_token_mint?: string | null } | null)?.voting_token_mint,
     );
 
+    let imageMap: Record<string, string> = {};
+    try {
+      const { data: imgRows } = await supabase
+        .from('dao_token_images')
+        .select('mint, image_uri')
+        .eq('dao_address', daoKey);
+      if (imgRows) {
+        imageMap = Object.fromEntries(
+          imgRows.flatMap((r: { mint: string; image_uri: string }) => [
+            [r.mint, r.image_uri],
+            [r.mint.toLowerCase(), r.image_uri],
+          ]),
+        );
+      }
+    } catch { /* non-fatal — images are optional */ }
+
     return {
       onChainData: registry,
       tokenCount: registry?.tokenCount ?? 0,
@@ -97,6 +113,7 @@ async function fetchTokenRegistryData(
         metadataAuthorityRevoked: t.metadataAuthorityRevoked,
         canReceiveProposals: t.canReceiveProposals,
         createdAt: t.createdAt,
+        imageUri: imageMap[t.mint] ?? imageMap[t.mint.toLowerCase()],
       })),
     };
   }

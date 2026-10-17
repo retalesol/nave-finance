@@ -6,15 +6,22 @@ import { isMockDaoAddress, MOCK_TREASURY_HISTORY, MOCK_STRATEGIES, MOCK_ASSETS, 
 import { fetchConstitution, fetchStrategyPositionsForMints, fetchRegisteredAssets } from '../lib/onChainFetcher';
 import { isProgramConfigured } from '../lib/programConfig';
 import { chainKindFromAddress, type EvmChainId } from '../lib/chain/types';
+import { recallDaoChainId } from '../lib/chain/daoChainMemory';
 import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
 import { fetchStrategyPositionsEvm } from '../lib/evm/readers';
 import { ACTIVE_EVM_CHAIN_IDS, isEvmChainConfigured } from '../lib/programConfig';
 import { adapterKey, blendedApy, marksFromSnapshots, measuredApy, positionKey } from '../lib/positionYield';
+import { useChain } from './useChain';
 
-function resolveEvmChainIdForDao(_daoAddress: string): EvmChainId | null {
-  // Prefer a configured active chain; multi-chain DAOs store chain on the registry
-  // but live position reads work against the first configured EVM chain that matches
-  // the treasury (treasury address is chain-scoped via wagmi).
+function resolveEvmChainIdForDao(
+  daoAddress: string,
+  fallbackChainId?: EvmChainId | null,
+): EvmChainId | null {
+  const remembered = recallDaoChainId(daoAddress);
+  if (remembered != null && isEvmChainConfigured(remembered)) return remembered;
+  if (fallbackChainId != null && isEvmChainConfigured(fallbackChainId)) return fallbackChainId;
+  if (remembered != null) return remembered;
+  if (fallbackChainId != null) return fallbackChainId;
   for (const id of ACTIVE_EVM_CHAIN_IDS) {
     if (isEvmChainConfigured(id)) return id;
   }
@@ -66,7 +73,10 @@ interface TreasuryDataQueryData {
   assets: AssetInfo[];
 }
 
-async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryData> {
+async function fetchTreasuryData(
+  daoAddress: string,
+  fallbackChainId?: EvmChainId | null,
+): Promise<TreasuryDataQueryData> {
   // Fetch snapshot history (last 90 days)
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -197,7 +207,7 @@ async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryD
     }
   } else if (kind === 'evm') {
     try {
-      const chainId = resolveEvmChainIdForDao(daoAddress);
+      const chainId = resolveEvmChainIdForDao(daoAddress, fallbackChainId);
       if (chainId != null) {
         const positions = await fetchStrategyPositionsEvm(chainId, daoAddress);
         // currentValue is micro-USD on-chain.
@@ -234,10 +244,11 @@ async function fetchTreasuryData(daoAddress: string): Promise<TreasuryDataQueryD
  */
 export function useTreasuryData(daoAddress: string | null): UseTreasuryDataResult {
   const isMock = isMockDaoAddress(daoAddress);
+  const { evmChainId } = useChain();
 
   const query = useQuery({
-    queryKey: ['treasuryData', daoAddress],
-    queryFn: () => fetchTreasuryData(daoAddress as string),
+    queryKey: ['treasuryData', daoAddress, evmChainId],
+    queryFn: () => fetchTreasuryData(daoAddress as string, evmChainId),
     enabled: !!daoAddress && !isMock,
     staleTime: 30_000,
     gcTime: 5 * 60_000,

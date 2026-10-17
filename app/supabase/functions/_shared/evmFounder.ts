@@ -44,7 +44,13 @@ const robinhoodTestnet = defineChain({
 
 export const EVM_RPC_CONFIG: Record<
   number,
-  { chain: Chain; rpcEnv: string; fallbackUrl?: string; protocolEnv: string }
+  {
+    chain: Chain;
+    rpcEnv: string;
+    fallbackUrl?: string;
+    protocolEnv: string;
+    fallbackProtocolAddress?: string;
+  }
 > = {
   1: { chain: mainnet, rpcEnv: "EVM_ETHEREUM_RPC_URL", protocolEnv: "EVM_ETHEREUM_PROTOCOL_ADDRESS" },
   11155111: {
@@ -52,6 +58,7 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_SEPOLIA_RPC_URL",
     fallbackUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     protocolEnv: "EVM_SEPOLIA_PROTOCOL_ADDRESS",
+    fallbackProtocolAddress: "0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1",
   },
   8453: { chain: base, rpcEnv: "EVM_BASE_RPC_URL", protocolEnv: "EVM_BASE_PROTOCOL_ADDRESS" },
   84532: {
@@ -59,6 +66,7 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_BASE_SEPOLIA_RPC_URL",
     fallbackUrl: "https://sepolia.base.org",
     protocolEnv: "EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS",
+    fallbackProtocolAddress: "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6",
   },
   4663: {
     chain: robinhood,
@@ -70,12 +78,14 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_ROBINHOOD_TESTNET_RPC_URL",
     fallbackUrl: "https://rpc.testnet.chain.robinhood.com",
     protocolEnv: "EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS",
+    fallbackProtocolAddress: "0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093",
   },
   5042002: {
     chain: arcTestnet,
     rpcEnv: "EVM_ARC_TESTNET_RPC_URL",
     fallbackUrl: "https://rpc.testnet.arc.network",
     protocolEnv: "EVM_ARC_TESTNET_PROTOCOL_ADDRESS",
+    fallbackProtocolAddress: "0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255",
   },
 };
 
@@ -119,11 +129,11 @@ export function hasEvmRpc(chainId: number): boolean {
   return evmRpcUrlFor(chainId) !== null;
 }
 
-/** Configured NaveProtocol address (lowercased) for `chainId`, or null when unset. */
+/** Configured NaveProtocol address (lowercased) for `chainId` (env or testnet fallback), or null when unset. */
 export function evmProtocolAddressFor(chainId: number): string | null {
   const cfg = EVM_RPC_CONFIG[chainId];
   if (!cfg) return null;
-  const raw = Deno.env.get(cfg.protocolEnv)?.trim();
+  const raw = Deno.env.get(cfg.protocolEnv)?.trim() || cfg.fallbackProtocolAddress;
   if (!raw || !/^0x[0-9a-fA-F]{40}$/.test(raw)) return null;
   return raw.toLowerCase();
 }

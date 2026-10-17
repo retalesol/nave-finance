@@ -676,6 +676,18 @@ test('evm_to_solana: reverted burn transactions are rejected', async () => {
 test('evm_to_solana: recipient comes from the burn event; a destination failure marks the row failed', async () => {
   // Enough confirmations now (head 200 → 101 confs).
   evmState.blockNumberHex = '0xc8';
+  // The release reads the on-chain fee before it builds the transfer.
+  solanaRpc.handlers.getAccountInfo = () => ({
+    context: { slot: 100 },
+    value: {
+      data: [syntheticBridgeConfig({ feeBps: 250, stakingBps: 100, protocolBps: 100, burnBps: 50 }).toString('base64'), 'base64'],
+      executable: false,
+      lamports: 1_000_000,
+      owner: bridgeProgramId.toBase58(),
+      rentEpoch: 0,
+      space: 347,
+    },
+  });
 
   // Force the DESTINATION (Solana release) to fail deterministically after
   // verification + insert, by removing a required release-side config.

@@ -61,6 +61,8 @@ export interface PolicyState {
   approvedProtocols: Record<string, boolean>;
   /** System-wide AI confidence (0–100). Not user-editable — persisted on save. */
   confidenceThreshold: number;
+  /** Minimum treasury NAV (in USD) required before autonomous agents deploy capital. */
+  agentThresholdUsd?: number;
 }
 
 export interface ConstitutionStepProps {
@@ -148,7 +150,14 @@ export function approvalsForPreset(
   const next = { ...current };
   for (const key of selectable) {
     const venue = findVenue(strategyChain, key);
-    if (!venue || !venue.stable || venue.availability === 'later') continue;
+    if (!venue) {
+      if (strategyChain === 'robinhood' || strategyChain === 'arc') {
+        next[key] = true;
+      }
+      continue;
+    }
+    if (venue.availability === 'later') continue;
+    if (!venue.stable && strategyChain !== 'robinhood' && strategyChain !== 'arc') continue;
     next[key] = tiers.includes(venue.tier);
   }
   return next;
@@ -247,13 +256,14 @@ export function rebalanceFreqToSecs(freq: string): number {
     case 'Weekly':    return 604_800;
     case 'Bi-weekly': return 1_209_600;
     case 'Monthly':   return 2_592_000;
-    case 'Manual':
+    case 'Manual':    return 0;
     default:          return 30 * 86_400;
   }
 }
 
 /** Convert a rebalance-secs value back to a human-readable label. */
 export function secsToRebalanceFreq(secs: number): string {
+  if (secs <= 0)         return 'Manual';
   if (secs <= 3_600)     return 'Hourly';
   if (secs <= 86_400)    return 'Daily';
   if (secs <= 604_800)   return 'Weekly';

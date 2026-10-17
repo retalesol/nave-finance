@@ -1,4 +1,5 @@
-import { createPublicClient, createWalletClient, encodeAbiParameters, http, keccak256, parseGwei, type Hash, type PublicClient } from 'viem';
+import { createPublicClient, createWalletClient, encodeAbiParameters, formatEther, http, keccak256, parseEther, parseGwei, type Hash, type Hex, type PublicClient } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet, base, sepolia, baseSepolia } from 'viem/chains';
 import type { Chain } from 'viem';
 import { loadEvmAccount, isEvmChainId, signEvmApproval, type EvmSignerRole } from './evmSigner.js';
@@ -6,17 +7,33 @@ import { arcTestnet, robinhood, robinhoodTestnet } from './evmChains.js';
 import { fetchHermesUpdateData } from './evmPythKeeper.js';
 import { evmStrategyVotingPeriodSeconds } from './actionDelays.js';
 
-// Scope: Ethereum + Base + Robinhood (1/8453/4663 + testnets).
+// Scope: Ethereum + Base + Robinhood + Arc Testnet (1/8453/4663 + testnets).
 
-/** chain_id → { viem chain, RPC env var }. */
-const CHAIN_CONFIG: Record<number, { chain: Chain; rpcEnv: string }> = {
+/** chain_id → { viem chain, RPC env var, optional testnet fallback URL }. */
+const CHAIN_CONFIG: Record<number, { chain: Chain; rpcEnv: string; fallbackUrl?: string }> = {
   1: { chain: mainnet, rpcEnv: 'EVM_ETHEREUM_RPC_URL' },
-  11155111: { chain: sepolia, rpcEnv: 'EVM_SEPOLIA_RPC_URL' },
+  11155111: {
+    chain: sepolia,
+    rpcEnv: 'EVM_SEPOLIA_RPC_URL',
+    fallbackUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
+  },
   8453: { chain: base, rpcEnv: 'EVM_BASE_RPC_URL' },
-  84532: { chain: baseSepolia, rpcEnv: 'EVM_BASE_SEPOLIA_RPC_URL' },
+  84532: {
+    chain: baseSepolia,
+    rpcEnv: 'EVM_BASE_SEPOLIA_RPC_URL',
+    fallbackUrl: 'https://sepolia.base.org',
+  },
   4663: { chain: robinhood, rpcEnv: 'EVM_ROBINHOOD_RPC_URL' },
-  46630: { chain: robinhoodTestnet, rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL' },
-  5042002: { chain: arcTestnet, rpcEnv: 'EVM_ARC_TESTNET_RPC_URL' },
+  46630: {
+    chain: robinhoodTestnet,
+    rpcEnv: 'EVM_ROBINHOOD_TESTNET_RPC_URL',
+    fallbackUrl: 'https://rpc.testnet.chain.robinhood.com',
+  },
+  5042002: {
+    chain: arcTestnet,
+    rpcEnv: 'EVM_ARC_TESTNET_RPC_URL',
+    fallbackUrl: 'https://rpc.testnet.arc.network',
+  },
 };
 
 /** Mainnet chain ids — a positive `minOut` slippage floor is REQUIRED here. */
@@ -108,7 +125,9 @@ const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
 // A custodied EOA broadcasts these txs, so we fence them: never submit a tx that
 // estimates above the gas cap, and never broadcast into a fee spike above the
 // max-fee cap. Both are intentionally generous for a single contract call.
-const DEFAULT_MAX_GAS = 600_000n;
+// Compound v3 deposits on Sepolia estimate about 1.6M gas. 600k refused a
+// real execute. 3M still rejects a runaway estimate.
+const DEFAULT_MAX_GAS = 3_000_000n;
 const DEFAULT_MAX_FEE_GWEI = 200; // maxFeePerGas ceiling
 
 function maxGasLimit(): bigint {
@@ -246,10 +265,10 @@ export interface EvmRelayResult {
   deadline?: string;
 }
 
-function rpcUrlFor(chainId: number): string {
+export function rpcUrlFor(chainId: number): string {
   const cfg = CHAIN_CONFIG[chainId];
-  if (!cfg) throw new Error(`Unsupported chain_id ${chainId} (Ethereum, Base, Robinhood)`);
-  const url = process.env[cfg.rpcEnv];
+  if (!cfg) throw new Error(`Unsupported chain_id ${chainId} (Ethereum, Base, Robinhood, Arc Testnet)`);
+  const url = process.env[cfg.rpcEnv]?.trim() || cfg.fallbackUrl;
   if (!url) throw new Error(`Relayer RPC not configured: set ${cfg.rpcEnv} for chain ${chainId}`);
   return url;
 }
@@ -257,15 +276,69 @@ function rpcUrlFor(chainId: number): string {
 type LoadedAccount = Awaited<ReturnType<typeof loadEvmAccount>>;
 
 /**
+ * Minimum gas floor for `syncPositionValue` so block-boundary interest accrual
+ * turning SSTORE no-ops into dirty writes never runs out of gas under EIP-150.
+ */
+export const SYNC_POSITION_VALUE_MIN_GAS = 200_000n;
+
+/**
+ * Compute the gas limit for a relayed EVM contract call:
+ *  - 30% headroom (`130n / 100n`) over the RPC estimate;
+ *  - minimum floor of `200_000n` when `functionName === 'syncPositionValue'`;
+ *  - capped at `gasCap`.
+ */
+export function computeRelayerGasLimit(
+  estimatedGas: bigint,
+  functionName: string,
+  gasCap: bigint = maxGasLimit(),
+): bigint {
+  const buffered = (estimatedGas * 130n) / 100n;
+  const floored =
+    functionName === 'syncPositionValue' && buffered < SYNC_POSITION_VALUE_MIN_GAS
+      ? SYNC_POSITION_VALUE_MIN_GAS
+      : buffered;
+  return floored > gasCap ? gasCap : floored;
+}
+
+/** In-process per-(chainId, senderAddress) async queue so concurrent calls from the same EOA never race on nonces. */
+const senderLocks = new Map<string, Promise<unknown>>();
+
+export async function withSenderLock<T>(
+  chainId: number,
+  address: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = `${chainId}:${address.toLowerCase()}`;
+  const prev = senderLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const next = prev.catch(() => {}).then(() => gate);
+  senderLocks.set(key, next);
+  await prev.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (senderLocks.get(key) === next) {
+      senderLocks.delete(key);
+    }
+  }
+}
+
+/**
  * Shared hardened broadcast for a single contract call from a custodied EOA.
  * Centralizes the relayer safety pattern used by BOTH the treasury toggle and
  * the NaveExecution pipeline relay:
- *  - per-chain client (Ethereum vs Base, mainnet vs testnet) from CHAIN_CONFIG;
+ *  - per-chain client (Ethereum, Base, Robinhood, Arc) from CHAIN_CONFIG;
+ *  - in-process per-(chainId, account.address) serialization around nonce read +
+ *    broadcast + receipt wait so concurrent calls from the same EOA never race;
  *  - gas estimate with a hard cap (estimateContractGas also surfaces a revert —
  *    e.g. caller is not the authorized agent — BEFORE we spend broadcasting);
- *  - 12% gas headroom (never above the cap);
+ *  - 30% gas headroom + 200k minimum floor on `syncPositionValue` (capped at gasCap);
  *  - EIP-1559 fees with a maxFeePerGas ceiling (refuse to broadcast into a spike);
- *  - explicit pending nonce so back-to-back relays don't collide;
+ *  - `'latest'` nonce tracking with a 20% fee bump when replacing a stuck pending tx;
  *  - wait for the receipt and FAIL if status === 'reverted' (no silent success).
  */
 async function broadcastCall(params: {
@@ -284,64 +357,129 @@ async function broadcastCall(params: {
   const publicClient = createPublicClient({ chain: cfg.chain, transport }) as PublicClient;
   const wallet = createWalletClient({ account, chain: cfg.chain, transport });
 
-  let gas: bigint;
-  try {
-    gas = await publicClient.estimateContractGas({
-      address: target,
-      abi: abi as never,
-      functionName: functionName as never,
-      args: args as never,
-      account,
-      ...(value !== undefined ? { value } : {}),
+  return withSenderLock(chainId, account.address, async () => {
+    let gas: bigint;
+    try {
+      gas = await publicClient.estimateContractGas({
+        address: target,
+        abi: abi as never,
+        functionName: functionName as never,
+        args: args as never,
+        account,
+        ...(value !== undefined ? { value } : {}),
+      });
+    } catch (err) {
+      throw new Error(
+        `Gas estimation failed for ${functionName} on ${target} (chain ${chainId}) — call would revert: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const gasCap = maxGasLimit();
+    if (gas > gasCap) {
+      throw new Error(`Estimated gas ${gas} exceeds relayer cap ${gasCap} for ${functionName} (chain ${chainId})`);
+    }
+    const gasLimit = computeRelayerGasLimit(gas, functionName, gasCap);
+
+    const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+    const feeCap = maxFeePerGasCap();
+    if (maxFeePerGas !== undefined && maxFeePerGas > feeCap) {
+      throw new Error(
+        `Network maxFeePerGas ${maxFeePerGas} exceeds relayer cap ${feeCap} (set NAVE_EVM_RELAY_MAX_FEE_GWEI to override) — refusing to relay during fee spike`,
+      );
+    }
+
+    const latestNonce = await publicClient.getTransactionCount({ address: account.address, blockTag: 'latest' });
+    let pendingNonce = latestNonce;
+    try {
+      pendingNonce = await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' });
+    } catch {
+      pendingNonce = latestNonce;
+    }
+
+    const minNormalPriority = parseGwei('0.01') > feeCap ? feeCap : parseGwei('0.01');
+    const minNormalMaxFee = parseGwei('0.05') > feeCap ? feeCap : parseGwei('0.05');
+    let effectiveMaxPriorityFeePerGas =
+      maxPriorityFeePerGas !== undefined && maxPriorityFeePerGas < minNormalPriority
+        ? minNormalPriority
+        : maxPriorityFeePerGas;
+    let effectiveMaxFeePerGas =
+      maxFeePerGas !== undefined && maxFeePerGas < minNormalMaxFee
+        ? minNormalMaxFee
+        : maxFeePerGas;
+    if (
+      effectiveMaxFeePerGas !== undefined &&
+      effectiveMaxPriorityFeePerGas !== undefined &&
+      effectiveMaxFeePerGas < effectiveMaxPriorityFeePerGas
+    ) {
+      effectiveMaxFeePerGas = effectiveMaxPriorityFeePerGas;
+    }
+
+    if (pendingNonce > latestNonce) {
+      // A prior tx at `latestNonce` is still pending in the mempool; bump fees
+      // by 20% and apply a 1.5 gwei priority / 3 gwei maxFee floor (capped at
+      // feeCap) so a stuck sub-gwei tx at `latestNonce` is replaced cleanly.
+      const minReplacePriority = parseGwei('1.5') > feeCap ? feeCap : parseGwei('1.5');
+      const minReplaceMaxFee = parseGwei('3') > feeCap ? feeCap : parseGwei('3');
+      if (effectiveMaxFeePerGas !== undefined) {
+        const bumped = (effectiveMaxFeePerGas * 120n) / 100n;
+        const floored = bumped < minReplaceMaxFee ? minReplaceMaxFee : bumped;
+        effectiveMaxFeePerGas = floored > feeCap ? feeCap : floored;
+      }
+      if (effectiveMaxPriorityFeePerGas !== undefined) {
+        const bumped = (effectiveMaxPriorityFeePerGas * 120n) / 100n;
+        const floored = bumped < minReplacePriority ? minReplacePriority : bumped;
+        effectiveMaxPriorityFeePerGas = floored > feeCap ? feeCap : floored;
+        if (effectiveMaxFeePerGas !== undefined && effectiveMaxPriorityFeePerGas > effectiveMaxFeePerGas) {
+          effectiveMaxPriorityFeePerGas = effectiveMaxFeePerGas;
+        }
+      }
+    }
+
+    let txHash!: Hash;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        txHash = await wallet.writeContract({
+          address: target,
+          abi: abi as never,
+          functionName: functionName as never,
+          args: args as never,
+          chain: cfg.chain,
+          account,
+          gas: gasLimit,
+          nonce: latestNonce,
+          ...(value !== undefined ? { value } : {}),
+          ...(effectiveMaxFeePerGas !== undefined ? { maxFeePerGas: effectiveMaxFeePerGas } : {}),
+          ...(effectiveMaxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas: effectiveMaxPriorityFeePerGas } : {}),
+        });
+        break;
+      } catch (err) {
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+        const isUnderpriced = msg.includes('replacement transaction underpriced') || msg.includes('underpriced');
+        if (!isUnderpriced || attempt === 2) throw err;
+        if (effectiveMaxFeePerGas !== undefined) {
+          const bumped = effectiveMaxFeePerGas * 2n;
+          effectiveMaxFeePerGas = bumped > feeCap ? feeCap : bumped;
+        }
+        if (effectiveMaxPriorityFeePerGas !== undefined) {
+          const bumped = effectiveMaxPriorityFeePerGas * 2n;
+          effectiveMaxPriorityFeePerGas = bumped > feeCap ? feeCap : bumped;
+          if (effectiveMaxFeePerGas !== undefined && effectiveMaxPriorityFeePerGas > effectiveMaxFeePerGas) {
+            effectiveMaxPriorityFeePerGas = effectiveMaxFeePerGas;
+          }
+        }
+      }
+    }
+
+    const confirmations = receiptConfirmations();
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      confirmations: confirmations > 0 ? confirmations : undefined,
+      timeout: receiptTimeoutMs(),
     });
-  } catch (err) {
-    throw new Error(
-      `Gas estimation failed for ${functionName} on ${target} (chain ${chainId}) — call would revert: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  const gasCap = maxGasLimit();
-  if (gas > gasCap) {
-    throw new Error(`Estimated gas ${gas} exceeds relayer cap ${gasCap} for ${functionName} (chain ${chainId})`);
-  }
-  const gasLimit = (() => {
-    const buffered = (gas * 112n) / 100n;
-    return buffered > gasCap ? gasCap : buffered;
-  })();
-
-  const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
-  const feeCap = maxFeePerGasCap();
-  if (maxFeePerGas !== undefined && maxFeePerGas > feeCap) {
-    throw new Error(
-      `Network maxFeePerGas ${maxFeePerGas} exceeds relayer cap ${feeCap} (set NAVE_EVM_RELAY_MAX_FEE_GWEI to override) — refusing to relay during fee spike`,
-    );
-  }
-
-  const nonce = await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' });
-
-  const txHash = await wallet.writeContract({
-    address: target,
-    abi: abi as never,
-    functionName: functionName as never,
-    args: args as never,
-    chain: cfg.chain,
-    account,
-    gas: gasLimit,
-    nonce,
-    ...(value !== undefined ? { value } : {}),
-    ...(maxFeePerGas !== undefined ? { maxFeePerGas } : {}),
-    ...(maxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas } : {}),
+    if (receipt.status !== 'success') {
+      throw new Error(`Relayed ${functionName} reverted on-chain (tx ${txHash}, chain ${chainId})`);
+    }
+    return { txHash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
   });
-
-  const confirmations = receiptConfirmations();
-  const receipt = await publicClient.waitForTransactionReceipt({
-    hash: txHash,
-    confirmations: confirmations > 0 ? confirmations : undefined,
-    timeout: receiptTimeoutMs(),
-  });
-  if (receipt.status !== 'success') {
-    throw new Error(`Relayed ${functionName} reverted on-chain (tx ${txHash}, chain ${chainId})`);
-  }
-  return { txHash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }
 
 /**
@@ -895,7 +1033,13 @@ const ACTION_SPECS: Record<EvmRelayAgentAction, ActionSpec> = {
  */
 export function evmRelaySignerRole(action: string): EvmSignerRole | null {
   if (action === 'toggle_agents') return 'guardian';
-  if (action === 'update_strategy_position_value' || action === 'revalue_treasury' || action === 'create_proposal') {
+  if (
+    action === 'update_strategy_position_value'
+    || action === 'revalue_treasury'
+    || action === 'create_proposal'
+    || action === 'create_strategy_request'
+    || action === 'finalize_proposal'
+  ) {
     return 'operational';
   }
   return ACTION_SPECS[action as EvmRelayAgentAction]?.role ?? null;
@@ -963,6 +1107,7 @@ const TREASURY_READ_ABI = [
   { type: 'function', name: 'governor', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'governanceType', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
   { type: 'function', name: 'nextProposalIndex', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+  { type: 'function', name: 'execution', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'oracle', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'getRegisteredAssets', stateMutability: 'view', inputs: [], outputs: [{ type: 'address[]' }] },
   {
@@ -1023,6 +1168,109 @@ const CREATE_PROPOSAL_ABI = [
     outputs: [{ name: 'index', type: 'uint64' }],
   },
 ] as const;
+
+const CREATE_STRATEGY_REQUEST_ABI = [
+  {
+    type: 'function',
+    name: 'createStrategyRequest',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'proposalIndex', type: 'uint64' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'adapter', type: 'address' },
+      { name: 'asset', type: 'address' },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const FINALIZE_PROPOSAL_ABI = [
+  {
+    type: 'function',
+    name: 'finalizeProposal',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'index', type: 'uint64' }],
+    outputs: [],
+  },
+] as const;
+
+/** Permissionless NaveGovernor.finalizeProposal. Reverts while voting is open and the outcome is not yet certain. */
+export async function relayEvmFinalizeProposal(body: {
+  chain_id: number;
+  dao_address: string;
+  proposal_index: string | number | bigint;
+}): Promise<{ txHash: Hash }> {
+  const { chain_id, dao_address } = body;
+  if (!isEvmChainId(chain_id)) throw new Error(`Unsupported chain_id ${chain_id}`);
+  if (!EVM_ADDRESS_RE.test(dao_address)) throw new Error('dao_address must be a 20-byte EVM address');
+  const index = BigInt(body.proposal_index);
+  if (index < 0n) throw new Error('proposal_index must be non-negative');
+  const client = evmPublicClient(chain_id);
+  const governor = await client.readContract({
+    address: dao_address as `0x${string}`,
+    abi: TREASURY_READ_ABI,
+    functionName: 'governor',
+  });
+  if (!EVM_ADDRESS_RE.test(governor) || governor === ZERO_ADDRESS) throw new Error('Treasury governor is unset');
+  const account = await loadEvmAccount(dao_address, chain_id, 'operational');
+  const { txHash } = await broadcastCall({
+    chainId: chain_id,
+    target: governor,
+    abi: FINALIZE_PROPOSAL_ABI,
+    functionName: 'finalizeProposal',
+    args: [index],
+    account,
+  });
+  return { txHash };
+}
+
+export interface EvmCreateStrategyRequest {
+  chain_id: number;
+  dao_address: string;
+  proposal_index: string | number | bigint;
+  adapter: string;
+  asset: string;
+  amount: string | number | bigint;
+}
+
+/**
+ * Permissionless NaveExecution.createStrategyRequest for a passed Strategy
+ * proposal. The contract rejects anything but a passed proposal whose payload
+ * hash equals (adapter, amount, asset). The request index is the proposal index.
+ */
+export async function relayEvmCreateStrategyRequest(
+  body: EvmCreateStrategyRequest,
+): Promise<{ txHash: Hash; executionAddress: string; index: string }> {
+  const { chain_id, dao_address } = body;
+  if (!isEvmChainId(chain_id)) throw new Error(`Unsupported chain_id ${chain_id}`);
+  if (!EVM_ADDRESS_RE.test(dao_address) || !EVM_ADDRESS_RE.test(body.adapter) || !EVM_ADDRESS_RE.test(body.asset)) {
+    throw new Error('dao_address, adapter, and asset must be 20-byte EVM addresses');
+  }
+  const amount = BigInt(body.amount);
+  const index = BigInt(body.proposal_index);
+  if (amount <= 0n) throw new Error('amount must be positive');
+  if (index < 0n) throw new Error('proposal_index must be non-negative');
+
+  const client = evmPublicClient(chain_id);
+  const execution = await client.readContract({
+    address: dao_address as `0x${string}`,
+    abi: TREASURY_READ_ABI,
+    functionName: 'execution',
+  });
+  if (!EVM_ADDRESS_RE.test(execution) || execution === ZERO_ADDRESS) {
+    throw new Error('Treasury execution contract is unset');
+  }
+  const account = await loadEvmAccount(dao_address, chain_id, 'operational');
+  const { txHash } = await broadcastCall({
+    chainId: chain_id,
+    target: execution,
+    abi: CREATE_STRATEGY_REQUEST_ABI,
+    functionName: 'createStrategyRequest',
+    args: [index, amount, body.adapter as `0x${string}`, body.asset as `0x${string}`],
+    account,
+  });
+  return { txHash, executionAddress: execution.toLowerCase(), index: index.toString() };
+}
 
 export interface EvmCreateProposalRequest {
   chain_id: number;
@@ -1102,7 +1350,7 @@ export async function relayEvmCreateProposal(body: EvmCreateProposalRequest): Pr
       description,
       payload,
       proposalType: 1,
-      votingPeriodSeconds: evmStrategyVotingPeriodSeconds(chain_id),
+      votingPeriodSeconds: evmStrategyVotingPeriodSeconds(chain_id, true),
       votingMint: votingMint as `0x${string}`,
     }],
     account,
@@ -1208,4 +1456,208 @@ export async function relayEvmRevalueTreasury(body: { chain_id: number; dao_addr
     status: 'success',
     ...(priceUpdateTx ? { price_update_tx: priceUpdateTx } : {}),
   };
+}
+
+// ── EVM agent wallet gas replenishment ────────────────────────────────────────
+
+export interface EvmAgentWalletResult {
+  role: string;
+  address: string;
+  balanceWei: bigint;
+  toppedUp: boolean;
+  topUpWei: bigint;
+  txHash?: Hash;
+}
+
+const DEFAULT_EVM_AGENT_MIN_GAS = '0.002';
+const DEFAULT_EVM_AGENT_TARGET_GAS = '0.005';
+const EVM_OPS_RESERVE_WEI = parseEther('0.0005');
+
+function parseEtherEnv(envName: string, defaultEther: string): bigint {
+  const raw = process.env[envName]?.trim();
+  if (!raw) return parseEther(defaultEther);
+  try {
+    const val = parseEther(raw);
+    return val > 0n ? val : parseEther(defaultEther);
+  } catch {
+    return parseEther(defaultEther);
+  }
+}
+
+function loadEvmOpsAccount(): ReturnType<typeof privateKeyToAccount> | null {
+  const raw = (process.env.NAVE_EVM_OPS_PRIVATE_KEY || process.env.EVM_OPS_PRIVATE_KEY || '').trim();
+  if (!raw) return null;
+  const hex = (raw.startsWith('0x') ? raw : `0x${raw}`) as Hex;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) {
+    console.error('[evm-relayer] EVM_OPS_PRIVATE_KEY / NAVE_EVM_OPS_PRIVATE_KEY is set but not a 32-byte hex key.');
+    return null;
+  }
+  try {
+    return privateKeyToAccount(hex);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check native gas balances of the DAO's custodied `executive`, `financial`,
+ * `oversight`, `operational`, and `guardian` EOAs on `chainId` (`11155111`,
+ * `84532`, `46630`, `5042002`, etc.) and top them up from the relayer ops
+ * wallet (`EVM_OPS_PRIVATE_KEY` / `NAVE_EVM_OPS_PRIVATE_KEY`) when below the
+ * safe minimum (`0.002` native gas by default).
+ */
+export async function replenishEvmAgentWallets(
+  daoAddress: string,
+  chainId: number,
+): Promise<EvmAgentWalletResult[]> {
+  if (!isEvmChainId(chainId) || !CHAIN_CONFIG[chainId]) {
+    throw new Error(`Unsupported EVM chain_id ${chainId}`);
+  }
+  if (!EVM_ADDRESS_RE.test(daoAddress)) {
+    throw new Error('daoAddress must be a 20-byte EVM address');
+  }
+
+  const cfg = CHAIN_CONFIG[chainId];
+  const transport = http(rpcUrlFor(chainId));
+  const publicClient = createPublicClient({ chain: cfg.chain, transport }) as PublicClient;
+  const opsAccount = loadEvmOpsAccount();
+  const minBalanceWei = parseEtherEnv('NAVE_EVM_AGENT_MIN_GAS', DEFAULT_EVM_AGENT_MIN_GAS);
+  const rawTargetWei = parseEtherEnv('NAVE_EVM_AGENT_TARGET_GAS', DEFAULT_EVM_AGENT_TARGET_GAS);
+  const targetBalanceWei = rawTargetWei > minBalanceWei ? rawTargetWei : minBalanceWei * 2n;
+
+  const targets: Array<{ label: string; account: LoadedAccount }> = [];
+  const seenAddresses = new Set<string>();
+
+  const pipelineRoles: Array<Exclude<EvmSignerRole, 'guardian'>> = [
+    'executive',
+    'financial',
+    'oversight',
+    'operational',
+  ];
+  for (const role of pipelineRoles) {
+    try {
+      const account = await loadEvmAccount(daoAddress, chainId, role);
+      const addrKey = account.address.toLowerCase();
+      if (!seenAddresses.has(addrKey)) {
+        seenAddresses.add(addrKey);
+        targets.push({ label: role, account });
+      }
+    } catch {
+      // Key not custodied for this role — skip gracefully.
+    }
+  }
+
+  for (let i = 0; i < MAX_CUSTODIED_GUARDIANS; i++) {
+    try {
+      const account = await loadEvmAccount(daoAddress, chainId, 'guardian', i);
+      const addrKey = account.address.toLowerCase();
+      if (!seenAddresses.has(addrKey)) {
+        seenAddresses.add(addrKey);
+        targets.push({ label: `guardian#${i}`, account });
+      }
+    } catch {
+      break; // first missing guardian slot ends the custodied guardian set
+    }
+  }
+
+  const results: EvmAgentWalletResult[] = [];
+  for (const { label, account } of targets) {
+    try {
+      const balanceWei = await publicClient.getBalance({ address: account.address });
+      if (balanceWei >= minBalanceWei) {
+        results.push({
+          role: label,
+          address: account.address,
+          balanceWei,
+          toppedUp: false,
+          topUpWei: 0n,
+        });
+        continue;
+      }
+
+      const neededWei = targetBalanceWei - balanceWei;
+      if (!opsAccount) {
+        console.warn(
+          `[evm-relayer] ${label}@${daoAddress} (chain ${chainId}) balance ${formatEther(balanceWei)} < ${formatEther(minBalanceWei)}, ` +
+          `but EVM_OPS_PRIVATE_KEY / NAVE_EVM_OPS_PRIVATE_KEY is not configured.`,
+        );
+        results.push({
+          role: label,
+          address: account.address,
+          balanceWei,
+          toppedUp: false,
+          topUpWei: 0n,
+        });
+        continue;
+      }
+
+      if (opsAccount.address.toLowerCase() === account.address.toLowerCase()) {
+        results.push({
+          role: label,
+          address: account.address,
+          balanceWei,
+          toppedUp: false,
+          topUpWei: 0n,
+        });
+        continue;
+      }
+
+      const txHash = await withSenderLock(chainId, opsAccount.address, async () => {
+        const opsBalance = await publicClient.getBalance({ address: opsAccount.address });
+        if (opsBalance < neededWei + EVM_OPS_RESERVE_WEI) {
+          throw new Error(
+            `EVM ops wallet ${opsAccount.address} balance ${formatEther(opsBalance)} on chain ${chainId} ` +
+            `is insufficient to top up ${label} (${account.address}) by ${formatEther(neededWei)}`,
+          );
+        }
+        const wallet = createWalletClient({ account: opsAccount, chain: cfg.chain, transport });
+        const nonce = await publicClient.getTransactionCount({ address: opsAccount.address, blockTag: 'latest' });
+        const hash = await wallet.sendTransaction({
+          account: opsAccount,
+          chain: cfg.chain,
+          to: account.address,
+          value: neededWei,
+          nonce,
+        });
+        const confirmations = receiptConfirmations();
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash,
+          confirmations: confirmations > 0 ? confirmations : undefined,
+          timeout: receiptTimeoutMs(),
+        });
+        if (receipt.status !== 'success') {
+          throw new Error(`EVM top-up tx ${hash} reverted on chain ${chainId}`);
+        }
+        return hash;
+      });
+
+      const finalBalanceWei = await publicClient.getBalance({ address: account.address });
+      console.log(
+        `[evm-relayer] Replenished ${label}@${daoAddress} (chain ${chainId}): +${formatEther(neededWei)} ` +
+        `(${formatEther(balanceWei)} → ${formatEther(finalBalanceWei)}, tx ${txHash})`,
+      );
+      results.push({
+        role: label,
+        address: account.address,
+        balanceWei: finalBalanceWei,
+        toppedUp: true,
+        topUpWei: neededWei,
+        txHash,
+      });
+    } catch (err) {
+      console.error(
+        `[evm-relayer] replenishEvmAgentWallets ${label}@${daoAddress} (chain ${chainId}):`,
+        err instanceof Error ? err.message : err,
+      );
+      results.push({
+        role: label,
+        address: account.address,
+        balanceWei: -1n,
+        toppedUp: false,
+        topUpWei: 0n,
+      });
+    }
+  }
+
+  return results;
 }

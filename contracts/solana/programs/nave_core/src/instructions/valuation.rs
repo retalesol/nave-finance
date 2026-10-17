@@ -1,17 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
-
 use crate::constants::{
-    pyth_receiver_program, AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED,
-    PYTH_MAX_PRICE_AGE_SECS, TREASURY_VAULT_SEED,
+    AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED, TREASURY_VAULT_SEED,
 };
 use crate::errors::NaveError;
 use crate::state::{
     AgentSet, AssetConfig, DaoRegistry, NaveGlobalConfig, StrategyPosition, TreasuryAsset,
     TreasuryVault,
 };
-use crate::utils::{value_stable, value_usd};
+use crate::utils::{nonstable_micro_usd, value_stable};
 
 /// Recompute the portfolio's USD NAV from every registered asset and reseed the
 /// performance high-water-mark. `remaining_accounts` holds one 4-account group
@@ -28,9 +25,9 @@ use crate::utils::{value_stable, value_usd};
 /// principal is summed separately so USD `deployed_capital` stays consistent
 /// with the constitution's deployment cap / liquidity floor.
 ///
-/// Stablecoins are valued at $1; other assets are valued via their Pyth feed
-/// (staleness + feed-id checked). The Pyth account is ignored for stablecoins;
-/// callers may pass the same `asset_vault` as a placeholder for the 4th slot.
+/// Stablecoins are valued at $1. Wrapped SOL is valued from the pinned
+/// Chainlink SOL/USD feed. Other assets use their Pyth feed. The price
+/// account is ignored for stablecoins; callers may pass `asset_vault`.
 pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
     crate::utils::require_not_paused(&ctx.accounts.global_config)?;
     // Authority gate: only the founder or an active Oversight agent (`AgentRole::Operational`) may
@@ -112,24 +109,23 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
                 value_stable(asset.deployed_capital, cfg.decimals)?,
             )
         } else {
-            require!(
-                price_ai.owner == &pyth_receiver_program::ID,
-                NaveError::InvalidOracleAccount
-            );
-            let price_update: PriceUpdateV2 = {
-                let data = price_ai.try_borrow_data()?;
-                PriceUpdateV2::try_deserialize(&mut &data[..])?
-            };
-            let p = price_update
-                .get_price_no_older_than(&clock, PYTH_MAX_PRICE_AGE_SECS, &cfg.pyth_feed_id)
-                .map_err(|_| error!(NaveError::StaleOracle))?;
-            // Reject prices whose Pyth confidence band is too wide relative to
-            // the price (>2%); a wide band must not be used to value the
-            // treasury (StaleOracle, same as an over-age price).
-            crate::utils::require_confidence(p.price, p.conf)?;
             (
-                value_usd(total, cfg.decimals, p.price, p.exponent)?,
-                value_usd(asset.deployed_capital, cfg.decimals, p.price, p.exponent)?,
+                nonstable_micro_usd(
+                    &asset.mint,
+                    &cfg.pyth_feed_id,
+                    cfg.decimals,
+                    total,
+                    price_ai,
+                    &clock,
+                )?,
+                nonstable_micro_usd(
+                    &asset.mint,
+                    &cfg.pyth_feed_id,
+                    cfg.decimals,
+                    asset.deployed_capital,
+                    price_ai,
+                    &clock,
+                )?,
             )
         };
 

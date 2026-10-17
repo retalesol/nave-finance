@@ -964,7 +964,7 @@ function SeedReviewStep({
   const isNewToken = config.tokenMode === 'new';
   const nativeUnit = treasuryNativeLabel(config.chain);
   const seedDepositCopy = config.chain === 'arc'
-    ? 'Deposited into your Arc vault as native gas USDC (18 decimals). This is not the 6-decimal USDC ERC-20 the treasury holds, and it is not a protocol fee.'
+    ? 'Arc treasuries hold 6-decimal ERC-20 USDC (deposited from Assets after creation); native gas USDC is not attached to createDao, and the seed amount sets your initial agent threshold.'
     : `Deposited into your ${chainLabel} vault as native ${nativeUnit} — not a protocol fee.`;
 
   const seedNum = parseFloat(seedAmount);
@@ -1578,8 +1578,17 @@ export default function CreateDAO() {
         );
       }
       // formationFee is 0. Any msg.value above that is the founder's own seed, not a fee.
+      // On Arc Testnet (5042002), NaveProtocol.wrappedNative() is address(0) because
+      // native gas is 18-decimal USDC while the treasury asset is 6-decimal ERC-20 USDC
+      // (0x3600000000000000000000000000000000000000); passing seedWei > 0 reverts
+      // seedNativeTreasury() with WrappedNativeNotConfigured().
       const seedNum = parseFloat(seedAmount);
-      const seedWei = !isNaN(seedNum) && seedNum > 0 ? parseEther(String(seedNum)) : 0n;
+      const seedWei =
+        chainId === 5042002
+          ? 0n
+          : !isNaN(seedNum) && seedNum > 0
+            ? parseEther(String(seedNum))
+            : 0n;
       const totalValue = formationFeeWei + seedWei;
       const build = buildCreateDaoEvm(chainId, params, totalValue, resolvedFactory);
       const outcome = await tx.sendEvm(build, { successLabel: 'Treasury deployed', quietMock: true, quietToast: true });
@@ -1721,7 +1730,14 @@ export default function CreateDAO() {
         let logoUrl = '';
         if (config.logoBlob) {
           try {
-            logoUrl = await uploadDaoLogo(config.logoBlob, config.name || treasury, founder, treasury);
+            logoUrl = await uploadDaoLogo(
+              config.logoBlob,
+              config.name || treasury,
+              founder,
+              treasury,
+              async (m) => signEvmMessage({ message: m }),
+              { chain: family, chainId },
+            );
           } catch {
             /* logo upload is non-blocking */
           }
@@ -2054,10 +2070,14 @@ export default function CreateDAO() {
       //    wallet signatures from 3 → 2 for the init phase (plus the later
       //    Seed & Ratify tx makes 3 total).
       const AGENT_SEED_LAMPORTS = Math.round(AGENT_WALLET_SEED_SOL * 1_000_000_000);
+      const seedAgentPubkeys = [
+        ...agentAuthorities,
+        ...(keyData.agents.planner?.pubkey ? [new PublicKey(keyData.agents.planner.pubkey)] : []),
+      ];
       const initDaoResult = await buildInitializeDao(founder, protocolTreasury, daoId, params);
       initDaoResult.preInstructions = [
         ...(initDaoResult.preInstructions ?? []),
-        ...agentAuthorities.map((agentKey) =>
+        ...seedAgentPubkeys.map((agentKey) =>
           SystemProgram.transfer({
             fromPubkey: founder,
             toPubkey: agentKey,
@@ -2203,7 +2223,15 @@ export default function CreateDAO() {
       let logoUrl = '';
       if (config.logoBlob) {
         try {
-          logoUrl = await uploadDaoLogo(config.logoBlob, config.name || daoRegistry.toBase58(), founder.toBase58(), daoRegistry.toBase58());
+          if (!signMessage) throw new Error('Connected wallet does not support message signing.');
+          logoUrl = await uploadDaoLogo(
+            config.logoBlob,
+            config.name || daoRegistry.toBase58(),
+            founder.toBase58(),
+            daoRegistry.toBase58(),
+            solanaAccessSigner(signMessage),
+            { chain: 'solana' },
+          );
         } catch {
           /* logo upload is non-blocking */
         }

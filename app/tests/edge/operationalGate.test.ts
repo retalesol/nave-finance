@@ -39,18 +39,44 @@ test("continue is refused when guardrails did not run or one fails", () => {
   assert.equal(operationalGate({ ...base, checks: warningOnly }).ok, true);
 });
 
-test("a model-only halt is never cleared by the model", () => {
+test("a model-only halt (openHaltCauses: []) can be cleared when all deterministic checks and guardrails pass", () => {
   const r = operationalGate({
     action: "clear_halt",
     status: "Halted",
     nowSecs: 2_000,
     reviewEndSecs: 1_000,
-    checks: green,
+    checks: [
+      ...green,
+      { id: "genlayer_venue", ok: true, indeterminate: true, severity: "critical" },
+      { id: "genlayer_halt", ok: true, indeterminate: true, severity: "critical" },
+    ],
     guardrailFailures: [],
     openHaltCauses: [],
   });
-  assert.equal(r.ok, false);
-  assert.match(r.blockers.join(";"), /founder/);
+  assert.equal(r.ok, true);
+  assert.ok(r.reasons.some((x) => x.includes("model-initiated halt cleared")));
+
+  const blockedByFailure = operationalGate({
+    action: "clear_halt",
+    status: "Halted",
+    nowSecs: 2_000,
+    reviewEndSecs: 1_000,
+    checks: green,
+    guardrailFailures: ["manual guardrail failure"],
+    openHaltCauses: [],
+  });
+  assert.equal(blockedByFailure.ok, false);
+
+  const blockedByGenlayer = operationalGate({
+    action: "clear_halt",
+    status: "Halted",
+    nowSecs: 2_000,
+    reviewEndSecs: 1_000,
+    checks: [...green, { id: "genlayer_halt", ok: false, severity: "critical" }],
+    guardrailFailures: [],
+    openHaltCauses: [],
+  });
+  assert.equal(blockedByGenlayer.ok, false);
 });
 
 test("clear_halt needs every recorded halt cause to pass again", () => {

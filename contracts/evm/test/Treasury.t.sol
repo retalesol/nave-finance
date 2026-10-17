@@ -10,6 +10,7 @@ import {NaveErrors} from "../src/libraries/NaveErrors.sol";
 import {NaveConstants} from "../src/libraries/NaveConstants.sol";
 import {TreasuryAdminLib} from "../src/libraries/TreasuryAdminLib.sol";
 import {AgentRole, AgentStatus, GuardianActionType} from "../src/libraries/NaveEnums.sol";
+import {MockERC20} from "./mocks/MockERC20.sol";
 
 contract TreasuryTest is NaveBase {
     NaveTreasury internal treasury;
@@ -156,6 +157,19 @@ contract TreasuryTest is NaveBase {
         vm.stopPrank();
         assertEq(treasury.currentNav(), 1000e6); // $1000 in micro-USD
         assertEq(usdc.balanceOf(address(treasury)), 1000e6);
+    }
+
+    function test_deposit_nonStableClearsRevalueWindow() public {
+        _registerUsdc();
+        _revalueTreasury(treasury);
+        assertGt(treasury.lastRevaluedAt(), 0);
+        MockERC20 weth = new MockERC20("Wrapped Ether", "WETH", 18);
+        vm.prank(founder);
+        treasury.registerAsset(address(weth), bytes32(uint256(1)), false, 0);
+        weth.mint(address(this), 1 ether);
+        weth.approve(address(treasury), 1 ether);
+        treasury.deposit(address(weth), 1 ether);
+        assertEq(treasury.lastRevaluedAt(), 0);
     }
 
     // ── Management fee is 0, including after a year ───────────────────────

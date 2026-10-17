@@ -76,9 +76,11 @@ function runPreflight(env) {
     const dep = JSON.parse(readFileSync(devnetJson, "utf8"));
     const programs = dep.programs || {};
     for (const [name, id] of Object.entries(programs)) {
-      const show = spawnSync("solana", ["program", "show", id, "-u", env.ANCHOR_PROVIDER_URL], {
-        encoding: "utf8",
-      });
+      const show = spawnSync(
+        "solana",
+        ["program", "show", id, "-u", env.ANCHOR_PROVIDER_URL, "-k", env.ANCHOR_WALLET],
+        { encoding: "utf8" }
+      );
       if (show.status !== 0) {
         errors.push(`Program ${name} (${id}) not found on devnet RPC`);
       } else {
@@ -171,7 +173,13 @@ function main() {
 
   const env = applyTestEnv();
   console.log(`\n=== Solana devnet suite (tier=${tier}) ===`);
-  console.log(`RPC: ${env.ANCHOR_PROVIDER_URL}`);
+  let rpcHost = "configured";
+  try {
+    rpcHost = new URL(env.ANCHOR_PROVIDER_URL).host;
+  } catch {
+    rpcHost = "configured";
+  }
+  console.log(`RPC host: ${rpcHost}`);
   console.log(`Wallet: ${env.ANCHOR_WALLET}\n`);
 
   runPreflight(env);

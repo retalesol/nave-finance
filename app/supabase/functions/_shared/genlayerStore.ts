@@ -15,6 +15,7 @@ import {
   type ReviewRow,
   charterRpcParams,
   isActionHash,
+  mergeStoredCharter,
   normalizeActionHash,
   treasuryKey,
   viewFromRows,
@@ -74,6 +75,43 @@ function storedActionHash(input: PublicCharterInput): string {
   return isActionHash(input.action_hash) ? normalizeActionHash(input.action_hash) : input.action_hash.trim();
 }
 
+async function fetchStoredCharter(input: PublicCharterInput): Promise<{
+  decision?: string | null;
+  summary?: string | null;
+  finished?: boolean | null;
+  provisional?: boolean | null;
+  customer_status?: string | null;
+  rule_ids?: string[] | null;
+  tx_id?: string | null;
+} | null> {
+  const url = envGet("SUPABASE_URL");
+  const key = envGet("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  const params = new URLSearchParams({
+    select: "decision,summary,finished,provisional,customer_status,rule_ids,tx_id",
+    chain_family: `eq.${input.chain_family}`,
+    network: `eq.${input.network}`,
+    treasury: `eq.${treasuryKey(input.chain_family, input.treasury)}`,
+    action_hash: `eq.${storedActionHash(input)}`,
+    kind: "eq.charter",
+    limit: "1",
+  });
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/genlayer_reviews?${params}`, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows[0] ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The transaction id already stored for this case, or "" when there is none. */
 export async function fetchStoredTx(input: PublicCharterInput, kind: ReviewKind): Promise<string> {
   const url = envGet("SUPABASE_URL");
@@ -122,18 +160,21 @@ export async function saveGenlayerReview(
   const url = envGet("SUPABASE_URL");
   const key = envGet("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key || !fields.tx_id) return;
+  const kept = kind === "charter" && fields.decision !== "pass" && fields.decision !== "fail"
+    ? mergeStoredCharter(fields, await fetchStoredCharter(input))
+    : fields;
   const row = {
     chain_family: input.chain_family,
     network: input.network,
     treasury: treasuryKey(input.chain_family, input.treasury),
     action_hash: storedActionHash(input),
     kind,
-    decision: fields.decision,
-    customer_status: fields.customer_status,
-    finished: fields.finished,
-    provisional: fields.provisional,
-    rule_ids: fields.rule_ids,
-    summary: fields.summary,
+    decision: kept.decision,
+    customer_status: kept.customer_status,
+    finished: kept.finished,
+    provisional: kept.provisional,
+    rule_ids: kept.rule_ids,
+    summary: kept.summary,
     venue_status: fields.venue_status,
     tx_id: fields.tx_id,
     case_id: charterRpcParams(input).case_id,

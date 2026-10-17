@@ -98,7 +98,17 @@ export function operationalGate(input: OperationalGateInput): OperationalGateRes
     if (input.openHaltCauses === null) {
       blockers.push("no halt record for this request");
     } else if (input.openHaltCauses.length === 0) {
-      blockers.push("halt had no deterministic cause; only the founder can clear it");
+      const failingDeterministic = HALT_CAUSE_CHECKS.filter((id) => {
+        const c = byId.get(id);
+        return c != null && !c.ok && (c.severity ?? "critical") === "critical";
+      });
+      if ((input.guardrailFailures?.length ?? 0) > 0 || failingDeterministic.length > 0) {
+        blockers.push(
+          `halt causes still failing: ${failingDeterministic.join(", ") || input.guardrailFailures!.join("; ")}`,
+        );
+      } else {
+        reasons.push("model-initiated halt cleared with all deterministic checks green");
+      }
     } else if (unresolved.length > 0) {
       blockers.push(`halt causes still failing: ${unresolved.join(", ")}`);
     } else {

@@ -21,15 +21,20 @@ import { corsHeadersFor, jsonWithCors, requireSecret } from "../_shared/http.ts"
 import {
   listRegisteredMints,
   readConstitution,
+  readSolanaMintQuote,
   readStrategyPositions,
   readTreasuryVault,
 } from "../_shared/onchain.ts";
 import {
   isEvmPolicyChain,
   readEvmConstitution,
+  readEvmHeldAssets,
   readEvmStrategyPositions,
   readEvmTreasuryVault,
 } from "../_shared/evmPolicy.ts";
+import { resolveAsset } from "../_shared/allowedAssets.ts";
+import { assetIsStable } from "../_shared/genlayerCharter.ts";
+import { bindDeployActions, type HeldAsset } from "../_shared/policyAssets.ts";
 import {
   applyLiveRates,
   loadStrategyRates,
@@ -43,8 +48,44 @@ import {
   evaluatePolicy,
   policyProofHash,
   scoreOpportunity,
+  withActions,
   type PolicyInputs,
+  type RecommendedAction,
 } from "../_shared/policy.ts";
+
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+
+/** Jito takes wrapped SOL and returns jitoSOL; the deposit asset is wSOL. */
+function solanaDeployMint(action: RecommendedAction): string | undefined {
+  if (action.protocolId === "jito") return WSOL_MINT;
+  return action.mint;
+}
+
+async function solanaHeldAssets(rpcUrl: string, dao: string, mints: string[]): Promise<HeldAsset[]> {
+  const held: HeldAsset[] = [];
+  for (const mint of mints) {
+    const quote = await readSolanaMintQuote(rpcUrl, dao, mint);
+    if (!quote || quote.idleBase <= 0) continue;
+    const idleMicroUsd = Number((BigInt(quote.totalMicroUsd) * BigInt(quote.idleBase)) / BigInt(quote.totalBase));
+    held.push({
+      mint,
+      stable: assetIsStable(mint, resolveAsset(mint)?.assetClass ?? null),
+      idleBase: quote.idleBase,
+      idleMicroUsd,
+    });
+  }
+  return held;
+}
+
+/** Idle stable value, or null when a held asset's class is unknown. */
+function stableMicroUsd(held: HeldAsset[]): number | null {
+  let total = 0;
+  for (const asset of held) {
+    if (asset.stable == null) return null;
+    if (asset.stable) total += asset.idleMicroUsd;
+  }
+  return total;
+}
 
 const BREACH_FLAGS = new Set([
   "deployment_cap_breached",
@@ -174,14 +215,24 @@ Deno.serve(async (req: Request) => {
           approved: true,
         }));
 
+      const solanaMints = evmChain ? [] : await listRegisteredMints(rpcUrl, daoAddr);
       const positions = evmChain
         ? await readEvmStrategyPositions(dao.chain_id as number, daoAddr, approvedProtocols)
         : await readStrategyPositions(
           rpcUrl,
           daoAddr,
           approvedProtocols.map((p) => p.protocolId),
-          await listRegisteredMints(rpcUrl, daoAddr),
+          solanaMints,
         );
+
+      const evmHeld = evmChain
+        ? await readEvmHeldAssets(dao.chain_id as number, daoAddr, approvedProtocols.map((p) => p.programId))
+        : null;
+      if (evmChain && evmHeld == null) {
+        skipped.push({ dao: daoAddr, reason: "held_assets_unreadable" });
+        continue;
+      }
+      const held: HeldAsset[] = evmHeld ?? await solanaHeldAssets(rpcUrl, daoAddr, solanaMints);
 
       const scanned = applyLiveRates(
         await scanYieldOpportunities(
@@ -205,11 +256,9 @@ Deno.serve(async (req: Request) => {
         daoAddress: daoAddr,
         navBaseUnits: vault.navBaseUnits,
         deployedBaseUnits: vault.deployedBaseUnits,
-        // The single-mint vault model cannot prove multi-asset reserve
-        // composition on-chain; leave reserve composition unknown so the
-        // evaluator flags it rather than assuming compliance (multi-asset
-        // treasury milestone, see Phase 1 notes).
-        stablecoinBaseUnits: null,
+        // Idle stable value in micro-USD, the same unit as NAV. Unknown when a
+        // held asset is not on the allowlist, so the evaluator flags it.
+        stablecoinBaseUnits: stableMicroUsd(held),
         positions,
         approvedProtocols,
         policy: {
@@ -224,7 +273,21 @@ Deno.serve(async (req: Request) => {
         nowSecs,
       };
 
-      const recommendation = evaluatePolicy(inputs);
+      const sized = evaluatePolicy(inputs);
+      const bound = bindDeployActions(sized.actions, {
+        candidatesFor: (action) => {
+          if (evmHeld) {
+            const adapter = action.programId.toLowerCase();
+            return evmHeld.filter((a) => a.adapters.includes(adapter));
+          }
+          const mint = solanaDeployMint(action);
+          return mint ? held.filter((a) => a.mint === mint) : [];
+        },
+        stableMicroUsd: inputs.stablecoinBaseUnits,
+        navMicroUsd: inputs.navBaseUnits,
+        minStablecoinReserveBps: constitution.minStablecoinReserveBps,
+      });
+      const recommendation = withActions(inputs, sized, bound.actions, bound.rejected);
       const canonical = canonicalPolicy(recommendation, inputs);
       const proofHash = await policyProofHash(canonical);
 

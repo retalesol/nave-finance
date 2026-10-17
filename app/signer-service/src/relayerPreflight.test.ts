@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { encodeAbiParameters, toFunctionSelector } from 'viem';
-import { expectedRequestPayloadHash, relayEvmAgentAction } from './evmRelayer.js';
+import {
+  SYNC_POSITION_VALUE_MIN_GAS,
+  computeRelayerGasLimit,
+  expectedRequestPayloadHash,
+  relayEvmAgentAction,
+  rpcUrlFor,
+  withSenderLock,
+} from './evmRelayer.js';
 
 const TREASURY = '0x1111111111111111111111111111111111111111';
 const EXECUTION = '0x2222222222222222222222222222222222222222';
@@ -164,4 +171,74 @@ test('relay refuses an approval whose caller-supplied fields differ from the cha
   current = { exists: true, kind: 0, status: 1, amount: 1_000_000n };
   await assert.rejects(relay('financial_approve', { amount: '999' }), /amount does not match the on-chain request/);
   await assert.rejects(relay('financial_approve', { adapter: IMPOSTOR }), /adapter does not match the on-chain request/);
+});
+
+test('rpcUrlFor: uses public testnet fallbacks when env vars are unset and requires mainnet env vars', () => {
+  const saved = {
+    EVM_SEPOLIA_RPC_URL: process.env.EVM_SEPOLIA_RPC_URL,
+    EVM_BASE_SEPOLIA_RPC_URL: process.env.EVM_BASE_SEPOLIA_RPC_URL,
+    EVM_ROBINHOOD_TESTNET_RPC_URL: process.env.EVM_ROBINHOOD_TESTNET_RPC_URL,
+    EVM_ARC_TESTNET_RPC_URL: process.env.EVM_ARC_TESTNET_RPC_URL,
+    EVM_ETHEREUM_RPC_URL: process.env.EVM_ETHEREUM_RPC_URL,
+    EVM_BASE_RPC_URL: process.env.EVM_BASE_RPC_URL,
+    EVM_ROBINHOOD_RPC_URL: process.env.EVM_ROBINHOOD_RPC_URL,
+  };
+  try {
+    delete process.env.EVM_SEPOLIA_RPC_URL;
+    delete process.env.EVM_BASE_SEPOLIA_RPC_URL;
+    delete process.env.EVM_ROBINHOOD_TESTNET_RPC_URL;
+    delete process.env.EVM_ARC_TESTNET_RPC_URL;
+    delete process.env.EVM_ETHEREUM_RPC_URL;
+    delete process.env.EVM_BASE_RPC_URL;
+    delete process.env.EVM_ROBINHOOD_RPC_URL;
+
+    assert.equal(rpcUrlFor(11155111), 'https://ethereum-sepolia-rpc.publicnode.com');
+    assert.equal(rpcUrlFor(84532), 'https://sepolia.base.org');
+    assert.equal(rpcUrlFor(46630), 'https://rpc.testnet.chain.robinhood.com');
+    assert.equal(rpcUrlFor(5042002), 'https://rpc.testnet.arc.network');
+
+    process.env.EVM_ARC_TESTNET_RPC_URL = 'https://custom-arc-rpc.example';
+    assert.equal(rpcUrlFor(5042002), 'https://custom-arc-rpc.example');
+
+    assert.throws(() => rpcUrlFor(1), /Relayer RPC not configured: set EVM_ETHEREUM_RPC_URL/);
+    assert.throws(() => rpcUrlFor(8453), /Relayer RPC not configured: set EVM_BASE_RPC_URL/);
+    assert.throws(() => rpcUrlFor(4663), /Relayer RPC not configured: set EVM_ROBINHOOD_RPC_URL/);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('computeRelayerGasLimit: applies 30% buffer, 200k floor on syncPositionValue, and respects gasCap', () => {
+  assert.equal(SYNC_POSITION_VALUE_MIN_GAS, 200_000n);
+  // 30% buffer on non-syncPositionValue calls
+  assert.equal(computeRelayerGasLimit(100_000n, 'executiveApprove', 3_000_000n), 130_000n);
+  // 200k floor on syncPositionValue when 1.3x estimate is below 200k
+  assert.equal(computeRelayerGasLimit(90_000n, 'syncPositionValue', 3_000_000n), 200_000n);
+  // Above 200k after 30% buffer uses the 30% buffered value
+  assert.equal(computeRelayerGasLimit(200_000n, 'syncPositionValue', 3_000_000n), 260_000n);
+  // Capped at gasCap
+  assert.equal(computeRelayerGasLimit(2_500_000n, 'execute', 3_000_000n), 3_000_000n);
+  assert.equal(computeRelayerGasLimit(90_000n, 'syncPositionValue', 150_000n), 150_000n);
+});
+
+test('withSenderLock: serializes concurrent calls for the same (chainId, address)', async () => {
+  const order: number[] = [];
+  const addrA = '0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa';
+  const p1 = withSenderLock(11155111, addrA, async () => {
+    order.push(1);
+    await new Promise((r) => setTimeout(r, 25));
+    order.push(2);
+    return 'first';
+  });
+  const p2 = withSenderLock(11155111, addrA.toLowerCase(), async () => {
+    order.push(3);
+    return 'second';
+  });
+  const [r1, r2] = await Promise.all([p1, p2]);
+  assert.equal(r1, 'first');
+  assert.equal(r2, 'second');
+  assert.deepEqual(order, [1, 2, 3]);
 });

@@ -94,6 +94,44 @@ const TREASURY_POLICY_ABI = [
     inputs: [],
     outputs: [{ type: "address" }],
   },
+  {
+    type: "function",
+    name: "getRegisteredAssets",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "assets", type: "address[]" }],
+  },
+  {
+    type: "function",
+    name: "assetInfo",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [
+      { name: "registered", type: "bool" },
+      { name: "enabled", type: "bool" },
+      { name: "isStablecoin", type: "bool" },
+      { name: "assetKind", type: "uint8" },
+      { name: "pythFeedId", type: "bytes32" },
+      { name: "decimals", type: "uint8" },
+    ],
+  },
+  {
+    type: "function",
+    name: "idleBalance",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "valueAssetUsd",
+    stateMutability: "view",
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
 ] as const;
 
 const PROTOCOL_TIER_ABI = [
@@ -103,6 +141,16 @@ const PROTOCOL_TIER_ABI = [
     stateMutability: "view",
     inputs: [{ name: "adapter", type: "address" }],
     outputs: [{ type: "uint8" }],
+  },
+] as const;
+
+const ADAPTER_ASSET_ABI = [
+  {
+    type: "function",
+    name: "supportsAsset",
+    stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }],
+    outputs: [{ type: "bool" }],
   },
 ] as const;
 
@@ -197,6 +245,153 @@ export async function readEvmConstitution(
     };
   } catch (e) {
     console.error("[evmPolicy] constitution read failed", dao, chainId, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** Micro-USD value of `amount` base units, via the treasury's own oracle. */
+export async function readEvmValueMicroUsd(
+  chainId: number,
+  dao: string,
+  asset: string,
+  amount: number,
+): Promise<number | null> {
+  const treasury = asAddress(dao);
+  const token = asAddress(asset);
+  const client = clientFor(chainId);
+  if (!treasury || !token || !client || !Number.isSafeInteger(amount) || amount < 0) return null;
+  try {
+    const valued = await client.readContract({
+      address: treasury,
+      abi: TREASURY_POLICY_ABI,
+      functionName: "valueAssetUsd",
+      args: [token, BigInt(amount)],
+    });
+    return safeNum(valued);
+  } catch (e) {
+    console.error("[evmPolicy] valueAssetUsd failed", dao, chainId, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * Idle stablecoin value in micro-USD. `0` means the treasury was read and holds
+ * none. `null` means the balances could not be read.
+ */
+export async function readEvmIdleStableMicroUsd(
+  chainId: number,
+  dao: string,
+): Promise<number | null> {
+  const treasury = asAddress(dao);
+  const client = clientFor(chainId);
+  if (!treasury || !client) return null;
+  try {
+    const assets = await client.readContract({
+      address: treasury,
+      abi: TREASURY_POLICY_ABI,
+      functionName: "getRegisteredAssets",
+    });
+    let total = 0n;
+    for (const asset of assets) {
+      const info = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "assetInfo",
+        args: [asset],
+      });
+      if (!info[2]) continue;
+      const idle = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "idleBalance",
+        args: [asset],
+      });
+      if (idle === 0n) continue;
+      const valued = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "valueAssetUsd",
+        args: [asset, idle],
+      });
+      total += valued;
+    }
+    return safeNum(total);
+  } catch (e) {
+    console.error("[evmPolicy] idle stable read failed", dao, chainId, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export interface EvmHeldAsset {
+  mint: string;
+  stable: boolean;
+  idleBase: number;
+  idleMicroUsd: number;
+  /** Adapters (lowercase) whose supportsAsset returned true for this asset. */
+  adapters: string[];
+}
+
+/** Registered, enabled assets with an idle balance, and the adapters that take each. null when unreadable. */
+export async function readEvmHeldAssets(
+  chainId: number,
+  dao: string,
+  adapters: string[],
+): Promise<EvmHeldAsset[] | null> {
+  const treasury = asAddress(dao);
+  const client = clientFor(chainId);
+  if (!treasury || !client) return null;
+  try {
+    const assets = await client.readContract({
+      address: treasury,
+      abi: TREASURY_POLICY_ABI,
+      functionName: "getRegisteredAssets",
+    });
+    const out: EvmHeldAsset[] = [];
+    for (const asset of assets) {
+      const info = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "assetInfo",
+        args: [asset],
+      });
+      if (!info[0] || !info[1]) continue;
+      const idle = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "idleBalance",
+        args: [asset],
+      });
+      if (idle === 0n) continue;
+      const valued = await client.readContract({
+        address: treasury,
+        abi: TREASURY_POLICY_ABI,
+        functionName: "valueAssetUsd",
+        args: [asset, idle],
+      });
+      const idleBase = safeNum(idle);
+      const idleMicroUsd = safeNum(valued);
+      if (idleBase == null || idleMicroUsd == null) continue;
+      const takers: string[] = [];
+      for (const adapter of adapters) {
+        const target = asAddress(adapter);
+        if (!target || target.toLowerCase() === ZERO) continue;
+        try {
+          const ok = await client.readContract({
+            address: target,
+            abi: ADAPTER_ASSET_ABI,
+            functionName: "supportsAsset",
+            args: [asset],
+          });
+          if (ok) takers.push(target.toLowerCase());
+        } catch {
+          // An adapter without supportsAsset takes nothing here.
+        }
+      }
+      out.push({ mint: asset, stable: Boolean(info[2]), idleBase, idleMicroUsd, adapters: takers });
+    }
+    return out;
+  } catch (e) {
+    console.error("[evmPolicy] held asset read failed", dao, chainId, e instanceof Error ? e.message : e);
     return null;
   }
 }

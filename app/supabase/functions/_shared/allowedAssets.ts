@@ -366,3 +366,66 @@ export const STABLECOIN_MINTS: ReadonlySet<string> = new Set(
 export const SOL_LIKE_MINTS: ReadonlySet<string> = new Set(
   ALLOWED_ASSETS.filter((a) => a.assetClass === "sol-like").map((a) => a.mint),
 );
+
+// ─── EVM ERC-20 allowlists across all supported EVM chains ───────────────────
+
+export interface EvmAllowedAsset {
+  symbol: string;
+  name: string;
+  assetClass: AssetClass;
+  address: string;
+  pythFeedId?: string;
+  decimals: number;
+  maxRisk: number;
+}
+
+export const EVM_ALLOWED_ASSETS: Record<number, EvmAllowedAsset[]> = {
+  1: [
+    { symbol: "USDC",   name: "USD Coin",          assetClass: "stablecoin", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6,  maxRisk: 35 },
+    { symbol: "USDT",   name: "Tether USD",        assetClass: "stablecoin", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6,  maxRisk: 35 },
+    { symbol: "DAI",    name: "Dai Stablecoin",    assetClass: "stablecoin", address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18, maxRisk: 40 },
+    { symbol: "WETH",   name: "Wrapped Ether",     assetClass: "blue-chip",  address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+    { symbol: "wstETH", name: "Wrapped stETH",     assetClass: "sol-like",   address: "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0", decimals: 18, maxRisk: 45 },
+  ],
+  8453: [
+    { symbol: "USDC",  name: "USD Coin",              assetClass: "stablecoin", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6,  maxRisk: 35 },
+    { symbol: "USDbC", name: "USD Base Coin",         assetClass: "stablecoin", address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA", decimals: 6,  maxRisk: 40 },
+    { symbol: "DAI",   name: "Dai Stablecoin",        assetClass: "stablecoin", address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18, maxRisk: 40 },
+    { symbol: "WETH",  name: "Wrapped Ether",         assetClass: "blue-chip",  address: "0x4200000000000000000000000000000000000006", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+    { symbol: "cbETH", name: "Coinbase Wrapped ETH",  assetClass: "sol-like",   address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", decimals: 18, maxRisk: 45 },
+  ],
+  11155111: [
+    { symbol: "USDC",  name: "USD Coin (Sepolia)",         assetClass: "stablecoin", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", decimals: 6,  maxRisk: 35 },
+    { symbol: "aUSDC", name: "Aave market USDC (Sepolia)", assetClass: "stablecoin", address: "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8", decimals: 6,  maxRisk: 35 },
+    { symbol: "WETH",  name: "Wrapped Ether (Sepolia)",    assetClass: "blue-chip",  address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+  ],
+  84532: [
+    { symbol: "USDC",  name: "USD Coin (Base Sepolia)",         assetClass: "stablecoin", address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", decimals: 6,  maxRisk: 35 },
+    { symbol: "aUSDC", name: "Aave market USDC (Base Sepolia)", assetClass: "stablecoin", address: "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f", decimals: 6,  maxRisk: 35 },
+    { symbol: "WETH",  name: "Wrapped Ether (Base Sepolia)",    assetClass: "blue-chip",  address: "0x4200000000000000000000000000000000000006", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+  ],
+  4663: [
+    { symbol: "WETH", name: "Wrapped Ether", assetClass: "blue-chip", address: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+  ],
+  46630: [
+    { symbol: "USDC", name: "USD Coin (Robinhood Testnet)",      assetClass: "stablecoin", address: "0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1", decimals: 6,  maxRisk: 35 },
+    { symbol: "WETH", name: "Wrapped Ether (Robinhood Testnet)", assetClass: "blue-chip",  address: "0x7943e237c7F95DA44E0301572D358911207852Fa", pythFeedId: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", decimals: 18, maxRisk: 45 },
+  ],
+  5042002: [
+    { symbol: "USDC", name: "USD Coin (Arc Testnet)", assetClass: "stablecoin", address: "0x3600000000000000000000000000000000000000", decimals: 6, maxRisk: 35 },
+  ],
+};
+
+const EVM_ASSET_BY_KEY: ReadonlyMap<string, EvmAllowedAsset> = new Map(
+  Object.entries(EVM_ALLOWED_ASSETS).flatMap(([chainId, assets]) =>
+    assets.map((a) => [`${chainId}:${a.address.toLowerCase()}`, a] as [string, EvmAllowedAsset]),
+  ),
+);
+
+export function resolveEvmAsset(chainId: number, address: string): EvmAllowedAsset | undefined {
+  return EVM_ASSET_BY_KEY.get(`${chainId}:${address.trim().toLowerCase()}`);
+}
+
+export function evmAllowedAssets(chainId: number): EvmAllowedAsset[] {
+  return EVM_ALLOWED_ASSETS[chainId] ?? [];
+}

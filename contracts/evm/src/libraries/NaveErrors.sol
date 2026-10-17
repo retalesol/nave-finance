@@ -170,6 +170,8 @@ library NaveErrors {
     error EscrowNotLocked();
     error InvalidTitleLength();
     error InvalidPayloadLength();
+    error VotingMintMismatch();
+    error ZeroVotingSupply();
 
     // ── Execution ─────────────────────────────────────────────────────────
     error ProposalDaoMismatch();

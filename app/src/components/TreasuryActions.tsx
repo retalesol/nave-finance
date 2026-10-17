@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
-import { parseUnits } from 'viem';
+import { hexToBytes, parseUnits } from 'viem';
 import Fi from './Fi';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
 import { toast } from '../hooks/use-toast';
 import { fetchDaoContracts } from '../lib/evm/readers';
 import { buildCreateProposalEvm } from '../lib/evm/writers';
+import { storeEvmProposalPayloadRemote } from '../lib/evmProposalPayloadStore';
+import { persistEvmProposalPayload } from './governance/proposalStorage';
 import { getAssociatedTokenAddressSync, getAccount } from '@solana/spl-token';
 import { buildCreateProposal, encodeSolanaNftTransferProposalPayload, encodeSolanaTransferProposalPayload } from '../lib/transactionBuilders';
 import { fetchTreasuryVault } from '../lib/onChainFetcher';
@@ -275,6 +277,7 @@ export function CreateTransactionModal({
             recipient.trim() as `0x${string}`,
             tokenId,
           );
+          const evmPayloadBytes = Array.from(hexToBytes(payloadHex));
           const outcome = await tx.sendEvm(
             buildCreateProposalEvm(evmChainId, trio.governor, {
               title: `Send NFT #${tokenId.toString()}`,
@@ -286,8 +289,16 @@ export function CreateTransactionModal({
             }),
             { successLabel: 'NFT transfer proposal created' },
           );
-          if (outcome.status === 'success' || outcome.status === 'mock') { onCreated?.(); onClose(); }
-          else setError(outcome.error || 'Failed to create NFT transfer proposal.');
+          if (outcome.status === 'success' || outcome.status === 'mock') {
+            if (evmPayloadBytes.length > 0) {
+              persistEvmProposalPayload(daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+              if (outcome.status === 'success' && evmChainId) {
+                void storeEvmProposalPayloadRemote(evmChainId, daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+              }
+            }
+            onCreated?.();
+            onClose();
+          } else setError(outcome.error || 'Failed to create NFT transfer proposal.');
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to create NFT transfer proposal.');
         } finally {
@@ -375,6 +386,7 @@ export function CreateTransactionModal({
           recipient.trim() as `0x${string}`,
           baseUnits,
         );
+        const evmPayloadBytes = Array.from(hexToBytes(payloadHex));
         const outcome = await tx.sendEvm(
           buildCreateProposalEvm(evmChainId, trio.governor, {
             title: `Send ${amount} ${selectedAsset.symbol}`,
@@ -386,8 +398,16 @@ export function CreateTransactionModal({
           }),
           { successLabel: 'Transaction proposal created' },
         );
-        if (outcome.status === 'success' || outcome.status === 'mock') { onCreated?.(); onClose(); }
-        else setError(outcome.error || 'Failed to create transaction proposal.');
+        if (outcome.status === 'success' || outcome.status === 'mock') {
+          if (evmPayloadBytes.length > 0) {
+            persistEvmProposalPayload(daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+            if (outcome.status === 'success' && evmChainId) {
+              void storeEvmProposalPayloadRemote(evmChainId, daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+            }
+          }
+          onCreated?.();
+          onClose();
+        } else setError(outcome.error || 'Failed to create transaction proposal.');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to create transaction proposal.');
       } finally {

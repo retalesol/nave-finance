@@ -11,12 +11,10 @@ use anchor_lang::prelude::*;
 use solana_program::hash::hash;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{Mint, Token, TokenAccount};
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
-
 use nave_core::{
     constants::{
-        jupiter_lending_program, pyth_receiver_program, AgentRole, AssetKind, MoonlightStatus,
-        ASSET_CONFIG_SEED, DAO_CONTROL_SEED, DAO_LIFECYCLE_SEED, FEE_CONFIG_SEED, GLOBAL_CONFIG_SEED, PYTH_MAX_PRICE_AGE_SECS,
+        jupiter_lending_program, AgentRole, AssetKind, MoonlightStatus,
+        ASSET_CONFIG_SEED, DAO_CONTROL_SEED, DAO_LIFECYCLE_SEED, FEE_CONFIG_SEED, GLOBAL_CONFIG_SEED,
         STRATEGY_ESCROW_SEED, TREASURY_ASSET_SEED, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
     },
     state::{
@@ -24,7 +22,7 @@ use nave_core::{
         TreasuryAsset, TreasuryConstitution, TreasuryVault, VaultAuthority,
     },
     utils::{
-        enforce_allocation_cap, realized_yield_withdraw_cap, value_stable, value_usd,
+        enforce_allocation_cap, nonstable_micro_usd, realized_yield_withdraw_cap, value_stable,
         EXECUTION_AUTHORITY_SEED,
     },
 };
@@ -846,8 +844,8 @@ fn required_asset_kind(protocol_program: Pubkey) -> Option<AssetKind> {
 }
 
 /// Value `amount` base units of `asset_config`'s mint in micro-USD. Stablecoins
-/// are valued at $1; other assets use their Pyth `PriceUpdateV2` (owner +
-/// staleness + feed-id verified).
+/// are valued at $1. Wrapped SOL uses the pinned Chainlink SOL/USD feed.
+/// Other assets use their Pyth feed.
 fn value_amount_usd(
     asset_config: &AssetConfig,
     price_ai: &AccountInfo,
@@ -857,25 +855,15 @@ fn value_amount_usd(
         return value_stable(amount, asset_config.decimals)
             .map_err(|_| error!(ExecutionError::MathOverflow));
     }
-    require!(
-        price_ai.owner == &pyth_receiver_program::ID,
-        ExecutionError::InvalidOracleAccount
-    );
-    let data = price_ai.try_borrow_data()?;
-    let price_update = PriceUpdateV2::try_deserialize(&mut &data[..])
-        .map_err(|_| error!(ExecutionError::InvalidOracleAccount))?;
-    let p = price_update
-        .get_price_no_older_than(&Clock::get()?, PYTH_MAX_PRICE_AGE_SECS, &asset_config.pyth_feed_id)
-        .map_err(|_| error!(ExecutionError::StaleOracle))?;
-    // Reject wide-confidence prices (>2% band) on the execution valuation path
-    // too, so a momentarily uncertain quote can't slip a deployment past the
-    // USD-denominated allocation / deployment / reserve caps.
-    require!(
-        nave_core::utils::confidence_within_bounds(p.price, p.conf),
-        ExecutionError::StaleOracle
-    );
-    value_usd(amount, asset_config.decimals, p.price, p.exponent)
-        .map_err(|_| error!(ExecutionError::MathOverflow))
+    let clock = Clock::get()?;
+    nonstable_micro_usd(
+        &asset_config.mint,
+        &asset_config.pyth_feed_id,
+        asset_config.decimals,
+        amount,
+        price_ai,
+        &clock,
+    )
 }
 
 /// When deploying a stablecoin, ensure the idle stablecoin remaining in its

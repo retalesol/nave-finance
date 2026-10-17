@@ -307,6 +307,40 @@ export function encodeEvmTransferProposalPayload(
   );
 }
 
+/** ABI-encoded payload for EVM `ProposalType.Strategy` (matches `PayloadHash.strategyHash(adapter, amount, asset)` preimage). */
+export function encodeEvmStrategyProposalPayload(
+  adapter: Address,
+  amount: bigint,
+  asset: Address,
+): `0x${string}` {
+  return encodeAbiParameters(
+    [
+      { type: 'address', name: 'adapter' },
+      { type: 'uint256', name: 'amount' },
+      { type: 'address', name: 'asset' },
+    ],
+    [adapter, amount, asset],
+  );
+}
+
+/** Decode EVM Strategy proposal payload (`abi.encode(adapter, amount, asset)`). */
+export function decodeEvmStrategyProposalPayload(bytes: Uint8Array | number[] | string): {
+  adapter: `0x${string}`;
+  amount: bigint;
+  asset: `0x${string}`;
+} {
+  const hex = typeof bytes === 'string' ? bytes : `0x${Buffer.from(bytes).toString('hex')}`;
+  const [adapter, amount, asset] = decodeAbiParameters(
+    [
+      { type: 'address', name: 'adapter' },
+      { type: 'uint256', name: 'amount' },
+      { type: 'address', name: 'asset' },
+    ],
+    hex as `0x${string}`,
+  );
+  return { adapter: adapter as `0x${string}`, amount, asset: asset as `0x${string}` };
+}
+
 /** ABI-encoded payload for EVM NFT transfer (matches `PayloadHash.nftTransferHash` preimage). */
 export function encodeEvmNftTransferProposalPayload(
   collection: Address,
@@ -696,6 +730,46 @@ export function buildExecutePermissionProposalEvm(
   };
 }
 
+/** Passed SwitchVotingSystem proposal → NaveGovernor.executeSwitchVotingSystem. */
+export function buildExecuteSwitchVotingSystemEvm(
+  chainId: EvmChainId,
+  governor: string,
+  proposalIndex: bigint | number,
+  newGovernanceType: number = 0,
+  newVotingToken: string = zeroAddress,
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  const governorAddr = toAddress(governor);
+  const tokenAddr = toAddress(newVotingToken) ?? zeroAddress;
+  if (!governorAddr) return notConfigured('NaveGovernor');
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: governorAddr,
+      abi: NaveGovernorAbi,
+      functionName: 'executeSwitchVotingSystem',
+      args: [BigInt(proposalIndex), newGovernanceType, tokenAddr],
+    },
+  };
+}
+
+/** Decode SwitchVotingSystem proposal payload (`abi.encode(uint8 governanceType, address votingToken)`). */
+export function decodeEvmSwitchVotingPayload(bytes: Uint8Array | number[] | string): {
+  governanceType: number;
+  votingToken: `0x${string}`;
+} {
+  const hex = typeof bytes === 'string' ? bytes : `0x${Buffer.from(bytes).toString('hex')}`;
+  const [governanceType, votingToken] = decodeAbiParameters(
+    [{ type: 'uint8' }, { type: 'address' }],
+    hex as `0x${string}`,
+  );
+  return {
+    governanceType: Number(governanceType),
+    votingToken: votingToken as `0x${string}`,
+  };
+}
+
 /** Founder registers sister treasury for agent bridges. */
 export function buildSetLinkedTreasuryEvm(
   chainId: EvmChainId,
@@ -942,7 +1016,7 @@ export function buildUpdateConstitutionEvm(
     request: {
       kind: 'evm', chainId, address: treasuryAddr, abi: NaveTreasuryAbi,
       functionName: 'updateConstitution',
-      args: [addrs, caps, approvedFlags, ids, confidenceThreshold, BigInt(agentThresholdUsd ?? 0)],
+      args: [addrs, caps, approvedFlags, ids, confidenceThreshold, BigInt(agentThresholdUsd ?? 100_000_000)],
     },
   };
 }

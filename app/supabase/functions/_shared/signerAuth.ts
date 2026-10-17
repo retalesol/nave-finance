@@ -21,6 +21,8 @@ const EVM_RELAY_ROLE: Record<string, SignerRole> = {
   update_strategy_position_value: "operational",
   revalue_treasury: "operational",
   create_proposal: "operational",
+  create_strategy_request: "operational",
+  finalize_proposal: "operational",
 };
 
 /** Role whose EVM key signs a /relay-evm action. */

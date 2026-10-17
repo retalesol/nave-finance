@@ -99,6 +99,11 @@ library NaveAddressRegistry {
     address internal constant SEPOLIA_COMET_USDC = 0xAec1F48e02Cfb822Be958B68C7957156EB3F0b6e;
     // Canonical Sepolia WETH9.
     address internal constant SEPOLIA_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
+    // Deployed Sepolia adapters (both Gen 1 and Gen 2 are protocol-approved).
+    address internal constant SEPOLIA_AAVE_V3_ADAPTER = 0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B;
+    address internal constant SEPOLIA_AAVE_V3_ADAPTER_GEN1 = 0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426;
+    address internal constant SEPOLIA_COMPOUND_V3_ADAPTER = 0xa675dC4A02304ce069D98760DcF64B0cf3530A80;
+    address internal constant SEPOLIA_COMPOUND_V3_ADAPTER_GEN1 = 0x845d8310A861A95Ed1644643D1BAe086944B1AA0;
 
     // Balancer Sepolia has official v3 core deployments, including Vault
     // 0xbA1333333333a1BA1108E8412f11850A5C319bA9 and WeightedPoolFactory
@@ -111,22 +116,33 @@ library NaveAddressRegistry {
     address internal constant BASE_SEPOLIA_AAVE_USDC = 0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f;
     address internal constant BASE_SEPOLIA_AAVE_V3_POOL = 0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27;
     address internal constant BASE_SEPOLIA_WETH = 0x4200000000000000000000000000000000000006;
+    address internal constant BASE_SEPOLIA_AAVE_V3_ADAPTER = 0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093;
+    address internal constant BASE_SEPOLIA_AAVE_V3_ADAPTER_GEN1 = 0x33D19799EBac88FFDc4e5BF61c199c71963470A6;
 
     // ── Robinhood Chain (4663) ────────────────────────────────────────────
     // Canonical WETH from Robinhood Chain token contracts docs.
     address internal constant ROBINHOOD_USDC = address(0);
     address internal constant ROBINHOOD_WETH = 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73;
 
-    // Robinhood testnet WETH from docs.robinhood.com/chain/contracts/.
-    // USDC is not published there (USDG is a different token — do not substitute).
+    // Robinhood testnet WETH from docs.robinhood.com/chain/contracts/ and
+    // first-party 6-decimal testnet USDC + ERC-4626 yield vaults/adapters.
+    address internal constant ROBINHOOD_TESTNET_USDC = 0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1;
     address internal constant ROBINHOOD_TESTNET_WETH = 0x7943e237c7F95DA44E0301572D358911207852Fa;
+    address internal constant ROBINHOOD_TESTNET_ORACLE = 0x47b76d227c11279Ebd24FBC370162F3A22c46e64;
+    address internal constant ROBINHOOD_TESTNET_USDC_VAULT = 0x7ED95FF3bF19f474b4885EbfbE94c18d3b7C72A8;
+    address internal constant ROBINHOOD_TESTNET_USDC_ADAPTER = 0x31be55dCf50a71B42948408c9eFE7004f827BF0F;
+    address internal constant ROBINHOOD_TESTNET_WETH_VAULT = 0x5526D13Df58aeB932FD5b1746d5FFD7B33887f3c;
+    address internal constant ROBINHOOD_TESTNET_WETH_ADAPTER = 0xF16421BDD5B9D6418d3133c49f3Afc8cdf15b457;
 
     // ── Arc Testnet (5042002) ─────────────────────────────────────────────
     // ERC-20 USDC, 6 decimals. Native gas is a separate 18-decimal USDC.
-    // Aave on Arc is V4; this registry keeps the V3 pool at zero (no V4 adapter).
+    // Aave on Arc is V4; this registry keeps the V3 pool at zero (no V4 adapter)
+    // and provides a first-party ERC-4626 USDC yield vault + adapter.
     // Pyth Core proxy (getPriceNoOlderThan), verified to have code on the testnet RPC.
     address internal constant ARC_TESTNET_USDC = 0x3600000000000000000000000000000000000000;
     address internal constant ARC_TESTNET_PYTH = 0x2880aB155794e7179c9eE2e38200202908C17B43;
+    address internal constant ARC_TESTNET_USDC_VAULT = 0x6B737500895C4196E855198F7B8a02Bae87E2D72;
+    address internal constant ARC_TESTNET_USDC_ADAPTER = 0x12DA47672287c188C79c1504eE72E2aC8b446f7B;
 
     // ── Resolution ────────────────────────────────────────────────────────
     /// Resolve the config for `chainId`. Reverts on an unsupported chain so a
@@ -189,7 +205,7 @@ library NaveAddressRegistry {
         if (chainId == ROBINHOOD_TESTNET) {
             return ChainConfig({
                 chainId: ROBINHOOD_TESTNET,
-                usdc: address(0),
+                usdc: ROBINHOOD_TESTNET_USDC,
                 weth: ROBINHOOD_TESTNET_WETH,
                 aaveV3Pool: address(0),
                 compoundCometUsdc: address(0),
@@ -216,6 +232,39 @@ library NaveAddressRegistry {
     function pyth(uint256 chainId) internal pure returns (address) {
         if (chainId == ARC_TESTNET) return ARC_TESTNET_PYTH;
         return address(0);
+    }
+
+    // Chainlink Data Feeds proxies and their published heartbeats. PythOracle
+    // uses these only when the Pyth price is missing or stale. Robinhood and
+    // Arc have no verified feed in the Chainlink directory.
+    address internal constant SEPOLIA_CHAINLINK_ETH_USD = 0x694AA1769357215DE4FAC081bf1f309aDC325306;
+    uint256 internal constant SEPOLIA_CHAINLINK_ETH_USD_HEARTBEAT = 3600;
+    address internal constant SEPOLIA_CHAINLINK_USDC_USD = 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E;
+    uint256 internal constant SEPOLIA_CHAINLINK_USDC_USD_HEARTBEAT = 86_400;
+    address internal constant BASE_SEPOLIA_CHAINLINK_ETH_USD = 0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1;
+    uint256 internal constant BASE_SEPOLIA_CHAINLINK_ETH_USD_HEARTBEAT = 1200;
+    address internal constant BASE_SEPOLIA_CHAINLINK_USDC_USD = 0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165;
+    uint256 internal constant BASE_SEPOLIA_CHAINLINK_USDC_USD_HEARTBEAT = 86_400;
+
+    /// Chainlink proxy and heartbeat for `asset` on `chainId`, or `(0, 0)`.
+    function chainlinkFeed(uint256 chainId, address asset)
+        internal
+        pure
+        returns (address feed, uint256 maxStaleness)
+    {
+        if (chainId == SEPOLIA && asset == SEPOLIA_WETH) {
+            return (SEPOLIA_CHAINLINK_ETH_USD, SEPOLIA_CHAINLINK_ETH_USD_HEARTBEAT);
+        }
+        if (chainId == SEPOLIA && asset == SEPOLIA_CIRCLE_USDC) {
+            return (SEPOLIA_CHAINLINK_USDC_USD, SEPOLIA_CHAINLINK_USDC_USD_HEARTBEAT);
+        }
+        if (chainId == BASE_SEPOLIA && asset == BASE_SEPOLIA_WETH) {
+            return (BASE_SEPOLIA_CHAINLINK_ETH_USD, BASE_SEPOLIA_CHAINLINK_ETH_USD_HEARTBEAT);
+        }
+        if (chainId == BASE_SEPOLIA && asset == BASE_SEPOLIA_AAVE_USDC) {
+            return (BASE_SEPOLIA_CHAINLINK_USDC_USD, BASE_SEPOLIA_CHAINLINK_USDC_USD_HEARTBEAT);
+        }
+        return (address(0), 0);
     }
 
     /// Convenience: wrapped-native address for `chainId` (zero if unknown).

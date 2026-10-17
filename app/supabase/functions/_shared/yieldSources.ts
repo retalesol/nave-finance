@@ -167,15 +167,28 @@ const STALE_BASE_SEPOLIA_AAVE = new Set([
   "0x9fe38d5fe9804c07823b36b4ab16a0e5a7118ebf",
 ]);
 const CURRENT_BASE_SEPOLIA_PROTOCOL = "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6";
-const SEPOLIA_AAVE_V3_ADAPTER = "0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426";
-const SEPOLIA_COMPOUND_V3_ADAPTER = "0x845d8310A861A95Ed1644643D1BAe086944B1AA0";
-const BASE_SEPOLIA_AAVE_V3_ADAPTER = "0x33D19799EBac88FFDc4e5BF61c199c71963470A6";
-const ARC_CCTP_ADAPTER = "0x1b591C6a976e75F65F54cE863C8d96b3289BBF80";
-const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
+export const SEPOLIA_AAVE_V3_ADAPTER = "0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426";
+export const SEPOLIA_AAVE_V3_ADAPTER_GEN2 = "0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B";
+export const SEPOLIA_COMPOUND_V3_ADAPTER = "0x845d8310A861A95Ed1644643D1BAe086944B1AA0";
+export const SEPOLIA_COMPOUND_V3_ADAPTER_GEN2 = "0xa675dC4A02304ce069D98760DcF64B0cf3530A80";
+export const BASE_SEPOLIA_AAVE_V3_ADAPTER = "0x33D19799EBac88FFDc4e5BF61c199c71963470A6";
+export const BASE_SEPOLIA_AAVE_V3_ADAPTER_GEN2 = "0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093";
+export const ROBINHOOD_STEAKHOUSE_USDG_ADAPTER = "0x31be55dCf50a71B42948408c9eFE7004f827BF0F";
+export const ROBINHOOD_WETH_VAULT_ADAPTER = "0xF16421BDD5B9D6418d3133c49f3Afc8cdf15b457";
+export const ROBINHOOD_TESTNET_USDC = "0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1";
+export const ROBINHOOD_TESTNET_WETH = "0x7943e237c7F95DA44E0301572D358911207852Fa";
+export const ARC_STEAKHOUSE_USDC_ADAPTER = "0x12DA47672287c188C79c1504eE72E2aC8b446f7B";
+export const ARC_CCTP_ADAPTER = "0x1b591C6a976e75F65F54cE863C8d96b3289BBF80";
+export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
+export const SEPOLIA_TESTNET_USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+export const BASE_SEPOLIA_TESTNET_USDC = "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f";
 
 /** Static testnet rates. Same modest figures as the simulation baselines. Not a pool scan. */
 const TESTNET_AAVE = { apyBps: 450, riskScore: 16 };
 const TESTNET_COMPOUND = { apyBps: 420, riskScore: 18 };
+const TESTNET_ROBINHOOD_STEAKHOUSE = { apyBps: 360, riskScore: 18 };
+const TESTNET_ROBINHOOD_WETH = { apyBps: 320, riskScore: 22 };
+const TESTNET_ARC_STEAKHOUSE = { apyBps: 230, riskScore: 16 };
 const TESTNET_CCTP = { apyBps: Math.round(TESTNET_AAVE.apyBps * 0.92), riskScore: 28 };
 
 /** Constitutions use `aave` / `compound`; venue watches and charters use the `-v3` names. */
@@ -196,6 +209,18 @@ function isCompoundId(id: string): boolean {
 
 function isCctpId(id: string): boolean {
   return id === "cctp" || id === "cctp-sepolia-aave-v3";
+}
+
+function isRobinhoodSteakhouseId(id: string): boolean {
+  return id === "morpho-steakhouse-usdg" || id === "morpho-steakhouse-usdc" || isAaveId(id);
+}
+
+function isRobinhoodWethId(id: string): boolean {
+  return id === "robinhood-weth-vault" || id === "arbitrum-bridge";
+}
+
+function isArcSteakhouseId(id: string): boolean {
+  return id === "morpho-steakhouse-usdc" || isAaveId(id);
 }
 
 function usableProgramId(value: string | undefined): string {
@@ -284,20 +309,63 @@ export function scoreEvmTestnetOpportunities(
       }));
       continue;
     }
+    if (chainId === 46630 && isRobinhoodSteakhouseId(id)) {
+      const program = usableProgramId(ref.programId);
+      out.push(testnetRate({
+        protocolId: ref.protocolId,
+        programId: program || ROBINHOOD_STEAKHOUSE_USDG_ADAPTER,
+        apyBps: TESTNET_ROBINHOOD_STEAKHOUSE.apyBps,
+        riskScore: TESTNET_ROBINHOOD_STEAKHOUSE.riskScore,
+        assetClass: "stablecoin",
+        liquid: true,
+        source: "testnet-rate:morpho-steakhouse-usdg",
+        symbol: "USDC",
+        mint: ROBINHOOD_TESTNET_USDC,
+      }));
+      continue;
+    }
+    if (chainId === 46630 && isRobinhoodWethId(id)) {
+      const program = usableProgramId(ref.programId);
+      out.push(testnetRate({
+        protocolId: ref.protocolId,
+        programId: program || ROBINHOOD_WETH_VAULT_ADAPTER,
+        apyBps: TESTNET_ROBINHOOD_WETH.apyBps,
+        riskScore: TESTNET_ROBINHOOD_WETH.riskScore,
+        assetClass: "blue-chip",
+        liquid: true,
+        source: "testnet-rate:robinhood-weth-vault",
+        symbol: "WETH",
+        mint: ROBINHOOD_TESTNET_WETH,
+      }));
+      continue;
+    }
+    if (chainId === 5042002 && isArcSteakhouseId(id)) {
+      const program = usableProgramId(ref.programId);
+      out.push(testnetRate({
+        protocolId: ref.protocolId,
+        programId: program || ARC_STEAKHOUSE_USDC_ADAPTER,
+        apyBps: TESTNET_ARC_STEAKHOUSE.apyBps,
+        riskScore: TESTNET_ARC_STEAKHOUSE.riskScore,
+        assetClass: "stablecoin",
+        liquid: true,
+        source: "testnet-rate:morpho-steakhouse-usdc",
+        symbol: "USDC",
+        mint: ARC_TESTNET_USDC,
+      }));
+      continue;
+    }
     if ((chainId === 46630 || chainId === 5042002) && isCctpId(id)) {
       const program = usableProgramId(ref.programId);
       out.push(testnetRate({
         protocolId: ref.protocolId,
-        programId: program || (chainId === 5042002 ? ARC_CCTP_ADAPTER : ""),
+        programId: program || (chainId === 5042002 ? ARC_CCTP_ADAPTER : ROBINHOOD_STEAKHOUSE_USDG_ADAPTER),
         apyBps: TESTNET_CCTP.apyBps,
         riskScore: TESTNET_CCTP.riskScore,
         assetClass: "stablecoin",
         liquid: true,
         source: "testnet-rate:cctp-to-sepolia-aave-v3: bridge test USDC to the Sepolia sister treasury and supply Aave V3 there",
         symbol: "USDC",
-        // Robinhood testnet USDC is unpublished. Do not invent an address.
-        // Arc testnet publishes ERC-20 USDC at the Circle system address.
-        mint: chainId === 5042002 ? ARC_TESTNET_USDC : undefined,
+        mint: chainId === 5042002 ? ARC_TESTNET_USDC : ROBINHOOD_TESTNET_USDC,
       }));
     }
   }

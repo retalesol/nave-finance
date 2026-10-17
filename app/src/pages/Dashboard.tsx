@@ -20,7 +20,17 @@ import { useMonthlyReports, type YearlyReportGroup, type MonthlyReport } from '.
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
 import { useTokenRegistry } from '../hooks/useTokenRegistry';
 import { useChain } from '../hooks/useChain';
+import { useSendTransaction } from '../hooks/useSendTransaction';
+import { PublicKey } from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useAccount } from 'wagmi';
+import { buildRevalueTreasury } from '../lib/transactionBuilders';
+import { buildRevalueTreasuryEvm } from '../lib/evm/writers';
 import { SOLANA_NETWORK } from '../lib/programConfig';
+
+const DASHBOARD_CHAINLINK_SOL_USD_DEVNET = '99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR';
+const DASHBOARD_CHAINLINK_SOL_USD_MAINNET = 'CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt';
+const DASHBOARD_WSOL_MINT = 'So11111111111111111111111111111111111111112';
 import { daoNetworkLabel, isEvmAddress } from '../lib/chain/types';
 import { isMockDaoAddress } from '../lib/mockData';
 import { agentRoleLabel } from '../lib/agentRoleLabel';
@@ -542,20 +552,45 @@ function ActivityFeed({ activities, onViewAll }: { activities: ActivityEntry[]; 
 }
 
 /* ── Asset table (live) ─────────────────────────────────────── */
-function AssetTable({ assets, onRefresh, refreshing }: { assets: AssetInfo[]; onRefresh?: () => void; refreshing?: boolean }) {
+function AssetTable({
+  assets,
+  onRefresh,
+  refreshing,
+  onRevalue,
+  revaluing,
+}: {
+  assets: AssetInfo[];
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  onRevalue?: () => void;
+  revaluing?: boolean;
+}) {
   return (
     <div className="nave-card overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
         <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Treasury Assets</span>
-        <button
-          onClick={onRefresh}
-          disabled={!onRefresh || refreshing}
-          className="flex items-center gap-1.5"
-          style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', cursor: onRefresh && !refreshing ? 'pointer' : 'default' }}
-        >
-          <Fi icon="arrows-rotate" style={{ fontSize: '11px' }} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-3">
+          {onRevalue && (
+            <button
+              onClick={onRevalue}
+              disabled={revaluing}
+              className="flex items-center gap-1.5"
+              style={{ fontSize: '12px', color: 'hsl(var(--foreground))', cursor: !revaluing ? 'pointer' : 'default', opacity: revaluing ? 0.6 : 1 }}
+            >
+              <Fi icon="calculator" style={{ fontSize: '11px' }} />
+              {revaluing ? 'Revaluing…' : 'Revalue NAV'}
+            </button>
+          )}
+          <button
+            onClick={onRefresh}
+            disabled={!onRefresh || refreshing}
+            className="flex items-center gap-1.5"
+            style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', cursor: onRefresh && !refreshing ? 'pointer' : 'default' }}
+          >
+            <Fi icon="arrows-rotate" style={{ fontSize: '11px' }} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
       {assets.length === 0 ? (
         <div className="px-5 py-10 text-center">
@@ -828,7 +863,50 @@ export default function Dashboard() {
   const monthlyReports = useMonthlyReports(daoAddress);
   const daoRegistry = useDaoRegistry(daoAddress);
   const tokenRegistry = useTokenRegistry(daoAddress);
-  const { chainKind } = useChain();
+  const { chainKind, evmChainId } = useChain();
+  const { publicKey } = useWallet();
+  const { address: evmAddress } = useAccount();
+  const tx = useSendTransaction();
+  const [revaluingNav, setRevaluingNav] = useState(false);
+
+  async function handleDashboardRevalueNav() {
+    if (!daoAddress || revaluingNav) return;
+    setRevaluingNav(true);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmChainId) return;
+        const out = await tx.sendEvm(buildRevalueTreasuryEvm(evmChainId, daoAddress), {
+          successLabel: 'Treasury NAV revalued',
+        });
+        if (out.status === 'success' || out.status === 'mock') {
+          treasuryAssets.refetch();
+          treasury.refetch();
+        }
+        return;
+      }
+      if (!publicKey) return;
+      const registered = treasuryAssets.assets.filter((a) => a.onChainRegistered && a.mint !== 'SOL');
+      if (registered.length === 0) return;
+      const solFeed = new PublicKey(
+        SOLANA_NETWORK === 'mainnet' ? DASHBOARD_CHAINLINK_SOL_USD_MAINNET : DASHBOARD_CHAINLINK_SOL_USD_DEVNET,
+      );
+      const built = await buildRevalueTreasury(
+        new PublicKey(daoAddress),
+        publicKey,
+        registered.map((a) => ({
+          mint: new PublicKey(a.mint),
+          priceUpdate: a.isStablecoin ? undefined : a.mint === DASHBOARD_WSOL_MINT ? solFeed : undefined,
+        })),
+      );
+      const out = await tx.send(built, { successLabel: 'Treasury NAV revalued' });
+      if (out.status === 'success' || out.status === 'mock') {
+        treasuryAssets.refetch();
+        treasury.refetch();
+      }
+    } finally {
+      setRevaluingNav(false);
+    }
+  }
   const daoChainId = daoRegistry.dao?.chainId ?? null;
   const charterActionHash = agentStatus.actionLogs.find((log) => isActionHash(log.payloadHash))?.payloadHash;
   const charter = useCharterCheck(daoAddress, daoChainId, charterActionHash);
@@ -1394,7 +1472,19 @@ export default function Dashboard() {
 
       {/* Asset table */}
       <div data-onboarding-id="dashboard-assets">
-        <AssetTable assets={displayAssets} onRefresh={treasuryAssets.refetch} refreshing={treasuryAssets.loading} />
+        <AssetTable
+          assets={displayAssets}
+          onRefresh={treasuryAssets.refetch}
+          refreshing={treasuryAssets.loading}
+          onRevalue={
+            !isMock &&
+            treasuryAssets.assets.some((a) => a.onChainRegistered) &&
+            (chainKind === 'evm' ? !!evmAddress && !!evmChainId : !!publicKey)
+              ? () => void handleDashboardRevalueNav()
+              : undefined
+          }
+          revaluing={revaluingNav}
+        />
       </div>
       {hasOnchainAssets && (
         <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, paddingLeft: '2px' }}>

@@ -62,7 +62,11 @@ describe("devnet live E2E — full DAO lifecycle", () => {
   before(() => {
     harness = new DevnetHarness();
     console.log("Founder/deployer:", harness.founder.publicKey.toBase58());
-    console.log("RPC:", harness.provider.connection.rpcEndpoint);
+    try {
+      console.log("RPC host:", new URL(harness.provider.connection.rpcEndpoint).host);
+    } catch {
+      console.log("RPC host: configured");
+    }
   });
 
   it("creates DAO, strategy deploy, and SPL transfer proposal", async function () {

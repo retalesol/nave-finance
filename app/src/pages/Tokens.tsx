@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { PublicKey, Keypair, SystemProgram } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useAccount } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import { parseEther, parseUnits } from 'viem';
 import {
   TOKEN_PROGRAM_ID,
@@ -20,7 +20,8 @@ import { useDaoContext } from '../hooks/useDaoContext';
 import { useTokenRegistry, type TokenInfo } from '../hooks/useTokenRegistry';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
-import { buildRegisterDaoTokenEvm, buildRevokeTokenAuthorityEvm } from '../lib/evm/writers';
+import { fetchTokenRegistryEvm } from '../lib/evm/readers';
+import { buildRegisterDaoTokenEvm, buildRevokeTokenAuthorityEvm, buildUpdateTokenMetadataEvm } from '../lib/evm/writers';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
 import {
@@ -32,9 +33,7 @@ import {
 } from '../lib/transactionBuilders';
 import { getVaultAuthorityPDA } from '../lib/pdaDerivation';
 import { TOKEN_MINT_FEE_SOL, TOKEN_REVOKE_REWARD_SOL, TOKEN_MINT_FEE_ETH, TOKEN_REVOKE_REWARD_ETH } from '../lib/programConfig';
-import { uploadDaoLogo } from '../lib/uploadLogo';
-import { supabase, setSupabaseWalletAddress } from '../lib/supabaseClient';
-import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
+import { founderMetadata, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { encodeEvmTokenMintPayload } from '../lib/constitutionPayload';
 
 /* ── Holder count (top accounts) ─────────────────────────── */
@@ -271,8 +270,11 @@ interface CreateTokenModalProps {
 
 function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenModalProps) {
   const { connection } = useConnection();
+  const { signMessage } = useWallet();
+  const { address: evmAddress } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const tx = useSendTransaction();
-  const { chainKind, evmChainId } = useChain();
+  const { chainKind, evmChainId, chainFamily } = useChain();
   const mintFeeLabel = tokenMintFeeLabel(chainKind);
   const revokeRewardLabel = tokenRevokeRewardLabel(chainKind);
   const [name, setName] = useState('');
@@ -329,8 +331,29 @@ function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenM
           ),
           { successLabel: 'Token created' },
         );
-        if (out.status === 'success' || out.status === 'mock') { onDone(); onClose(); }
-        else if (out.status === 'error') setErr(out.error || 'Token creation failed');
+        if (out.status === 'success' || out.status === 'mock') {
+          if (imageFile && evmAddress) {
+            try {
+              const reg = await fetchTokenRegistryEvm(evmChainId, daoAddress);
+              const mintedAddr = reg?.tokens?.[0]?.mint;
+              if (mintedAddr) {
+                const { error: imageErr } = await founderMetadata({
+                  action: 'set_token_image',
+                  daoAddress,
+                  wallet: evmAddress,
+                  signChallenge: (m) => signMessageAsync({ message: m }),
+                  chain: chainFamily,
+                  chainId: evmChainId,
+                  image: imageFile,
+                  mint: mintedAddr,
+                });
+                if (imageErr) throw new Error(imageErr);
+              }
+            } catch { /* image upload is best-effort */ }
+          }
+          onDone();
+          onClose();
+        } else if (out.status === 'error') setErr(out.error || 'Token creation failed');
       } catch (e) {
         setErr(e instanceof Error ? e.message : 'Token creation failed');
       } finally {
@@ -408,22 +431,18 @@ function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenM
       const outcome = await tx.sendGrouped(groups, { successLabel: 'Token minted' });
       if (outcome.status === 'success' || outcome.status === 'mock') {
         // 4. Upload and store the token image (non-blocking — failure doesn't roll back the token).
-        if (imageFile) {
+        if (imageFile && founder && signMessage) {
           try {
-            // The new RLS policy on `dao_token_images` (and the `dao-logos`
-            // bucket) fails closed unless the request carries the connected
-            // founder wallet in `x-wallet-address`. Set it on the shared client
-            // before both writes.
-            setSupabaseWalletAddress(founder.toBase58());
-            const imageUri = await uploadDaoLogo(imageFile, symbol.trim().toLowerCase() || 'token', founder.toBase58(), daoAddress);
-            await supabase.from('dao_token_images').upsert(
-              {
-                dao_address: normalizeDaoOnchainAddressForQuery(daoAddress) || daoAddress,
-                mint: mint.toBase58(),
-                image_uri: imageUri,
-              },
-              { onConflict: 'dao_address,mint' },
-            );
+            const { error: imageErr } = await founderMetadata({
+              action: 'set_token_image',
+              daoAddress,
+              wallet: founder.toBase58(),
+              signChallenge: solanaAccessSigner(signMessage),
+              chain: 'solana',
+              image: imageFile,
+              mint: mint.toBase58(),
+            });
+            if (imageErr) throw new Error(imageErr);
           } catch { /* image upload is best-effort */ }
         }
         onDone();
@@ -707,10 +726,6 @@ export default function Tokens() {
     if (action === 'revoke') { setRevokeToken(token); return; }
     if (action === 'mint') { setMintToken(token); return; }
     if (action === 'metadata') {
-      if (chainKind === 'evm') {
-        toast({ variant: 'destructive', title: 'Not available', description: 'Token metadata edits are managed through governance on Ethereum or Base.' });
-        return;
-      }
       setMetadataToken(token);
       return;
     }
@@ -822,9 +837,23 @@ export default function Tokens() {
     return true;
   }
 
-  /** Update token metadata (Solana). Returns true on success. */
+  /** Update token metadata (Solana or EVM). Returns true on success. */
   async function executeMetadata(token: TokenInfo, newName: string, newSymbol: string): Promise<boolean> {
-    if (!publicKey || !daoAddress) return false;
+    if (!daoAddress) return false;
+    if (chainKind === 'evm') {
+      if (!evmChainId) return false;
+      const r = buildUpdateTokenMetadataEvm(
+        evmChainId,
+        daoAddress,
+        token.mint,
+        newName.trim(),
+        newSymbol.trim().toUpperCase().slice(0, 11),
+      );
+      const out = await tx.sendEvm(r, { successLabel: 'Metadata updated' });
+      if (out.status === 'success' || out.status === 'mock') { refetch(); return true; }
+      return false;
+    }
+    if (!publicKey) return false;
     const r = await buildUpdateTokenMetadata(
       new PublicKey(daoAddress),
       publicKey,
@@ -832,7 +861,7 @@ export default function Tokens() {
       newSymbol.trim().toUpperCase().slice(0, 8),
     );
     const out = await tx.send(r, { successLabel: 'Metadata updated' });
-    if (out.status === 'success') { refetch(); return true; }
+    if (out.status === 'success' || out.status === 'mock') { refetch(); return true; }
     return false;
   }
 

@@ -196,6 +196,8 @@ export interface PolicyRecommendation {
 }
 
 const BPS = 10_000;
+/** Share of a cap's remaining room a single deploy may use (90%). */
+const HEADROOM_USE_BPS = 9_000;
 
 function bpsOf(part: number, whole: number): number {
   if (whole <= 0) return 0;
@@ -263,7 +265,9 @@ export function computeDrift(input: PolicyInputs): PolicyDrift {
       flags.push("reserve_unknown");
     } else {
       stablecoinBps = bpsOf(input.stablecoinBaseUnits, nav);
-      if (stablecoinBps < input.policy.minStablecoinReserveBps) {
+      // A treasury that holds no stablecoins is not yet bound by the floor,
+      // matching the reserve_floor guardrail.
+      if (input.stablecoinBaseUnits > 0 && stablecoinBps < input.policy.minStablecoinReserveBps) {
         flags.push("reserve_floor_breached");
       }
     }
@@ -348,7 +352,9 @@ export function evaluatePolicy(input: PolicyInputs): PolicyRecommendation {
   // 2. Otherwise deploy idle headroom into the best low-risk opportunities,
   //    respecting per-protocol caps. (Rebalance-due uses the same machinery; a
   //    full exit/re-enter cycle is orchestrated as withdraw+deploy by Phase 4.)
-  let headroom = drift.deployableHeadroomBaseUnits;
+  //    Only part of each headroom is used: NAV moves between the vote and the
+  //    execute, and an amount sized exactly to a cap is refused once it does.
+  let headroom = Math.floor((drift.deployableHeadroomBaseUnits * HEADROOM_USE_BPS) / BPS);
   const ranked = rankOpportunities(input.opportunities);
 
   for (const opp of ranked) {
@@ -368,7 +374,7 @@ export function evaluatePolicy(input: PolicyInputs): PolicyRecommendation {
     // Per-protocol remaining capacity = cap*NAV - current position.
     const protoCap = Math.floor((nav * cap.maxAllocationBps) / BPS);
     const current = positionByProtocol.get(cap.protocolId) ?? 0;
-    const protoHeadroom = Math.max(0, protoCap - current);
+    const protoHeadroom = Math.floor((Math.max(0, protoCap - current) * HEADROOM_USE_BPS) / BPS);
     if (protoHeadroom <= 0) {
       rejected.push({ ...slim(opp), reason: "protocol_cap_reached" });
       continue;
@@ -396,6 +402,20 @@ export function evaluatePolicy(input: PolicyInputs): PolicyRecommendation {
   const intent: PolicyRecommendation["intent"] =
     actions.length > 0 ? (drift.rebalanceDue ? "rebalance" : "deploy_idle") : "hold";
   return finalize(input, drift, intent, actions, rejected);
+}
+
+/** Same drift, new action list. Intent and summary follow the actions that remain. */
+export function withActions(
+  input: PolicyInputs,
+  rec: PolicyRecommendation,
+  actions: RecommendedAction[],
+  extraRejected: RejectedAlternative[],
+): PolicyRecommendation {
+  let intent = rec.intent;
+  if (intent !== "reduce_exposure") {
+    intent = actions.length > 0 ? (rec.drift.rebalanceDue ? "rebalance" : "deploy_idle") : "hold";
+  }
+  return finalize(input, rec.drift, intent, actions, [...rec.rejected, ...extraRejected]);
 }
 
 function slim(o: YieldOpportunity): Omit<RejectedAlternative, "reason"> {

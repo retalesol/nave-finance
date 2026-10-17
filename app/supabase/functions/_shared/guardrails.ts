@@ -315,9 +315,15 @@ export function evaluateGuardrails(
     // contexts that lack the on-chain reads, e.g. eval fixtures).
     const nav = ctx.treasury.navBaseUnits ?? ctx.treasury.totalValueUsd;
     const capBps = ctx.riskParams.maxSingleAllocationBps;
-    const amount = ctx.request.amount ?? null;
-    const deployed = ctx.request.targetProtocolDeployedBaseUnits ??
-      ctx.treasury.deployedBaseUnits ?? sumDeployed(ctx);
+    // NAV and vault deployed capital are micro-USD. A 6-decimal stablecoin
+    // amount is already that unit. Other assets pass amountValueUnits so a
+    // lamport figure is not added to a dollar figure.
+    const amount = navUnits(ctx.request.amountValueUnits, ctx.request.amount ?? null);
+    const deployed = navUnits(
+      ctx.request.venueDeployedValueUnits,
+      ctx.request.targetProtocolDeployedBaseUnits ??
+        ctx.treasury.deployedBaseUnits ?? sumDeployed(ctx),
+    );
     if (capBps == null || nav == null || amount == null || deployed == null) {
       add(
         "allocation_cap",
@@ -344,7 +350,7 @@ export function evaluateGuardrails(
     // case 0 fails closed.
     const navBu = ctx.treasury.navBaseUnits ?? null;
     const deployedBu = ctx.treasury.deployedBaseUnits ?? sumDeployed(ctx);
-    const amt = ctx.request.amount ?? null;
+    const amt = navUnits(ctx.request.amountValueUnits, ctx.request.amount ?? null);
     const projected =
       deployedBu != null && amt != null ? deployedBu + amt : null;
 
@@ -581,6 +587,12 @@ export function evaluateGuardrails(
   const shouldSign = pass && isSigning && output.should_sign === true;
 
   return { pass, shouldSign, checks, failures };
+}
+
+/** Prefer a micro-USD quote. Fall back to the raw amount when it is already that unit. */
+function navUnits(quoted: number | null | undefined, raw: number | null): number | null {
+  if (typeof quoted === "number" && Number.isFinite(quoted)) return quoted;
+  return raw;
 }
 
 /** Best-effort sum of deployed capital from snapshot strategy positions. */

@@ -22,9 +22,12 @@ import { computeAgentStatus, type AgentStatusDisplay } from '../lib/agentStatus'
 import { agentRoleLabel } from '../lib/agentRoleLabel';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
+import { isTreasuryOpsFamily } from '../lib/chain/types';
+import { PublicKey } from '@solana/web3.js';
 import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
-import { setAgentsEnabledViaProxyEvm } from '../lib/edgeFunctionClient';
+import { clearHaltViaProxy, setAgentsEnabledViaProxyEvm, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { buildEmergencyPauseAgents } from '../lib/transactionBuilders';
+import { getExecutionRequestPDA } from '../lib/pdaDerivation';
 
 /* ── Confirm Dialog ─────────────────────────────────────── */
 function ConfirmAgentToggleModal({
@@ -282,14 +285,27 @@ function executionStatusLabel(status: ExecutionStatus): { label: string; tone: '
   }
 }
 
-function LiveExecutionRow({ exec }: { exec: ExecutionInfo }) {
+function LiveExecutionRow({
+  exec,
+  canClearHalt,
+  clearingHalt,
+  clearHaltError,
+  onClearHalt,
+}: {
+  exec: ExecutionInfo;
+  canClearHalt?: boolean;
+  clearingHalt?: boolean;
+  clearHaltError?: string | null;
+  onClearHalt?: () => void;
+}) {
   const { label, tone } = executionStatusLabel(exec.status);
   const currentStageIdx = EXECUTION_STAGES.findIndex(s => s.status === exec.status);
+  const isHalted = exec.status === ExecutionStatus.Halted || exec.operationalHalt;
   return (
     <div className="rounded-lg border p-3" style={{ borderColor: 'hsl(var(--border))' }}>
       <div className="flex items-center justify-between mb-2">
         <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--foreground))' }}>
-          {exec.proposal.slice(0, 8)}…{exec.proposal.slice(-4)} · {exec.protocolName || 'strategy'}
+          {exec.proposal.length > 12 ? `${exec.proposal.slice(0, 8)}…${exec.proposal.slice(-4)}` : `#${exec.proposal}`} · {exec.protocolName || 'strategy'}
         </span>
         <span style={{
           fontSize: '11px', fontWeight: 500,
@@ -316,9 +332,33 @@ function LiveExecutionRow({ exec }: { exec: ExecutionInfo }) {
             </div>
           );
         })}
-        {exec.operationalHalt && (
+        {isHalted && (
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <div style={{ fontSize: '11px', color: 'hsl(var(--destructive))' }}>
+              Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
+            </div>
+            {canClearHalt && onClearHalt && (
+              <button
+                type="button"
+                onClick={onClearHalt}
+                disabled={clearingHalt}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium"
+                style={{
+                  borderColor: 'hsl(var(--border-strong))',
+                  backgroundColor: 'hsl(var(--surface-0))',
+                  color: 'hsl(var(--foreground))',
+                  opacity: clearingHalt ? 0.6 : 1,
+                }}
+              >
+                <Fi icon={clearingHalt ? 'arrows-rotate' : 'shield-check'} style={{ fontSize: 10 }} className={clearingHalt ? 'animate-spin' : ''} />
+                {clearingHalt ? 'Clearing…' : 'Clear Halt'}
+              </button>
+            )}
+          </div>
+        )}
+        {clearHaltError && (
           <div style={{ fontSize: '11px', color: 'hsl(var(--destructive))', marginTop: '4px' }}>
-            Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
+            {clearHaltError}
           </div>
         )}
         {exec.status === ExecutionStatus.InReview && exec.timeRemainingSeconds > 0 && (
@@ -370,9 +410,17 @@ function listedFailures(check: Record<string, unknown>): string | null {
 function ExecutionPipeline({
   executions,
   loading,
+  canClearHalt,
+  clearingProposal,
+  clearHaltErrors,
+  onClearHalt,
 }: {
   executions: ExecutionInfo[];
   loading: boolean;
+  canClearHalt?: boolean;
+  clearingProposal?: string | null;
+  clearHaltErrors?: Record<string, string>;
+  onClearHalt?: (exec: ExecutionInfo) => void;
 }) {
   return (
     <div className="nave-card">
@@ -393,7 +441,14 @@ function ExecutionPipeline({
           </div>
         )}
         {executions.map((exec) => (
-          <LiveExecutionRow key={exec.proposal} exec={exec} />
+          <LiveExecutionRow
+            key={exec.proposal}
+            exec={exec}
+            canClearHalt={canClearHalt}
+            clearingHalt={clearingProposal === exec.proposal}
+            clearHaltError={clearHaltErrors?.[exec.proposal] ?? null}
+            onClearHalt={onClearHalt ? () => onClearHalt(exec) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -928,13 +983,81 @@ export default function Agent() {
   const isMock = isMockDaoAddress(daoAddress);
   const executionPipeline = useExecutionPipeline(daoAddress, daoRegistry.dao?.proposalCount ?? 0);
 
-  const { publicKey } = useWallet();
+  const { publicKey, signMessage } = useWallet();
   const { isFounder, isGuardian } = useDaoMembership();
   const { chainKind, evmChainId, chainFamily } = useChain();
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const { signTypedDataAsync } = useSignTypedData();
   const tx = useSendTransaction();
+  const [clearingProposal, setClearingProposal] = useState<string | null>(null);
+  const [clearHaltErrors, setClearHaltErrors] = useState<Record<string, string>>({});
+
+  async function handleClearHalt(exec: ExecutionInfo) {
+    if (!daoAddress || clearingProposal) return;
+    setClearHaltErrors((prev) => {
+      const next = { ...prev };
+      delete next[exec.proposal];
+      return next;
+    });
+    setClearingProposal(exec.proposal);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmAddress || !evmChainId || !isTreasuryOpsFamily(chainFamily)) {
+          setClearHaltErrors((prev) => ({
+            ...prev,
+            [exec.proposal]: 'Connect your EVM founder wallet on Ethereum, Base, Robinhood, or Arc.',
+          }));
+          return;
+        }
+        const idx = Number(exec.proposal);
+        const { error } = await clearHaltViaProxy({
+          daoAddress,
+          walletAddress: evmAddress,
+          executionRequestAddress: exec.proposal,
+          signChallenge: (m) => signMessageAsync({ message: m }),
+          chain: chainFamily,
+          chainId: evmChainId,
+          index: Number.isFinite(idx) ? idx : undefined,
+        });
+        if (error) {
+          setClearHaltErrors((prev) => ({ ...prev, [exec.proposal]: error }));
+          return;
+        }
+        executionPipeline.refetch();
+        agentStatus.refetch();
+        return;
+      }
+      if (!publicKey || !signMessage) {
+        setClearHaltErrors((prev) => ({
+          ...prev,
+          [exec.proposal]: 'Connect your Solana founder wallet with message signing support.',
+        }));
+        return;
+      }
+      const [erPda] = getExecutionRequestPDA(new PublicKey(exec.proposal));
+      const { error } = await clearHaltViaProxy({
+        daoAddress,
+        walletAddress: publicKey.toBase58(),
+        executionRequestAddress: erPda.toBase58(),
+        signChallenge: solanaAccessSigner(signMessage),
+        chain: 'solana',
+      });
+      if (error) {
+        setClearHaltErrors((prev) => ({ ...prev, [exec.proposal]: error }));
+        return;
+      }
+      executionPipeline.refetch();
+      agentStatus.refetch();
+    } catch (err) {
+      setClearHaltErrors((prev) => ({
+        ...prev,
+        [exec.proposal]: err instanceof Error ? err.message : 'Failed to clear halt.',
+      }));
+    } finally {
+      setClearingProposal(null);
+    }
+  }
 
   // Only the founder or a guardian may pause the agents or propose to enable them.
   // Mock DAOs stay interactive for the demo.
@@ -1095,7 +1218,7 @@ export default function Agent() {
     // guardian signature(s) and broadcasts guardianAction(DISABLE_AGENTS, sigs). ──
     if (chainKind === 'evm') {
       if (!daoAddress) { setToggleError('Select a treasury to pause the agents.'); return; }
-      if (!evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
+      if (!evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
         setToggleError('Select an Ethereum, Base, or Robinhood network.');
         return;
       }
@@ -1426,6 +1549,10 @@ export default function Agent() {
         <ExecutionPipeline
           executions={executionPipeline.executions}
           loading={executionPipeline.loading}
+          canClearHalt={isFounder}
+          clearingProposal={clearingProposal}
+          clearHaltErrors={clearHaltErrors}
+          onClearHalt={(exec) => void handleClearHalt(exec)}
         />
       )}
 

@@ -64,4 +64,6 @@ pub enum GovernanceError {
     InvalidVotingPeriod,
     #[msg("Token mint does not match the proposal's governance voting mint")]
     VotingMintMismatch,
+    #[msg("Token governance requires a non-zero voting-token supply")]
+    ZeroVotingSupply,
 }

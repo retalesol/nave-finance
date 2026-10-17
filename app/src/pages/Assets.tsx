@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
@@ -16,7 +16,7 @@ import { DepositFlowModal } from '../components/DepositFlow';
 import NaveModal from '../components/NaveModal';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
-import { buildRegisterAssetEvm, type EvmBuildResult } from '../lib/evm/writers';
+import { buildRegisterAssetEvm, buildRevalueTreasuryEvm, type EvmBuildResult } from '../lib/evm/writers';
 import {
   buildInitStrategyPosition,
   buildInitStrategyEscrow,
@@ -24,12 +24,18 @@ import {
   buildConfigureMarginfiPosition,
   buildRegisterAsset,
   buildRegisterNftAsset,
+  buildRevalueTreasury,
   buildSetFeeAsset,
 } from '../lib/transactionBuilders';
 import { evmAllowedAssets, resolveAsset, riskLabel, type AllowedAsset, type EvmAllowedAsset } from '../lib/allowedAssets';
-import { fetchYieldData } from '../lib/edgeFunctionClient';
+import { fetchYieldData, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { getSolanaRegisterAssetPlan } from '../lib/solanaTreasuryRegistrationDefaults';
 import { getSolanaStrategyStatuses } from '../lib/strategyReadiness';
+import { SOLANA_NETWORK } from '../lib/programConfig';
+
+const CHAINLINK_SOL_USD_FEED_DEVNET = '99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR';
+const CHAINLINK_SOL_USD_FEED_MAINNET = 'CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt';
+const WSOL_MINT_STR = 'So11111111111111111111111111111111111111112';
 
 const MARGINFI_STRATEGY_ENABLED = getSolanaStrategyStatuses().find((s) => s.id === 'marginfi')?.supported ?? false;
 const JUPITER_STRATEGY_BADGE = getSolanaStrategyStatuses().find((s) => s.id === 'jupiter')?.badge ?? null;
@@ -544,6 +550,9 @@ function treasuryAssetDexScreenerUrl(
     return `https://dexscreener.com/solana/${asset.mint}`;
   }
   if (chainKind === 'evm' && /^0x[0-9a-fA-F]{40}$/i.test(asset.mint)) {
+    if (evmChainId === 4663 || evmChainId === 46630 || evmChainId === 5042 || evmChainId === 5042002) {
+      return null;
+    }
     const seg = evmChainId === 8453 || evmChainId === 84532 ? 'base' : 'ethereum';
     return `https://dexscreener.com/${seg}/${asset.mint}`;
   }
@@ -752,9 +761,10 @@ function NftCard({ nft, canManage, onAction }: {
 export default function Assets() {
   const navigate = useNavigate();
   const { daoAddress, isMockMode } = useDaoContext();
-  const { publicKey } = useWallet();
+  const { publicKey, signMessage } = useWallet();
   const { address: evmAddress } = useAccount();
-  const { chainKind } = useChain();
+  const { signMessageAsync } = useSignMessage();
+  const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
   const { assets, visibleAssets, hiddenAssets, onchainNavUsd, deployedUsd, loading, error, refetch, hideAsset, unhideAsset } = useTreasuryAssets(daoAddress);
   const { nfts, loading: nftsLoading, error: nftsError, unsupported: nftsUnsupported, refetch: refetchNfts } = useTreasuryNfts(daoAddress);
@@ -763,22 +773,90 @@ export default function Assets() {
   const [configureAsset, setConfigureAsset] = useState<TreasuryAssetRow | null>(null);
   const [registerEvmAsset, setRegisterEvmAsset] = useState(false);
   const [registerSolanaAsset, setRegisterSolanaAsset] = useState<TreasuryAssetRow | null>(null);
+  const [revaluing, setRevaluing] = useState(false);
   const [tab, setTab] = useState<'tokens' | 'hidden' | 'nfts'>('tokens');
 
   const canManage = !!daoAddress && !isMockMode && (chainKind === 'evm' ? !!evmAddress : !!publicKey);
 
+  async function handleRevalueNav() {
+    if (!daoAddress || revaluing) return;
+    setRevaluing(true);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmChainId) {
+          toast({ variant: 'destructive', title: 'Select network', description: 'Select an EVM network to revalue treasury NAV.' });
+          return;
+        }
+        const out = await tx.sendEvm(buildRevalueTreasuryEvm(evmChainId, daoAddress), {
+          successLabel: 'Treasury NAV revalued',
+        });
+        if (out.status === 'success' || out.status === 'mock') {
+          refetch();
+        }
+        return;
+      }
+      if (!publicKey) {
+        toast({ variant: 'destructive', title: 'Connect wallet', description: 'Connect your founder wallet to revalue treasury NAV.' });
+        return;
+      }
+      const registered = assets.filter((a) => a.onChainRegistered && a.mint !== 'SOL');
+      if (registered.length === 0) {
+        toast({ variant: 'destructive', title: 'No registered assets', description: 'Enable at least one treasury asset before revaluing NAV.' });
+        return;
+      }
+      const solFeed = new PublicKey(
+        SOLANA_NETWORK === 'mainnet' ? CHAINLINK_SOL_USD_FEED_MAINNET : CHAINLINK_SOL_USD_FEED_DEVNET,
+      );
+      const revalueAssets = registered.map((a) => ({
+        mint: new PublicKey(a.mint),
+        priceUpdate: a.isStablecoin ? undefined : a.mint === WSOL_MINT_STR ? solFeed : undefined,
+      }));
+      const built = await buildRevalueTreasury(new PublicKey(daoAddress), publicKey, revalueAssets);
+      const out = await tx.send(built, { successLabel: 'Treasury NAV revalued' });
+      if (out.status === 'success' || out.status === 'mock') {
+        refetch();
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Revalue failed',
+        description: err instanceof Error ? err.message : 'Could not revalue treasury NAV.',
+      });
+    } finally {
+      setRevaluing(false);
+    }
+  }
+
   async function handleAction(action: string, asset: TreasuryAssetRow) {
     if (!canManage) return;
-    if (action === 'hide') {
-      const { error: hErr } = await hideAsset(asset.mint);
-      if (hErr) toast({ variant: 'destructive', title: 'Could not hide asset', description: hErr });
-      else toast({ title: 'Asset hidden', description: `${asset.symbol} moved to Hidden Assets.` });
-      return;
-    }
-    if (action === 'unhide') {
-      const { error: uErr } = await unhideAsset(asset.mint);
-      if (uErr) toast({ variant: 'destructive', title: 'Could not unhide asset', description: uErr });
-      else toast({ title: 'Asset restored', description: `${asset.symbol} is visible again.` });
+    if (action === 'hide' || action === 'unhide') {
+      const wallet = chainKind === 'evm' ? evmAddress : publicKey?.toBase58();
+      if (!wallet) return;
+      const signChallenge = chainKind === 'evm'
+        ? (m: string) => signMessageAsync({ message: m })
+        : signMessage
+          ? solanaAccessSigner(signMessage)
+          : null;
+      if (!signChallenge) {
+        toast({ variant: 'destructive', title: 'Wallet cannot sign', description: 'Connect a wallet that can sign messages.' });
+        return;
+      }
+      const write = action === 'hide' ? hideAsset : unhideAsset;
+      const { error: hErr } = await write(asset.mint, wallet, signChallenge);
+      if (hErr) {
+        toast({
+          variant: 'destructive',
+          title: action === 'hide' ? 'Could not hide asset' : 'Could not unhide asset',
+          description: hErr,
+        });
+      } else {
+        toast({
+          title: action === 'hide' ? 'Asset hidden' : 'Asset restored',
+          description: action === 'hide'
+            ? `${asset.symbol} moved to Hidden Assets.`
+            : `${asset.symbol} is visible again.`,
+        });
+      }
       return;
     }
     if (action === 'deposit') {
@@ -878,6 +956,17 @@ export default function Assets() {
             <button onClick={() => { setDepositAsset(null); setShowDeposit(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium"
               style={{ fontSize: 12.5, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>
               <Fi icon="arrow-down" style={{ fontSize: 11 }} /> Deposit
+            </button>
+          )}
+          {canManage && daoAddress && assets.some((a) => a.onChainRegistered) && (
+            <button
+              onClick={() => void handleRevalueNav()}
+              disabled={revaluing}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"
+              style={{ fontSize: 12.5, borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', opacity: revaluing ? 0.6 : 1 }}
+            >
+              <Fi icon="arrows-rotate" className={revaluing ? 'animate-spin' : ''} style={{ fontSize: 11 }} />
+              {revaluing ? 'Revaluing…' : 'Revalue NAV'}
             </button>
           )}
           <button onClick={() => { refetch(); refetchNfts(); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"

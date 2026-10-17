@@ -49,12 +49,24 @@ export function mapLiveProposalsToUi(
     }
     return base;
   };
+  const AGENT_ENABLE_PAYLOAD_HASH =
+    '0x5fe7f977e71dba2ea1a68e21057beebb9be2ac30c6410aa38d4f3fbe41dcffd2';
+  const isAgentEnableProposal = (p: ProposalInfo): boolean => {
+    if (p.title.startsWith(AGENT_ENABLE_PROPOSAL_TITLE)) return true;
+    if (p.proposalType === OnChainProposalType.General && p.payloadHash) {
+      const h = p.payloadHash.toLowerCase();
+      if (h === '0x01' || h === '01' || h === AGENT_ENABLE_PAYLOAD_HASH) return true;
+    }
+    return false;
+  };
   return proposals.map((p: ProposalInfo) => ({
     id: `p${p.index}`,
     number: p.index,
-    title: p.title,
+    title: isAgentEnableProposal(p) && !p.title.startsWith(AGENT_ENABLE_PROPOSAL_TITLE)
+      ? AGENT_ENABLE_PROPOSAL_TITLE
+      : p.title,
     description: p.description,
-    type: p.title.startsWith(AGENT_ENABLE_PROPOSAL_TITLE)
+    type: isAgentEnableProposal(p)
       ? ('agent-enable' as ProposalType)
       : typeMap[p.proposalType] || 'general',
     status: statusMap[p.status] || 'pending',

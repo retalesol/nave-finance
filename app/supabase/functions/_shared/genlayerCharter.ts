@@ -221,11 +221,19 @@ export function counterevidenceError(value: string | null | undefined): string |
 
 /**
  * Status pages for the venues this testing environment actually uses.
- * Balancer is omitted. status.kamino.finance and status.compound.finance do
- * not resolve. status.getcompound.ai is a different product.
+ * Balancer is omitted. Jito's docs stand in for a status page because
+ * jito.network answers 403 to automated reads. status.kamino.finance and
+ * status.compound.finance do not resolve. status.getcompound.ai is a different
+ * product.
  */
 export const VENUE_STATUS_TARGETS: readonly {
-  venue: "kamino" | "aave-v3" | "compound-v3";
+  venue:
+    | "kamino"
+    | "jito"
+    | "aave-v3"
+    | "compound-v3"
+    | "morpho-steakhouse-usdg"
+    | "morpho-steakhouse-usdc";
   families: readonly ChainFamily[];
   statusUrl: string;
 }[] = [
@@ -233,6 +241,11 @@ export const VENUE_STATUS_TARGETS: readonly {
     venue: "kamino",
     families: ["solana"],
     statusUrl: "https://kamino.com/docs/security.md",
+  },
+  {
+    venue: "jito",
+    families: ["solana"],
+    statusUrl: "https://jito-foundation.gitbook.io/jitosol",
   },
   {
     venue: "aave-v3",
@@ -243,6 +256,16 @@ export const VENUE_STATUS_TARGETS: readonly {
     venue: "compound-v3",
     families: ["ethereum"],
     statusUrl: "https://docs.compound.xyz/",
+  },
+  {
+    venue: "morpho-steakhouse-usdg",
+    families: ["robinhood"],
+    statusUrl: "https://docs.morpho.org/",
+  },
+  {
+    venue: "morpho-steakhouse-usdc",
+    families: ["arc"],
+    statusUrl: "https://docs.morpho.org/",
   },
 ];
 
@@ -431,8 +454,9 @@ export function charterSatisfies(
   if (!charter) return false;
   if (charter.decision !== "pass") return false;
   if (!charter.finished || charter.provisional) return false;
-  const expected = expectedActionHash.trim().toLowerCase();
-  const got = charter.action_hash.trim().toLowerCase();
+  // Stored hashes drop the 0x prefix; EVM payload hashes carry it.
+  const expected = expectedActionHash.trim().toLowerCase().replace(/^0x/, "");
+  const got = charter.action_hash.trim().toLowerCase().replace(/^0x/, "");
   if (!expected || !got) return false;
   return expected === got;
 }
@@ -535,7 +559,7 @@ export function venueGateOutcome(args: {
   }
   return {
     block: false,
-    indeterminate: !args.venue,
+    indeterminate: false,
     recordedOnly: false,
     detail: `venue ${status}`,
   };
@@ -576,7 +600,7 @@ export function haltGateOutcome(args: {
       detail: "keep_pause blocks clear_halt",
     };
   }
-  return { block: false, indeterminate: !args.halt, recordedOnly: false, detail: note };
+  return { block: false, indeterminate: false, recordedOnly: false, detail: note };
 }
 
 export interface ReviewRow {
@@ -660,6 +684,69 @@ export interface InterpretedCharter {
   customer_status: CustomerStatus;
 }
 
+/** A contract read may arrive as a JSON string or one wrapper object. */
+export function contractRecord(raw: unknown): Record<string, unknown> {
+  let value = raw;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text.startsWith("{") && !text.startsWith("[")) return {};
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return {};
+    }
+  }
+  if (Array.isArray(value)) value = value[0];
+  if (!value || typeof value !== "object") return {};
+  const obj = value as Record<string, unknown>;
+  if (obj.decision === "pass" || obj.decision === "fail" || obj.decision === "keep_pause" || obj.decision === "lift_pause" || obj.status === "fine" || obj.status === "watch" || obj.status === "stop") {
+    return obj;
+  }
+  for (const key of ["result", "data", "case"]) {
+    const inner = obj[key];
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) return inner as Record<string, unknown>;
+  }
+  return obj;
+}
+
+/**
+ * A later read that loses the verdict must not erase a pass or fail already
+ * stored for the same transaction.
+ */
+export function mergeStoredCharter<T extends {
+  decision: string;
+  summary: string;
+  finished: boolean;
+  provisional: boolean;
+  customer_status: string;
+  rule_ids: string[];
+  tx_id: string;
+}>(incoming: T, stored: {
+  decision?: string | null;
+  summary?: string | null;
+  finished?: boolean | null;
+  provisional?: boolean | null;
+  customer_status?: string | null;
+  rule_ids?: string[] | null;
+  tx_id?: string | null;
+} | null): T {
+  if (incoming.decision === "pass" || incoming.decision === "fail") return incoming;
+  const decision = stored?.decision === "pass" || stored?.decision === "fail" ? stored.decision : "";
+  if (!decision || (stored?.tx_id ?? "") !== incoming.tx_id) return incoming;
+  const customer = stored?.customer_status === "checked" || stored?.customer_status === "needs_closer_look"
+    ? stored.customer_status
+    : incoming.customer_status;
+  return {
+    ...incoming,
+    decision,
+    summary: typeof stored?.summary === "string" && stored.summary.trim() ? stored.summary : incoming.summary,
+    finished: stored?.finished === true,
+    provisional: stored?.provisional === true,
+    customer_status: customer,
+    rule_ids: Array.isArray(stored?.rule_ids) ? stored.rule_ids : incoming.rule_ids,
+  };
+}
+
 /** Read a contract result. Essays are dropped. A provisional accept stays unfinished. */
 export function interpretCharterResponse(raw: unknown, expectedActionHash: string): InterpretedCharter {
   const obj = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
@@ -676,7 +763,11 @@ export function interpretCharterResponse(raw: unknown, expectedActionHash: strin
   const ruleIds = Array.isArray(obj.rule_ids)
     ? obj.rule_ids.filter((id): id is string => typeof id === "string")
     : [];
-  const summary = decision === "fail" ? everydaySentence(typeof obj.summary === "string" ? obj.summary : "") : "";
+  const rawSummary = typeof obj.summary === "string" ? obj.summary.replace(/\s+/g, " ").trim() : "";
+  // A pass keeps the contract's one sentence. Any other pass text is an essay and is dropped.
+  const summary = decision === "fail"
+    ? everydaySentence(rawSummary)
+    : (rawSummary === "This move fits the treasury rules." ? rawSummary : "");
   const txId = typeof obj.tx_id === "string"
     ? obj.tx_id
     : typeof obj.transaction_hash === "string"
@@ -740,6 +831,8 @@ const EVM_STABLE_ASSETS = new Set([
   "0x94a9d9ac8a22534e3faca9f4e7f2e2cf85d5e4c8",
   "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
   "0xba50cd2a20f6da35d788639e581bca8d0b5d4d5f",
+  "0x3600000000000000000000000000000000000000",
+  "0xaaae26c5b891bf00d4cd6ef04148bf1cb1cc96b1",
 ]);
 
 const EVM_OTHER_ASSETS = new Set([
@@ -749,6 +842,7 @@ const EVM_OTHER_ASSETS = new Set([
   "0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22",
   "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
   "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+  "0x7943e237c7f95da44e0301572d358911207852fa",
 ]);
 
 /** True or false when this mint is on the product allowlist. Unknown stays unknown. */
@@ -759,6 +853,25 @@ export function assetIsStable(mint: string, solanaClass?: string | null): boolea
   if (EVM_STABLE_ASSETS.has(key)) return true;
   if (EVM_OTHER_ASSETS.has(key)) return false;
   return null;
+}
+
+/**
+ * Price `amountBase` token units in micro-USD using a treasury mark.
+ * `totalBase` is the marked token amount (idle + deployed) and `totalMicroUsd`
+ * is that same pile's last valuation. Returns null when the mark cannot price
+ * the amount. Stablecoins whose base unit is already one micro-USD do not need this.
+ */
+export function scaleBaseToMicroUsd(
+  amountBase: number,
+  totalBase: number,
+  totalMicroUsd: number,
+): number | null {
+  if (!Number.isSafeInteger(amountBase) || amountBase < 0) return null;
+  if (!Number.isSafeInteger(totalBase) || totalBase <= 0) return null;
+  if (!Number.isSafeInteger(totalMicroUsd) || totalMicroUsd < 0) return null;
+  const scaled = (BigInt(amountBase) * BigInt(totalMicroUsd)) / BigInt(totalBase);
+  const out = Number(scaled);
+  return Number.isSafeInteger(out) ? out : null;
 }
 
 function wholeUnits(value: number): string | null {
@@ -990,7 +1103,7 @@ export function reviewFromRecord(args: {
   txId: string;
 }): RecordedReview {
   const finished = observationFinished(args.observation);
-  const obj = args.record && typeof args.record === "object" ? args.record as Record<string, unknown> : {};
+  const obj = contractRecord(args.record);
   if (args.kind === "venue") {
     const status = obj.status === "fine" || obj.status === "watch" || obj.status === "stop" ? obj.status : null;
     const done = finished && status != null;
@@ -1031,7 +1144,7 @@ export function reviewFromRecord(args: {
       rule_ids: obj.rule_ids,
       summary: obj.summary,
       action_hash: typeof obj.action_hash === "string" ? obj.action_hash : args.actionHash,
-      status: finished ? "finalized" : (args.observation?.status || "accepted"),
+      status: finished ? "finalized" : (args.observation?.status ?? ""),
       finished,
       provisional: !finished,
       tx_id: args.txId,

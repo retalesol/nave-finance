@@ -139,6 +139,8 @@ oracle accounting. No program changes needed.
 - `NAVE_COMPOUND_MIN_GAIN_BPS` (default 100 = 1%) — min gain threshold
 - `NAVE_WITHDRAW_DELAY_SECS` as the compound cooldown
 
+EVM `withdraw_from_strategy` harvest and auto-withdraw calls pass a positive `min_out`: `amount * (10_000 - 50) / 10_000`, and at least 1. That is the same 50 bps bound as `NaveConstants.DEPOSIT_SLIPPAGE_BPS` and the signer `withDefaultMinOut`. The harvest amount is realized gain only, so principal stays deployed. Founder withdrawals still quote through `resolveEvmMinOut`.
+
 **Current status:** Disabled. Can be enabled without program changes. ✓
 
 ---
@@ -208,7 +210,7 @@ not env flags:
 
 | Behavior | Location | Status | Phase ref |
 |----------|----------|--------|-----------|
-| EVM post-`Executed` state (compound/oracle/auto-withdraw) | `agent-orchestrator/index.ts` EVM branch of the `fresh.status === "Executed"` handler | FIXED (Phase 5) — reuses the same `NAVE_POSITION_ORACLE_ENABLED` / `NAVE_COMPOUND_ENABLED` / `NAVE_AUTO_WITHDRAW_ENABLED` flags as Solana, applied per-chain. Position is keyed by adapter address via `NaveTreasury.position(adapter)` / `updateStrategyPositionValue` (relayed from the custodied Oversight agent EOA, role `operational`) instead of a Solana PDA. `min_out` for the EVM `withdraw_from_strategy` harvest/withdraw calls is omitted (defaults to 0 on testnets); a real EVM mainnet deployment will need a positive off-chain-quoted `min_out` threaded the same way `resolveEvmMinOut` does for founder-initiated withdrawals. | Phase 5 |
+| EVM post-`Executed` state (compound/oracle/auto-withdraw) | `agent-orchestrator/index.ts` EVM branch of the `fresh.status === "Executed"` handler | FIXED (Phase 5) — reuses the same `NAVE_POSITION_ORACLE_ENABLED` / `NAVE_COMPOUND_ENABLED` / `NAVE_AUTO_WITHDRAW_ENABLED` flags as Solana, applied per-chain. Position is keyed by adapter address via `NaveTreasury.position(adapter)` / `updateStrategyPositionValue` (relayed from the custodied Oversight agent EOA, role `operational`) instead of a Solana PDA. `min_out` for the EVM `withdraw_from_strategy` harvest and auto-withdraw calls is a positive floor of the withdrawn amount: `amount * (10_000 - 50) / 10_000`, and at least 1. That is the same 50 bps bound as `NaveConstants.DEPOSIT_SLIPPAGE_BPS` and the signer `withDefaultMinOut`. The harvest withdraws realized gain only, so principal stays deployed. Founder-initiated withdrawals still pass an explicit quote through `resolveEvmMinOut`. | Phase 5 |
 | EVM guardian multi-sig UI | `src/lib/evm/writers.ts` | PARTIALLY WIRED | Phase 2C |
 
 ---
@@ -222,21 +224,25 @@ These three flags are read only when the env value is the literal `true`. Unset 
 
 When on, a signing role needs a finished charter pass whose action hash matches the execution request. A missing, unfinished, or failed review blocks. A pass does not create a transfer. The vault, the caps, and the payload binding stay on the treasury chain.
 
-**Enable when:** `NAVE_GENLAYER_CHARTER_ADDRESS` points at a deployed `CharterAdjudicator`, and the same check has been exercised on Solana and on Ethereum, Base, and Robinhood.
+**Enable when:** `NAVE_GENLAYER_CHARTER_ADDRESS` points at a deployed `CharterAdjudicator`, and the same check has been exercised across all five supported testnet chains (`solana`, `ethereum` `11155111`, `base` `84532`, `robinhood` `46630`, and `arc` `5042002`).
 
-**Current status:** Off. Contracts are in `contracts/genlayer/` and are not deployed by this repository.
+**Current status:** Off (`NAVE_GENLAYER_GATE=false`). Bradbury serves CharterAdjudicator `0x8F935d913e507A1C8869bcD81803Fef289F1F2B0`, VenueWatch `0xc27B9E337Cc0c277818210c9563A8E5536b2ACe6`, and HaltAppeal `0x7e302d6EbFBCfdf53F8d41F21ffE24401de1B6A4`. All five testnet chains (`solana`, `11155111`, `84532`, `46630`, `5042002`) have been verified end-to-end with live charter and venue reviews on Bradbury. The three gates stay off by default unless explicitly set to `true`. A finalized review does not turn a gate on, and a finished pass does not authorize a transfer.
 
 ### `NAVE_GENLAYER_VENUE_GATE` (default: `false`)
 **Classification: (A) App-only gate**
 
-When on, a finished venue status of `stop` withholds a new deploy into that venue. `fine` and `watch` do not. Changing the on-chain allowlist still takes a governance vote on the treasury chain.
+When on, a finished venue status of `stop` withholds a new deploy into that venue. `fine` and `watch` do not. Changing the on-chain allowlist still takes a governance vote on the treasury chain. `genlayer-venue-watch` warms venue reviews across all five testnet chains (`solana` `jito`/`kamino`, `ethereum` `aave-v3`/`compound-v3`, `base` `aave-v3`, `robinhood` `morpho-steakhouse-usdg`, and `arc` `morpho-steakhouse-usdc`).
 
-**Enable when:** `NAVE_GENLAYER_VENUE_ADDRESS` is set and each venue has a real `https` status page. The app does not invent one.
+**Enable when:** `NAVE_GENLAYER_VENUE_ADDRESS` is set and each venue has a real `https` status or security page.
 
 ### `NAVE_GENLAYER_HALT_GATE` (default: `false`)
 **Classification: (A) App-only gate**
 
 When on, a finished `keep_pause` blocks `clear_halt`. `lift_pause` does not sign `operational_clear` and does not shorten the review window. The Oversight key (role `operational`) on the treasury chain is still required to lift a pause.
+
+**Halt recovery (`clear_halt`) flow:**
+- **Autonomous Oversight recovery (`operationalGate`)**: When an execution request is `Halted` on-chain, the Oversight agent (`agent_role = "operational"`) evaluates whether the halt remains warranted (`haltPrompt.ts`). If the halt was recorded with deterministic causes (`openHaltCauses`), every recorded cause must now pass. If the halt was a model-only halt (`openHaltCauses: []`), `operationalGate` permits `clear_halt` once all deterministic guardrail checks and active GenLayer gates pass. The orchestrator then relays `operational_clear` on-chain (`NaveExecution.operationalClear` on EVM or `nave_execution::operational_clear` on Solana), moving the request back to `InReview`.
+- **Founder-signed recovery (`agent-admin` `clear_halt`)**: A DAO founder can also clear an on-chain halt directly by signing `nave-admin|<dao_address>|clear_halt|<execution_request_address_or_index>|<unix_ms>` with their founder wallet and calling `agent-admin` with `action: "clear_halt"`, which verifies on-chain founder authority and relays `operational_clear`.
 
 **Enable when:** `NAVE_GENLAYER_HALT_ADDRESS` is set.
 

@@ -18,7 +18,7 @@ def contract_path(filename):
 
 def mock_mandate(direct_vm, fits=True, score=80):
     direct_vm.mock_llm(
-        r"Judge whether this treasury move fits the written mandate",
+        r"Set fits to false only when the written mandate forbids something",
         json.dumps({
             "fits": fits,
             "score": score,

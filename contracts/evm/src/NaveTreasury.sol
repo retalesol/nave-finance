@@ -767,6 +767,9 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         (totalDeposited, currentNav, highWaterMark) = TreasuryAdminLib.deposit(
             oracle, _assets, asset, amount, totalDeposited, currentNav, highWaterMark
         );
+        // A non-stable deposit does not credit NAV. Invalidate the revalue
+        // window so the stable-reserve floor cannot be applied to the old NAV.
+        if (!_assets[asset].isStablecoin) lastRevaluedAt = 0;
         emit VaultDeposited(msg.sender, asset, amount, currentNav);
     }
 
@@ -869,6 +872,16 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         );
         deployedCapital += amountUsd;
         emit StrategyDeposited(adapter, asset, amount, amountUsd);
+    }
+
+    /// Assets left this treasury through a bridge. `deployedCapital` rises and
+    /// `currentNav` falls so the next cap check in this block sees the outflow.
+    /// {revalueTreasury} overwrites both from live balances and positions.
+    function noteCapitalDeparture(address asset, uint256 amount) external onlyExecution {
+        uint256 amountUsd = valueAssetUsd(asset, amount);
+        currentNav = currentNav > amountUsd ? currentNav - amountUsd : 0;
+        deployedCapital += amountUsd;
+        emit StrategyDeposited(address(0), asset, amount, amountUsd);
     }
 
     /// Record a strategy withdrawal. The adapter has already returned the

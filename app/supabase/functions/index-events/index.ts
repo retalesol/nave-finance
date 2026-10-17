@@ -543,15 +543,11 @@ Deno.serve(async (req: Request) => {
     const daosRegistered = await upsertDaoRegistry(supabase, newEvents, resolveChain);
 
     // ── Real treasury valuation for treasury-affecting events ────────────
-    // snapshot-treasury currently values Solana vaults only; EVM treasury
-    // valuation is produced by the EVM indexer / cutover flow, so we only
-    // trigger it for Solana DAOs here (EVM events still land in activity_logs).
     const treasuryDaos = new Set<string>();
     for (const e of newEvents) {
       if (
         TREASURY_EVENTS.has(e.event_type) &&
-        e.dao_onchain_address &&
-        resolveChain(e).chain === "solana"
+        e.dao_onchain_address
       ) {
         treasuryDaos.add(e.dao_onchain_address);
       }

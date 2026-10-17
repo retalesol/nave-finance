@@ -54,7 +54,7 @@ const FACTORY_FILES: Partial<Record<SmokeChain, string>> = {
 };
 
 const CLOSED_SOLANA_BRIDGE = "Fu3ZpX1SMvqVhuo7E4uKGvJxe6cJDFDxxmSCET6de9u6";
-const GENLAYER_ACCOUNT = "0xb82acb2eb8a1c76805b6fac55cfc8797f00fcc10";
+const GENLAYER_ACCOUNT = "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca";
 const SEPOLIA_AAVE = "0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426";
 const SEPOLIA_COMPOUND = "0x845d8310A861A95Ed1644643D1BAe086944B1AA0";
 const BASE_SEPOLIA_AAVE = "0x33D19799EBac88FFDc4e5BF61c199c71963470A6";
@@ -211,7 +211,7 @@ function checkGates(chain: SmokeChain) {
   const flags = [NAVE_GENLAYER_GATE, NAVE_GENLAYER_VENUE_GATE, NAVE_GENLAYER_HALT_GATE];
   const on = flags.filter((name) => readGenlayerFlag(name));
   if (on.length > 0) {
-    fail(chain, `${on.join(", ")} is true. Gates stay off: no finalized Bradbury charter case, and ${GENLAYER_ACCOUNT} has 0 GEN.`);
+    fail(chain, `${on.join(", ")} is true. Gates stay off until a review is FINALIZED. Account ${GENLAYER_ACCOUNT}.`);
     return;
   }
   const missing = charterGateOutcome({
@@ -298,9 +298,15 @@ function selectedChains(): SmokeChain[] {
 }
 
 const bradbury = readJson("contracts/genlayer/deployments/bradbury.json");
+const bradburyContracts = (bradbury?.contracts ?? {}) as Record<string, { address?: string }>;
 console.log("GenLayer gates stay off.");
-console.log(`Bradbury deployed=${String(bradbury?.deployed)}. Account ${GENLAYER_ACCOUNT} balance: ${String(bradbury?.balance ?? "0 GEN")}.`);
-console.log("No finalized Bradbury charter case exists, so NAVE_GENLAYER_GATE, NAVE_GENLAYER_VENUE_GATE, and NAVE_GENLAYER_HALT_GATE stay unset.");
+console.log(
+  `Bradbury deployed=${String(bradbury?.deployed)}. Account ${GENLAYER_ACCOUNT}. ` +
+    `charter ${bradburyContracts.charter_adjudicator?.address ?? "unset"}, ` +
+    `venue ${bradburyContracts.venue_watch?.address ?? "unset"}, ` +
+    `halt ${bradburyContracts.halt_appeal?.address ?? "unset"}.`,
+);
+console.log("Accepted charter cases are not finished reviews, so NAVE_GENLAYER_GATE, NAVE_GENLAYER_VENUE_GATE, and NAVE_GENLAYER_HALT_GATE stay unset.");
 
 for (const chain of selectedChains()) checkChain(chain);
 

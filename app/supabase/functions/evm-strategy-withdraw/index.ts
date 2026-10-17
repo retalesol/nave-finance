@@ -89,17 +89,23 @@ Deno.serve(async (req) => {
   const indexStr = String(body.index);
   const amountStr = String(body.amount);
   const parts = message.split("|");
+  const signedMinOut = parts[5] ?? "";
+  const bodyMinOut = body.min_out === undefined || body.min_out === null || String(body.min_out) === ""
+    ? signedMinOut
+    : String(body.min_out);
   if (
-    parts.length !== 6 ||
+    parts.length !== 7 ||
     parts[0] !== "nave-admin" ||
     parts[1]?.toLowerCase() !== dao_address ||
     parts[2] !== "withdraw_from_strategy" ||
     parts[3] !== indexStr ||
-    parts[4] !== amountStr
+    parts[4] !== amountStr ||
+    signedMinOut === "" ||
+    bodyMinOut !== signedMinOut
   ) {
     return jsonResponse({ error: "Malformed challenge message" }, 400);
   }
-  if (checkChallengeTimestamp(parts[5])) {
+  if (checkChallengeTimestamp(parts[6])) {
     return jsonResponse({ error: "Challenge expired or not yet valid" }, 401);
   }
 
@@ -139,9 +145,7 @@ Deno.serve(async (req) => {
     index: indexStr,
     amount: amountStr,
   };
-  if (body.min_out !== undefined && body.min_out !== null && String(body.min_out) !== "") {
-    payload.min_out = String(body.min_out);
-  }
+  payload.min_out = signedMinOut;
 
   const resp = await fetch(`${signerUrl.replace(/\/$/, "")}/relay-evm`, {
     method: "POST",

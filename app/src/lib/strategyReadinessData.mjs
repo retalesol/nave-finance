@@ -112,15 +112,15 @@ export const EVM_STRATEGIES = [
         envVar: 'VITE_EVM_BASE_SEPOLIA_AAVE_ADAPTER_ADDRESS',
       },
       46630: {
-        supported: false,
-        configurableWithAdapter: false,
-        reason: 'Robinhood Testnet has no Aave V3 pool in the Nave address registry.',
+        supported: true,
+        configurableWithAdapter: true,
+        reason: 'Robinhood Testnet ERC-4626 yield vault adapter over Robinhood Testnet USDC.',
         envVar: 'VITE_EVM_ROBINHOOD_TESTNET_AAVE_ADAPTER_ADDRESS',
       },
       5042002: {
-        supported: false,
-        configurableWithAdapter: false,
-        reason: 'Arc Testnet yield is CCTP domain 26 to Sepolia Aave V3. Official Aave on Arc is V4, and Nave does not ship a V4 adapter.',
+        supported: true,
+        configurableWithAdapter: true,
+        reason: 'Arc Testnet ERC-4626 yield vault adapter over Arc Testnet USDC.',
         envVar: 'VITE_EVM_ARC_TESTNET_AAVE_ADAPTER_ADDRESS',
       },
     },
@@ -257,15 +257,41 @@ export const EVM_STRATEGIES = [
         envVar: 'VITE_EVM_ROBINHOOD_CCTP_BRIDGE_ADAPTER_ADDRESS',
       },
       46630: {
-        supported: false,
+        supported: true,
         configurableWithAdapter: true,
-        reason: 'Robinhood Testnet USDC is unpublished. CCTP stays off until a USDC address is confirmed. USDG is not a substitute.',
+        reason: 'Robinhood Testnet USDC (0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1) is deployed and priced on TestnetPegOracle.',
         envVar: 'VITE_EVM_ROBINHOOD_TESTNET_CCTP_BRIDGE_ADAPTER_ADDRESS',
       },
       5042002: {
         supported: true,
         reason: 'Arc Testnet CCTP domain 26 burns USDC to Sepolia (domain 0), then the existing Sepolia Aave V3 adapter supplies it.',
         envVar: 'VITE_EVM_ARC_TESTNET_CCTP_BRIDGE_ADAPTER_ADDRESS',
+      },
+    },
+  },
+  {
+    id: 'morpho-steakhouse-usdg',
+    label: 'Morpho Steakhouse USDG',
+    badge: null,
+    badgeReason: null,
+    chains: {
+      46630: {
+        supported: true,
+        reason: 'Robinhood Testnet ERC-4626 yield vault over Robinhood Testnet USDC.',
+        envVar: 'VITE_EVM_ROBINHOOD_TESTNET_STEAKHOUSE_ADAPTER_ADDRESS',
+      },
+    },
+  },
+  {
+    id: 'morpho-steakhouse-usdc',
+    label: 'Morpho Steakhouse Prime USDC',
+    badge: null,
+    badgeReason: null,
+    chains: {
+      5042002: {
+        supported: true,
+        reason: 'Arc Testnet ERC-4626 yield vault over Arc Testnet USDC.',
+        envVar: 'VITE_EVM_ARC_TESTNET_STEAKHOUSE_ADAPTER_ADDRESS',
       },
     },
   },
@@ -311,9 +337,43 @@ export const EVM_TESTNET_ADAPTER_FALLBACKS = {
   84532: {
     aave: '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
   },
+  46630: {
+    aave: '0x31be55dCf50a71B42948408c9eFE7004f827BF0F',
+    'morpho-steakhouse-usdg': '0x31be55dCf50a71B42948408c9eFE7004f827BF0F',
+    'arbitrum-bridge': '0xF16421BDD5B9D6418d3133c49f3Afc8cdf15b457',
+    cctp: '0x31be55dCf50a71B42948408c9eFE7004f827BF0F',
+  },
   5042002: {
+    aave: '0x12DA47672287c188C79c1504eE72E2aC8b446f7B',
+    'morpho-steakhouse-usdc': '0x12DA47672287c188C79c1504eE72E2aC8b446f7B',
     cctp: '0x1b591C6a976e75F65F54cE863C8d96b3289BBF80',
   },
+};
+
+/**
+ * All protocol-approved testnet adapter addresses (Gen 1 and Gen 2) per chain,
+ * so existing DAOs ratified against either generation remain recognized.
+ */
+export const EVM_TESTNET_APPROVED_ADAPTERS = {
+  11155111: [
+    '0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B',
+    '0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426',
+    '0xa675dC4A02304ce069D98760DcF64B0cf3530A80',
+    '0x845d8310A861A95Ed1644643D1BAe086944B1AA0',
+    '0x222D1fb4a59c2b9759099802808fbb57bA5ff9db',
+  ],
+  84532: [
+    '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
+    '0x33D19799EBac88FFDc4e5BF61c199c71963470A6',
+  ],
+  46630: [
+    '0x31be55dCf50a71B42948408c9eFE7004f827BF0F',
+    '0xF16421BDD5B9D6418d3133c49f3Afc8cdf15b457',
+  ],
+  5042002: [
+    '0x12DA47672287c188C79c1504eE72E2aC8b446f7B',
+    '0x1b591C6a976e75F65F54cE863C8d96b3289BBF80',
+  ],
 };
 
 /** Chain ids considered "mainnet" for readiness-checklist purposes. */

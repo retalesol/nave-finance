@@ -73,15 +73,32 @@ pub fn jupiter_swap_handler<'info>(
     // practice; treating `0` as "0 bps tolerance" (rather than "disabled") for
     // any legacy account is the fail-safe direction for a guardrail.
     require!(expected_amount_out > 0, NaveError::MaxSlippageExceeded);
+    // The expected output is chosen by the same agent that signs the swap, so
+    // it is not an independent price. Stable pairs are priced at $1. Any other
+    // pair stays disabled until a price account is wired into this instruction.
+    require!(
+        ctx.accounts.asset_config_in.is_stablecoin && ctx.accounts.asset_config_out.is_stablecoin,
+        NaveError::SwapOracleRequired
+    );
     {
         const BPS: u128 = 10_000;
         let tolerance_bps = BPS.saturating_sub(ctx.accounts.constitution.max_slippage_bps as u128);
-        let floor = (expected_amount_out as u128)
+        let in_usd = value_stable(amount_in, ctx.accounts.asset_config_in.decimals)? as u128;
+        let min_out_usd = value_stable(min_amount_out, ctx.accounts.asset_config_out.decimals)? as u128;
+        let floor_usd = in_usd
             .checked_mul(tolerance_bps)
             .ok_or(NaveError::MathOverflow)?
             .checked_div(BPS)
             .ok_or(NaveError::MathOverflow)?;
-        require!(min_amount_out as u128 >= floor, NaveError::MaxSlippageExceeded);
+        require!(min_out_usd >= floor_usd, NaveError::MaxSlippageExceeded);
+        // Keep the agent quote as a second ceiling on how loose min_out may be
+        // relative to the quote they published, not as the price itself.
+        let quote_floor = (expected_amount_out as u128)
+            .checked_mul(tolerance_bps)
+            .ok_or(NaveError::MathOverflow)?
+            .checked_div(BPS)
+            .ok_or(NaveError::MathOverflow)?;
+        require!(min_amount_out as u128 >= quote_floor, NaveError::MaxSlippageExceeded);
     }
 
     // 3. Bind the token accounts to the treasury accounting records and confirm
@@ -189,7 +206,9 @@ pub fn jupiter_swap_handler<'info>(
             .iter()
             .map(|a| AccountMeta {
                 pubkey: *a.key,
-                is_signer: a.is_signer,
+                // The vault PDA is not a signer on the outer transaction.
+                // invoke_signed only grants the signature when this flag is set.
+                is_signer: a.is_signer || a.key() == va_key,
                 is_writable: a.is_writable,
             })
             .collect(),

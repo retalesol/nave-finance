@@ -2,21 +2,46 @@
   "network": "testnet-bradbury",
   "chainId": "4221",
   "rpc": "https://rpc-bradbury.genlayer.com",
+  "explorer": "https://explorer-bradbury.genlayer.com/",
   "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
-  "deployed": false,
-  "account": "0xb82acb2eb8a1c76805b6fac55cfc8797f00fcc10",
-  "balance": "0 GEN",
-  "faucet": "https://testnet-faucet.genlayer.foundation/",
-  "gas": {
-    "networkMax": 16777216,
-    "charterEstimate": 16355900,
-    "note": "genlayer 0.39.2 has no --gas flag. deploy sends the eth_estimateGas result as the transaction gas. Bradbury rejects gas above 16777216 (2^24). The previous charter estimate was 18308639 and was rejected as gas limit too high. charter_adjudicator.py is indented with tabs so the estimate is 16355900, which eth_call accepts and which the network will broadcast. Expanding that file back to spaces pushes the estimate over 16777216."
-  },
-  "command": "genlayer network set testnet-bradbury && genlayer deploy --contract contracts/genlayer/charter_adjudicator.py",
+  "deployed": true,
+  "account": "0x1FA9D4Ad76D53FbF1274d10ACBA12463ae90Bdca",
   "contracts": {
-    "charter_adjudicator": null,
-    "venue_watch": null,
-    "halt_appeal": null
+    "charter_adjudicator": {
+      "address": "0x8F935d913e507A1C8869bcD81803Fef289F1F2B0",
+      "tx": "0x715b5ca1b3470aa97b5fb51395fffe9eb706d8f55358ccc8a5be47c2c89cbe1b",
+      "status": "ACCEPTED",
+      "execution": "FINISHED_WITH_RETURN"
+    },
+    "venue_watch": {
+      "address": "0xc27B9E337Cc0c277818210c9563A8E5536b2ACe6",
+      "tx": "0x9dd23ea95a5fa0b0ea9fbb015d9d812f06985c8078d744439785e8635c01090c",
+      "status": "ACCEPTED",
+      "execution": "FINISHED_WITH_RETURN"
+    },
+    "halt_appeal": {
+      "address": "0x7e302d6EbFBCfdf53F8d41F21ffE24401de1B6A4",
+      "tx": "0x7ab04e688effaf19b293fff434742e6a3ce4aed0a6d05284b53dc565e40bde01",
+      "status": "ACCEPTED",
+      "execution": "FINISHED_WITH_RETURN"
+    }
   },
-  "blocker": "No contract address was created. After the gas change, charter deploy used gas 16355900 and Bradbury rejected the broadcast because 0xb82acb2eb8a1c76805b6fac55cfc8797f00fcc10 has 0 GEN: eth_sendRawTransaction [0xd563aa0ea3857fe69736f66e3b210bc5daf29696edc922bee6f1f65c31fd735c]: sender does not have enough funds (0) to cover transaction fees: 2090840938395000. That hash is a rejected broadcast, not a contract address. Fund the account at the faucet, then run command. venue_watch and halt_appeal were not retried; they already fit under the gas cap and failed only for the same 0 GEN balance."
+  "cases": {
+    "solana": { "decision": "pass", "summary": "This move fits the treasury rules.", "tx": "0x099c90cbad38ca52c776d68cc3d0ab99438965e6b3f5fd19c44f29d2e6620155" },
+    "ethereum": { "decision": "fail", "rule_ids": ["mandate_fit"], "summary": "This move does not fit the written mandate.", "tx": "0x54ee0a6414bba1cbc7cd267fb3913817ecf8837fc44dcfa9e52d5824fed09130" },
+    "base": { "decision": "pass", "summary": "This move fits the treasury rules.", "tx": "0x2555eeda648f7f73ce7122034a48c158f4b0dfa5c6695854c34cfd6a82afa09f" },
+    "robinhood": { "decision": "pass", "summary": "This move fits the treasury rules.", "tx": "0xe1c75ab640fb4ff2148909405ec0ff459a192fdad95eab4018fbd0fdd4b0d1a0" },
+    "arc": { "decision": "pass", "summary": "This move fits the treasury rules.", "tx": "0x9b4c63783073a7ab6c7cf967f1f938e146b34e2918c8963d3f78c856f50753cf" }
+  },
+  "halt_appeal_ethereum": {
+    "decision": "lift_pause",
+    "summary": "A second check says the pause can be lifted by the treasury operators.",
+    "tx": "0xd0cadb75ec2150030edc9624feaa10ee09a3c90ea54e41410cd1f26c42e6285d"
+  },
+  "gates": {
+    "NAVE_GENLAYER_GATE": false,
+    "NAVE_GENLAYER_VENUE_GATE": false,
+    "NAVE_GENLAYER_HALT_GATE": false,
+    "note": "Gates stay off. A finished review does not turn a gate on. A finished pass does not authorize a transfer."
+  }
 }

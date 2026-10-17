@@ -168,12 +168,16 @@ export async function runEvmActivation(
     }];
   });
 
-  // Estimate agentThresholdUsd from seed amount (ETH × price), or 0 if no seed.
+  // agentThresholdUsd is micro-USD, the same unit as currentNav. A missing
+  // seed must not write 0, which disables the gate. Arc seeds are denominated
+  // in USDC ($1) rather than ETH.
   const seedNum = parseFloat(seedAmount);
+  const isArc = (chainId as number) === 5042002 || (chainId as number) === 5042;
+  const seedUsdPrice = isArc ? 1 : ESTIMATED_ETH_USD_PRICE;
   const agentThresholdUsd =
     !isNaN(seedNum) && seedNum > 0
-      ? Math.round(seedNum * ESTIMATED_ETH_USD_PRICE)
-      : 0;
+      ? Math.round(seedNum * seedUsdPrice * 1_000_000)
+      : 100_000_000;
 
   const policyTarget: EvmPolicyTarget = {
     reserveBps: Math.round(policy.minStablecoin * 100),
@@ -191,7 +195,7 @@ export async function runEvmActivation(
   ]);
 
   const pendingTx2: EvmBuildResult[] = [];
-  if (!constitutionDone) {
+  if (!constitutionDone && adapters.length > 0) {
     pendingTx2.push(buildUpdateConstitutionEvm(chainId, daoAddress, adapters, SYSTEM_CONFIDENCE_THRESHOLD, agentThresholdUsd));
   }
   if (!policyDone) {

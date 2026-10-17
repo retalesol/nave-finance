@@ -242,4 +242,6 @@ pub enum NaveError {
     VenueDepositRequiresEscrow,
     #[msg("Approved Tier 2 caps may total at most 30% and Tier 3 caps at most 15%")]
     RiskTierCapExceeded,
+    #[msg("Jupiter swaps of non-stable assets need an independent price and are disabled")]
+    SwapOracleRequired,
 }

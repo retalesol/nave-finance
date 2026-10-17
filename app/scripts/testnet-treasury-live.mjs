@@ -1,6 +1,7 @@
 /**
- * Live testnet treasury loop. Signs with EVM_DEPLOY_PRIVATE_KEY from
- * contracts/evm/.env.testnet.local. Does not print the key.
+ * Live testnet treasury loop. The founder signs with EVM_DEPLOY_PRIVATE_KEY.
+ * Executive, Financial, and Oversight sign with EVM_TESTING_KEY_1/2/3.
+ * Operational is a fresh address that does not sign. Keys are not printed.
  *
  *   node scripts/testnet-treasury-live.mjs --chain ethereum
  *   node scripts/testnet-treasury-live.mjs --chain all
@@ -22,7 +23,7 @@ import {
   parseAbi,
   defineChain,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(HERE, "../../contracts/evm/.env.testnet.local");
@@ -162,12 +163,28 @@ for (const [name, spec] of Object.entries(CHAINS)) {
   spec.rpc = rpcFrom(RPC_KEYS[name], spec.rpc);
 }
 
-function loadKey() {
-  let value = FILE_ENV.EVM_DEPLOY_PRIVATE_KEY || "";
-  if (!value) throw new Error("EVM_DEPLOY_PRIVATE_KEY is missing from the testnet env file");
+function loadHexKey(name) {
+  let value = FILE_ENV[name] || "";
+  if (!value) throw new Error(`${name} is missing from the testnet env file`);
   if (!value.startsWith("0x")) value = `0x${value}`;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) throw new Error("EVM_DEPLOY_PRIVATE_KEY is not a 32-byte hex key");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${name} is not a 32-byte hex key`);
   return value;
+}
+
+function loadKey() {
+  return loadHexKey("EVM_DEPLOY_PRIVATE_KEY");
+}
+
+// Agent keys cannot be the founder, a guardian, or each other. The three
+// funded testing keys sign Executive, Financial, and Oversight. Operational
+// only monitors, so a fresh address is enough and is never printed as a key.
+function roleAccounts() {
+  return {
+    executive: privateKeyToAccount(loadHexKey("EVM_TESTING_KEY_1")),
+    financial: privateKeyToAccount(loadHexKey("EVM_TESTING_KEY_2")),
+    oversight: privateKeyToAccount(loadHexKey("EVM_TESTING_KEY_3")),
+    operational: privateKeyToAccount(generatePrivateKey()),
+  };
 }
 
 function chainFor(spec) {
@@ -181,17 +198,38 @@ function chainFor(spec) {
 
 function shortError(error) {
   const message = error?.shortMessage || error?.message || String(error);
-  return message.split("\n")[0].slice(0, 400);
+  const cause = error?.cause?.shortMessage || error?.cause?.message || "";
+  const combined = cause && !message.includes(cause) ? `${message}: ${cause}` : message;
+  return combined.split("\n")[0].slice(0, 400);
+}
+
+function slippageFloor(amount) {
+  const floor = (amount * 9950n) / 10000n;
+  return floor === 0n ? 1n : floor;
 }
 
 async function send(wallet, publicClient, params) {
-  const hash = await wallet.writeContract({ ...params, gas: params.gas ?? 4_000_000n });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 180_000 });
-  if (receipt.status !== "success") {
-    throw new Error(`transaction reverted: ${hash}`);
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const hash = await wallet.writeContract({ ...params, gas: params.gas ?? 4_000_000n });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 180_000 });
+      if (receipt.status !== "success") {
+        throw new Error(`transaction reverted: ${hash}`);
+      }
+      console.log(`  tx ${params.functionName} ${hash}`);
+      return receipt;
+    } catch (error) {
+      last = error;
+      const message = shortError(error);
+      const sent = Boolean(error?.cause?.hash || /transaction reverted: 0x/.test(message));
+      const retryable = message.includes("Missing or invalid parameters")
+        || message.toLowerCase().includes("nonce");
+      if (sent || !retryable) throw error;
+      await sleep(1500);
+    }
   }
-  console.log(`  tx ${params.functionName} ${hash}`);
-  return receipt;
+  throw last;
 }
 
 function sleep(ms) {
@@ -223,13 +261,18 @@ async function readUntil(publicClient, address, functionName, args, predicate, l
   throw new Error(`${label} stayed ${last}`);
 }
 
-function daoParams(name, founder) {
+function daoParams(name, founder, roles) {
   return {
     name,
     privacyMode: 0,
     guardianWallets: [founder],
     guardianThreshold: 1,
-    agentAuthorities: [founder, founder, founder, founder],
+    agentAuthorities: [
+      roles.executive.address,
+      roles.financial.address,
+      roles.oversight.address,
+      roles.operational.address,
+    ],
     managementFeeBps: 0,
     performanceFeeBps: 1500,
     frozenManagementFeeBps: 0,
@@ -240,12 +283,12 @@ function daoParams(name, founder) {
   };
 }
 
-async function createDao(wallet, publicClient, spec, founder) {
+async function createDao(wallet, publicClient, spec, founder, roles) {
   const receipt = await send(wallet, publicClient, {
     address: spec.factory,
     abi: ABI,
     functionName: "createDao",
-    args: [daoParams(spec.name, founder)],
+    args: [daoParams(spec.name, founder, roles)],
     value: 0n,
     gas: 12_000_000n,
   });
@@ -311,7 +354,7 @@ async function govern(wallet, publicClient, spec, dao, founder, payload, proposa
   return { index, payloadHash: core[2] };
 }
 
-async function strategyLoop(wallet, publicClient, spec, dao, founder) {
+async function strategyLoop(wallet, publicClient, spec, dao, founder, roleWallets) {
   const beforeNav = await read(publicClient, dao.treasury, "currentNav");
   const info = await read(publicClient, dao.treasury, "assetInfo", [spec.asset]);
   if (!info[0]) {
@@ -363,7 +406,7 @@ async function strategyLoop(wallet, publicClient, spec, dao, founder) {
     functionName: "updateConstitution",
     args: [[spec.adapter], [10_000], [true], [spec.protocolId], 70, 0n],
   });
-  await send(wallet, publicClient, {
+  await send(roleWallets.executive, publicClient, {
     address: dao.treasury,
     abi: ABI,
     functionName: "toggleAgents",
@@ -396,30 +439,40 @@ async function strategyLoop(wallet, publicClient, spec, dao, founder) {
     }
   }
   if (!vote) vote = await govern(wallet, publicClient, spec, dao, founder, payload, 1, "deploy-venue");
-  await send(wallet, publicClient, {
-    address: dao.execution,
-    abi: ABI,
-    functionName: "createStrategyRequestBootstrap",
-    args: [vote.index, spec.deploy, spec.adapter, spec.asset],
-  });
-  await send(wallet, publicClient, {
-    address: dao.execution,
-    abi: ABI,
-    functionName: "executiveApprove",
-    args: [vote.index, REASONING],
-  });
-  await send(wallet, publicClient, {
-    address: dao.execution,
-    abi: ABI,
-    functionName: "financialApprove",
-    args: [vote.index, vote.payloadHash, REASONING],
-  });
-  await send(wallet, publicClient, {
-    address: dao.execution,
-    abi: ABI,
-    functionName: "oversightApprove",
-    args: [vote.index, vote.payloadHash, REASONING],
-  });
+  let requestStatus = 0;
+  try {
+    requestStatus = Number(await read(publicClient, dao.execution, "requestStatus", [vote.index]));
+  } catch {
+    requestStatus = 0;
+  }
+  if (requestStatus < 4) {
+    await send(wallet, publicClient, {
+      address: dao.execution,
+      abi: ABI,
+      functionName: "createStrategyRequestBootstrap",
+      args: [vote.index, spec.deploy, spec.adapter, spec.asset],
+    });
+    await send(roleWallets.executive, publicClient, {
+      address: dao.execution,
+      abi: ABI,
+      functionName: "executiveApprove",
+      args: [vote.index, REASONING],
+    });
+    await send(roleWallets.financial, publicClient, {
+      address: dao.execution,
+      abi: ABI,
+      functionName: "financialApprove",
+      args: [vote.index, vote.payloadHash, REASONING],
+    });
+    await send(roleWallets.oversight, publicClient, {
+      address: dao.execution,
+      abi: ABI,
+      functionName: "oversightApprove",
+      args: [vote.index, vote.payloadHash, REASONING],
+    });
+  } else {
+    console.log(`  request ${vote.index} already at status ${requestStatus}`);
+  }
   await send(wallet, publicClient, {
     address: dao.treasury,
     abi: ABI,
@@ -427,13 +480,15 @@ async function strategyLoop(wallet, publicClient, spec, dao, founder) {
     args: [],
   });
   const idleBefore = await read(publicClient, spec.asset, "balanceOf", [dao.treasury]);
-  await send(wallet, publicClient, {
+  if (requestStatus < 5) {
+  await send(roleWallets.executive, publicClient, {
     address: dao.execution,
     abi: ABI,
     functionName: "execute",
-    args: [vote.index, 0n],
+    args: [vote.index, slippageFloor(spec.deploy)],
     gas: 8_000_000n,
   });
+  }
   const status = await readUntil(
     publicClient,
     dao.execution,
@@ -476,11 +531,11 @@ async function strategyLoop(wallet, publicClient, spec, dao, founder) {
   console.log(`  venue balance ${venueBalance}; treasury idle ${idleBefore} -> ${idleAfter}`);
 
   const withdrawAmt = spec.deploy - 2_000n;
-  await send(wallet, publicClient, {
+  await send(roleWallets.executive, publicClient, {
     address: dao.execution,
     abi: ABI,
     functionName: "withdrawFromStrategy",
-    args: [vote.index, withdrawAmt, 0n],
+    args: [vote.index, withdrawAmt, slippageFloor(withdrawAmt)],
     gas: 8_000_000n,
   });
   const idleFinal = await readUntil(
@@ -645,10 +700,16 @@ async function policyLoop(wallet, publicClient, spec, dao, founder) {
 
 async function runChain(key, spec) {
   const account = privateKeyToAccount(key);
+  const roles = roleAccounts();
   const chain = chainFor(spec);
   const transport = http(spec.rpc);
   const publicClient = createPublicClient({ chain, transport });
   const wallet = createWalletClient({ account, chain, transport });
+  const roleWallets = {
+    executive: createWalletClient({ account: roles.executive, chain, transport }),
+    financial: createWalletClient({ account: roles.financial, chain, transport }),
+    oversight: createWalletClient({ account: roles.oversight, chain, transport }),
+  };
   const founder = account.address;
   const onchainId = await publicClient.getChainId();
   if (onchainId !== spec.chainId) throw new Error(`RPC chain id ${onchainId} != ${spec.chainId}`);
@@ -658,10 +719,10 @@ async function runChain(key, spec) {
   console.log(`\n${spec.name} factory ${spec.factory} protocol ${protocol}`);
   const existing = resumeDao();
   const stake = existing ? { required: "resumed" } : await ensureStake(wallet, publicClient, protocol, founder);
-  const dao = existing ?? await createDao(wallet, publicClient, spec, founder);
+  const dao = existing ?? await createDao(wallet, publicClient, spec, founder, roles);
   console.log(`  dao ${dao.daoId} treasury ${dao.treasury}`);
   let detail;
-  if (spec.mode === "strategy") detail = await strategyLoop(wallet, publicClient, spec, dao, founder);
+  if (spec.mode === "strategy") detail = await strategyLoop(wallet, publicClient, spec, dao, founder, roleWallets);
   else if (spec.mode === "transfer") detail = await transferLoop(wallet, publicClient, spec, dao, founder);
   else detail = await policyLoop(wallet, publicClient, spec, dao, founder);
   return { ok: true, chain: spec.name, chainId: spec.chainId, founder, stake, ...dao, ...detail };

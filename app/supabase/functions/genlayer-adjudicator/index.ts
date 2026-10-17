@@ -15,7 +15,7 @@
 // on the configured GenLayer contracts. Accepted is stored as still checking.
 // This function never sends a Nave mainnet transaction.
 
-import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.57.4";
 import { corsHeadersFor, jsonWithCors, requireSecret } from "../_shared/http.ts";
 import { clientKey, rateLimit } from "../_shared/rateLimit.ts";
 import {
@@ -91,6 +91,8 @@ Deno.serve(async (req: Request) => {
     const evidenceError = counterevidenceError(input.counterevidence);
     if (evidenceError) return jsonResponse({ error: evidenceError }, 400);
     const existing = await readRow(supabase, input, "charter");
+    const existingHalt = await readRow(supabase, input, "halt");
+    const previousHaltTx = typeof existingHalt?.tx_id === "string" ? existingHalt.tx_id.trim() : "";
     const pause = input.pause_reason
       ?? (typeof existing?.summary === "string" && existing.summary.trim().length >= 12
         ? existing.summary
@@ -104,24 +106,31 @@ Deno.serve(async (req: Request) => {
         venue: input.venue || "move",
         amount: input.amount || "0",
         asset: input.asset || "asset",
-      }, "");
+      }, previousHaltTx);
     } catch (err) {
       return jsonResponse({ error: err instanceof Error ? err.message : "GenLayer review failed" }, 502);
     }
     if (!synced) return jsonResponse({ error: "GenLayer review is not configured" }, 503);
-    const stored = await upsertReview(supabase, input, "halt", { ...synced, appeal_requested: true });
+    const stored = await upsertReview(supabase, input, "halt", {
+      ...synced,
+      tx_id: synced.tx_id || previousHaltTx,
+      appeal_requested: true,
+    });
     if (!stored.ok) return jsonResponse({ error: stored.error }, 500);
     return jsonResponse({
       success: true,
       customer_status: synced.customer_status,
       appeal_requested: true,
-      tx_id: synced.tx_id,
+      tx_id: synced.tx_id || previousHaltTx,
     });
   }
 
   const existing = await readRow(supabase, input, kind);
-  const previousTx = typeof existing?.tx_id === "string" ? existing.tx_id : "";
-  const txForSync = kind === "venue" && mode === "submit" ? "" : previousTx;
+  const previousTx = typeof existing?.tx_id === "string" ? existing.tx_id.trim() : "";
+  // A finished venue can be reviewed again. An unfinished one keeps its receipt
+  // so an in-flight review_venue is not submitted a second time.
+  const venueRefresh = kind === "venue" && mode === "submit" && existing?.finished === true;
+  const txForSync = venueRefresh ? "" : previousTx;
   let synced;
   try {
     synced = await syncConfiguredReview(kind, input, txForSync);
@@ -164,7 +173,7 @@ interface StoredFields {
 }
 
 async function upsertReview(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   input: PublicCharterInput,
   kind: "charter" | "venue" | "halt",
   fields: StoredFields,
@@ -201,7 +210,7 @@ function reviewKey(input: PublicCharterInput, kind: string): string {
 }
 
 async function readRow(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   input: PublicCharterInput,
   kind: string,
 ): Promise<Record<string, unknown> | null> {

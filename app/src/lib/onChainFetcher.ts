@@ -339,6 +339,7 @@ export async function fetchConstitution(
       minLiquidityBps?: AnyBN;
       rebalanceFrequencySecs?: AnyBN;
       lastRebalanceAt?: AnyBN;
+      agentThresholdUsd?: AnyBN;
     };
     const minStablecoinReserveBps = num(policy.minStablecoinReserveBps);
     const maxTotalDeployedBps = num(policy.maxTotalDeployedBps);
@@ -367,6 +368,7 @@ export async function fetchConstitution(
       lastRebalanceAt,
       confidenceThreshold: acc.confidenceThreshold,
       reviewWindowSecs: num(acc.reviewWindowSecs),
+      agentThresholdUsd: num(policy.agentThresholdUsd),
       bump: acc.bump,
     };
   } catch (err) {

@@ -140,22 +140,30 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Verify the timestamped challenge ──────────────────────────────────
-    // `nave-register-dao|<dao_address>|<chain_id|solana>|<issued_at_ms>|<nonce>`
+    // `nave-register-dao|<dao>|<chain>|<privacy 0|1>|<wallets>|<issued_at_ms>|<nonce>`
     const parts = creator_message.split("|");
     const expectedChainField = evm ? String(selector.chain_id) : "solana";
     const daoMatches = evm
       ? parts[1]?.toLowerCase() === dao_address
       : parts[1] === dao_address;
+    const privacyField = body.privacy_enabled ? "1" : "0";
+    const walletField = (Array.isArray(body.authorized_wallets) ? body.authorized_wallets : [])
+      .map((w) => String(w).trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(",");
     if (
-      parts.length !== 5 ||
+      parts.length !== 7 ||
       parts[0] !== REGISTER_CHALLENGE_PREFIX ||
       !daoMatches ||
       parts[2] !== expectedChainField ||
-      !isValidChallengeNonce(parts[4])
+      parts[3] !== privacyField ||
+      parts[4] !== walletField ||
+      !isValidChallengeNonce(parts[6])
     ) {
       return jsonResponse({ error: "Malformed creator challenge message" }, 400);
     }
-    if (checkChallengeTimestamp(parts[3])) {
+    if (checkChallengeTimestamp(parts[5])) {
       return jsonResponse({ error: "Creator challenge expired or not yet valid" }, 401);
     }
     const verified = await verifyWalletSignature(

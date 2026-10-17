@@ -203,7 +203,7 @@ export const STRATEGY_VENUES: StrategyVenue[] = [
     exit: "instant", exitNote: INSTANT,
     risks: [LENDING_RISK, "Needs USDG registered as the treasury stablecoin (real USDG, not a USDC stand-in)."],
     rate: { kind: "defillama", pool: "32f586b4-5358-5aa2-88ee-c842139e7023" },
-    fallbackApy: 3.6, availability: "fork-only",
+    fallbackApy: 3.6, availability: "testnet",
   },
 
   // ── Arc ────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ export const STRATEGY_VENUES: StrategyVenue[] = [
     id: "morpho-steakhouse-usdc", chain: "arc", label: "Morpho Steakhouse Prime USDC", asset: "USDC", tier: 1, stable: true,
     exit: "instant", exitNote: INSTANT, risks: [LENDING_RISK],
     rate: { kind: "morpho", chainId: 5042, vault: "0xbeef0016cb2Fd5C352ea7CA08a9f54739DFa7298" },
-    fallbackApy: 2.3, availability: "fork-only",
+    fallbackApy: 2.3, availability: "testnet",
   },
 ];
 

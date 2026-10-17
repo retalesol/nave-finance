@@ -20,7 +20,9 @@ import {
   readEvmConstitution,
   readEvmStrategyPositions,
   readEvmTreasuryVault,
+  readEvmValueMicroUsd,
 } from "./evmPolicy.ts";
+import { resolveAsset } from "./allowedAssets.ts";
 import { readEvmAgentGate } from "./evmExecution.ts";
 import {
   evaluateGuardrails,
@@ -32,16 +34,19 @@ import {
   NAVE_GENLAYER_HALT_GATE,
   NAVE_GENLAYER_VENUE_GATE,
   type GenlayerView,
+  assetIsStable,
   chainFamilyFrom,
   haltGateOutcome,
   networkForSigner,
   readGenlayerFlag,
+  scaleBaseToMicroUsd,
 } from "./genlayerCharter.ts";
 import { fetchGenlayerView } from "./genlayerStore.ts";
 import {
   listRegisteredMints,
   readAgentGate,
   readConstitution,
+  readSolanaMintQuote,
   readStrategyPositions,
   readTreasuryVault,
   type ApprovedProtocol,
@@ -88,11 +93,18 @@ export interface SignerVerdict {
   record: Record<string, unknown>;
 }
 
-interface ChainState {
+export interface ChainState {
   constitution: ConstitutionView | null;
   vault: VaultView | null;
   gate: { agentsEnabled: boolean | null; frozen: boolean | null } | null;
   targetDeployed?: number;
+}
+
+/** Unit tests inject a treasury snapshot. Production never calls this. */
+let chainStateForTests: ChainState | null = null;
+
+export function setChainStateForTests(state: ChainState | null): void {
+  chainStateForTests = state;
 }
 
 function envFlag(name: string): boolean {
@@ -145,6 +157,7 @@ function isEvmPayload(input: SignerVerdictInput): boolean {
 }
 
 async function loadChainState(input: SignerVerdictInput, protocolId?: string): Promise<ChainState> {
+  if (chainStateForTests) return chainStateForTests;
   if (isEvmPayload(input)) {
     const chainId = input.chain_id;
     if (chainId == null) return { constitution: null, vault: null, gate: null };
@@ -164,7 +177,11 @@ async function loadChainState(input: SignerVerdictInput, protocolId?: string): P
         })),
       );
       const key = protocolId.toLowerCase();
-      const pos = positions.find((p) => p.protocolId.toLowerCase() === key);
+      const matchedProto = constitution.approvedProtocols.find(
+        (p) => p.protocolId.toLowerCase() === key || p.programId.toLowerCase() === key,
+      );
+      const posKey = (matchedProto?.protocolId ?? protocolId).toLowerCase();
+      const pos = positions.find((p) => p.protocolId.toLowerCase() === posKey);
       if (pos && pos.mint) targetDeployed = pos.currentValueBaseUnits;
     }
     return { constitution, vault, gate, targetDeployed };
@@ -192,6 +209,33 @@ async function loadChainState(input: SignerVerdictInput, protocolId?: string): P
     }
   }
   return { constitution, vault, gate, targetDeployed };
+}
+
+/**
+ * Micro-USD value of `amount` base units of `mint`, the unit NAV and the caps
+ * use. Null when it cannot be priced; six-decimal Solana stables are already
+ * micro-USD and return null so the raw amount is used.
+ */
+async function priceToMicroUsd(
+  input: SignerVerdictInput,
+  mint: string | undefined,
+  amount: number | null | undefined,
+): Promise<number | null> {
+  if (chainStateForTests || !mint || amount == null || !(amount > 0)) return null;
+  const whole = Math.trunc(amount);
+  if (isEvmPayload(input)) {
+    return input.chain_id != null ? await readEvmValueMicroUsd(input.chain_id, input.dao_address, mint, whole) : null;
+  }
+  if (assetIsStable(mint, resolveAsset(mint)?.assetClass ?? null) !== false) return null;
+  let rpc = "";
+  try {
+    rpc = Deno.env.get("SOLANA_RPC_URL") ?? "";
+  } catch {
+    rpc = "";
+  }
+  if (!rpc) return null;
+  const quote = await readSolanaMintQuote(rpc, input.dao_address, mint);
+  return quote ? scaleBaseToMicroUsd(whole, quote.totalBase, quote.totalMicroUsd) : null;
 }
 
 function policyOf(constitution: ConstitutionView): PolicyParams {
@@ -224,6 +268,7 @@ function withdrawRepairs(args: {
   protocolId: string | undefined;
   approved: ApprovedProtocol[];
   nowSecs: number;
+  purpose?: SignerVerdictInput["purpose"];
 }): { ok: boolean; detail: string } {
   if (!venueApproved(args.approved, args.protocolId)) {
     return { ok: false, detail: "withdraw venue is not approved" };
@@ -245,16 +290,25 @@ function withdrawRepairs(args: {
   const breach = pre.flags.filter(
     (flag) => flag === "deployment_cap_breached" || flag === "liquidity_floor_breached",
   );
+  const post = computeDrift({
+    ...shared,
+    deployedBaseUnits: Math.max(0, args.deployed - args.amount),
+  });
   if (breach.length === 0) {
+    if (args.purpose === "auto_withdraw") {
+      const postBreach = post.flags.filter(
+        (flag) => flag === "deployment_cap_breached" || flag === "liquidity_floor_breached",
+      );
+      if (postBreach.length > 0) {
+        return { ok: false, detail: `post-withdraw introduces breach: ${postBreach.join(", ")}` };
+      }
+      return { ok: true, detail: "auto_withdraw reduces deployed capital on approved venue without introducing breach" };
+    }
     return {
       ok: false,
       detail: "withdraw does not repair a deployment-cap or liquidity-floor breach",
     };
   }
-  const post = computeDrift({
-    ...shared,
-    deployedBaseUnits: Math.max(0, args.deployed - args.amount),
-  });
   const remaining = breach.filter((flag) => post.flags.includes(flag));
   if (remaining.length > 0) {
     return { ok: false, detail: `post-withdraw still breached: ${remaining.join(", ")}` };
@@ -278,6 +332,11 @@ interface EvalSlice {
   postDeployed?: number | null;
   /** Overrides the per-protocol deployed figure used by the allocation cap. */
   allocationDeployed?: number;
+  /** Asset of this slice; used to price amount and position in micro-USD. */
+  mint?: string;
+  /** Micro-USD value of `amount` and of the target position, when priced. */
+  amountValue?: number | null;
+  deployedValue?: number | null;
 }
 
 function evaluateSlice(
@@ -312,6 +371,8 @@ function evaluateSlice(
       protocolProgram: key ? null : "unspecified",
       expectedPayloadHash: slice.payloadHash ?? null,
       amount,
+      amountValueUnits: slice.postDeployed != null ? null : (slice.amountValue ?? null),
+      venueDeployedValueUnits: slice.allocationDeployed != null ? null : (slice.deployedValue ?? null),
       targetProtocolDeployedBaseUnits: slice.allocationDeployed ?? state.targetDeployed,
     },
     treasury: {
@@ -397,8 +458,18 @@ function confidenceFor(input: SignerVerdictInput, constitution: ConstitutionView
   return -1;
 }
 
-async function assessCapital(input: SignerVerdictInput): Promise<SignerVerdict> {
-  const state = await loadChainState(input, input.protocol_id);
+async function assessCapital(rawInput: SignerVerdictInput): Promise<SignerVerdict> {
+  const state = await loadChainState(rawInput, rawInput.protocol_id);
+  let input = rawInput;
+  if (!input.genlayer?.venue && state.constitution && input.protocol_id) {
+    const key = input.protocol_id.toLowerCase();
+    const match = state.constitution.approvedProtocols.find(
+      (p) => p.approved && (p.protocolId.toLowerCase() === key || p.programId.toLowerCase() === key),
+    );
+    if (match && match.protocolId.toLowerCase() !== key) {
+      input = await withGenlayer({ ...rawInput, protocol_id: match.protocolId, genlayer: undefined });
+    }
+  }
   const extraFailures: string[] = [];
   const hash = input.payload_hash ?? input.expected_payload_hash ?? undefined;
   const withdraw = input.action.toLowerCase().includes("withdraw");
@@ -440,6 +511,7 @@ async function assessCapital(input: SignerVerdictInput): Promise<SignerVerdict> 
         protocolId: input.protocol_id,
         approved: state.constitution.approvedProtocols,
         nowSecs: Math.floor(Date.now() / 1000),
+        purpose: input.purpose,
       });
       if (!repair.ok) extraFailures.push(repair.detail);
     }
@@ -466,9 +538,11 @@ async function assessCapital(input: SignerVerdictInput): Promise<SignerVerdict> 
       protocolId: op.protocol_id,
       amount: asFinite(op.amount),
       deployed: state.vault?.deployedBaseUnits ?? null,
-      payloadHash: op.payload_hash ?? op.expected_payload_hash,
+      // `||` so an empty payload_hash falls through to the expected hash.
+      payloadHash: op.payload_hash || op.expected_payload_hash,
       confidence: confidenceFor(input, state.constitution, op.confidence),
       policyIntent: op.action === "execute_strategy" ? undefined : "rebalance" as const,
+      mint: op.mint,
     }))
     : [{
       action: input.action,
@@ -480,7 +554,19 @@ async function assessCapital(input: SignerVerdictInput): Promise<SignerVerdict> 
       policyIntent: input.policy_intent,
       postDeployed,
       allocationDeployed,
+      mint: input.mint,
     }];
+
+  // Deploy amounts and the position mark are asset base units; NAV and the
+  // caps are micro-USD. Price both so a wSOL lamport amount is not compared
+  // with a dollar cap.
+  for (const slice of slices) {
+    if (slice.action.toLowerCase().includes("withdraw") || slice.postDeployed != null) continue;
+    slice.amountValue = await priceToMicroUsd(input, slice.mint, slice.amount);
+    slice.deployedValue = state.targetDeployed
+      ? await priceToMicroUsd(input, slice.mint, state.targetDeployed)
+      : null;
+  }
 
   if (input.action === "bundle_rebalance" && slices.length === 0) {
     extraFailures.push("bundle_rebalance has no operations");

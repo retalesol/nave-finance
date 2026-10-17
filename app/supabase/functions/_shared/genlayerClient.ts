@@ -29,11 +29,19 @@ function address(raw: string): `0x${string}` | null {
   return /^0x[0-9a-fA-F]{40}$/.test(text) ? text as `0x${string}` : null;
 }
 
+interface ChainDescriptor {
+  id: number;
+  name: string;
+  rpcUrls: { default: { http: readonly string[] } };
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  blockExplorers?: { default: { name: string; url: string } };
+}
+
 interface ChainModule {
-  testnetBradbury: { id: number; rpcUrls: { default: { http: readonly string[] } } };
-  testnetAsimov: { id: number; rpcUrls: { default: { http: readonly string[] } } };
-  studionet: { id: number; rpcUrls: { default: { http: readonly string[] } } };
-  localnet: { id: number; rpcUrls: { default: { http: readonly string[] } } };
+  testnetBradbury: ChainDescriptor;
+  testnetAsimov: ChainDescriptor;
+  studionet: ChainDescriptor;
+  localnet: ChainDescriptor;
 }
 
 function pickChain(rpc: string, chains: ChainModule) {
@@ -42,6 +50,14 @@ function pickChain(rpc: string, chains: ChainModule) {
   if (url.includes("studio.genlayer.com")) return chains.studionet;
   if (url.includes("localhost") || url.includes("127.0.0.1")) return chains.localnet;
   return chains.testnetBradbury;
+}
+
+/** Prefer the SDK name. genlayer-js 1.1.8 has no name for status 14, which Bradbury returns while a leader is still working. */
+function receiptLabel(name: unknown, code: unknown): string {
+  if (typeof name === "string" && name.trim()) return name;
+  if (typeof code === "number" && Number.isFinite(code)) return String(code);
+  if (typeof code === "string" && code.trim()) return code;
+  return "";
 }
 
 function txIdOf(value: unknown): string {
@@ -97,10 +113,8 @@ export async function createGenLayerSession(): Promise<GenLayerSession | null> {
       return id;
     },
     async status(txId) {
-      const tx = await client.getTransaction({ hash: txId as `0x${string}` });
-      const status = typeof tx?.statusName === "string" ? tx.statusName : "";
-      const executionResult = typeof tx?.txExecutionResultName === "string" ? tx.txExecutionResultName : "";
-      return { status, executionResult };
+      const tx = await client.getTransaction({ hash: txId as (`0x${string}` & { length: 66 }) });
+      return { status: receiptLabel(tx?.statusName, tx?.status), executionResult: receiptLabel(tx?.txExecutionResultName, tx?.txExecutionResult) };
     },
   };
 }

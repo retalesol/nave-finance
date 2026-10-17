@@ -1,0 +1,4 @@
+contracts
+**/.anchor
+**/*.rpc
+.git

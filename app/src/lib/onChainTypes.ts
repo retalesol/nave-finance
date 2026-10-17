@@ -111,6 +111,8 @@ export interface TreasuryConstitution {
   lastRebalanceAt: number;          // unix ts of last completed rebalance (0 = never)
   confidenceThreshold: number; // 0-100 — minimum Claude confidence for agent approval
   reviewWindowSecs: number; // agent-pipeline oversight review window (seconds)
+  /** Micro-USD. Zero on a legacy account means the gate is unset. */
+  agentThresholdUsd?: number;
   bump: number;
 }
 

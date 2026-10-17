@@ -4,6 +4,7 @@ import { corsHeadersFor, jsonWithCors, secretsMatch } from "../_shared/http.ts";
 import { ALL_EVM_CHAIN_IDS, SUPPORTED_EVM_CHAIN_IDS } from "../_shared/chain.ts";
 import { evmRpcUrlFor } from "../_shared/evmFounder.ts";
 import { readEvmTreasurySnapshotMetrics } from "../_shared/evmTreasuryNav.ts";
+import { readEvmIdleStableMicroUsd } from "../_shared/evmPolicy.ts";
 import { signerSecretFor } from "../_shared/signerAuth.ts";
 
 // ─── Solana RPC helpers ───────────────────────────────────────────────────
@@ -806,18 +807,19 @@ Deno.serve(async (req: Request) => {
         const isEvm =
           cid != null &&
           SUPPORTED_EVM_CHAIN_IDS.has(Number(cid)) &&
-          (rowChain === "ethereum" || rowChain === "base" || rowChain === "robinhood") &&
+          (rowChain === "ethereum" || rowChain === "base" || rowChain === "robinhood" || rowChain === "arc") &&
           /^0x[0-9a-fA-F]{40}$/.test(dao.dao_onchain_address.trim());
 
         if (isEvm) {
           const treasury = dao.dao_onchain_address.trim().toLowerCase() as `0x${string}`;
-          if (rowChain === "base" || rowChain === "robinhood" || rowChain === "ethereum") {
+          if (rowChain === "base" || rowChain === "robinhood" || rowChain === "ethereum" || rowChain === "arc") {
             const revalue = await maybeRevalueEvmViaSigner(Number(cid), treasury);
             if (!revalue.ok) {
               console.warn(`[snapshot-evm] revalue skipped for ${treasury}: ${revalue.error}`);
             }
           }
           const metrics = await readEvmTreasurySnapshotMetrics(Number(cid), treasury);
+          const idleStableMicro = await readEvmIdleStableMicroUsd(Number(cid), treasury);
           if (!metrics) {
             errors.push({
               dao: dao.dao_onchain_address,
@@ -831,7 +833,7 @@ Deno.serve(async (req: Request) => {
             dao_onchain_address: dao.dao_onchain_address,
             total_value_usd: metrics.navUsd,
             sol_balance: metrics.nativeEth,
-            usdc_balance: 0,
+            usdc_balance: idleStableMicro == null ? 0 : idleStableMicro / 1_000_000,
             strategy_positions: metrics.positions,
             token_balances: [
               {
@@ -840,6 +842,8 @@ Deno.serve(async (req: Request) => {
                 note: "Native ETH on NaveTreasury; NAV from currentNav (micro-USD)",
               },
             ],
+            // A bulk insert needs the same columns on every row; Solana rows set this.
+            reconciliation_status: "unavailable",
             snapshot_at: now,
             chain: rowChain,
             chain_id: Number(cid),

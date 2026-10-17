@@ -15,6 +15,9 @@ import {
   buildOpenCaseArgs,
   charterGateOutcome,
   constitutionSnapshot,
+  contractRecord,
+  mergeStoredCharter,
+  scaleBaseToMicroUsd,
   charterRpcParams,
   charterSatisfies,
   customerStatus,
@@ -31,7 +34,7 @@ import {
   isChainFamily,
   storedDecision,
 } from "../../supabase/functions/_shared/genlayerCharter.ts";
-import { syncReview } from "../../supabase/functions/_shared/genlayerSync.ts";
+import { recordCharterSubmitFailure, syncReview } from "../../supabase/functions/_shared/genlayerSync.ts";
 import {
   FAILED_CHECK,
   FINISHED_PASS,
@@ -200,6 +203,34 @@ test("gate off records a failed check and does not block", () => {
   assert.match(charter.detail, /NAVE_GENLAYER_GATE off/);
 });
 
+test("a finished pass with the gate off does not set shouldSign", () => {
+  const flags = {
+    failClosedOnUnknown: true,
+    genlayerGate: false,
+    genlayerVenueGate: false,
+    genlayerHaltGate: false,
+  };
+  const declined = evaluateGuardrails(
+    "executive",
+    context({ charter: FINISHED_PASS }),
+    { ...output, decision: "reject", should_sign: false },
+    flags,
+  );
+  const recorded = declined.checks.find((check) => check.id === "genlayer_charter");
+  assert.ok(recorded);
+  assert.equal(recorded.ok, true);
+  assert.match(recorded.detail, /NAVE_GENLAYER_GATE off/);
+  assert.equal(declined.pass, true);
+  assert.equal(declined.shouldSign, false);
+
+  const overCap = context({ charter: FINISHED_PASS });
+  overCap.request.amount = 90_000;
+  const blocked = evaluateGuardrails("executive", overCap, output, flags);
+  assert.equal(blocked.checks.find((check) => check.id === "allocation_cap")?.ok, false);
+  assert.equal(blocked.checks.find((check) => check.id === "genlayer_charter")?.ok, true);
+  assert.equal(blocked.shouldSign, false);
+});
+
 test("gate on blocks a missing, failed, unfinished, or mismatched check", () => {
   const missing = run({ charter: null }, { charter: true });
   assert.equal(missing.shouldSign, false);
@@ -327,6 +358,90 @@ test("an empty review stays off the screen, and an accepted fail stays unfinishe
   assert.equal(closed.finished, true);
   assert.equal(closed.provisional, false);
   assert.equal(closed.customer_status, "checked");
+  assert.equal(closed.summary, "This move fits the treasury rules.");
+  const essay = reviewFromRecord({
+    kind: "charter",
+    record: { decision: "pass", rule_ids: [], summary: "Finalized essay about equivalence.", action_hash: ACTION },
+    observation: { status: "Finalized", executionResult: "FinishedWithReturn" },
+    actionHash: ACTION,
+    txId: "0xabc",
+  });
+  assert.equal(essay.summary, "");
+  const noReceipt = reviewFromRecord({
+    kind: "charter",
+    record: { decision: "pass", rule_ids: [], summary: "This move fits the treasury rules.", action_hash: ACTION },
+    observation: null,
+    actionHash: ACTION,
+    txId: "",
+  });
+  assert.equal(noReceipt.finished, false);
+  assert.equal(noReceipt.customer_status, "still_checking");
+  assert.equal(noReceipt.tx_id, "");
+});
+
+test("an EVM payload hash with 0x matches the stored hash without it", () => {
+  const stored = { decision: "pass" as const, rule_ids: [], summary: "", finished: true, provisional: false, action_hash: ACTION };
+  assert.equal(charterSatisfies(stored, `0x${ACTION}`), true);
+  assert.equal(charterSatisfies({ ...stored, action_hash: `0x${ACTION}` }, ACTION), true);
+  assert.equal(charterSatisfies(stored, `0x${"cd".repeat(32)}`), false);
+});
+
+test("a JSON contract read keeps its decision, and an empty read does not erase a stored pass", () => {
+  const parsed = contractRecord(JSON.stringify({
+    decision: "pass",
+    summary: "This move fits the treasury rules.",
+    action_hash: ACTION,
+  }));
+  assert.equal(parsed.decision, "pass");
+  const fromString = reviewFromRecord({
+    kind: "charter",
+    record: JSON.stringify({
+      decision: "pass",
+      rule_ids: [],
+      summary: "This move fits the treasury rules.",
+      action_hash: ACTION,
+    }),
+    observation: { status: "Finalized", executionResult: "FinishedWithReturn" },
+    actionHash: ACTION,
+    txId: "0xabc",
+  });
+  assert.equal(fromString.decision, "pass");
+  assert.equal(fromString.finished, true);
+  const kept = mergeStoredCharter({
+    decision: "",
+    summary: "",
+    finished: true,
+    provisional: false,
+    customer_status: "still_checking",
+    rule_ids: [],
+    tx_id: "0xabc",
+  }, {
+    decision: "pass",
+    summary: "This move fits the treasury rules.",
+    finished: true,
+    provisional: false,
+    customer_status: "checked",
+    rule_ids: [],
+    tx_id: "0xabc",
+  });
+  assert.equal(kept.decision, "pass");
+  assert.equal(kept.customer_status, "checked");
+  const replaced = mergeStoredCharter({
+    ...kept,
+    decision: "fail",
+    summary: "This would put more into one venue than your limit allows.",
+    customer_status: "needs_closer_look",
+  }, { decision: "pass", tx_id: "0xabc" });
+  assert.equal(replaced.decision, "fail");
+});
+
+test("non-stable amounts are priced in micro-USD before they meet a dollar cap", () => {
+  // 0.02 SOL against a treasury whose wSOL pile is 0.05 SOL marked at $5.273637.
+  const priced = scaleBaseToMicroUsd(20_000_000, 50_000_000, 5_273_637);
+  assert.equal(priced, 2_109_454);
+  assert.ok(priced != null && priced <= Math.floor(5_273_637 * 5000 / 10_000));
+  assert.equal(scaleBaseToMicroUsd(400_000, 400_000, 400_000), 400_000);
+  assert.equal(scaleBaseToMicroUsd(1, 0, 1), null);
 });
 
 test("open_case args carry the mandate and constitution, and public inputs allow them", () => {
@@ -360,6 +475,9 @@ test("open_case args carry the mandate and constitution, and public inputs allow
     assetIsStable: true,
   }), null);
   assert.equal(assetIsStable("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), true);
+  assert.equal(assetIsStable("0x3600000000000000000000000000000000000000"), true);
+  assert.equal(assetIsStable("0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1"), true);
+  assert.equal(assetIsStable("0x7943e237c7F95DA44E0301572D358911207852Fa"), false);
   assert.equal(assetIsStable("not-a-known-mint"), null);
   const constitution = JSON.stringify({ ...snapshot, note: "x".repeat(400) });
   assert.equal(publicInputsError({
@@ -417,9 +535,16 @@ test("open_case args carry the mandate and constitution, and public inputs allow
   });
 });
 
-test("venue watch covers kamino, aave v3, and compound v3 and skips balancer", () => {
+test("venue watch covers all five testnet chains and skips balancer", () => {
   const venues = VENUE_STATUS_TARGETS.map((target) => target.venue);
-  assert.deepEqual(venues, ["kamino", "aave-v3", "compound-v3"]);
+  assert.deepEqual(venues, [
+    "kamino",
+    "jito",
+    "aave-v3",
+    "compound-v3",
+    "morpho-steakhouse-usdg",
+    "morpho-steakhouse-usdc",
+  ]);
   assert.equal(venues.includes("balancer-v2"), false);
   for (const target of VENUE_STATUS_TARGETS) {
     assert.match(target.statusUrl, /^https:\/\/\S+$/);
@@ -434,13 +559,17 @@ test("venue watch covers kamino, aave v3, and compound v3 and skips balancer", (
   ]);
   assert.deepEqual(jobs.map((job) => `${job.chain_family}:${job.venue}`), [
     "solana:kamino",
+    "solana:jito",
     "ethereum:aave-v3",
     "ethereum:compound-v3",
     "base:aave-v3",
+    "robinhood:morpho-steakhouse-usdg",
+    "arc:morpho-steakhouse-usdc",
   ]);
   assert.equal(jobs.some((job) => job.venue.includes("balancer")), false);
   assert.equal(jobs.some((job) => job.network === "mainnet"), false);
-  assert.equal(jobs.some((job) => job.chain_family === "arc"), false);
+  assert.equal(jobs.some((job) => job.chain_family === "robinhood"), true);
+  assert.equal(jobs.some((job) => job.chain_family === "arc"), true);
 });
 
 test("arc stays in the family union, and venue and halt stay off the charter decision", () => {
@@ -520,6 +649,382 @@ test("a configured session opens a case once, and an accepted result does not fi
   assert.equal(first.customer_status, "still_checking");
   assert.equal(second.finished, false);
   assert.equal(second.customer_status, "still_checking");
+});
+
+function charterCaseInput() {
+  return {
+    chain_family: "solana" as const,
+    network: "devnet" as const,
+    treasury: "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2",
+    action_hash: ACTION,
+    venue: "kamino",
+    amount: "1000",
+    asset: "USDC",
+    mandate_text: "Keep at least 10 percent available.",
+    constitution_json: JSON.stringify({
+      approved_venues: ["kamino"],
+      max_single_allocation_bps: 2500,
+      max_deployment_bps: 8000,
+      liquidity_floor_bps: 1000,
+      reserve_floor_bps: 2000,
+      nav_base_units: "1000000",
+      deployed_base_units: "100000",
+      venue_deployed_base_units: "50000",
+      liquid_base_units: "900000",
+      reserve_base_units: "400000",
+      asset_is_stable: true,
+    }),
+  };
+}
+
+test("a charter write retries leader timeout and not voted, and stops after two extra attempts", async () => {
+  const receipts = [
+    { status: "LEADER_TIMEOUT", executionResult: "" },
+    { status: "ACCEPTED", executionResult: "NOT_VOTED" },
+    { status: "LEADER_TIMEOUT", executionResult: "NOT_VOTED" },
+    { status: "FINALIZED", executionResult: "FINISHED_WITH_RETURN" },
+  ];
+  let statusCalls = 0;
+  const writes: string[][] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write(_kind: "charter", method: string, args: string[]) {
+      writes.push([method, ...args]);
+      return `0xtx${writes.length}`;
+    },
+    async status() {
+      const receipt = receipts[statusCalls] ?? receipts[receipts.length - 1];
+      statusCalls += 1;
+      return receipt;
+    },
+  };
+  const result = await syncReview(session, "charter", charterCaseInput(), "");
+  assert.equal(writes.length, 3);
+  assert.equal(statusCalls, 3);
+  for (const call of writes) assert.equal(call[0], "open_case");
+  assert.equal(writes[0].length, writes[1].length);
+  assert.equal(result.tx_id, "0xtx3");
+  assert.equal(result.receipt_status, "LEADER_TIMEOUT");
+  assert.equal(result.finished, false);
+  assert.equal(result.provisional, true);
+  assert.equal(result.customer_status, "still_checking");
+  assert.match(result.summary, /LEADER_TIMEOUT/);
+});
+
+test("an unnamed in-flight status with not voted is not submitted again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("open_case");
+      return "0xinflight";
+    },
+    async status() {
+      return { status: "14", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = charterCaseInput();
+  const first = await syncReview(session, "charter", input, "");
+  const second = await syncReview(session, "charter", input, first.tx_id);
+  assert.equal(writes.length, 1);
+  assert.equal(first.tx_id, "0xinflight");
+  assert.equal(first.receipt_status, "14");
+  assert.equal(first.finished, false);
+  assert.equal(second.tx_id, "0xinflight");
+  assert.doesNotMatch(first.summary, /NOT_VOTED/);
+});
+
+test("a ready-to-finalize receipt is still in flight and is not submitted again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("open_case");
+      return "0xready";
+    },
+    async status() {
+      return { status: "READY_TO_FINALIZE", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = charterCaseInput();
+  const first = await syncReview(session, "charter", input, "");
+  const second = await syncReview(session, "charter", input, first.tx_id);
+  assert.equal(writes.length, 1);
+  assert.equal(first.tx_id, "0xready");
+  assert.equal(first.receipt_status, "READY_TO_FINALIZE");
+  assert.equal(first.finished, false);
+  assert.equal(second.tx_id, "0xready");
+  assert.doesNotMatch(first.summary, /NOT_VOTED/);
+});
+
+test("a pending not-voted receipt is still in progress and is not submitted again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("open_case");
+      return "0xpending";
+    },
+    async status() {
+      return { status: "PENDING", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = charterCaseInput();
+  const first = await syncReview(session, "charter", input, "");
+  const second = await syncReview(session, "charter", input, first.tx_id);
+  assert.equal(writes.length, 1);
+  assert.equal(first.tx_id, "0xpending");
+  assert.equal(first.receipt_status, "PENDING");
+  assert.equal(first.finished, false);
+  assert.equal(first.customer_status, "still_checking");
+  assert.equal(second.tx_id, "0xpending");
+  assert.equal(second.finished, false);
+  assert.doesNotMatch(first.summary, /NOT_VOTED/);
+});
+
+test("a stored accepted transaction is polled and is not submitted again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("open_case");
+      return "0xnew";
+    },
+    async status() {
+      return { status: "Accepted", executionResult: "FINISHED_WITH_RETURN" };
+    },
+  };
+  const result = await syncReview(session, "charter", charterCaseInput(), "0xstored");
+  assert.deepEqual(writes, []);
+  assert.equal(result.tx_id, "0xstored");
+  assert.equal(result.receipt_status, "Accepted");
+  assert.equal(result.finished, false);
+  assert.equal(result.customer_status, "still_checking");
+});
+
+test("a stored leader timeout gets two extra charter writes", async () => {
+  const receipts = [
+    { status: "LEADER_TIMEOUT", executionResult: "" },
+    { status: "LEADER_TIMEOUT", executionResult: "" },
+    { status: "FINALIZED", executionResult: "FINISHED_WITH_RETURN" },
+  ];
+  let statusCalls = 0;
+  const writes: string[] = [];
+  const session = {
+    async read(_kind: "charter", method: string) {
+      if (method === "has_case") return writes.length >= 2;
+      if (method === "get_case") {
+        return { decision: "pass", rule_ids: [], summary: "This move fits the treasury rules.", action_hash: ACTION };
+      }
+      return null;
+    },
+    async write() {
+      writes.push("open_case");
+      return `0xretry${writes.length}`;
+    },
+    async status() {
+      const receipt = receipts[statusCalls] ?? receipts[receipts.length - 1];
+      statusCalls += 1;
+      return receipt;
+    },
+  };
+  const result = await syncReview(session, "charter", charterCaseInput(), "0xold");
+  assert.deepEqual(writes, ["open_case", "open_case"]);
+  assert.equal(result.tx_id, "0xretry2");
+  assert.equal(result.receipt_status, "FINALIZED");
+  assert.equal(result.finished, true);
+  assert.equal(result.decision, "pass");
+  assert.equal(result.customer_status, "checked");
+});
+
+test("a stored validators timeout is written again only while no case is stored", async () => {
+  const writes: string[] = [];
+  let stored = false;
+  const session = {
+    async read(_kind: "charter", method: string) {
+      if (method === "has_case") return stored;
+      if (method === "get_case") {
+        return { decision: "pass", rule_ids: [], summary: "This move fits the treasury rules.", action_hash: ACTION };
+      }
+      return null;
+    },
+    async write() {
+      writes.push("open_case");
+      return `0xretry${writes.length}`;
+    },
+    async status(txId: string) {
+      return txId === "0xold"
+        ? { status: "VALIDATORS_TIMEOUT", executionResult: "NONDET_DISAGREE" }
+        : { status: "PENDING", executionResult: "NOT_VOTED" };
+    },
+  };
+  const first = await syncReview(session, "charter", charterCaseInput(), "0xold");
+  assert.deepEqual(writes, ["open_case"]);
+  assert.equal(first.tx_id, "0xretry1");
+  assert.equal(first.finished, false);
+
+  stored = true;
+  await syncReview(session, "charter", charterCaseInput(), "0xold");
+  assert.deepEqual(writes, ["open_case"], "a stored case is never opened again");
+});
+
+test("a stored case without a transaction id stays unfinished and is not marked Accepted", async () => {
+  let statusCalls = 0;
+  const writes: string[] = [];
+  const session = {
+    async read(_kind: "charter", method: string) {
+      if (method === "has_case") return true;
+      if (method === "get_case") {
+        return {
+          decision: "pass",
+          rule_ids: [],
+          summary: "This move fits the treasury rules.",
+          action_hash: ACTION,
+        };
+      }
+      return null;
+    },
+    async write() {
+      writes.push("open_case");
+      return "0xshould-not-write";
+    },
+    async status() {
+      statusCalls += 1;
+      return { status: "Accepted", executionResult: "FINISHED_WITH_RETURN" };
+    },
+  };
+  const result = await syncReview(session, "charter", charterCaseInput(), "  ");
+  assert.deepEqual(writes, []);
+  assert.equal(statusCalls, 0);
+  assert.equal(result.tx_id, "");
+  assert.equal(result.receipt_status, "");
+  assert.equal(result.decision, "pass");
+  assert.equal(result.summary, "This move fits the treasury rules.");
+  assert.equal(result.finished, false);
+  assert.equal(result.provisional, true);
+  assert.equal(result.customer_status, "still_checking");
+});
+
+function haltCaseInput() {
+  return {
+    chain_family: "ethereum" as const,
+    network: "testnet" as const,
+    treasury: "0x2222222222222222222222222222222222222222",
+    action_hash: ACTION,
+    venue: "aave-v3",
+    amount: "1000",
+    asset: "USDC",
+    pause_reason: "Reviewers asked for another look at this move.",
+    counterevidence: "The venue published a full incident closure and service is restored.",
+  };
+}
+
+test("an in-flight halt appeal is not opened again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("open_appeal");
+      return "0xhalt";
+    },
+    async status() {
+      return { status: "14", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = haltCaseInput();
+  const first = await syncReview(session, "halt", input, "");
+  const second = await syncReview(session, "halt", input, first.tx_id);
+  assert.equal(writes.length, 1);
+  assert.equal(first.tx_id, "0xhalt");
+  assert.equal(first.receipt_status, "14");
+  assert.equal(first.finished, false);
+  assert.equal(second.tx_id, "0xhalt");
+  assert.equal(second.halt_decision, "");
+});
+
+test("a stored halt leader timeout is retried and does not replace an open appeal", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read(_kind: "halt", method: string) {
+      if (method === "has_appeal") return writes.length > 0;
+      if (method === "get_appeal") {
+        return { decision: "lift_pause", summary: "A second check says the pause can be lifted by the treasury operators." };
+      }
+      return null;
+    },
+    async write() {
+      writes.push("open_appeal");
+      return "0xhalt-retry";
+    },
+    async status() {
+      return writes.length > 1
+        ? { status: "FINALIZED", executionResult: "FINISHED_WITH_RETURN" }
+        : { status: "LEADER_TIMEOUT", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = haltCaseInput();
+  const first = await syncReview(session, "halt", input, "0xold-timeout");
+  assert.deepEqual(writes, ["open_appeal", "open_appeal"]);
+  assert.equal(first.finished, true);
+  assert.equal(first.halt_decision, "lift_pause");
+  assert.equal(first.decision, "lift_pause");
+  const second = await syncReview(session, "halt", input, first.tx_id);
+  assert.deepEqual(writes, ["open_appeal", "open_appeal"]);
+  assert.equal(second.tx_id, first.tx_id);
+});
+
+test("an in-flight venue review is not submitted again", async () => {
+  const writes: string[] = [];
+  const session = {
+    async read() {
+      return false;
+    },
+    async write() {
+      writes.push("review_venue");
+      return "0xvenue";
+    },
+    async status() {
+      return { status: "14", executionResult: "NOT_VOTED" };
+    },
+  };
+  const input = {
+    chain_family: "ethereum" as const,
+    network: "testnet" as const,
+    treasury: "0x1111111111111111111111111111111111111111",
+    action_hash: "aave-v3",
+    venue: "aave-v3",
+    status_url: "https://status.aave.com/api/v2/summary.json",
+  };
+  const first = await syncReview(session, "venue", input, "");
+  const second = await syncReview(session, "venue", input, first.tx_id);
+  assert.equal(writes.length, 1);
+  assert.equal(first.receipt_status, "14");
+  assert.equal(first.finished, false);
+  assert.equal(first.venue_status, null);
+  assert.equal(second.tx_id, "0xvenue");
+});
+
+test("a thrown charter submit is returned unfinished instead of dropped", async () => {
+  const review = await recordCharterSubmitFailure(charterCaseInput(), new Error("rpc down"));
+  assert.equal(review.finished, false);
+  assert.equal(review.provisional, true);
+  assert.equal(review.customer_status, "still_checking");
+  assert.equal(review.decision, "");
+  assert.equal(review.tx_id, "");
+  assert.equal(review.receipt_status, "");
+  assert.match(review.summary, /Charter submit failed: rpc down/);
 });
 
 test("charter outcome is fail-closed only for the signing gate", () => {

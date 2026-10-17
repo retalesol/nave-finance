@@ -93,3 +93,7 @@ verify_jwt = false
 [functions.refresh-strategy-rates]
 # Hourly cron upserts live venue APYs into strategy_rates. Auth is the service role or X-Agent-Secret.
 verify_jwt = false
+
+[functions.founder-metadata]
+# Browser-reachable. Founder wallet challenge; service role writes logos, token images, and hidden assets.
+verify_jwt = false

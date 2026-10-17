@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
 import Fi from './Fi';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import { useDaoMembership } from '../hooks/useDaoMembership';
 import { useChain } from '../hooks/useChain';
+import { isTreasuryOpsFamily } from '../lib/chain/types';
 import { setAgentsEnabledViaProxy, setAgentsEnabledViaProxyEvm } from '../lib/edgeFunctionClient';
 import { toast } from '../hooks/use-toast';
 
@@ -30,6 +31,7 @@ export default function AgentsDisabledBanner({ daoAddress }: { daoAddress: strin
   const { publicKey, signMessage } = useWallet();
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,8 +48,8 @@ export default function AgentsDisabledBanner({ daoAddress }: { daoAddress: strin
     setBusy(true);
     try {
       if (chainKind === 'evm') {
-        if (!evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
-          setError('Select an Ethereum, Base, or Robinhood network to re-enable agents.');
+        if (!evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
+          setError('Select an Ethereum, Base, Robinhood, or Arc network to re-enable agents.');
           return;
         }
         if (!evmAddress) { setError('Connect your founder wallet to re-enable agents.'); return; }
@@ -58,6 +60,17 @@ export default function AgentsDisabledBanner({ daoAddress }: { daoAddress: strin
           true,
           evmChainId,
           chainFamily,
+          {
+            signGuardianAction: signTypedDataAsync
+              ? (typed) =>
+                  signTypedDataAsync({
+                    domain: typed.domain,
+                    types: typed.types,
+                    primaryType: typed.primaryType,
+                    message: typed.message,
+                  })
+              : undefined,
+          },
         );
         if (err || !data?.success) { setError(err || data?.error || 'Failed to re-enable agents.'); return; }
       } else {

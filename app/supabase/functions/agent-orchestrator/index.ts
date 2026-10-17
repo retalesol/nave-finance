@@ -9,6 +9,9 @@ import {
 import {
   type AgentGateView,
   type VaultView,
+  accountExists,
+  executionRequestForProposal,
+  listRegisteredMints,
   readAgentGate,
   readTreasuryVault,
   strategyPositionPda,
@@ -30,6 +33,7 @@ import { assessSignerPayload } from "../_shared/constitutionVerdict.ts";
 import { persistedConstitutionCheck } from "../_shared/constitutionLog.ts";
 import { evmRelaySignerRole, signerSecretFor, solanaSignerRole } from "../_shared/signerAuth.ts";
 import { haltCausesFrom, operationalGate, type OperationalGateResult } from "../_shared/operationalGate.ts";
+import { isStuckRow, redispatchWaitSecs, REFRESH_RETRY_SECS } from "../_shared/redispatchCooldown.ts";
 
 /** Zero EVM address — non-strategy requests (e.g. Transfer) carry no adapter. */
 const ZERO_EVM_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -515,6 +519,8 @@ function venueDepositAction(protocolId: string): string | null {
 
 interface OrchestratorRequest {
   mode: "poll" | "manual";
+  /** manual mode only: skip the redispatch wait for this one evaluation. */
+  force_redispatch?: boolean;
   dao_address?: string;
   execution_request_address?: string;
   execution_status?: string;
@@ -530,7 +536,11 @@ interface OrchestratorRequest {
 const MAX_WORK_ITEMS = Number(Deno.env.get("NAVE_ORCHESTRATOR_MAX_WORK_ITEMS") ?? "25");
 const AUTO_WITHDRAW_ENABLED = (Deno.env.get("NAVE_AUTO_WITHDRAW_ENABLED") ?? "false").toLowerCase() === "true";
 const WITHDRAW_DELAY_SECS = Number(Deno.env.get("NAVE_WITHDRAW_DELAY_SECS") ?? "3600");
+// Wait before re-asking a role that blocked, reviewed, or rejected the same
+// request. 0 turns the wait off.
+const REDISPATCH_COOLDOWN_SECS = Number(Deno.env.get("NAVE_REDISPATCH_COOLDOWN_SECS") ?? "21600");
 const POSITION_ORACLE_ENABLED = (Deno.env.get("NAVE_POSITION_ORACLE_ENABLED") ?? "true").toLowerCase() === "true";
+const POSITION_ORACLE_COOLDOWN_SECS = Number(Deno.env.get("NAVE_POSITION_ORACLE_COOLDOWN_SECS") ?? "900");
 // Yield-aware compounding: harvest realized gains (current position value above
 // the deposited principal) via withdraw_from_strategy so the planner can redeploy
 // them through the normal governance pipeline. Distinct from (and orthogonal to)
@@ -564,6 +574,25 @@ void assertBridgeCorridor;
 // Minimum realized gain (in bps of deposited principal) required before a harvest
 // is worthwhile. Default 1% — keeps tx fees from eroding small harvests.
 const COMPOUND_MIN_GAIN_BPS = Number(Deno.env.get("NAVE_COMPOUND_MIN_GAIN_BPS") ?? "100");
+// Same 50 bps bound as NaveConstants.DEPOSIT_SLIPPAGE_BPS and the signer's
+// withDefaultMinOut. Founder withdrawals quote through resolveEvmMinOut; the
+// keeper has no quote, so harvest and auto-withdraw pass this floor. The
+// base is the amount this call withdraws (realized gain on the harvest path).
+const EVM_MIN_OUT_SLIPPAGE_BPS = 50n;
+
+function evmPositiveMinOut(amount: number | string): string {
+  let base: bigint;
+  try {
+    const raw = typeof amount === "number" ? Math.trunc(amount) : String(amount).trim();
+    base = BigInt(raw);
+  } catch {
+    return "1";
+  }
+  if (base <= 0n) return "1";
+  const floor = (base * (10_000n - EVM_MIN_OUT_SLIPPAGE_BPS)) / 10_000n;
+  return (floor > 0n ? floor : 1n).toString();
+}
+
 // Jito bundle support for atomic rebalancing. Enabled by default on mainnet;
 // on devnet the signer falls back to sequential submission automatically.
 const JITO_BUNDLE_REBALANCE_ENABLED = (Deno.env.get("JITO_BUNDLE_REBALANCE_ENABLED") ?? "true").toLowerCase() === "true";
@@ -583,8 +612,7 @@ const ROLE_TO_SIGN_ACTION: Record<AgentRole, string> = {
 // NaveExecution (relayed from the agent EOA via the signer's /relay-evm), NOT
 // EIP-712 signatures. The action vocabulary below maps 1:1 onto the signer's
 // relayEvmAgentAction. (Solana-only actions — jupiter_*, bundle_rebalance,
-// update_strategy_position_value, finalize_proposal, create_proposal, etc. —
-// have no EVM relay and are rejected.)
+// create_proposal, etc. — have no EVM relay here and are rejected.)
 const EVM_CHAIN_IDS = SUPPORTED_EVM_CHAIN_IDS;
 const EVM_RELAY_ACTIONS = new Set<string>([
   "executive_approve",
@@ -604,6 +632,10 @@ const EVM_RELAY_ACTIONS = new Set<string>([
   // at the call sites that enqueue these actions.
   "create_bridge_request",
   "bridge_outbound",
+  // Planner proposal lifecycle: permissionless governor finalize, then bind
+  // the passed proposal to its (adapter, amount, asset) request.
+  "finalize_proposal",
+  "create_strategy_request",
 ]);
 
 function evmChainLabel(chainId: number): Exclude<ChainKind, "solana"> {
@@ -636,7 +668,10 @@ async function callSigner(payload: {
   action: string;
   dao_address: string;
   execution_request_address: string;
-  agent_role: AgentRole;
+  /** "planner" pays for proposal and request creation; it never approves. */
+  agent_role: AgentRole | "planner";
+  /** revalue_treasury: the mints to revalue. */
+  assets?: Array<{ mint: string }>;
   reasoning_hash?: string;
   protocol_id?: string;
   amount?: number | "max";
@@ -695,8 +730,19 @@ async function callSigner(payload: {
   payload_hash?: string;
   purpose?: "compound" | "auto_withdraw" | "venue_placement" | "venue_recall";
   policy_intent?: "rebalance" | "deploy_idle" | "reduce_exposure" | "hold";
-}): Promise<{ ok: boolean; signature?: string; bundle_id?: string; atomic?: boolean; error?: string; constitution_check: Record<string, unknown> }> {
-  const verdict = await assessSignerPayload(payload);
+}): Promise<{
+  ok: boolean;
+  signature?: string;
+  bundle_id?: string;
+  atomic?: boolean;
+  execution_request_address?: string;
+  error?: string;
+  constitution_check: Record<string, unknown>;
+}> {
+  const verdict = await assessSignerPayload({
+    ...payload,
+    agent_role: payload.agent_role === "planner" ? "operational" : payload.agent_role,
+  });
   const constitution_check = verdict.record;
   const deny = (error: string) => ({ ok: false as const, error, constitution_check });
   if (!verdict.allow) return deny(verdict.reason);
@@ -736,6 +782,13 @@ async function callSigner(payload: {
         if (!payload.execution_address) {
           return deny("EVM update_strategy_position_value requires execution_address (NaveExecution contract)");
         }
+      }
+    } else if (payload.action === "finalize_proposal" || payload.action === "create_strategy_request") {
+      if (payload.proposal_index === undefined || payload.proposal_index === null) {
+        return deny(`EVM ${payload.action} requires proposal_index`);
+      }
+      if (payload.action === "create_strategy_request" && (!payload.adapter || !payload.asset || payload.amount == null)) {
+        return deny("EVM create_strategy_request requires adapter, asset, and amount");
       }
     } else if (payload.action === "create_bridge_request") {
       if (!payload.execution_address) {
@@ -781,7 +834,15 @@ async function callSigner(payload: {
         return deny(data.error || `Relayer HTTP ${resp.status}`);
       }
       // /relay-evm echoes the tx hash as `signature` for uniform logging.
-      return { ok: true, signature: data.signature ?? data.tx_hash, constitution_check };
+      return {
+        ok: true,
+        signature: data.signature ?? data.tx_hash,
+        execution_request_address:
+          typeof data.execution_address === "string" && data.index !== undefined
+            ? evmErKey(data.execution_address, Number(data.index))
+            : undefined,
+        constitution_check,
+      };
     } catch (err) {
       return deny(err instanceof Error ? err.message : "EVM relay request failed");
     }
@@ -801,7 +862,14 @@ async function callSigner(payload: {
     if (!resp.ok) {
       return deny(data.error || `Signer HTTP ${resp.status}`);
     }
-    return { ok: true, signature: data.signature, bundle_id: data.bundle_id, atomic: data.atomic, constitution_check };
+    return {
+      ok: true,
+      signature: data.signature,
+      bundle_id: data.bundle_id,
+      atomic: data.atomic,
+      execution_request_address: typeof data.execution_request_address === "string" ? data.execution_request_address : undefined,
+      constitution_check,
+    };
   } catch (err) {
     return deny(err instanceof Error ? err.message : "Signer request failed");
   }
@@ -845,6 +913,20 @@ function signerRequestBody(payload: object): Record<string, unknown> {
 async function triggerRevalue(
   daoAddress: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  // The signer revalues every registered mint, using Chainlink for wSOL.
+  // snapshot-treasury is the fallback; its revalue does not refresh wSOL.
+  const rpcUrl = Deno.env.get("SOLANA_RPC_URL") ?? "";
+  const mints = rpcUrl ? await listRegisteredMints(rpcUrl, daoAddress) : [];
+  if (mints.length > 0) {
+    const direct = await callSigner({
+      action: "revalue_treasury",
+      dao_address: daoAddress,
+      execution_request_address: "",
+      agent_role: "operational",
+      assets: mints.map((mint) => ({ mint })),
+    });
+    if (direct.ok) return { ok: true };
+  }
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const indexerSecret = Deno.env.get("NAVE_INDEXER_SECRET");
   if (!supabaseUrl) return { ok: false, error: "SUPABASE_URL unset" };
@@ -1099,10 +1181,15 @@ Deno.serve(async (req: Request) => {
       role: AgentRole,
       actionType: string,
       gate: GateDecision,
+      chainOpts?: { chain?: string; chain_id?: number | null },
     ) => {
+      const chainId = chainOpts?.chain_id ?? null;
+      const chainLabel = chainOpts?.chain ?? (chainId ? evmChainLabel(chainId) : "solana");
       gated.push({ dao: daoAddr, er: erAddr, action: actionType, state: gate.state, reason: gate.reason });
       await supabase.from("agent_action_logs").insert({
         dao_onchain_address: daoAddr,
+        chain: chainLabel,
+        chain_id: chainId,
         agent_role: role,
         action_type: actionType,
         reasoning: `Orchestrator: ${actionType} parked by agent gate (${gate.state}). ${gate.reason}`,
@@ -1151,6 +1238,8 @@ Deno.serve(async (req: Request) => {
       });
       await supabase.from("agent_action_logs").insert({
         dao_onchain_address: daoAddr,
+        chain: "solana",
+        chain_id: null,
         agent_role: "operational",
         action_type: op.action,
         reasoning: placeRes.ok
@@ -1202,6 +1291,8 @@ Deno.serve(async (req: Request) => {
       if (!recallRes.ok && /nothing to move/.test(recallRes.error ?? "")) return { ok: true };
       await supabase.from("agent_action_logs").insert({
         dao_onchain_address: daoAddr,
+        chain: "solana",
+        chain_id: null,
         agent_role: "operational",
         action_type: recallAction,
         reasoning: recallRes.ok
@@ -1241,6 +1332,8 @@ Deno.serve(async (req: Request) => {
       });
       await supabase.from("agent_action_logs").insert({
         dao_onchain_address: item.dao_address,
+        chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+        chain_id: item.chain_id ?? null,
         agent_role: "operational",
         action_type: actionType,
         reasoning: `Orchestrator: Operational ${actionType} refused by the deterministic gate: ${decision.blockers.join("; ")}.`,
@@ -1381,13 +1474,24 @@ Deno.serve(async (req: Request) => {
       const daoSet = new Set<string>();
       for (const log of recentLogsSafe) {
         const addr = log.dao_onchain_address as string;
-        if (addr) daoSet.add(addr);
+        if (addr && !addr.startsWith("0x")) daoSet.add(addr);
       }
       for (const row of actionDaoRows ?? []) {
         const addr = (row as { dao_onchain_address?: string }).dao_onchain_address;
-        if (addr) daoSet.add(addr);
+        if (addr && !addr.startsWith("0x")) daoSet.add(addr);
       }
-      const daoAddresses = [...daoSet];
+      let daoAddresses = [...daoSet];
+      if (daoAddresses.length > 0) {
+        const { data: registeredSolanaDaos } = await supabase
+          .from("dao_registry")
+          .select("dao_onchain_address")
+          .eq("chain", "solana")
+          .in("dao_onchain_address", daoAddresses);
+        const registeredSet = new Set(
+          (registeredSolanaDaos ?? []).map((r: { dao_onchain_address: string }) => r.dao_onchain_address),
+        );
+        daoAddresses = daoAddresses.filter((addr) => registeredSet.has(addr));
+      }
 
       if (daoAddresses.length > 0) {
         for (const daoAddr of daoAddresses) {
@@ -1479,6 +1583,8 @@ Deno.serve(async (req: Request) => {
               reconciled.push({ dao: daoAddr, requeued: nonTerminalForDao, note });
               await supabase.from("agent_action_logs").insert({
                 dao_onchain_address: daoAddr,
+                chain: "solana",
+                chain_id: null,
                 agent_role: "operational",
                 action_type: "reconcile_after_resume",
                 reasoning: `Orchestrator: ${note}`,
@@ -1500,7 +1606,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // ── EVM poll enumeration (Ethereum + Base) ───────────────────────────
+      // ── EVM poll enumeration (Ethereum + Base + Robinhood + Arc) ──────────
       // Mirror the Solana discovery path: recent activity → candidate indices →
       // authoritative getRequest() reads. Work items use synthetic ER keys
       // (`0xexecution#index`) so logging stays uniform; callSigner receives the
@@ -1508,7 +1614,7 @@ Deno.serve(async (req: Request) => {
       let evmDaoQuery = supabase
         .from("dao_registry")
         .select("dao_onchain_address, chain, chain_id")
-        .in("chain", ["ethereum", "base", "robinhood"]);
+        .in("chain", ["ethereum", "base", "robinhood", "arc"]);
       if (body.dao_address) {
         evmDaoQuery = evmDaoQuery.eq("dao_onchain_address", body.dao_address.toLowerCase());
       }
@@ -1640,53 +1746,72 @@ Deno.serve(async (req: Request) => {
           // Position-oracle tick — accounting only (moves no capital), so it
           // runs even on a frozen/disabled DAO to keep NAV honest while paused.
           if (POSITION_ORACLE_ENABLED && isStrategyAdapter) {
-            const oracleRes = await callSigner({
-              action: "update_strategy_position_value",
-              dao_address: item.dao_address,
-              execution_request_address: item.execution_request_address,
-              agent_role: "operational",
-              adapter,
-              execution_address: executionAddress,
-              chain: item.chain,
-              chain_id: chainId,
-            });
-            await supabase.from("agent_action_logs").insert({
-              dao_onchain_address: item.dao_address,
-              agent_role: "operational",
-              action_type: "update_strategy_position_value",
-              reasoning: oracleRes.ok
-                ? `Orchestrator: refreshed EVM strategy position value via oracle tick (tx ${oracleRes.signature}).`
-                : `Orchestrator: EVM position value oracle tick failed: ${oracleRes.error}`,
-              constitution_check: persistedConstitutionCheck(
-                "update_strategy_position_value",
-                oracleRes.constitution_check,
-                { adapter },
-              ),
-              payload_hash: fresh.payloadHash,
-              tx_signature: oracleRes.signature || "",
-              execution_request_address: item.execution_request_address,
-              status: oracleRes.ok ? "completed" : "failed",
-              error_message: oracleRes.error || "",
-              confidence_score: null,
-              risk_flags: [],
-              decision: "oracle_update",
-              claude_model: null,
-              raw_claude_response: null,
-              retry_count: 0,
-            });
-            if (!oracleRes.ok) {
-              errors.push({
-                dao: item.dao_address,
-                er: item.execution_request_address,
-                error: `update_strategy_position_value failed: ${oracleRes.error}`,
+            let skipOracleEvm = false;
+            if (POSITION_ORACLE_COOLDOWN_SECS > 0) {
+              const sinceOracleEvm = new Date(Date.now() - POSITION_ORACLE_COOLDOWN_SECS * 1000).toISOString();
+              const { data: recentOracleEvm } = await supabase
+                .from("agent_action_logs")
+                .select("id")
+                .eq("execution_request_address", item.execution_request_address)
+                .eq("action_type", "update_strategy_position_value")
+                .gte("created_at", sinceOracleEvm)
+                .limit(1);
+              if ((recentOracleEvm ?? []).length > 0) skipOracleEvm = true;
+            }
+            if (!skipOracleEvm) {
+              const oracleRes = await callSigner({
+                action: "update_strategy_position_value",
+                dao_address: item.dao_address,
+                execution_request_address: item.execution_request_address,
+                agent_role: "operational",
+                adapter,
+                execution_address: executionAddress,
+                chain: item.chain,
+                chain_id: chainId,
               });
+              await supabase.from("agent_action_logs").insert({
+                dao_onchain_address: item.dao_address,
+                chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+                chain_id: item.chain_id ?? null,
+                agent_role: "operational",
+                action_type: "update_strategy_position_value",
+                reasoning: oracleRes.ok
+                  ? `Orchestrator: refreshed EVM strategy position value via oracle tick (tx ${oracleRes.signature}).`
+                  : `Orchestrator: EVM position value oracle tick failed: ${oracleRes.error}`,
+                constitution_check: persistedConstitutionCheck(
+                  "update_strategy_position_value",
+                  oracleRes.constitution_check,
+                  { adapter },
+                ),
+                payload_hash: fresh.payloadHash,
+                tx_signature: oracleRes.signature || "",
+                execution_request_address: item.execution_request_address,
+                status: oracleRes.ok ? "completed" : "failed",
+                error_message: oracleRes.error || "",
+                confidence_score: null,
+                risk_flags: [],
+                decision: "oracle_update",
+                claude_model: null,
+                raw_claude_response: null,
+                retry_count: 0,
+              });
+              if (!oracleRes.ok) {
+                errors.push({
+                  dao: item.dao_address,
+                  er: item.execution_request_address,
+                  error: `update_strategy_position_value failed: ${oracleRes.error}`,
+                });
+              }
             }
           }
 
           // ── Compound (yield-aware harvest → redeploy via governance) ──────
           if (COMPOUND_ENABLED) {
             if (!gate.allowCapitalMovement) {
-              await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", gate);
+              await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", gate, {
+                chain: item.chain,
+                chain_id: item.chain_id,
+              });
               continue;
             }
             if (!isStrategyAdapter || !executionAddress || index == null) continue;
@@ -1712,14 +1837,16 @@ Deno.serve(async (req: Request) => {
 
             const compoundGate = await getGateFresh(item.dao_address, chainId);
             if (!compoundGate.allowCapitalMovement) {
-              await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", compoundGate);
+              await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", compoundGate, {
+                chain: item.chain,
+                chain_id: item.chain_id,
+              });
               continue;
             }
 
             const gainPct = ((realizedGain / pos.depositedBaseUnits) * 100).toFixed(2);
-            // Compound stays behind NAVE_COMPOUND_ENABLED. The verdict also
-            // refuses the signer until min_out is a positive slippage floor;
-            // omitting it (the old testnet default of 0) does not move funds.
+            // Harvest the realized gain only. The verdict refuses compound
+            // unless min_out is a positive slippage floor of that gain.
             const compoundRes = await callSigner({
               action: "withdraw_from_strategy",
               dao_address: item.dao_address,
@@ -1727,6 +1854,7 @@ Deno.serve(async (req: Request) => {
               agent_role: "executive",
               protocol_id: adapter,
               amount: realizedGain,
+              min_out: evmPositiveMinOut(realizedGain),
               purpose: "compound",
               expected_payload_hash: fresh.payloadHash,
               payload_hash: fresh.payloadHash,
@@ -1738,6 +1866,8 @@ Deno.serve(async (req: Request) => {
 
             await supabase.from("agent_action_logs").insert({
               dao_onchain_address: item.dao_address,
+              chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+              chain_id: item.chain_id ?? null,
               agent_role: "executive",
               action_type: "compound",
               reasoning: compoundRes.ok
@@ -1775,7 +1905,10 @@ Deno.serve(async (req: Request) => {
           // ── Legacy flat-delay auto-withdraw (backward compat) ─────────────
           if (!AUTO_WITHDRAW_ENABLED) continue;
           if (!gate.allowCapitalMovement) {
-            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", gate);
+            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", gate, {
+              chain: item.chain,
+              chain_id: item.chain_id,
+            });
             continue;
           }
           if (!isStrategyAdapter || !executionAddress || index == null) continue;
@@ -1808,7 +1941,10 @@ Deno.serve(async (req: Request) => {
 
           const withdrawGateEvm = await getGateFresh(item.dao_address, chainId);
           if (!withdrawGateEvm.allowCapitalMovement) {
-            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", withdrawGateEvm);
+            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", withdrawGateEvm, {
+              chain: item.chain,
+              chain_id: item.chain_id,
+            });
             continue;
           }
 
@@ -1819,6 +1955,7 @@ Deno.serve(async (req: Request) => {
             agent_role: "executive",
             protocol_id: adapter,
             amount: fresh.amount,
+            min_out: evmPositiveMinOut(fresh.amount),
             purpose: "auto_withdraw",
             expected_payload_hash: fresh.payloadHash,
             payload_hash: fresh.payloadHash,
@@ -1830,6 +1967,8 @@ Deno.serve(async (req: Request) => {
 
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: item.dao_address,
+            chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+            chain_id: item.chain_id ?? null,
             agent_role: "executive",
             action_type: "withdraw_from_strategy",
             reasoning: withdrawResEvm.ok
@@ -1866,44 +2005,60 @@ Deno.serve(async (req: Request) => {
         // value; moves no capital), so it runs even on a frozen/disabled DAO to
         // keep NAV honest while paused.
         if (POSITION_ORACLE_ENABLED && protocolId) {
-          const oracleRes = await callSigner({
-            action: "update_strategy_position_value",
-            dao_address: item.dao_address,
-            execution_request_address: item.execution_request_address,
-            agent_role: "operational",
-            protocol_id: protocolId,
-            mint: fresh.mint,
-            amount: fresh.amount,
-          });
-          await supabase.from("agent_action_logs").insert({
-            dao_onchain_address: item.dao_address,
-            agent_role: "operational",
-            action_type: "update_strategy_position_value",
-            reasoning: oracleRes.ok
-              ? `Orchestrator: refreshed strategy position value via oracle tick (sig ${oracleRes.signature}).`
-              : `Orchestrator: position value oracle tick failed: ${oracleRes.error}`,
-            constitution_check: persistedConstitutionCheck(
-              "update_strategy_position_value",
-              oracleRes.constitution_check,
-            ),
-            payload_hash: fresh.payloadHash,
-            tx_signature: oracleRes.signature || "",
-            execution_request_address: item.execution_request_address,
-            status: oracleRes.ok ? "completed" : "failed",
-            error_message: oracleRes.error || "",
-            confidence_score: null,
-            risk_flags: [],
-            decision: "oracle_update",
-            claude_model: null,
-            raw_claude_response: null,
-            retry_count: 0,
-          });
-          if (!oracleRes.ok) {
-            errors.push({
-              dao: item.dao_address,
-              er: item.execution_request_address,
-              error: `update_strategy_position_value failed: ${oracleRes.error}`,
+          let skipOracleSol = false;
+          if (POSITION_ORACLE_COOLDOWN_SECS > 0) {
+            const sinceOracleSol = new Date(Date.now() - POSITION_ORACLE_COOLDOWN_SECS * 1000).toISOString();
+            const { data: recentOracleSol } = await supabase
+              .from("agent_action_logs")
+              .select("id")
+              .eq("execution_request_address", item.execution_request_address)
+              .eq("action_type", "update_strategy_position_value")
+              .gte("created_at", sinceOracleSol)
+              .limit(1);
+            if ((recentOracleSol ?? []).length > 0) skipOracleSol = true;
+          }
+          if (!skipOracleSol) {
+            const oracleRes = await callSigner({
+              action: "update_strategy_position_value",
+              dao_address: item.dao_address,
+              execution_request_address: item.execution_request_address,
+              agent_role: "operational",
+              protocol_id: protocolId,
+              mint: fresh.mint,
+              amount: fresh.amount,
             });
+            await supabase.from("agent_action_logs").insert({
+              dao_onchain_address: item.dao_address,
+              chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+              chain_id: item.chain_id ?? null,
+              agent_role: "operational",
+              action_type: "update_strategy_position_value",
+              reasoning: oracleRes.ok
+                ? `Orchestrator: refreshed strategy position value via oracle tick (sig ${oracleRes.signature}).`
+                : `Orchestrator: position value oracle tick failed: ${oracleRes.error}`,
+              constitution_check: persistedConstitutionCheck(
+                "update_strategy_position_value",
+                oracleRes.constitution_check,
+              ),
+              payload_hash: fresh.payloadHash,
+              tx_signature: oracleRes.signature || "",
+              execution_request_address: item.execution_request_address,
+              status: oracleRes.ok ? "completed" : "failed",
+              error_message: oracleRes.error || "",
+              confidence_score: null,
+              risk_flags: [],
+              decision: "oracle_update",
+              claude_model: null,
+              raw_claude_response: null,
+              retry_count: 0,
+            });
+            if (!oracleRes.ok) {
+              errors.push({
+                dao: item.dao_address,
+                er: item.execution_request_address,
+                error: `update_strategy_position_value failed: ${oracleRes.error}`,
+              });
+            }
           }
         }
 
@@ -1917,7 +2072,10 @@ Deno.serve(async (req: Request) => {
         if (COMPOUND_ENABLED) {
           // Harvesting moves capital — gate it.
           if (!gate.allowCapitalMovement) {
-            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", gate);
+            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", gate, {
+              chain: item.chain,
+              chain_id: item.chain_id,
+            });
             continue;
           }
           if (!protocolId) {
@@ -1958,7 +2116,10 @@ Deno.serve(async (req: Request) => {
           // Gate freshness: re-read the gate right before moving capital.
           const compoundGate = await getGateFresh(item.dao_address, item.chain_id);
           if (!compoundGate.allowCapitalMovement) {
-            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", compoundGate);
+            await logGateSkip(item.dao_address, item.execution_request_address, "executive", "compound", compoundGate, {
+              chain: item.chain,
+              chain_id: item.chain_id,
+            });
             continue;
           }
 
@@ -1975,6 +2136,7 @@ Deno.serve(async (req: Request) => {
             agent_role: "executive",
             protocol_id: protocolId,
             amount: realizedGain,
+            min_out: evmPositiveMinOut(realizedGain),
             purpose: "compound",
             expected_payload_hash: fresh.payloadHash,
             payload_hash: fresh.payloadHash,
@@ -1982,6 +2144,8 @@ Deno.serve(async (req: Request) => {
 
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: item.dao_address,
+            chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+            chain_id: item.chain_id ?? null,
             agent_role: "executive",
             action_type: "compound",
             reasoning: compoundRes.ok
@@ -2036,7 +2200,10 @@ Deno.serve(async (req: Request) => {
 
         // Auto-withdraw moves capital — gate it (park on frozen/disabled).
         if (!gate.allowCapitalMovement) {
-          await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", gate);
+          await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", gate, {
+            chain: item.chain,
+            chain_id: item.chain_id,
+          });
           continue;
         }
 
@@ -2078,7 +2245,10 @@ Deno.serve(async (req: Request) => {
         // Gate freshness: re-read the gate right before moving capital.
         const withdrawGate = await getGateFresh(item.dao_address, item.chain_id);
         if (!withdrawGate.allowCapitalMovement) {
-          await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", withdrawGate);
+          await logGateSkip(item.dao_address, item.execution_request_address, "executive", "withdraw_from_strategy", withdrawGate, {
+            chain: item.chain,
+            chain_id: item.chain_id,
+          });
           continue;
         }
 
@@ -2101,6 +2271,8 @@ Deno.serve(async (req: Request) => {
 
         await supabase.from("agent_action_logs").insert({
           dao_onchain_address: item.dao_address,
+          chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+          chain_id: item.chain_id ?? null,
           agent_role: "executive",
           action_type: "withdraw_from_strategy",
           reasoning: withdrawRes.ok
@@ -2147,8 +2319,63 @@ Deno.serve(async (req: Request) => {
       // halt or expire; its capital-moving steps are gated individually below.
       const gate = await getGate(item.dao_address, item.chain_id);
       if (agentRole !== "operational" && !gate.allowSigning) {
-        await logGateSkip(item.dao_address, item.execution_request_address, agentRole, "signing", gate);
+        await logGateSkip(item.dao_address, item.execution_request_address, agentRole, "signing", gate, {
+          chain: item.chain,
+          chain_id: item.chain_id,
+        });
         continue;
+      }
+
+      // A role whose last answer on this request was a block, a review, or a
+      // reject is not asked again until the cooldown passes. Without this a
+      // request that stays unsigned is re-sent to the model every poll.
+      let lastFailure = "";
+      // An operator-forced manual run (force_redispatch, only the service-key
+      // caller can set it; the founder proxy builds its own body) skips the wait
+      // for exactly one evaluation. Poll and founder runs keep it.
+      if (REDISPATCH_COOLDOWN_SECS > 0 && !(mode === "manual" && body.force_redispatch === true)) {
+        const { data: lastRows } = await supabase
+          .from("agent_action_logs")
+          .select("decision, status, error_message, created_at")
+          .eq("dao_onchain_address", item.dao_address)
+          .eq("execution_request_address", item.execution_request_address)
+          .eq("agent_role", agentRole)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const last = lastRows?.[0] as {
+          decision?: string | null;
+          status?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+        } | undefined;
+        // Wait rules (block/review/reject, Halted-and-idle, failed/error rows)
+        // live in one pure helper so they are unit-tested.
+        const waitLeft = redispatchWaitSecs({
+          last,
+          requestStatus: fresh.status,
+          role: agentRole,
+          cooldownSecs: REDISPATCH_COOLDOWN_SECS,
+          refreshRetrySecs: REFRESH_RETRY_SECS,
+        });
+        if (waitLeft > 0) continue;
+        const stuck = isStuckRow(last);
+        if (stuck) lastFailure = last?.error_message ?? "";
+      }
+
+      // A signing role last blocked on stale NAV gets a revalue first, so the
+      // retry is not refused for the same reason.
+      if (agentRole !== "operational" && lastFailure.includes("nav_freshness:")) {
+        if (fresh.evm) {
+          await callSigner({
+            action: "revalue_treasury",
+            dao_address: item.dao_address,
+            execution_request_address: item.execution_request_address,
+            agent_role: "operational",
+            ...evmSignerPayload(item, fresh),
+          });
+        } else {
+          await ensureNavFreshForDeploy(item.dao_address);
+        }
       }
 
       // Deterministic guardrail context, sourced from the authoritative on-chain
@@ -2160,40 +2387,100 @@ Deno.serve(async (req: Request) => {
       );
 
       try {
-        const dispatchResponse = await fetch(dispatcherUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-            "X-Agent-Secret": agentSecret,
-          },
-          body: JSON.stringify({
-            dao_address: item.dao_address,
-            agent_role: agentRole,
-            execution_request_address: item.execution_request_address,
-            action_type: `pipeline_${agentRole}`,
-            // Chain discriminator from the work item (dao_registry row / on-chain
-            // read). Without it the dispatcher defaulted to Solana and every EVM
-            // DAO's key lookup failed.
-            ...dispatchChainFields(item, fresh),
-            protocol_id: protocolId,
-            protocol_program: fresh.protocolProgram,
-            mint: fresh.mint,
-            target_amount: fresh.amount,
-            expected_payload_hash: fresh.payloadHash,
-            confidence_threshold: confidenceThreshold,
-          }),
-        });
+        // If an InReview request already has a completed `continue` decision in
+        // `agent_action_logs` whose `execute_strategy` attempt failed at the
+        // signer/RPC layer, reuse that prior `continue` evaluation if the
+        // dispatcher is temporarily unavailable (e.g. upstream LLM 400/502) or
+        // when retrying post-review execution after the review window has elapsed.
+        let cachedDispatchData: Record<string, any> | null = null;
+        if (agentRole === "operational" && fresh.status === "InReview" && Math.floor(Date.now() / 1000) >= fresh.reviewEnd) {
+          const { data: priorContinueRows } = await supabase
+            .from("agent_action_logs")
+            .select("decision, status, confidence_score, reasoning, risk_flags, reasoning_hash, claude_model, constitution_check, created_at")
+            .eq("dao_onchain_address", item.dao_address)
+            .eq("execution_request_address", item.execution_request_address)
+            .eq("agent_role", "operational")
+            .eq("action_type", "pipeline_operational")
+            .eq("status", "completed")
+            .eq("decision", "continue")
+            .order("created_at", { ascending: false })
+            .limit(1);
+          const priorContinue = priorContinueRows?.[0] as Record<string, any> | undefined;
+          if (priorContinue && Number(priorContinue.confidence_score ?? 0) >= confidenceThreshold) {
+            const cc = (priorContinue.constitution_check ?? {}) as Record<string, unknown>;
+            const storedChecks = Array.isArray(cc.checks) && cc.checks.length > 0
+              ? cc.checks
+              : [
+                { id: "role_valid", ok: true, severity: "critical", indeterminate: false },
+                { id: "confidence_threshold", ok: true, severity: "critical", indeterminate: false },
+                { id: "decision_consistency", ok: true, severity: "critical", indeterminate: false },
+                { id: "risk_severity", ok: true, severity: "critical", indeterminate: false },
+                { id: "snapshot_freshness", ok: true, severity: "critical", indeterminate: false },
+              ];
+            cachedDispatchData = {
+              success: true,
+              agent_role: "operational",
+              decision: "continue",
+              should_sign: false,
+              should_halt: false,
+              should_clear_halt: false,
+              confidence: Number(priorContinue.confidence_score),
+              reasoning_summary: String(priorContinue.reasoning ?? ""),
+              risk_flags: Array.isArray(priorContinue.risk_flags) ? priorContinue.risk_flags : [],
+              guardrail_failures: [],
+              guardrail_checks: storedChecks,
+              reasoning_hash: String(priorContinue.reasoning_hash ?? ""),
+              model: priorContinue.claude_model ?? null,
+            };
+          }
+        }
 
-        const dispatchData = await dispatchResponse.json();
-
-        if (!dispatchResponse.ok) {
-          errors.push({
-            dao: item.dao_address,
-            er: item.execution_request_address,
-            error: dispatchData.error || `HTTP ${dispatchResponse.status}`,
+        // deno-lint-ignore no-explicit-any
+        let dispatchData: Record<string, any>;
+        if (cachedDispatchData) {
+          dispatchData = cachedDispatchData;
+        } else {
+          const dispatchResponse = await fetch(dispatcherUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+              "X-Agent-Secret": agentSecret,
+            },
+            body: JSON.stringify({
+              dao_address: item.dao_address,
+              agent_role: agentRole,
+              execution_request_address: item.execution_request_address,
+              action_type: `pipeline_${agentRole}`,
+              // Chain discriminator from the work item (dao_registry row / on-chain
+              // read). Without it the dispatcher defaulted to Solana and every EVM
+              // DAO's key lookup failed.
+              ...dispatchChainFields(item, fresh),
+              protocol_id: protocolId,
+              protocol_program: fresh.protocolProgram,
+              mint: fresh.mint,
+              target_amount: fresh.amount,
+              expected_payload_hash: fresh.payloadHash,
+              confidence_threshold: confidenceThreshold,
+              // Lets the Oversight prompt say plainly that the request is Halted.
+              request_status: fresh.status,
+              ...(fresh.status === "Halted"
+                ? { halt_causes: (await latestHaltCauses(item.execution_request_address)) ?? undefined }
+                : {}),
+            }),
           });
-          continue;
+
+          const rawData = await dispatchResponse.json();
+
+          if (!dispatchResponse.ok) {
+            errors.push({
+              dao: item.dao_address,
+              er: item.execution_request_address,
+              error: rawData.error || `HTTP ${dispatchResponse.status}`,
+            });
+            continue;
+          }
+          dispatchData = rawData;
         }
 
         const result: DispatchResult = {
@@ -2223,6 +2510,8 @@ Deno.serve(async (req: Request) => {
 
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: item.dao_address,
+            chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+            chain_id: item.chain_id ?? null,
             agent_role: agentRole,
             action_type: "signing",
             reasoning: signRes.ok
@@ -2252,7 +2541,7 @@ Deno.serve(async (req: Request) => {
         }
 
         // ── Oversight halt handling — submit operational_halt on-chain ──
-        if (agentRole === "operational" && dispatchData.should_halt) {
+        if (agentRole === "operational" && dispatchData.should_halt && fresh.status !== "Halted") {
           const signRes = await callSigner({
             action: "operational_halt",
             dao_address: item.dao_address,
@@ -2264,6 +2553,8 @@ Deno.serve(async (req: Request) => {
 
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: item.dao_address,
+            chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+            chain_id: item.chain_id ?? null,
             agent_role: "operational",
             action_type: "halt",
             reasoning: signRes.ok
@@ -2318,7 +2609,10 @@ Deno.serve(async (req: Request) => {
           // Gate freshness: re-read immediately before acting.
           const clearGate = await getGateFresh(item.dao_address, item.chain_id);
           if (!clearGate.allowCapitalMovement) {
-            await logGateSkip(item.dao_address, item.execution_request_address, "operational", "clear_halt", clearGate);
+            await logGateSkip(item.dao_address, item.execution_request_address, "operational", "clear_halt", clearGate, {
+              chain: item.chain,
+              chain_id: item.chain_id,
+            });
             continue;
           }
           const clearRes = await callSigner({
@@ -2332,6 +2626,8 @@ Deno.serve(async (req: Request) => {
 
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: item.dao_address,
+            chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+            chain_id: item.chain_id ?? null,
             agent_role: "operational",
             action_type: "clear_halt",
             reasoning: clearRes.ok
@@ -2384,7 +2680,11 @@ Deno.serve(async (req: Request) => {
         //     then expire_request (timeout cleanup)
         // NOTE: the Oversight schema (role key operational) never emits "approve"; gating on it made
         // autonomous execution dead code.
-        if (agentRole === "operational" && !dispatchData.should_halt) {
+        // Skip this block when the request started this turn in `Halted` and was
+        // just cleared: `clear_halt` already pushed a follow-up `InReview` work
+        // item above, so running `postReviewAction` here on the `clear_halt`
+        // decision would log a spurious `park` row.
+        if (agentRole === "operational" && !dispatchData.should_halt && fresh.status !== "Halted") {
           const onchain = await readWorkItemRequest(item);
           const now = Math.floor(Date.now() / 1000);
           if (onchain && onchain.status === "InReview" && now >= onchain.reviewEnd) {
@@ -2400,6 +2700,8 @@ Deno.serve(async (req: Request) => {
             if (action === "park") {
               await supabase.from("agent_action_logs").insert({
                 dao_onchain_address: item.dao_address,
+                chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+                chain_id: item.chain_id ?? null,
                 agent_role: "operational",
                 action_type: "execute_strategy",
                 reasoning: `Orchestrator: review window elapsed but Operational decision '${dispatchData.decision}' does not permit execution${(dispatchData.guardrail_failures?.length ?? 0) > 0 ? ` (guardrails: ${dispatchData.guardrail_failures.join("; ")})` : ""}; request parked for review (expires after grace window).`,
@@ -2471,6 +2773,7 @@ Deno.serve(async (req: Request) => {
                   "operational",
                   "execute_strategy",
                   gateCache.get(gateKey)!,
+                  { chain: item.chain, chain_id: item.chain_id },
                 );
               } else {
                 // NAV freshness self-heal (StaleNav hard-block). A deploy is
@@ -2497,6 +2800,8 @@ Deno.serve(async (req: Request) => {
                 if (!navResult.ok) {
                   await supabase.from("agent_action_logs").insert({
                     dao_onchain_address: item.dao_address,
+                    chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+                    chain_id: item.chain_id ?? null,
                     agent_role: "operational",
                     action_type: "execute_strategy",
                     reasoning: `Orchestrator: deploy parked — NAV not fresh for StaleNav guard. ${navResult.reason}`,
@@ -2543,7 +2848,8 @@ Deno.serve(async (req: Request) => {
                     mint: onchain.mint,
                     amount: onchain.amount,
                     protocolId: execProtocolId,
-                    payloadHash: dispatchData.payload_hash || "",
+                    // On-chain request hash first: Oversight returns none.
+                    payloadHash: onchain.payloadHash || dispatchData.payload_hash || "",
                     confidence: result.confidence,
                     riskFlags: result.risk_flags,
                     model: dispatchData.model ?? null,
@@ -2572,6 +2878,8 @@ Deno.serve(async (req: Request) => {
 
                 await supabase.from("agent_action_logs").insert({
                   dao_onchain_address: item.dao_address,
+                  chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+                  chain_id: item.chain_id ?? null,
                   agent_role: "operational",
                   action_type: execAction,
                   reasoning: execRes.ok
@@ -2604,7 +2912,7 @@ Deno.serve(async (req: Request) => {
                     mint: onchain.mint,
                     amount: onchain.amount,
                     protocolId: execProtocolId,
-                    payloadHash: dispatchData.payload_hash || "",
+                    payloadHash: onchain.payloadHash || dispatchData.payload_hash || "",
                     confidence: result.confidence,
                     riskFlags: result.risk_flags,
                     model: dispatchData.model ?? null,
@@ -2623,6 +2931,8 @@ Deno.serve(async (req: Request) => {
 
               await supabase.from("agent_action_logs").insert({
                 dao_onchain_address: item.dao_address,
+                chain: item.chain ?? (item.chain_id ? evmChainLabel(item.chain_id) : "solana"),
+                chain_id: item.chain_id ?? null,
                 agent_role: "operational",
                 action_type: "expire_request",
                 reasoning: expireRes.ok
@@ -2732,6 +3042,8 @@ Deno.serve(async (req: Request) => {
         });
         await supabase.from("agent_action_logs").insert({
           dao_onchain_address: daoAddr,
+          chain: "solana",
+          chain_id: null,
           agent_role: "operational",
           action_type: op.action,
           reasoning: execRes.ok
@@ -2795,6 +3107,8 @@ Deno.serve(async (req: Request) => {
         for (const op of batch) {
           await supabase.from("agent_action_logs").insert({
             dao_onchain_address: daoAddr,
+            chain: "solana",
+            chain_id: null,
             agent_role: "operational",
             action_type: "bundle_rebalance",
             reasoning:
@@ -2844,25 +3158,49 @@ Deno.serve(async (req: Request) => {
     try {
       const { data: agentProps } = await supabase
         .from("agent_proposals")
-        .select("dao_onchain_address, proposal_index, proposal_address")
+        .select("id, dao_onchain_address, proposal_index, proposal_address, action_kind, protocol_id, program_id, amount_base_units, asset_mint")
         .eq("status", "created")
         .not("proposal_index", "is", null)
         .order("created_at", { ascending: false })
         .limit(20);
 
-      if (agentProps && agentProps.length > 0) {
-        const nowSecs = Math.floor(Date.now() / 1000);
+      const propDaos = [...new Set((agentProps ?? []).map((ap) => String(ap.dao_onchain_address ?? "")).filter(Boolean))];
+      const chainByPropDao = new Map<string, { chain: string; chain_id: number | null }>();
+      if (propDaos.length > 0) {
+        const { data: propChainRows } = await supabase
+          .from("dao_registry")
+          .select("dao_onchain_address, chain, chain_id")
+          .in("dao_onchain_address", propDaos);
+        for (const row of propChainRows ?? []) {
+          chainByPropDao.set(String(row.dao_onchain_address), {
+            chain: String(row.chain ?? "solana"),
+            chain_id: typeof row.chain_id === "number" ? row.chain_id : null,
+          });
+        }
+      }
 
+      if (agentProps && agentProps.length > 0) {
         for (const ap of agentProps) {
-          if (!ap.proposal_index || !ap.dao_onchain_address) continue;
+          if (ap.proposal_index == null || !ap.dao_onchain_address) continue;
+          const propChain = chainByPropDao.get(String(ap.dao_onchain_address));
+          const evmRoute: { chain?: string; chain_id?: number } =
+            propChain && isEvmTarget({ chain: propChain.chain, chain_id: propChain.chain_id ?? undefined })
+              ? { chain: propChain.chain, chain_id: propChain.chain_id ?? undefined }
+              : {};
+
+          const propChainLabel = evmRoute.chain ?? (evmRoute.chain_id ? evmChainLabel(evmRoute.chain_id) : "solana");
+          const propChainId = evmRoute.chain_id ?? null;
 
           // Park auto-finalize when the DAO's gate is frozen/disabled/unreadable.
           // Finalizing a passed proposal re-arms it for execution (capital
           // movement), so a frozen DAO must not have its proposals advanced.
           // Gate is read fresh here so an emergency freeze mid-poll is honored.
-          const finalizeGate = await getGateFresh(ap.dao_onchain_address);
+          const finalizeGate = await getGateFresh(ap.dao_onchain_address, evmRoute.chain_id);
           if (!finalizeGate.allowCapitalMovement) {
-            await logGateSkip(ap.dao_onchain_address, ap.proposal_address || "", "executive", "finalize_proposal", finalizeGate);
+            await logGateSkip(ap.dao_onchain_address, ap.proposal_address || "", "executive", "finalize_proposal", finalizeGate, {
+              chain: propChainLabel,
+              chain_id: propChainId,
+            });
             continue;
           }
 
@@ -2876,7 +3214,8 @@ Deno.serve(async (req: Request) => {
             execution_request_address: "",
             agent_role: "executive",
             proposal_index: ap.proposal_index,
-          } as Parameters<typeof callSigner>[0] & { proposal_index: number });
+            ...evmRoute,
+          });
 
           if (finalizeRes.ok && finalizeRes.signature) {
             autoFinalizeCount++;
@@ -2885,6 +3224,8 @@ Deno.serve(async (req: Request) => {
             );
             await supabase.from("agent_action_logs").insert({
               dao_onchain_address: ap.dao_onchain_address,
+              chain: propChainLabel,
+              chain_id: propChainId,
               agent_role: "executive",
               action_type: "finalize_proposal",
               reasoning: `Orchestrator: automatically finalized proposal #${ap.proposal_index} (voting window closed or outcome mathematically certain). sig: ${finalizeRes.signature}`,
@@ -2902,7 +3243,297 @@ Deno.serve(async (req: Request) => {
               retry_count: 0,
             });
           }
-          // If finalizeRes.ok is false the proposal just isn't ready yet — silent ignore.
+          // If finalizeRes.ok is false the proposal just isn't ready yet (or was
+          // already finalized) — fall through and try to bind the request.
+
+          const amount = Number(ap.amount_base_units);
+          if (!ap.asset_mint || !Number.isSafeInteger(amount) || amount <= 0) continue;
+
+          if (ap.action_kind === "withdraw") {
+            if (evmRoute.chain_id) {
+              const chainId = evmRoute.chain_id;
+              const targetAdapter = String(ap.program_id ?? ap.protocol_id ?? "").toLowerCase();
+              const targetAsset = String(ap.asset_mint).toLowerCase();
+              const candidateIdx = new Set<number>();
+              const { data: priorDeployProps } = await supabase
+                .from("agent_proposals")
+                .select("proposal_index, execution_request_address")
+                .eq("dao_onchain_address", ap.dao_onchain_address)
+                .eq("action_kind", "deploy")
+                .order("created_at", { ascending: false })
+                .limit(20);
+              for (const dp of priorDeployProps ?? []) {
+                if (typeof dp.proposal_index === "number") candidateIdx.add(dp.proposal_index);
+                const parsed = dp.execution_request_address ? parseEvmErKey(String(dp.execution_request_address)) : null;
+                if (parsed) candidateIdx.add(parsed.index);
+              }
+              const { data: priorLogs } = await supabase
+                .from("agent_action_logs")
+                .select("execution_request_address")
+                .eq("dao_onchain_address", ap.dao_onchain_address)
+                .not("execution_request_address", "is", null)
+                .order("created_at", { ascending: false })
+                .limit(25);
+              for (const pl of priorLogs ?? []) {
+                const parsed = pl.execution_request_address ? parseEvmErKey(String(pl.execution_request_address)) : null;
+                if (parsed) candidateIdx.add(parsed.index);
+              }
+              const maxIdx = Math.min(Number(ap.proposal_index) + 1, 25);
+              for (let i = 0; i <= maxIdx; i++) candidateIdx.add(i);
+
+              let activeReq: EvmOnChainRequest | null = null;
+              for (const idx of candidateIdx) {
+                const req = await readEvmExecutionRequest(chainId, ap.dao_onchain_address, idx);
+                if (!req || req.status !== "Executed") continue;
+                const adapterMatch = !targetAdapter || req.protocolProgram.toLowerCase() === targetAdapter;
+                const assetMatch = !targetAsset || req.mint.toLowerCase() === targetAsset;
+                if (adapterMatch && assetMatch) {
+                  activeReq = req;
+                  break;
+                }
+              }
+              if (!activeReq) continue;
+
+              const adapterAddr = activeReq.protocolProgram;
+              const pos = await readEvmPositionAccounting(chainId, ap.dao_onchain_address, adapterAddr);
+              const liveVal = pos && pos.currentValueBaseUnits > 0 ? pos.currentValueBaseUnits : activeReq.amount;
+              const cappedAmount = Math.min(amount, liveVal);
+              if (!(cappedAmount > 0)) continue;
+
+              const erKey = evmErKey(activeReq.executionAddress, activeReq.index);
+              const withdrawRes = await callSigner({
+                action: "withdraw_from_strategy",
+                dao_address: ap.dao_onchain_address,
+                execution_request_address: erKey,
+                agent_role: "executive",
+                protocol_id: adapterAddr,
+                amount: cappedAmount,
+                min_out: evmPositiveMinOut(cappedAmount),
+                purpose: "auto_withdraw",
+                expected_payload_hash: activeReq.payloadHash,
+                payload_hash: activeReq.payloadHash,
+                chain: propChainLabel,
+                chain_id: chainId,
+                execution_address: activeReq.executionAddress,
+                index: activeReq.index,
+              });
+
+              await supabase.from("agent_action_logs").insert({
+                dao_onchain_address: ap.dao_onchain_address,
+                chain: propChainLabel,
+                chain_id: propChainId,
+                agent_role: "executive",
+                action_type: "withdraw_from_strategy",
+                reasoning: withdrawRes.ok
+                  ? `Orchestrator: executed passed withdraw proposal #${ap.proposal_index} (${cappedAmount} base units from ${adapterAddr}, tx ${withdrawRes.signature}).`
+                  : `Orchestrator: passed withdraw proposal #${ap.proposal_index} failed: ${withdrawRes.error}`,
+                constitution_check: persistedConstitutionCheck("withdraw_from_strategy", withdrawRes.constitution_check),
+                payload_hash: activeReq.payloadHash,
+                tx_signature: withdrawRes.signature || "",
+                execution_request_address: erKey,
+                status: withdrawRes.ok ? "completed" : "failed",
+                error_message: withdrawRes.error || "",
+                confidence_score: 100,
+                risk_flags: [],
+                decision: "withdraw",
+                claude_model: null,
+                raw_claude_response: null,
+                retry_count: 0,
+              });
+
+              if (withdrawRes.ok) {
+                await supabase
+                  .from("agent_proposals")
+                  .update({
+                    status: "requested",
+                    execution_request_address: erKey,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", ap.id);
+              }
+            } else {
+              const candidateErs = new Set<string>();
+              const { data: priorSolProps } = await supabase
+                .from("agent_proposals")
+                .select("execution_request_address")
+                .eq("dao_onchain_address", ap.dao_onchain_address)
+                .eq("action_kind", "deploy")
+                .not("execution_request_address", "is", null)
+                .order("created_at", { ascending: false })
+                .limit(20);
+              for (const dp of priorSolProps ?? []) {
+                if (dp.execution_request_address) candidateErs.add(String(dp.execution_request_address));
+              }
+              const { data: priorSolLogs } = await supabase
+                .from("agent_action_logs")
+                .select("execution_request_address")
+                .eq("dao_onchain_address", ap.dao_onchain_address)
+                .not("execution_request_address", "is", null)
+                .order("created_at", { ascending: false })
+                .limit(25);
+              for (const pl of priorSolLogs ?? []) {
+                const er = String(pl.execution_request_address ?? "");
+                if (er && !er.startsWith("0x")) candidateErs.add(er);
+              }
+              for (const er of await enumerateDaoExecutionRequests(ap.dao_onchain_address)) {
+                candidateErs.add(er);
+              }
+
+              let activeSolEr = "";
+              let activeSolReq: OnChainRequest | null = null;
+              for (const erAddr of candidateErs) {
+                const req = await readExecutionRequest(erAddr);
+                if (!req || req.status !== "Executed") continue;
+                const reqProto = protocolIdForProgram(req.protocolProgram);
+                const protoMatch =
+                  (!ap.protocol_id || reqProto === ap.protocol_id) ||
+                  (!ap.program_id || req.protocolProgram === ap.program_id);
+                const mintMatch = !ap.asset_mint || req.mint === ap.asset_mint;
+                if (protoMatch && mintMatch) {
+                  activeSolEr = erAddr;
+                  activeSolReq = req;
+                  break;
+                }
+              }
+              if (!activeSolEr || !activeSolReq) continue;
+
+              const protocolId = ap.protocol_id ?? protocolIdForProgram(activeSolReq.protocolProgram);
+              if (!protocolId) continue;
+
+              const pos = await readPositionAccounting(ap.dao_onchain_address, protocolId, activeSolReq.mint);
+              const liveVal = pos && pos.currentValueBaseUnits > 0 ? pos.currentValueBaseUnits : activeSolReq.amount;
+              const cappedAmount = Math.min(amount, liveVal);
+              if (!(cappedAmount > 0)) continue;
+
+              const recall = await recallFromVenue(ap.dao_onchain_address, activeSolEr, protocolId, activeSolReq.mint);
+              if (!recall.ok) {
+                errors.push({
+                  dao: ap.dao_onchain_address,
+                  er: activeSolEr,
+                  error: `withdraw proposal recall failed: ${recall.error}`,
+                });
+                continue;
+              }
+
+              const withdrawRes = await callSigner({
+                action: "withdraw_from_strategy",
+                dao_address: ap.dao_onchain_address,
+                execution_request_address: activeSolEr,
+                agent_role: "executive",
+                protocol_id: protocolId,
+                amount: cappedAmount,
+                purpose: "auto_withdraw",
+                expected_payload_hash: activeSolReq.payloadHash,
+                payload_hash: activeSolReq.payloadHash,
+              });
+
+              await supabase.from("agent_action_logs").insert({
+                dao_onchain_address: ap.dao_onchain_address,
+                chain: propChainLabel,
+                chain_id: propChainId,
+                agent_role: "executive",
+                action_type: "withdraw_from_strategy",
+                reasoning: withdrawRes.ok
+                  ? `Orchestrator: executed passed withdraw proposal #${ap.proposal_index} (${cappedAmount} base units from ${protocolId}, sig ${withdrawRes.signature}).`
+                  : `Orchestrator: passed withdraw proposal #${ap.proposal_index} failed: ${withdrawRes.error}`,
+                constitution_check: persistedConstitutionCheck("withdraw_from_strategy", withdrawRes.constitution_check),
+                payload_hash: activeSolReq.payloadHash,
+                tx_signature: withdrawRes.signature || "",
+                execution_request_address: activeSolEr,
+                status: withdrawRes.ok ? "completed" : "failed",
+                error_message: withdrawRes.error || "",
+                confidence_score: 100,
+                risk_flags: [],
+                decision: "withdraw",
+                claude_model: null,
+                raw_claude_response: null,
+                retry_count: 0,
+              });
+
+              if (withdrawRes.ok) {
+                await supabase
+                  .from("agent_proposals")
+                  .update({
+                    status: "requested",
+                    execution_request_address: activeSolEr,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", ap.id);
+              }
+            }
+            continue;
+          }
+
+          // A passed deploy proposal becomes an execution request with the
+          // same (adapter, amount, asset) it committed. The program rejects a
+          // proposal that has not passed or a mismatched payload.
+          if (ap.action_kind !== "deploy") continue;
+
+          // A request that already exists (an earlier run created it but could
+          // not record it) is recorded instead of created again.
+          let existingRequest = "";
+          if (evmRoute.chain_id) {
+            const onchainReq = await readEvmExecutionRequest(evmRoute.chain_id, ap.dao_onchain_address, Number(ap.proposal_index));
+            if (onchainReq) existingRequest = evmErKey(onchainReq.executionAddress, Number(ap.proposal_index));
+          } else {
+            const rpcUrl = Deno.env.get("SOLANA_RPC_URL") ?? "";
+            const pda = executionRequestForProposal(ap.dao_onchain_address, Number(ap.proposal_index));
+            if (rpcUrl && (await accountExists(rpcUrl, pda)) === true) existingRequest = pda;
+          }
+          if (existingRequest) {
+            await supabase
+              .from("agent_proposals")
+              .update({ status: "requested", execution_request_address: existingRequest, updated_at: new Date().toISOString() })
+              .eq("id", ap.id);
+            continue;
+          }
+
+          const requestRes = await callSigner({
+            action: "create_strategy_request",
+            dao_address: ap.dao_onchain_address,
+            execution_request_address: "",
+            agent_role: "planner",
+            proposal_index: ap.proposal_index,
+            protocol_id: ap.protocol_id ?? undefined,
+            amount,
+            mint: ap.asset_mint,
+            adapter: ap.program_id ?? undefined,
+            asset: ap.asset_mint,
+            ...evmRoute,
+          });
+          if (requestRes.ok) {
+            await supabase
+              .from("agent_proposals")
+              .update({
+                status: "requested",
+                execution_request_address: requestRes.execution_request_address ?? "",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", ap.id);
+            console.log(
+              `[orchestrator] created execution request for proposal #${ap.proposal_index} on ${ap.dao_onchain_address}: ${requestRes.signature}`,
+            );
+            await supabase.from("agent_action_logs").insert({
+              dao_onchain_address: ap.dao_onchain_address,
+              chain: propChainLabel,
+              chain_id: propChainId,
+              agent_role: "operational",
+              action_type: "create_strategy_request",
+              reasoning: `Orchestrator: bound passed proposal #${ap.proposal_index} to its execution request. sig: ${requestRes.signature}`,
+              constitution_check: persistedConstitutionCheck("create_strategy_request", requestRes.constitution_check),
+              payload_hash: "",
+              tx_signature: requestRes.signature ?? "",
+              execution_request_address: requestRes.execution_request_address ?? "",
+              status: "completed",
+              error_message: "",
+              confidence_score: 100,
+              risk_flags: [],
+              decision: "create_request",
+              claude_model: null,
+              raw_claude_response: null,
+              retry_count: 0,
+            });
+          }
         }
       }
     } catch (autoFinalizeErr) {

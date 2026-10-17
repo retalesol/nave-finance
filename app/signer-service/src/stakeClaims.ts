@@ -26,14 +26,16 @@
 //     per-chain count derives the nonce, and rows are inserted BEFORE the
 //     mint so every attempt permanently consumes its nonce.
 //
-// Concurrency: each claim runs under the cross-replica `try_acquire_worker_lock`
-// lease keyed per (chain, staker), so two replicas can never double-pay. As a
-// second, lease-independent guard the ledger is settled BEFORE funds move
-// (settle → wrap → mint) and refunded only when the payout provably failed —
-// a claim that outlives its lease still can't be paid twice.
+// Concurrency: each claim takes a per-staker lease AND a global
+// `stakeClaim:reserve` lease. The reserve balance is reduced by every
+// in-flight claim that has not yet wrapped, so two stakers cannot each mint
+// the full reserve. Funds move wrap-then-mint: NAVE reaches custody before
+// wNAVE is minted, and the mint is refused unless outstanding supply stays
+// within custody. The ledger is settled before funds move and refunded only
+// when the wrap provably did not land.
 
 import { createClient } from '@supabase/supabase-js';
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, TransactionInstruction } from '@solana/web3.js';
 import { createTransferInstruction } from '@solana/spl-token';
 import {
   createPublicClient,
@@ -46,7 +48,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { deriveCustody, NAVE_BRIDGE_LOCKBOX_ABI } from './bridgePrograms.js';
-import { evmChainNetwork, resolveMintLockbox } from './bridgeRelayer.js';
+import { assertWnaveMintWithinCustody, evmChainNetwork, resolveMintLockbox } from './bridgeRelayer.js';
 import { confirmSolanaTransactionRobust, parseSolanaKeypair } from './solanaTxUtils.js';
 import {
   decodeStakePoolAccount,
@@ -421,20 +423,72 @@ export async function nextClaimNonce(
   return BigInt((count ?? 0) + 1);
 }
 
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+const RESERVE_LOCK_KEY = 'stakeClaim:reserve';
+
+function wrapMemo(claimId: string): string {
+  return `stake-claim-wrap:${claimId}`;
+}
+
+/** A previous confirm can time out after the transfer landed. The memo makes the retry a no-op. */
+async function findExistingWrap(connection: Connection, reserve: PublicKey, memo: string): Promise<string | null> {
+  const sigs = await connection.getSignaturesForAddress(reserve, { limit: 25 });
+  for (const entry of sigs) {
+    if (entry.err) continue;
+    const tx = await connection.getTransaction(entry.signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    const logs = tx?.meta?.logMessages ?? [];
+    if (logs.some((line) => line.includes(memo))) return entry.signature;
+  }
+  return null;
+}
+
+async function unwrappedReservedRaw(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  excludeId: string,
+): Promise<bigint> {
+  const { data, error } = await supabase
+    .from('bridge_stake_events')
+    .select('id, amount_raw')
+    .eq('kind', 'reward_claim')
+    .is('wrap_tx', null)
+    .in('status', ['submitted', 'delivering', 'wrapping']);
+  if (error) throw new Error(`reserve reservation query failed: ${error.message}`);
+  let sum = 0n;
+  for (const row of (data ?? []) as Array<{ id: string; amount_raw: string }>) {
+    if (String(row.id) === excludeId) continue;
+    sum += BigInt(String(row.amount_raw));
+  }
+  return sum;
+}
+
 async function sendReserveToCustody(
   cfg: StakeClaimConfig,
   connection: Connection,
   relayer: Keypair,
   amountRaw: bigint,
+  claimId: string,
 ): Promise<string> {
   const { TransactionMessage, VersionedTransaction } = await import('@solana/web3.js');
+  const reserve = new PublicKey(cfg.reserveAccount);
+  const memo = wrapMemo(claimId);
+  const existing = await findExistingWrap(connection, reserve, memo);
+  if (existing) return existing;
   const custody = deriveCustody(new PublicKey(cfg.mirror.bridgeProgramId));
-  const ix = createTransferInstruction(new PublicKey(cfg.reserveAccount), custody, relayer.publicKey, amountRaw);
+  const ix = createTransferInstruction(reserve, custody, relayer.publicKey, amountRaw);
+  const memoIx = new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [{ pubkey: relayer.publicKey, isSigner: true, isWritable: false }],
+    data: Buffer.from(memo, 'utf8'),
+  });
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
   const msg = new TransactionMessage({
     payerKey: relayer.publicKey,
     recentBlockhash: blockhash,
-    instructions: [ix],
+    instructions: [ix, memoIx],
   }).compileToV0Message();
   const tx = new VersionedTransaction(msg);
   tx.sign([relayer]);
@@ -444,8 +498,46 @@ async function sendReserveToCustody(
 }
 
 /**
+ * Mint wNAVE for a claim whose reserve has already moved into custody.
+ * Replay-safe on `(claimSrcChainId, nonce)`. `onBroadcast` runs before the
+ * receipt wait so a crash still leaves the hash on the audit row.
+ */
+async function mintClaimWnave(
+  cfg: StakeClaimConfig,
+  chainId: number,
+  staker: `0x${string}`,
+  payout: bigint,
+  nonce: bigint,
+  onBroadcast?: (hash: string) => Promise<void>,
+): Promise<string> {
+  await assertWnaveMintWithinCustody(chainId, payout);
+  const meta = STAKING_EVM_CHAINS[chainId];
+  const lockbox = getAddress(await resolveMintLockbox(chainId));
+  const key = cfg.mirror.evmMinterPrivateKey!.startsWith('0x')
+    ? cfg.mirror.evmMinterPrivateKey!
+    : `0x${cfg.mirror.evmMinterPrivateKey}`;
+  const account = privateKeyToAccount(key as `0x${string}`);
+  const transport = http(evmRpcUrl(chainId));
+  const publicClient = createPublicClient({ chain: meta.chain, transport }) as PublicClient;
+  const wallet = createWalletClient({ account, chain: meta.chain, transport });
+  const mintTx = await wallet.writeContract({
+    address: lockbox,
+    abi: NAVE_BRIDGE_LOCKBOX_ABI,
+    functionName: 'bridgeIn',
+    args: [staker, payout, BigInt(cfg.claimSrcChainId), nonce],
+    chain: meta.chain,
+    account,
+  });
+  if (onBroadcast) await onBroadcast(mintTx);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: mintTx });
+  if (receipt.status !== 'success') throw new Error(`bridgeIn reverted (tx ${mintTx})`);
+  return mintTx;
+}
+
+/**
  * Verify + execute one claim. Caller (index.ts) must hold the per-staker
- * cross-replica lease before invoking.
+ * cross-replica lease before invoking. This function also holds the global
+ * reserve lease for the duration of the payout.
  */
 export async function handleStakeClaim(req: StakeClaimRequest): Promise<StakeClaimResult> {
   const cfg = readStakeClaimConfig();
@@ -488,11 +580,23 @@ export async function handleStakeClaim(req: StakeClaimRequest): Promise<StakeCla
     );
   }
 
-  const reserveRaw = BigInt((await connection.getTokenAccountBalance(new PublicKey(cfg.reserveAccount))).value.amount);
-  if (reserveRaw <= 0n) {
-    return { status: 'reserve_empty', claimableRaw: payout.toString(), reserveRaw: '0' };
+  const reserveLockHolder = `stake-reserve-${process.pid}-${Date.now()}`;
+  const { data: reserveLocked, error: reserveLockErr } = await supabase.rpc('try_acquire_worker_lock', {
+    p_lock_key: RESERVE_LOCK_KEY,
+    p_holder: reserveLockHolder,
+    p_ttl_seconds: 600,
+  });
+  if (reserveLockErr || reserveLocked !== true) {
+    throw new Error('Reward reserve is settling another claim — retry shortly');
   }
-  if (payout > reserveRaw) payout = reserveRaw;
+  try {
+  const reserveRaw = BigInt((await connection.getTokenAccountBalance(new PublicKey(cfg.reserveAccount))).value.amount);
+  const reservedRaw = await unwrappedReservedRaw(supabase, '');
+  const availableRaw = reserveRaw > reservedRaw ? reserveRaw - reservedRaw : 0n;
+  if (availableRaw <= 0n) {
+    return { status: 'reserve_empty', claimableRaw: payout.toString(), reserveRaw: reserveRaw.toString() };
+  }
+  if (payout > availableRaw) payout = availableRaw;
 
   // 1. Audit row FIRST, status 'submitted' — its per-chain count consumes this
   //    nonce forever, and the app polls the row for live phase updates.
@@ -550,120 +654,85 @@ export async function handleStakeClaim(req: StakeClaimRequest): Promise<StakeCla
     throw new Error(`claim ledger settle failed: ${settleErr.message}`);
   }
 
-  // ORDER (audit HIGH): the EVM mint runs FIRST and must be receipt-confirmed
-  // before any Solana reserve→custody move. The previous order (wrap, then
-  // mint) left custody over-collateralized — reserve NAVE stranded in custody
-  // with no wNAVE minted — every time the mint failed. Now:
-  //   3. mint wNAVE to the staker (lockbox bridgeIn, replay key
-  //      claimSrcChainId/nonce) and wait for a successful receipt;
-  //   4. only then wrap: move `payout` NAVE reserve → bridge custody so the
-  //      just-minted wNAVE is custody-backed.
-  // If step 4 fails after step 3 succeeded, the row is left in 'wrapping' with
-  // dest_tx set and wrap_tx null — a PERSISTED two-phase record that
-  // {@link reconcileStakeClaimWraps} completes on the next worker tick /
-  // restart (the wrap is a plain SPL transfer from the relayer's own reserve
-  // and is safe to retry). The user has already been paid, so the ledger is
-  // never refunded in that case.
-  //
-  // Refund is only safe when the mint provably did NOT happen: nothing was
-  // broadcast, or the tx landed and REVERTED. A broadcast with an unknown
-  // outcome (receipt timeout, RPC drop) is NOT refunded — under-crediting is
-  // reconcilable from the audit row; double-paying is not.
-  let mintBroadcast = false;
-  let mintReverted = false;
-  let mintTx: string | undefined;
+  // 3. Move reserve → custody BEFORE minting. A crashed mint leaves NAVE
+  //    over-collateralizing custody, which the reconciler can mint against.
+  //    The reverse order minted wNAVE that was not yet backed.
+  await setPhase({ status: 'wrapping' satisfies StakeClaimPhase });
+  let wrapTx: string;
   try {
-    // 3. Mint wNAVE straight to the staker via whichever lockbox currently
-    //    holds wNAVE.minter() (never a static env address — the v1→v2 rotation
-    //    made that silently wrong).
-    await setPhase({ status: 'delivering' satisfies StakeClaimPhase });
-    const meta = STAKING_EVM_CHAINS[req.chainId];
-    const lockbox = getAddress(await resolveMintLockbox(req.chainId));
-    const key = cfg.mirror.evmMinterPrivateKey!.startsWith('0x')
-      ? cfg.mirror.evmMinterPrivateKey!
-      : `0x${cfg.mirror.evmMinterPrivateKey}`;
-    const account = privateKeyToAccount(key as `0x${string}`);
-    const transport = http(evmRpcUrl(req.chainId));
-    const publicClient = createPublicClient({ chain: meta.chain, transport }) as PublicClient;
-    const wallet = createWalletClient({ account, chain: meta.chain, transport });
-
-    mintTx = await wallet.writeContract({
-      address: lockbox,
-      abi: NAVE_BRIDGE_LOCKBOX_ABI,
-      functionName: 'bridgeIn',
-      args: [staker, payout, BigInt(cfg.claimSrcChainId), nonce],
-      chain: meta.chain,
-      account,
-    });
-    mintBroadcast = true;
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: mintTx as `0x${string}` });
-    if (receipt.status !== 'success') {
-      mintReverted = true;
-      throw new Error(`bridgeIn reverted (tx ${mintTx})`);
-    }
+    wrapTx = await sendReserveToCustody(cfg, connection, relayer, payout, claimId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const refundSafe = !mintBroadcast || mintReverted;
-    let refundNote = '';
-    if (refundSafe) {
-      const { error: refundErr } = await supabase.rpc('settle_evm_reward_claim', {
-        p_chain_id: req.chainId,
-        p_staker: staker.toLowerCase(),
-        p_amount: (-payout).toString(),
-      });
-      refundNote = refundErr ? ` (ledger refund FAILED: ${refundErr.message})` : ' (ledger refunded)';
-      if (refundErr) {
-        // User stays under-credited — the safe direction. Reconcile from this row.
-        console.error(
-          `[stake-claim] ledger refund failed for claim ${claimId} (chain ${req.chainId}, ${staker}, ${payout}): ${refundErr.message}`,
-        );
+    const existing = await findExistingWrap(connection, new PublicKey(cfg.reserveAccount), wrapMemo(claimId)).catch(() => null);
+    if (!existing) {
+      const maybeLanded = /not confirmed/i.test(message);
+      if (!maybeLanded) {
+        const { error: refundErr } = await supabase.rpc('settle_evm_reward_claim', {
+          p_chain_id: req.chainId,
+          p_staker: staker.toLowerCase(),
+          p_amount: (-payout).toString(),
+        });
+        const refundNote = refundErr ? ` (ledger refund FAILED: ${refundErr.message})` : ' (ledger refunded)';
+        await setPhase({ status: 'failed' satisfies StakeClaimPhase, error: `wrap failed: ${message}${refundNote}`.slice(0, 500) });
+      } else {
+        await setPhase({ error: `wrap confirm pending: ${message}`.slice(0, 500) });
       }
-    } else {
-      refundNote = ' (mint outcome unknown — ledger NOT refunded; reconcile manually)';
-      console.error(
-        `[stake-claim] CRITICAL: mint broadcast with unknown outcome for claim ${claimId} (chain ${req.chainId}, ${staker}, ${payout}) — verify on-chain before any manual refund.`,
-      );
+      throw err;
     }
-    // Nothing moved on Solana (the wrap never ran), so custody is untouched.
-    await setPhase({
-      status: 'failed' satisfies StakeClaimPhase,
-      error: `mint failed: ${message}${refundNote}`.slice(0, 500),
-      ...(mintTx ? { dest_tx: mintTx } : {}),
+    wrapTx = existing;
+  }
+  await setPhase({ wrap_tx: wrapTx, error: null });
+
+  // 4. Mint only after custody holds the backing. Persist the hash before the
+  //    receipt wait. A revert refunds nothing on-chain (custody keeps the
+  //    NAVE) and leaves the row for the reconciler to retry the mint; the
+  //    lockbox nonce was not consumed on revert.
+  let mintTx: string | undefined;
+  try {
+    await setPhase({ status: 'delivering' satisfies StakeClaimPhase });
+    mintTx = await mintClaimWnave(cfg, req.chainId, staker, payout, nonce, async (hash) => {
+      await setPhase({ dest_tx: hash });
     });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const reverted = /reverted/i.test(message);
+    await setPhase({
+      status: 'delivering' satisfies StakeClaimPhase,
+      error: `mint pending (wrap ${wrapTx} landed): ${message}`.slice(0, 500),
+      // A revert did not consume the lockbox nonce. Clear the hash so the
+      // reconciler mints again instead of treating the row as paid.
+      dest_tx: reverted ? null : (mintTx ?? null),
+    });
+    if (reverted) {
+      console.error(`[stake-claim] mint reverted after wrap for claim ${claimId}; reconciler will retry`);
+    }
     throw err;
   }
 
-  // 4. Wrap: back the confirmed mint by moving NAVE reserve → bridge custody.
-  //    Persist the mint FIRST so a crash between here and the wrap leaves a
-  //    reconcilable two-phase record ('wrapping' + dest_tx, no wrap_tx).
-  await setPhase({ status: 'wrapping' satisfies StakeClaimPhase, dest_tx: mintTx! });
-  let wrapTx: string | undefined;
-  try {
-    wrapTx = await sendReserveToCustody(cfg, connection, relayer, payout);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(
-      `[stake-claim] mint ${mintTx} landed but reserve→custody wrap failed for claim ${claimId} ` +
-        `(chain ${req.chainId}, ${staker}, ${payout}); left in 'wrapping' for reconciliation: ${message}`,
-    );
-    // Stay in 'wrapping' (NOT failed): the staker has been paid; only the
-    // custody backing is outstanding and the reconciler retries it.
-    await setPhase({ error: `wrap pending (mint ${mintTx} landed): ${message}`.slice(0, 500) });
-    return { status: 'completed', claimedRaw: payout.toString(), mintTx, claimId };
-  }
-
-  await setPhase({ status: 'completed' satisfies StakeClaimPhase, wrap_tx: wrapTx, error: null });
+  await setPhase({ status: 'completed' satisfies StakeClaimPhase, dest_tx: mintTx, error: null });
   return { status: 'completed', claimedRaw: payout.toString(), mintTx, wrapTx, claimId };
+  } finally {
+    await supabase.rpc('release_worker_lock', { p_lock_key: RESERVE_LOCK_KEY, p_holder: reserveLockHolder });
+  }
+}
+
+async function mintReceiptStatus(chainId: number, hash: string): Promise<'success' | 'reverted' | 'pending'> {
+  const meta = STAKING_EVM_CHAINS[chainId];
+  if (!meta) return 'pending';
+  const publicClient = createPublicClient({ chain: meta.chain, transport: http(evmRpcUrl(chainId)) });
+  try {
+    const receipt = await publicClient.getTransactionReceipt({ hash: hash as `0x${string}` });
+    return receipt.status === 'success' ? 'success' : 'reverted';
+  } catch {
+    return 'pending';
+  }
 }
 
 /**
- * Two-phase reconciliation (worker tick / restart): complete the Solana
- * reserve→custody wrap for reward_claim rows whose EVM mint landed
- * (`dest_tx` set) but whose wrap never did (`status='wrapping'`,
- * `wrap_tx` null). Rows younger than `minAgeMs` are skipped so an in-flight
- * claim on another replica is not raced. The wrap is a plain SPL transfer from
- * the relayer-owned reserve, so retrying it is safe; the amount comes from the
- * persisted audit row (`amount_raw`), never recomputed.
+ * Finish claims that stopped between the reserve transfer and the wNAVE mint.
+ * Rows younger than `minAgeMs` are skipped so an in-flight claim is not raced.
+ * Legacy rows (mint landed, wrap missing) are wrapped and not minted again.
+ * The wrap memo makes a second transfer a no-op.
  */
 export async function reconcileStakeClaimWraps(
   minAgeMs = 5 * 60_000,
@@ -674,11 +743,9 @@ export async function reconcileStakeClaimWraps(
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('bridge_stake_events')
-    .select('id, amount_raw, dest_tx, wrap_tx, updated_at')
+    .select('id, amount_raw, dest_tx, wrap_tx, source_tx, source_chain_id, staker, status, updated_at')
     .eq('kind', 'reward_claim')
-    .eq('status', 'wrapping')
-    .not('dest_tx', 'is', null)
-    .is('wrap_tx', null);
+    .in('status', ['wrapping', 'delivering']);
   if (error) throw new Error(`reconcile query failed: ${error.message}`);
   const cutoff = Date.now() - minAgeMs;
   let reconciled = 0;
@@ -689,20 +756,60 @@ export async function reconcileStakeClaimWraps(
       pending += 1;
       continue;
     }
+    const claimId = String(row.id);
     const amount = BigInt(String(row.amount_raw));
+    const destTx = row.dest_tx == null ? '' : String(row.dest_tx);
+    let alreadyMinted = destTx.length > 0;
+    if (alreadyMinted) {
+      const chainId = Number(row.source_chain_id);
+      const receipt = await mintReceiptStatus(chainId, destTx);
+      if (receipt === 'pending') {
+        pending += 1;
+        continue;
+      }
+      if (receipt === 'reverted') {
+        alreadyMinted = false;
+        await supabase.from('bridge_stake_events').update({ dest_tx: null, updated_at: new Date().toISOString() }).eq('id', claimId);
+      }
+    }
+    let wrapTx = row.wrap_tx == null ? '' : String(row.wrap_tx);
     try {
       const connection = getConnection(cfg);
       const relayer = getRelayer(cfg);
-      const wrapTx = await sendReserveToCustody(cfg, connection, relayer, amount);
+      if (!wrapTx) {
+        wrapTx = await sendReserveToCustody(cfg, connection, relayer, amount, claimId);
+        await supabase
+          .from('bridge_stake_events')
+          .update({ wrap_tx: wrapTx, updated_at: new Date().toISOString() })
+          .eq('id', claimId);
+      }
+      if (alreadyMinted) {
+        await supabase
+          .from('bridge_stake_events')
+          .update({ status: 'completed' satisfies StakeClaimPhase, error: null, updated_at: new Date().toISOString() })
+          .eq('id', claimId);
+        reconciled += 1;
+        continue;
+      }
+      const sourceTx = String(row.source_tx ?? '');
+      const nonce = BigInt(sourceTx.split(':').pop() || '0');
+      const chainId = Number(row.source_chain_id);
+      const staker = getAddress(String(row.staker));
+      const mintTx = await mintClaimWnave(cfg, chainId, staker, amount, nonce, async (hash) => {
+        await supabase
+          .from('bridge_stake_events')
+          .update({ dest_tx: hash, status: 'delivering', updated_at: new Date().toISOString() })
+          .eq('id', claimId);
+      });
       await supabase
         .from('bridge_stake_events')
-        .update({ status: 'completed' satisfies StakeClaimPhase, wrap_tx: wrapTx, error: null, updated_at: new Date().toISOString() })
-        .eq('id', String(row.id));
+        .update({ status: 'completed' satisfies StakeClaimPhase, dest_tx: mintTx, wrap_tx: wrapTx, error: null, updated_at: new Date().toISOString() })
+        .eq('id', claimId);
       reconciled += 1;
-      console.log(`[stake-claim] reconciled wrap for claim ${row.id}: ${wrapTx}`);
+      console.log(`[stake-claim] reconciled claim ${claimId}: wrap ${wrapTx} mint ${mintTx}`);
     } catch (err) {
       pending += 1;
-      console.warn(`[stake-claim] wrap reconciliation for claim ${row.id} failed: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[stake-claim] reconciliation for claim ${claimId} failed: ${err instanceof Error ? err.message : err}`);
     }
   }
   return { reconciled, pending };

@@ -167,10 +167,18 @@ contract NaveGovernor is INaveGovernor, Initializable, UUPSUpgradeable, Reentran
         bool isTokenGov = treasuryContract.governanceType() == uint8(GovernanceType.Token);
         uint256 snapshotSupply;
         if (isTokenGov) {
+            // The proposer does not get to pick a thin registered mint. Weight
+            // is measured against the treasury's designated voting token only.
+            if (p.votingMint != treasuryContract.votingToken()) {
+                revert NaveErrors.VotingMintMismatch();
+            }
             if (!treasuryContract.isTokenRegistered(p.votingMint)) {
                 revert NaveErrors.TokenMintNotRegistered();
             }
             snapshotSupply = IERC20(p.votingMint).totalSupply();
+            // Supply 0 would fall through to the guardian count and let a few
+            // tokens pass a treasury transfer.
+            if (snapshotSupply == 0) revert NaveErrors.ZeroVotingSupply();
         }
 
         index = treasuryContract.nextProposalIndex();
@@ -219,16 +227,21 @@ contract NaveGovernor is INaveGovernor, Initializable, UUPSUpgradeable, Reentran
         _requireActiveVotable(prop);
         if (_voteRecords[index][msg.sender].voted) revert NaveErrors.AlreadyVoted();
 
+        // Weight is tokens actually received, not the requested amount. A
+        // no-op or fee-on-transfer `transferFrom` cannot mint voting power.
+        uint256 beforeBal = IERC20(prop.votingMint).balanceOf(address(this));
         IERC20(prop.votingMint).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(prop.votingMint).balanceOf(address(this)) - beforeBal;
+        if (received == 0) revert NaveErrors.MathOverflow();
         _escrows[index][msg.sender] =
-            VoteEscrow({mint: prop.votingMint, lockedAmount: amount, released: false});
+            VoteEscrow({mint: prop.votingMint, lockedAmount: received, released: false});
         _voteRecords[index][msg.sender] = VoteRecord({
-            voted: true, choice: choice, method: uint8(VoteMethod.Escrow), weight: amount
+            voted: true, choice: choice, method: uint8(VoteMethod.Escrow), weight: received
         });
-        _applyVoteWeight(prop, choice, amount);
+        _applyVoteWeight(prop, choice, received);
 
-        emit VoteEscrowLocked(index, msg.sender, amount);
-        emit VoteCast(index, msg.sender, choice, uint8(VoteMethod.Escrow), amount);
+        emit VoteEscrowLocked(index, msg.sender, received);
+        emit VoteCast(index, msg.sender, choice, uint8(VoteMethod.Escrow), received);
     }
 
     function releaseVoteEscrow(uint64 index) external notPaused nonReentrant {
@@ -265,6 +278,13 @@ contract NaveGovernor is INaveGovernor, Initializable, UUPSUpgradeable, Reentran
 
         uint8 status;
         if (block.timestamp <= prop.votingEnd) {
+            // Token weight can be borrowed and repaid in one transaction.
+            // Early finalization would let that loan create, pass, execute,
+            // and unlock before the next block. Wallet votes are one per
+            // guardian and stay eligible for an undefeatable early pass.
+            if (treasuryContract.governanceType() == uint8(GovernanceType.Token)) {
+                revert NaveErrors.VotingPeriodNotEnded();
+            }
             // Early finalization: quorum met AND the FOR lead exceeds all
             // remaining possible votes (outcome mathematically certain).
             uint256 remaining = eligibleTotal > totalVotes ? eligibleTotal - totalVotes : 0;

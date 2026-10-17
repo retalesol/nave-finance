@@ -33,6 +33,35 @@ const NAVE_CORE_PROGRAM_ID =
   "8GSh9ghC2EL88X9FwftiH2QDrm8drvgSLAUoo45gN5nB";
 
 const corePid = new PublicKey(NAVE_CORE_PROGRAM_ID);
+const governancePid = new PublicKey(
+  Deno.env.get("NAVE_GOVERNANCE_PROGRAM_ID") || "CwFouCjZyBrpLGuKvd9VXQqYh4ZYyT9yUQbqmo6k7n9M",
+);
+const executionPid = new PublicKey(
+  Deno.env.get("NAVE_EXECUTION_PROGRAM_ID") || "2sGy7WwF6uGCyBmPqohRtobmutGhKjr2AG2FKvfcpYzb",
+);
+
+/** ExecutionRequest PDA for proposal `index`: ["execution_request", proposal]. */
+export function executionRequestForProposal(dao: string, index: number): string {
+  const indexLe = new Uint8Array(8);
+  new DataView(indexLe.buffer).setBigUint64(0, BigInt(index), true);
+  const proposal = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("proposal"), new PublicKey(dao).toBuffer(), indexLe],
+    governancePid,
+  )[0];
+  return PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("execution_request"), proposal.toBuffer()],
+    executionPid,
+  )[0].toBase58();
+}
+
+/** True when the account exists; null when it could not be read. */
+export async function accountExists(rpcUrl: string, address: string): Promise<boolean | null> {
+  try {
+    return (await getAccountData(rpcUrl, address)) != null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Fixed layout constants (mirror nave_core state) ──────────────────────────
 // TreasuryConstitution layout (byte offsets from account start):
@@ -460,6 +489,62 @@ export async function readAgentGate(
   }
 
   return { agentsEnabled, frozen };
+}
+
+const ASSET_TOKEN_ACCOUNT_OFF = 8 + 1 + 32 + 32;
+const ASSET_DEPLOYED_BASE_OFF = ASSET_TOKEN_ACCOUNT_OFF + 32 + 8;
+const ASSET_LAST_VALUED_USD_OFF = ASSET_DEPLOYED_BASE_OFF + 8;
+const SPL_AMOUNT_OFF = 64;
+
+export interface SolanaMintQuote {
+  /** Idle vault balance plus base units deployed from this mint. */
+  totalBase: number;
+  /** last_valued_usd for that same pile, in micro-USD. */
+  totalMicroUsd: number;
+  /** Idle vault balance alone, in base units. */
+  idleBase: number;
+}
+
+/**
+ * Last revalue mark for one Solana mint. Caps compare micro-USD, while a
+ * request amount is in token base units. The quote is the bridge: micro-USD
+ * per base unit = totalMicroUsd / totalBase. Returns null when the asset has
+ * not been valued.
+ */
+export async function readSolanaMintQuote(
+  rpcUrl: string,
+  dao: string,
+  mint: string,
+): Promise<SolanaMintQuote | null> {
+  try {
+    const assetPda = PublicKey.findProgramAddressSync(
+      [
+        new TextEncoder().encode("treasury_asset"),
+        new PublicKey(dao).toBuffer(),
+        new PublicKey(mint).toBuffer(),
+      ],
+      corePid,
+    )[0].toBase58();
+    const raw = await getAccountData(rpcUrl, assetPda);
+    if (!raw || raw.length < ASSET_LAST_VALUED_USD_OFF + 8) return null;
+    const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    const tokenAccount = bytesToBase58(raw.slice(ASSET_TOKEN_ACCOUNT_OFF, ASSET_TOKEN_ACCOUNT_OFF + 32));
+    const deployed = dv.getBigUint64(ASSET_DEPLOYED_BASE_OFF, true);
+    const valued = dv.getBigUint64(ASSET_LAST_VALUED_USD_OFF, true);
+    if (valued === 0n) return null;
+    const tokenRaw = await getAccountData(rpcUrl, tokenAccount);
+    const idle = tokenRaw && tokenRaw.length >= SPL_AMOUNT_OFF + 8
+      ? new DataView(tokenRaw.buffer, tokenRaw.byteOffset, tokenRaw.byteLength).getBigUint64(SPL_AMOUNT_OFF, true)
+      : 0n;
+    const total = idle + deployed;
+    if (total <= 0n) return null;
+    const totalBase = Number(total);
+    const totalMicroUsd = Number(valued);
+    if (!Number.isSafeInteger(totalBase) || !Number.isSafeInteger(totalMicroUsd)) return null;
+    return { totalBase, totalMicroUsd, idleBase: Number(idle) };
+  } catch {
+    return null;
+  }
 }
 
 /**

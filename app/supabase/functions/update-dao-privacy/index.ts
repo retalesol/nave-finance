@@ -6,6 +6,8 @@ import { corsHeadersFor, jsonWithCors } from "../_shared/http.ts";
 import { readDaoFounder } from "../_shared/onchain.ts";
 import { isEvmChain, normalizeChain, normalizeEvmAddress } from "../_shared/chain.ts";
 import { hasEvmRpc, readEvmTreasuryFounder } from "../_shared/evmFounder.ts";
+import { verifyWalletSignature } from "../_shared/walletAuth.ts";
+import { consumeChallenge, replayChainLabel } from "../_shared/replay.ts";
 
 interface RequestPayload {
   dao_address: string;
@@ -140,6 +142,16 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    const verified = await verifyWalletSignature(evm ? "evm" : "solana", wallet, message, signatureStr);
+    if (!verified) return jsonResponse({ error: "Invalid signature" }, 403);
+    const consumed = await consumeChallenge(supabase, {
+      wallet,
+      chain: replayChainLabel(chainSel.chain, chainSel.chain_id),
+      verified,
+      daoAddress,
+    });
+    if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
 
     const { error } = await supabase
       .from("dao_registry")

@@ -1094,6 +1094,11 @@
   },
   {
     "type": "error",
+    "name": "VotingMintMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "VotingPeriodEnded",
     "inputs": []
   },
@@ -1110,6 +1115,11 @@
   {
     "type": "error",
     "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroVotingSupply",
     "inputs": []
   }
 ]

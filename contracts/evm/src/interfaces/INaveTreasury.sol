@@ -102,6 +102,9 @@ interface INaveTreasury {
         uint256 amount,
         uint256 amountUsd
     ) external;
+    /// Book assets that left via a bridge: lower NAV and raise deployed capital
+    /// so a second move in the same block still sees the first.
+    function noteCapitalDeparture(address asset, uint256 amount) external;
     function recordStrategyWithdrawal(
         address adapter,
         address asset,

@@ -14,5 +14,8 @@
   "proxyPattern": "uups-singleton+uups-dao-consent",
   "tokenDeployer": "0x29337FBE01AB9dc5e17C44a3372ADFBAFd409CdE",
   "treasuryImpl": "0x6de3fe98dcc15999f3b0c5877111970219506992",
-  "treasuryImplementation": "0x6de3fe98dcc15999f3b0c5877111970219506992"
+  "treasuryImplementation": "0x6de3fe98dcc15999f3b0c5877111970219506992",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "usdcVault": "0x6B737500895C4196E855198F7B8a02Bae87E2D72",
+  "usdcVaultAdapter": "0x12DA47672287c188C79c1504eE72E2aC8b446f7B"
 }

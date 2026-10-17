@@ -35,6 +35,8 @@ test("catalog ids are unique per chain and every venue has a tier and exit note"
   assert.equal(findVenue("solana", "marginfi")?.hiddenByDefault, true);
   assert.equal(findVenue("ethereum", "maple-syrup")?.tier, 3);
   assert.equal(findVenue("ethereum", "pendle-pt-susde")?.exit, "maturity");
+  assert.equal(findVenue("robinhood", "morpho-steakhouse-usdg")?.availability, "testnet");
+  assert.equal(findVenue("arc", "morpho-steakhouse-usdc")?.availability, "testnet");
 });
 
 test("effectiveApy ignores rewards and falls back to the 30-day mean on a spike", () => {

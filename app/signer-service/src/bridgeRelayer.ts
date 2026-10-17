@@ -485,6 +485,18 @@ export interface FeeBpsDriftResult {
  * blocks startup — availability of already-verified relays is preferable to a
  * hard crash-loop on a config mismatch.
  */
+/** On-chain fee used by `release`. Missing config fails closed. */
+export async function readOnChainFeeBps(cfg: BridgeConfig = readBridgeConfig()): Promise<number> {
+  if (!cfg.bridgeProgramId) throw new Error('BRIDGE_SOLANA_BRIDGE_PROGRAM is not configured');
+  const connection = getBridgeConnection(cfg);
+  const configPda = deriveBridgeConfig(new PublicKey(cfg.bridgeProgramId));
+  const info = await connection.getAccountInfo(configPda);
+  if (!info) throw new Error('BridgeConfig account not found; refusing EVM to Solana release');
+  const fees = decodeBridgeConfigFees(Buffer.from(info.data));
+  if (fees.feeBps >= 10_000) throw new Error(`on-chain fee_bps ${fees.feeBps} is not a valid fee`);
+  return fees.feeBps;
+}
+
 export async function checkBridgeFeeBpsDrift(): Promise<FeeBpsDriftResult> {
   const cfg = readBridgeConfig();
   const base: FeeBpsDriftResult = { ok: true, envFeeBps: cfg.feeBps };
@@ -1224,7 +1236,11 @@ export async function handleBridgeRelay(
     recipient = ev.solanaRecipient;
     sender = ev.sender;
     grossRaw = ev.grossRaw;
-    const split = netFromGross(ev.grossRaw, cfg.feeBps);
+    // release() charges fee_bps from the on-chain BridgeConfig on top of the
+    // net we pass. Using the env fee here pays out other depositors' NAVE
+    // whenever BRIDGE_FEE_BPS is lower than the program's fee.
+    const onChainFeeBps = await readOnChainFeeBps(cfg);
+    const split = netFromGross(ev.grossRaw, onChainFeeBps);
     netRaw = split.netRaw;
     feeRaw = split.feeRaw;
     try {

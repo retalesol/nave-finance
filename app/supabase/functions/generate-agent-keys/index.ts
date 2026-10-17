@@ -75,8 +75,7 @@ interface RequestPayload {
   // Required for pre-creation key gen: proves dao_address is the canonical
   // PDA(["dao", creator_wallet, dao_id]) for this founder before the DAO exists.
   dao_id?: number;
-  // Optional role override. Defaults to the canonical 4-agent pipeline roles.
-  // Allows provisioning of a dedicated planner key without regenerating all keys.
+  // Optional role override. Defaults to all 5 pipeline + planner roles.
   roles?: string[];
   // Break-glass ONLY: return the raw decrypt keys (DEKs) in the response for
   // external custody. Off by default — normal operation persists the wrapped DEK
@@ -93,7 +92,7 @@ const AGENT_ROLES = [
   "operational",
   "planner",
 ] as const;
-const DEFAULT_PIPELINE_ROLES = AGENT_ROLES.slice(0, 4);
+const DEFAULT_PIPELINE_ROLES = AGENT_ROLES;
 
 Deno.serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req, { allowBrowserFallback: true });

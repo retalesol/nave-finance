@@ -141,6 +141,7 @@ export const EVM_ALLOWED_ASSETS: Record<EvmChainId, EvmAllowedAsset[]> = {
     { symbol: 'WETH', name: 'Wrapped Ether', assetClass: 'blue-chip', address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', pythFeedId: 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', decimals: 18, maxRisk: 45 },
   ],
   46630: [
+    { symbol: 'USDC', name: 'USD Coin (Robinhood Testnet)', assetClass: 'stablecoin', address: '0xAaaE26C5B891bF00D4cD6eF04148Bf1CB1CC96b1', decimals: 6, maxRisk: 35 },
     { symbol: 'WETH', name: 'Wrapped Ether (Robinhood Testnet)', assetClass: 'blue-chip', address: '0x7943e237c7F95DA44E0301572D358911207852Fa', pythFeedId: 'ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', decimals: 18, maxRisk: 45 },
   ],
   // Arc Testnet ERC-20 USDC (6 decimals). Native gas USDC (18 decimals) is not listed.

@@ -23,6 +23,19 @@ test('netFromGross inverts the 2.5%-on-top fee', () => {
   assert.equal(netRaw + feeRaw, gross);
 });
 
+test('release priced from the chain fee stays within the burned gross', () => {
+  const gross = 1_030_000n;
+  const chainBps = 300;
+  const envBps = 250;
+  const feeOnTop = (net: bigint, bps: number) => (net * BigInt(bps)) / 10_000n;
+  const chainNet = netFromGross(gross, chainBps).netRaw;
+  const envNet = netFromGross(gross, envBps).netRaw;
+  const chainPull = chainNet + feeOnTop(chainNet, chainBps);
+  const envPull = envNet + feeOnTop(envNet, chainBps);
+  assert.ok(chainPull <= gross);
+  assert.ok(envPull > gross);
+});
+
 test('netFromGross never over-pays (net + fee <= gross for any input)', () => {
   for (const gross of [1n, 7n, 333n, 1_000_001n, 987_654_321n]) {
     const { netRaw, feeRaw } = netFromGross(gross, 250);

@@ -22,6 +22,8 @@ export interface ConstitutionData {
   minStablecoinReserveBps?: number;
   reviewWindowSecs: number;
   confidenceThreshold?: number;
+  /** Micro-USD agent floor. Preserved when a later constitution is ratified. */
+  agentThresholdUsdMicro?: number;
 }
 
 interface UseConstitutionResult {
@@ -73,6 +75,7 @@ async function fetchConstitutionData(
       protocolCount: data.protocolCount,
       minReservesBps: data.minReservesBps,
       minLiquidityBps: data.minLiquidityBps,
+      agentThresholdUsdMicro: data.agentThresholdUsd,
       minStablecoinReserveBps: data.minStablecoinReserveBps,
       reviewWindowSecs: data.reviewWindowSecs,
     },

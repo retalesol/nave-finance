@@ -28,6 +28,11 @@ export type EvmChainId = (typeof EVM_CHAIN_IDS)[number];
 /** Human-facing chain "family" used by selectors and routing. */
 export type ChainFamily = 'solana' | 'ethereum' | 'base' | 'robinhood' | 'arc';
 
+/** Families whose founder controls (freeze, agents, withdraw, dispatch) are live. */
+export function isTreasuryOpsFamily(family: ChainFamily): family is EvmChainFamily {
+  return family === 'ethereum' || family === 'base' || family === 'robinhood' || family === 'arc';
+}
+
 /** Testnet treasury creation: Solana, Ethereum, Base, Robinhood, and Arc. */
 export const TESTNET_USER_CHAINS: readonly ChainFamily[] = ['solana', 'ethereum', 'base', 'robinhood', 'arc'];
 

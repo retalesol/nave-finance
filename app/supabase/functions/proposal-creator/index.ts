@@ -80,6 +80,9 @@ function isEvmDaoChain(chain: string | null | undefined): boolean {
   return c === "base" || c === "robinhood" || c === "ethereum" || c === "arc";
 }
 
+/** How long an unfinished planner proposal blocks a repeat of the same move. */
+const OPEN_PROPOSAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 async function callSigner(payload: Record<string, unknown>): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string; status?: number }> {
   const signerUrl = Deno.env.get("NAVE_SIGNER_URL");
   const signerSecret = Deno.env.get("NAVE_SIGNER_SECRET");
@@ -268,15 +271,29 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Per-action idempotency key: bind the proof to the SPECIFIC action
-      // (kind + protocol + asset mint + amount) so distinct legs of one
-      // recommendation can't collide — in particular a withdraw and a deploy to
-      // the same protocol for the same amount stay distinct, AND two different
-      // assets deployed to the same protocol/amount (multi-asset DAOs) stay
-      // distinct — while a retry of the SAME leg is deduped by the signer's
-      // UNIQUE constraint.
+      // One proposal per treasury, direction, venue, and asset per UTC day. The
+      // policy proof hash and the amount change on every run, so neither can be
+      // in the key or each run would open another proposal for the same move.
       const mintKeyPart = action.mint ?? "default";
-      const idempotencyKey = `${rec.policy_proof_hash}:${actionKind}:${action.protocolId}:${mintKeyPart}:${action.amountBaseUnits}`;
+      const utcDay = new Date().toISOString().slice(0, 10);
+      const idempotencyKey = `${actionKind}:${action.protocolId}:${mintKeyPart}:${utcDay}`;
+
+      // A move still open from an earlier day (not yet voted, or voted and
+      // waiting on the agents) is not proposed again.
+      const openSince = new Date(Date.now() - OPEN_PROPOSAL_WINDOW_MS).toISOString();
+      const { data: openRows } = await supabase
+        .from("agent_proposals")
+        .select("id")
+        .eq("dao_onchain_address", rec.dao_onchain_address)
+        .eq("action_kind", actionKind)
+        .eq("protocol_id", action.protocolId)
+        .in("status", ["creating", "created", "requested"])
+        .gte("created_at", openSince)
+        .limit(1);
+      if ((openRows ?? []).length > 0) {
+        anyProgress = true;
+        continue;
+      }
       const verb = actionKind === "withdraw" ? "Withdraw from" : "Deploy to";
 
       const daoChain = chainByDao.get(rec.dao_onchain_address);

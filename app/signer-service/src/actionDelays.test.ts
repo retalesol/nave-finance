@@ -16,6 +16,13 @@ test('devnet signer accepts a 60-second vote and defaults to it when the request
   }
 });
 
+test('planner proposals on testnet stay open for a day; mainnet stays at 7 days', () => {
+  assert.equal(solanaVotingPeriodSeconds(undefined, false, true), 86_400);
+  assert.equal(solanaVotingPeriodSeconds(undefined, true, true), MAINNET_VOTING_PERIOD_SECONDS);
+  assert.equal(evmStrategyVotingPeriodSeconds(11155111, true), 86_400n);
+  assert.equal(evmStrategyVotingPeriodSeconds(1, true), 604_800n);
+});
+
 test('mainnet signer defaults to the 7-day voting period', () => {
   assert.equal(solanaVotingPeriodSeconds(undefined, true), MAINNET_VOTING_PERIOD_SECONDS);
   assert.equal(solanaVotingPeriodSeconds(0, true), MAINNET_VOTING_PERIOD_SECONDS);

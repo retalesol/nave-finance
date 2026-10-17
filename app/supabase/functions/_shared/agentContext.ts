@@ -86,6 +86,18 @@ export interface ExecutionRequestView {
   /** Base-unit amount the request would move, when known. */
   amount?: number | null;
   /**
+   * `amount` priced in the same unit as `treasury.navBaseUnits` (micro-USD).
+   * Set for assets whose base unit is not already one micro-USD, so cap math
+   * does not compare lamports to dollars. Absent means `amount` is already
+   * in that unit (a 6-decimal stablecoin).
+   */
+  amountValueUnits?: number | null;
+  /**
+   * Target-protocol mark in the same unit as NAV. Absent means
+   * `targetProtocolDeployedBaseUnits` is already in that unit.
+   */
+  venueDeployedValueUnits?: number | null;
+  /**
    * Base-unit deployed value already held in the request's TARGET protocol
    * (StrategyPosition.current_value for that protocol). Used by the per-protocol
    * allocation cap so it compares target-protocol deployed (not vault-wide

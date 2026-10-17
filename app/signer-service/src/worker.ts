@@ -56,6 +56,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { readDaoAgentGate, replenishAgentWallets } from './index.js';
+import { replenishEvmAgentWallets } from './evmRelayer.js';
 import { readStakingMirrorConfig, runStakingMirror } from './stakingMirror.js';
 import { readBridgeWatcherConfig, runBridgeWatcher } from './bridgeWatcher.js';
 import { reconcileStakeClaimWraps, runStakeClaimAccrualTick } from './stakeClaims.js';
@@ -222,66 +223,111 @@ async function filterAgentActiveDaos(daos: string[], label: string): Promise<str
  * Runs every REPLENISH_INTERVAL_MS (default 6 hours) so wallets are proactively
  * maintained and agents never hit zero unexpectedly.
  */
+const DEFAULT_EVM_TESTNET_CHAIN_IDS: Record<string, number> = {
+  ethereum: 11155111,
+  base: 84532,
+  robinhood: 46630,
+  arc: 5042002,
+};
+
 async function runReplenishAgentWallets(): Promise<void> {
-  if (!process.env.NAVE_OPS_WALLET_SECRET) {
-    // Silently skip if the ops wallet isn't configured yet (e.g. early boot).
+  const hasSolanaOps = Boolean(process.env.NAVE_OPS_WALLET_SECRET);
+  const hasEvmOps = Boolean(process.env.NAVE_EVM_OPS_PRIVATE_KEY || process.env.EVM_OPS_PRIVATE_KEY);
+  if (!hasSolanaOps && !hasEvmOps) {
+    // Silently skip if neither ops wallet is configured yet (e.g. early boot).
     return;
   }
 
-  let daos: string[] = [];
-  try {
-    const { data, error } = await supabase
-      .from('dao_registry')
-      .select('dao_onchain_address')
-      .not('dao_onchain_address', 'is', null);
-    if (error) throw error;
-    daos = (data ?? []).map((r: { dao_onchain_address: string }) => r.dao_onchain_address).filter(Boolean);
-  } catch (err) {
-    console.error('[worker] replenish: failed to fetch DAO list:', err instanceof Error ? err.message : err);
-    return;
-  }
-
-  if (daos.length === 0) return;
-
-  // H4: only replenish agent wallets for DAOs whose on-chain agents are active.
-  daos = await filterAgentActiveDaos(daos, 'replenish');
-  if (daos.length === 0) return;
-
-  console.log(`[worker] replenish: checking agent wallets for ${daos.length} DAO(s)`);
-  let totalTopUps = 0;
-  let totalLamports = 0;
-  let totalUrgent = 0;
-
-  for (const daoAddress of daos) {
+  if (hasSolanaOps) {
+    let daos: string[] = [];
     try {
-      const results = await replenishAgentWallets(daoAddress);
-      for (const r of results) {
-        if (r.requestedUrgent) totalUrgent++;
-        if (r.toppedUp) {
-          totalTopUps++;
-          totalLamports += r.topUpLamports;
+      const { data, error } = await supabase
+        .from('dao_registry')
+        .select('dao_onchain_address')
+        .eq('chain', 'solana')
+        .not('dao_onchain_address', 'is', null);
+      if (error) throw error;
+      daos = (data ?? []).map((r: { dao_onchain_address: string }) => r.dao_onchain_address).filter(Boolean);
+    } catch (err) {
+      console.error('[worker] replenish: failed to fetch Solana DAO list:', err instanceof Error ? err.message : err);
+    }
+
+    if (daos.length > 0) {
+      // H4: only replenish agent wallets for DAOs whose on-chain agents are active.
+      daos = await filterAgentActiveDaos(daos, 'replenish');
+    }
+
+    if (daos.length > 0) {
+      console.log(`[worker] replenish: checking Solana agent wallets for ${daos.length} DAO(s)`);
+      let totalTopUps = 0;
+      let totalLamports = 0;
+      let totalUrgent = 0;
+
+      for (const daoAddress of daos) {
+        try {
+          const results = await replenishAgentWallets(daoAddress);
+          for (const r of results) {
+            if (r.requestedUrgent) totalUrgent++;
+            if (r.toppedUp) {
+              totalTopUps++;
+              totalLamports += r.topUpLamports;
+            }
+          }
+        } catch (err) {
+          console.error(
+            `[worker] replenish ${daoAddress}:`,
+            err instanceof Error ? err.message : err,
+          );
         }
       }
-    } catch (err) {
-      console.error(
-        `[worker] replenish ${daoAddress}:`,
-        err instanceof Error ? err.message : err,
-      );
+
+      const urgentNote = totalUrgent > 0
+        ? ` ${totalUrgent} wallet(s) were critically low (URGENT, below the 0.05 SOL request threshold).`
+        : '';
+      if (totalTopUps > 0) {
+        console.log(
+          `[worker] replenish complete: ${totalTopUps} wallet(s) refilled toward the 0.25 SOL ceiling, ` +
+          `${totalLamports} lamports (${(totalLamports / 1e9).toFixed(6)} SOL) total transferred.${urgentNote}`,
+        );
+      } else {
+        console.log(
+          `[worker] replenish complete: all Solana agent wallets within the operating band (no refill needed).${urgentNote}`,
+        );
+      }
     }
   }
 
-  const urgentNote = totalUrgent > 0
-    ? ` ${totalUrgent} wallet(s) were critically low (URGENT, below the 0.05 SOL request threshold).`
-    : '';
-  if (totalTopUps > 0) {
-    console.log(
-      `[worker] replenish complete: ${totalTopUps} wallet(s) refilled toward the 0.25 SOL ceiling, ` +
-      `${totalLamports} lamports (${(totalLamports / 1e9).toFixed(6)} SOL) total transferred.${urgentNote}`,
-    );
-  } else {
-    console.log(
-      `[worker] replenish complete: all agent wallets within the operating band (no refill needed).${urgentNote}`,
-    );
+  // Replenish EVM agent EOAs across supported EVM chains (11155111, 84532, 46630, 5042002).
+  try {
+    const { data: evmDaos, error: evmErr } = await supabase
+      .from('dao_registry')
+      .select('dao_onchain_address, chain, chain_id')
+      .in('chain', ['ethereum', 'base', 'robinhood', 'arc'])
+      .not('dao_onchain_address', 'is', null);
+    if (evmErr) throw evmErr;
+
+    let evmTopUps = 0;
+    for (const row of (evmDaos ?? []) as Array<{ dao_onchain_address: string; chain: string; chain_id: number | null }>) {
+      const daoAddress = row.dao_onchain_address;
+      const chainId = Number(row.chain_id ?? DEFAULT_EVM_TESTNET_CHAIN_IDS[row.chain] ?? 0);
+      if (!daoAddress || !chainId) continue;
+      try {
+        const results = await replenishEvmAgentWallets(daoAddress, chainId);
+        for (const r of results) {
+          if (r.toppedUp) evmTopUps++;
+        }
+      } catch (err) {
+        console.error(
+          `[worker] replenish EVM ${daoAddress} (chain ${chainId}):`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    if (evmTopUps > 0) {
+      console.log(`[worker] EVM replenish complete: ${evmTopUps} agent/guardian EOA(s) topped up.`);
+    }
+  } catch (err) {
+    console.error('[worker] replenish: failed to process EVM DAOs:', err instanceof Error ? err.message : err);
   }
 }
 

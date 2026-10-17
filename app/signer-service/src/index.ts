@@ -18,6 +18,7 @@ import {
 } from '@solana/spl-token';
 import BN from 'bn.js';
 import { jitoAccountsFromStakePool, kaminoAccountsFromReserve } from './venueAccounts.js';
+import { chainlinkSolUsdFor, executionPriceAccount, WSOL_MINT } from './priceAccount.js';
 import { adapterProgramId, checkJupiterProgramIds, devnetProgramIdWarnings, EXTERNAL_PROGRAM_IDS, fetchDaoRegistryTolerant, fetchExecutionRequestTolerant, getConnection, isMainnetCluster, pdas, PROGRAM_IDS, programsForAgent, resolveSolanaRpcUrl, type AgentPrograms } from './programs.js';
 import { assertEvmKekPolicy, isKekConfigured, unwrapStoredDek } from './kek.js';
 import { assertRoleSecretPolicy, authorizeRole, isSignerRole, type SignerRole } from './roleAuth.js';
@@ -33,6 +34,8 @@ import {
   relayEvmAgentAction,
   relayEvmUpdateStrategyPositionValue,
   relayEvmCreateProposal,
+  relayEvmCreateStrategyRequest,
+  relayEvmFinalizeProposal,
   relayEvmRevalueTreasury,
   evmRelaySignerRole,
 } from './evmRelayer.js';
@@ -243,6 +246,7 @@ type SignAction =
   | 'update_strategy_position_value'
   | 'expire_request'
   | 'create_proposal'
+  | 'create_strategy_request'
   | 'toggle_agents'
   // ── multi-asset / real-protocol CPI actions (nave_core) ──
   | 'revalue_treasury'
@@ -568,6 +572,7 @@ function requiredAssetKindForProtocol(protocolId: string): number | null {
   switch (protocolId.toLowerCase()) {
     case 'kamino':
     case 'marginfi':
+    case 'jupiter':
       return ASSET_KIND_STABLE;
     case 'jito':
       return ASSET_KIND_SOL_LIKE;
@@ -746,6 +751,8 @@ async function handleCreateProposal(
   let daoTokenMint: PublicKey;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let registry: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let daoAcc: any;
   try {
     const tokenRegistryPda = PublicKey.findProgramAddressSync(
       [Buffer.from('token_registry'), dao.toBuffer()],
@@ -753,7 +760,20 @@ async function handleCreateProposal(
     )[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     registry = await (readPrograms.core.account as any).tokenRegistry.fetch(tokenRegistryPda);
-    daoTokenMint = new PublicKey(registry.tokens[0].mint);
+    daoAcc = await fetchDaoRegistryTolerant(readPrograms, dao);
+    // Token governance pins the proposal mint to dao_registry.voting_token.
+    // Wallet governance never registers a token, so slot 0 can be empty; the
+    // program only needs an SPL mint there, and the app passes wSOL.
+    const isTokenGov = Number(daoAcc.governanceType ?? 0) === 1;
+    const votingToken = daoAcc.votingToken ? new PublicKey(daoAcc.votingToken) : PublicKey.default;
+    if (isTokenGov) {
+      if (votingToken.equals(PublicKey.default)) {
+        return res.status(400).json({ error: 'Token-governed DAO has no voting token set' });
+      }
+      daoTokenMint = votingToken;
+    } else {
+      daoTokenMint = WSOL_MINT;
+    }
   } catch (err) {
     return res.status(502).json({
       error: `Failed to read DAO token registry for proposal payload: ${err instanceof Error ? err.message : String(err)}`,
@@ -824,6 +844,7 @@ async function handleCreateProposal(
       amount_base_units: amountBu,
       action_kind: actionKind,
       payload_hash: payloadHash,
+      asset_mint: assetMint.toBase58(),
       proposer_role: agent_role,
       status: 'creating',
     })
@@ -845,17 +866,19 @@ async function handleCreateProposal(
   let programs: AgentPrograms;
   try {
     const proposer = await loadAgentKeypair(dao.toBase58(), agent_role, effectiveAesKey);
+    await ensureFundedFromOpsWallet(proposer.publicKey);
     programs = programsForAgent(proposer, getConnection());
 
-    // Resolve proposal index (dao_registry.proposal_count). The governance
-    // voting token (daoTokenMint = token_registry.tokens[0]) was resolved above
-    // for the createProposal account; the deployed-asset mint (assetMint) was
-    // bound into the payload hash.
-    const daoAcc = await fetchDaoRegistryTolerant(programs, dao);
-    const proposalIndex = Number(daoAcc.proposalCount?.toString?.() ?? daoAcc.proposalCount ?? 0);
+    // The proposal PDA is seeded by dao_registry.next_proposal_index, which
+    // archiving never decrements. proposal_count can lag it.
+    const freshDao = await fetchDaoRegistryTolerant(programs, dao);
+    const proposalIndex = Number(
+      freshDao.nextProposalIndex?.toString?.() ?? freshDao.nextProposalIndex
+        ?? daoAcc.nextProposalIndex?.toString?.() ?? 0,
+    );
 
     const proposal = pdas.proposal(dao, proposalIndex);
-    const votingPeriod = solanaVotingPeriodSeconds(body.voting_period_seconds, isMainnetCluster());
+    const votingPeriod = solanaVotingPeriodSeconds(body.voting_period_seconds, isMainnetCluster(), true);
 
     const verb = actionKind === 'withdraw' ? 'Withdraw' : 'Deploy';
     const preposition = actionKind === 'withdraw' ? 'from' : 'to';
@@ -959,11 +982,15 @@ const AGENT_REFILL_TRIGGER_LAMPORTS = process.env.NAVE_AGENT_SOL_REFILL_TRIGGER
 /** Conservative fee per transaction (base 5 k + typical priority fee). */
 const ESTIMATED_TX_FEE_LAMPORTS = 50_000; // 0.00005 SOL per tx
 
-/** Hard minimum used by the inline pre-sign emergency top-up (≈50 txs). */
-const HARD_MIN_LAMPORTS = 50 * ESTIMATED_TX_FEE_LAMPORTS; // 2_500_000 ≈ 0.0025 SOL
+/** Hard minimum used by the inline pre-sign emergency top-up (≥ 3_000_000 lamports). */
+const HARD_MIN_LAMPORTS = Math.max(50 * ESTIMATED_TX_FEE_LAMPORTS, 3_000_000); // 3_000_000 ≈ 0.003 SOL
 
-/** Safety gate: if somehow below this we must refill before signing. */
-const CRITICAL_MIN_LAMPORTS = 5 * ESTIMATED_TX_FEE_LAMPORTS; // 250_000 lamports
+/**
+ * Safety gate: if below this we must refill before signing. Set above Solana's
+ * 890,880-lamport 0-byte system account rent-exempt minimum + fee buffer so a
+ * fee payer never fails simulation with `insufficient funds for rent`.
+ */
+const CRITICAL_MIN_LAMPORTS = 1_500_000; // 0.0015 SOL
 
 /** Per-wallet outcome of a replenishment cycle (consumed by worker.ts). */
 interface AgentWalletResult {
@@ -1119,7 +1146,7 @@ export async function replenishAgentWallets(
   daoAddress: string,
   effectiveAesKey?: string,
 ): Promise<AgentWalletResult[]> {
-  const roles: AgentRole[] = ['executive', 'financial', 'oversight', 'operational'];
+  const roles: AgentRole[] = ['executive', 'financial', 'oversight', 'operational', 'planner'];
   const conn = getConnection();
   const ops = loadOpsWallet();
   const results: AgentWalletResult[] = [];
@@ -1182,6 +1209,68 @@ export async function replenishAgentWallets(
   }
 
   return results;
+}
+
+/**
+ * create_strategy_request — permissionless; binds a passed Strategy proposal to
+ * (adapter, amount, mint). The program recomputes the proposal's payload hash
+ * from these values and rejects anything else. The planner key pays rent.
+ */
+async function handleCreateStrategyRequest(
+  res: express.Response,
+  body: SignRequest,
+  dao: PublicKey,
+  effectiveAesKey?: string,
+): Promise<express.Response> {
+  if (body.proposal_index == null || !Number.isInteger(body.proposal_index) || body.proposal_index < 0) {
+    return res.status(400).json({ error: 'create_strategy_request requires proposal_index (integer)' });
+  }
+  const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
+  if (!Number.isSafeInteger(amount) || (amount as number) <= 0) {
+    return res.status(400).json({ error: 'create_strategy_request requires a positive integer amount (base units)' });
+  }
+  const adapter = body.protocol_id ? adapterProgramId(body.protocol_id) : null;
+  if (!adapter) return res.status(400).json({ error: `Unknown protocol_id: ${body.protocol_id ?? ''}` });
+  if (!body.mint) return res.status(400).json({ error: 'create_strategy_request requires mint' });
+  let mint: PublicKey;
+  try {
+    mint = new PublicKey(body.mint);
+  } catch {
+    return res.status(400).json({ error: 'mint is not a valid public key' });
+  }
+
+  try {
+    const creator = await loadAgentKeypair(dao.toBase58(), body.agent_role ?? 'planner', effectiveAesKey);
+    await ensureFundedFromOpsWallet(creator.publicKey);
+    const programs = programsForAgent(creator, getConnection());
+    const proposal = pdas.proposal(dao, body.proposal_index);
+    const executionRequest = pdas.executionRequest(proposal);
+    const ix = await programs.execution.methods
+      .createExecutionRequest(new BN(amount as number), adapter, mint, false)
+      .accountsPartial({
+        creator: creator.publicKey,
+        daoRegistry: dao,
+        proposal,
+        executionRequest,
+      })
+      .instruction();
+    const sig = await sendAgentV0(
+      programs,
+      creator,
+      [ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }), ix],
+    );
+    console.log(`[signer] create_strategy_request #${body.proposal_index} for ${dao.toBase58()}: ${sig}`);
+    return res.json({
+      success: true,
+      signature: sig,
+      execution_request_address: executionRequest.toBase58(),
+      proposal_address: proposal.toBase58(),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'create_strategy_request failed';
+    console.warn(`[signer] create_strategy_request attempt failed: ${msg}`);
+    return res.status(500).json({ error: msg });
+  }
 }
 
 /**
@@ -1882,6 +1971,10 @@ async function principalPositions(programs: AgentPrograms, dao: PublicKey): Prom
     .map((r) => r.publicKey as PublicKey);
 }
 
+function chainlinkSolUsdFeed(): PublicKey {
+  return chainlinkSolUsdFor(isMainnetCluster());
+}
+
 /**
  * Revalue the treasury's USD NAV from every registered asset. Caller supplies
  * the asset list (mints + posted Pyth update for non-stables); the program
@@ -1916,7 +2009,13 @@ async function handleRevalueTreasury(
     const resolved: Resolved[] = [];
     for (const a of body.assets) {
       const mint = new PublicKey(a.mint);
-      const explicit = a.price_update_address ? new PublicKey(a.price_update_address) : null;
+      // Wrapped SOL is priced from the pinned Chainlink SOL/USD account.
+      // Hermes no longer serves a Pyth update without a paid key.
+      const explicit = a.price_update_address
+        ? new PublicKey(a.price_update_address)
+        : mint.equals(WSOL_MINT)
+          ? chainlinkSolUsdFeed()
+          : null;
       let feedHex: string | null = null;
       if (!explicit) {
         const cfg = await (programs.core.account as Record<string, { fetch: (k: PublicKey) => Promise<{ pythFeedId: number[]; isStablecoin: boolean }> }>)
@@ -2123,7 +2222,7 @@ async function buildExecuteStrategyIx(
       assetConfig: pdas.assetConfig(dao, assetMint),
       treasuryAsset: pdas.treasuryAsset(dao, assetMint),
       // Stablecoins are valued at parity and ignore this account.
-      priceUpdate: priceUpdateAddress ? new PublicKey(priceUpdateAddress) : assetMint,
+      priceUpdate: executionPriceAccount(assetMint, isMainnetCluster(), priceUpdateAddress),
       vaultTokenAccount,
       executionAuthority: pdas.executionAuthority(dao),
       adapterProgram: adapter,
@@ -3107,6 +3206,7 @@ app.post('/relay-evm', async (req, res) => {
           protocol_id: proposalBody.protocol_id ?? 'evm',
           program_id: adapter,
           amount_base_units: amountForRow,
+          asset_mint: asset,
           action_kind: proposalBody.action_kind ?? 'deploy',
           proposer_role: proposalBody.agent_role ?? 'operational',
           status: 'creating',
@@ -3158,6 +3258,37 @@ app.post('/relay-evm', async (req, res) => {
         await supabase.from('agent_proposals').delete().eq('id', ledgerId);
         throw err;
       }
+    }
+
+    if (action === 'finalize_proposal') {
+      const finalizeBody = body as { proposal_index?: number | string };
+      if (finalizeBody.proposal_index === undefined) {
+        return res.status(400).json({ error: "finalize_proposal requires 'proposal_index'" });
+      }
+      const result = await relayEvmFinalizeProposal({ chain_id, dao_address, proposal_index: finalizeBody.proposal_index });
+      return res.json({ success: true, signature: result.txHash });
+    }
+
+    // Permissionless request creation for a passed planner proposal.
+    if (action === 'create_strategy_request') {
+      const reqBody = body as { proposal_index?: number | string; adapter?: string; asset?: string; amount?: string | number };
+      if (reqBody.proposal_index === undefined || !reqBody.adapter || !reqBody.asset || reqBody.amount === undefined) {
+        return res.status(400).json({ error: "create_strategy_request requires 'proposal_index', 'adapter', 'asset', and 'amount'" });
+      }
+      const result = await relayEvmCreateStrategyRequest({
+        chain_id,
+        dao_address,
+        proposal_index: reqBody.proposal_index,
+        adapter: reqBody.adapter,
+        asset: reqBody.asset,
+        amount: reqBody.amount,
+      });
+      return res.json({
+        success: true,
+        signature: result.txHash,
+        execution_address: result.executionAddress,
+        index: result.index,
+      });
     }
 
     // ── Four-agent NaveExecution pipeline relay ──────────────────────────────
@@ -3613,7 +3744,12 @@ app.post('/sign', async (req, res) => {
     // the EVM relayer, not this Solana path. Reject EVM requests explicitly so
     // a mis-routed call can never hit a Solana handler with an EVM address.
     const reqChain = (body.chain ?? 'solana').toLowerCase();
-    if (reqChain === 'ethereum' || reqChain === 'base') {
+    if (
+      reqChain === 'ethereum'
+      || reqChain === 'base'
+      || reqChain === 'robinhood'
+      || reqChain === 'arc'
+    ) {
       return res.status(400).json({
         error: `chain '${reqChain}' is not supported on /sign; use /sign-evm for EVM approval signing`,
       });
@@ -3626,6 +3762,7 @@ app.post('/sign', async (req, res) => {
     // the AgentSet — neither has an execution request; all other actions do.
     const requiresExecutionRequest =
       action !== 'create_proposal'
+      && action !== 'create_strategy_request'
       && action !== 'toggle_agents'
       && action !== 'update_strategy_position_value'
       && action !== 'revalue_treasury'
@@ -3711,6 +3848,9 @@ app.post('/sign', async (req, res) => {
     // still pass governance and the full 4-agent pipeline before funds move.
     if (action === 'create_proposal') {
       return await handleCreateProposal(res, body, dao, effectiveAesKey);
+    }
+    if (action === 'create_strategy_request') {
+      return await handleCreateStrategyRequest(res, body, dao, effectiveAesKey);
     }
 
     // ── toggle_agents — real on-chain pause/resume of autonomous agents ───
@@ -3919,9 +4059,7 @@ app.post('/sign', async (req, res) => {
         // Pyth PriceUpdateV2 for non-stable assets. Stablecoins are valued at USD
         // parity on-chain and ignore this account, so we pass the mint as a
         // harmless placeholder when no explicit price_update is supplied.
-        const priceUpdate = body.price_update_address
-          ? new PublicKey(body.price_update_address)
-          : assetMint;
+        const priceUpdate = executionPriceAccount(assetMint, isMainnetCluster(), body.price_update_address);
 
         if (action === 'withdraw_from_strategy') {
           const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;

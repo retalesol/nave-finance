@@ -1,12 +1,12 @@
 # GenLayer for Nave
 
-GenLayer is one review layer above the treasuries. The same review covers Solana, Ethereum, Base, and Robinhood. The chain is an input on the case. It is not a separate product, and it is not a Base-only add-on.
+GenLayer is one review layer above the treasuries. The same review covers Solana, Ethereum, Base, Robinhood, and Arc. The chain is an input on the case. It is not a separate product, and it is not a Base-only add-on.
 
 GenLayer does not hold Nave assets. A review can stop a signature. It cannot, by itself, approve a transfer. The vault, the caps, the payload binding, and the review window stay on the chain that already holds the funds.
 
 ## What stays on the treasury chain
 
-Custody stays on Solana, or on Ethereum, Base, or Robinhood, whichever treasury the member already picked.
+Custody stays on Solana, or on Ethereum, Base, Robinhood, or Arc, whichever treasury the member already picked.
 
 These checks stay there too:
 
@@ -16,7 +16,7 @@ These checks stay there too:
 
 The Oversight key (role `operational`) on that chain is still required to lift a pause. A GenLayer result does not shorten the window and does not move the vault.
 
-GenLayer contracts cannot call Nave's Solana programs or the treasury contracts on Ethereum, Base, or Robinhood.
+GenLayer contracts cannot call Nave's Solana programs or the treasury contracts on Ethereum, Base, Robinhood, or Arc.
 
 ## What the member sees
 
@@ -58,7 +58,7 @@ Every charter case and every halt appeal uses the same four fields:
 
 | Field | Values |
 | --- | --- |
-| `chain_family` | `solana`, `ethereum`, `base`, or `robinhood` |
+| `chain_family` | `solana`, `ethereum`, `base`, `robinhood`, or `arc` |
 | `network` | `mainnet`, `testnet`, or `devnet` |
 | `treasury` | The treasury address, as a string |
 | `action_hash` | A 64-character hex string |
@@ -68,7 +68,7 @@ Stored form, which `get_case`, `has_case`, `get_appeal`, and `has_appeal` also a
 - `chain_family` and `network` are lowercase.
 - `action_hash` is 64 lowercase hex characters with no `0x`. A `0x` prefix on input is accepted and stripped. Any other length is rejected.
 - A Solana `treasury` is stored exactly as trimmed base58. Case is kept.
-- An Ethereum, Base, or Robinhood `treasury` is stored as lowercase `0x` plus 40 hex characters.
+- An Ethereum, Base, Robinhood, or Arc `treasury` is stored as lowercase `0x` plus 40 hex characters.
 
 The storage key is those four stored fields joined with `|`. Call the view methods rather than building the key in the app.
 
@@ -126,7 +126,7 @@ The contract ignores `decision`, `rule_ids`, `summary`, `essay`, `assistant`, `e
 
 Opening the same case twice does not change the stored result. A bad mandate hash does not open a case.
 
-`has_case` returns true or false. `get_case` returns the same object as `open_case`, or reverts if the case is missing. A missing case is Still checking, not a pass.
+`has_case` returns true or false. `get_case` returns the same object as `open_case`, or reverts if the case is missing. A missing case is not a pass. The screen shows nothing until a review is stored. An unfinished review, including one that is only accepted, is Still checking.
 
 ## VenueWatch
 
@@ -144,7 +144,7 @@ File: `contracts/genlayer/venue_watch.py`.
 
 `status_url` must be `https://…`. The page is the evidence. A one-word page is rejected. Prices, yields, and APY are not the source; price marks stay on Pyth. A `stop` withholds new deposits into that venue. Changing the on-chain allowlist is still a governance vote on the treasury chain.
 
-A later `review_venue` for the same family, network, and venue replaces the stored status. `get_venue` returns the record. `has_venue` is true or false. No record means there is nothing to show.
+A later `review_venue` for the same family, network, and venue replaces the stored status. `get_venue` returns the record. `has_venue` is true or false. No record means there is nothing to show. `genlayer-venue-watch` schedules reviews across all five testnet chains (`solana` `kamino` and `jito`, `ethereum` `aave-v3` and `compound-v3`, `base` `aave-v3`, `robinhood` `morpho-steakhouse-usdg` and `robinhood-weth-vault`, and `arc` `morpho-steakhouse-usdc`). Balancer is skipped.
 
 Validators must agree on `status` exactly. The score may differ by up to 15 points and is not stored.
 
@@ -175,13 +175,17 @@ A pause reason or a counterevidence text that is only a verdict word (`lift_paus
 
 `lift_pause` still needs the Oversight key (role `operational`) on the treasury chain and does not shorten the review window. `keep_pause` means a clear stays blocked in the shared guardrail.
 
+When an execution request is `Halted` on-chain, recovery (`clear_halt` → `operational_clear`) works through two paths:
+1. **Autonomous Oversight recovery**: The Oversight agent (`operational` role) receives the `HALTED` notice (`haltPrompt.ts`) and evaluates whether the halt is still warranted. `operationalGate` allows `clear_halt` when every recorded deterministic halt cause now passes — or, for a model-only halt (`openHaltCauses: []`), when all deterministic guardrail checks and active GenLayer gates are green.
+2. **Founder-signed recovery (`agent-admin`)**: The DAO founder signs `nave-admin|<dao_address>|clear_halt|<execution_request_address_or_index>|<unix_ms>` and posts `action: "clear_halt"` to `agent-admin`, which verifies on-chain founder authority and relays `operational_clear`.
+
 `has_appeal` and `get_appeal` match the case id. Validators must agree on `decision` exactly. The score may differ by up to 15 points and is not stored.
 
 ## Writing the decision back onto the treasury chain
 
-This is deferred. Do not build a registry, a program, or a contract that writes the GenLayer decision back onto Solana or onto Ethereum, Base, or Robinhood.
+This is deferred. Do not build a registry, a program, or a contract that writes the GenLayer decision back onto Solana or onto Ethereum, Base, Robinhood, or Arc.
 
-That step waits until the treasury programs have been audited, and until a real proof exists for the chain that holds the assets. Solana needs its own proof. Ethereum, Base, and Robinhood each need their own proof.
+That step waits until the treasury programs have been audited, and until a real proof exists for the chain that holds the assets. Solana needs its own proof. Ethereum, Base, Robinhood, and Arc each need their own proof.
 
 Even after a receipt like that exists, it still cannot move the vault.
 
@@ -197,7 +201,7 @@ A session exists only when all of these are set:
 - `NAVE_GENLAYER_VENUE_ADDRESS`
 - `NAVE_GENLAYER_HALT_ADDRESS`
 
-If any of those is missing, the adjudicator returns an error and writes no row. The dispatcher skips the submit. Signing continues under the existing treasury rules. The three gate flags stay off until those addresses are real.
+If any of those is missing, the adjudicator returns an error and writes no row. The dispatcher skips the submit. Signing continues under the existing treasury rules. The three gate flags stay off unless each one is the literal `true`. Deployed contract addresses do not turn a gate on. A finished pass does not authorize a transfer, and the review is not written back onto the treasury chain.
 
 The dispatcher submits `open_case` only when it already has the 64-hex action hash the signer will check, the on-chain constitution numbers, the venue, the amount, and the asset. The snapshot uses the contract's fields (`approved_venues`, `max_deployment_bps`, `liquidity_floor_bps`, `reserve_floor_bps`, `liquid_base_units`, `venue_deployed_base_units`, `reserve_base_units`, `asset_is_stable`). A missing number skips the submit. The mandate sentence is built from those numbers. The model's paragraph is not the mandate and is not the verdict.
 
@@ -221,8 +225,9 @@ One public case per family, with test addresses:
 | `contracts/genlayer/fixtures/ethereum.json` | ethereum | testnet | `0x1111111111111111111111111111111111111111` | aave-v3 |
 | `contracts/genlayer/fixtures/base.json` | base | testnet | `0x2222222222222222222222222222222222222222` | compound-v3 |
 | `contracts/genlayer/fixtures/robinhood.json` | robinhood | testnet | `0x3333333333333333333333333333333333333333` | balancer-v2 |
+| `contracts/genlayer/fixtures/arc.json` | arc | testnet | `0x4444444444444444444444444444444444444444` | aave-v3 |
 
-Each file is a passing move against the same mandate. The mandate hash is the sha256 of the exact `mandate_text` in the file.
+Each file is a passing move against the same mandate. The mandate hash is the sha256 of the exact `mandate_text` in the file. The Robinhood file names `balancer-v2`, and the Arc file names `aave-v3`, as fixture data. Neither is a live venue page, and venue watch does not fetch one for those families.
 
 ## Checks
 

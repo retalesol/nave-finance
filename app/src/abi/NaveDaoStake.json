@@ -241,12 +241,12 @@
         "internalType": "address"
       },
       {
-        "name": "amount",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "priceUsdMicro",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }

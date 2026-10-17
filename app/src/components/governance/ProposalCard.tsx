@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { findVenue, packSolanaAllocation } from '../../../supabase/functions/_shared/strategyCatalog.ts';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { getAssociatedTokenAddressSync, NATIVE_MINT } from '@solana/spl-token';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
 import { parseUnits } from 'viem';
 import Fi from '@/components/Fi';
 import ProposalStatusStepper from '@/components/governance/ProposalStatusStepper';
@@ -13,7 +13,10 @@ import CharterCheckStatus from '@/components/governance/CharterCheckStatus';
 import { useCharterCheck } from '@/hooks/useCharterCheck';
 import { useSendTransaction } from '@/hooks/useSendTransaction';
 import { useChain } from '@/hooks/useChain';
-import { fetchDaoContracts } from '@/lib/evm/readers';
+import { useConstitution } from '@/hooks/useConstitution';
+import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
+import { isTreasuryOpsFamily } from '@/lib/chain/types';
+import { fetchDaoContracts, fetchExecutionRequestsEvm } from '@/lib/evm/readers';
 import {
   buildApproveErc20Evm,
   buildCastVoteEvm,
@@ -21,8 +24,11 @@ import {
   buildExecuteTransferProposalEvm,
   buildExecuteNftTransferProposalEvm,
   buildExecutePermissionProposalEvm,
+  buildExecuteSwitchVotingSystemEvm,
   decodeEvmNftTransferRequestPayload,
   decodeEvmPermissionPayload,
+  decodeEvmSwitchVotingPayload,
+  decodeEvmStrategyProposalPayload,
   buildFinalizeProposalEvm,
   buildMintAdditionalTokensEvm,
   buildReleaseVoteEscrowEvm,
@@ -38,6 +44,7 @@ import {
   buildSetPolicyParameters,
   buildMintAdditionalTokens,
   buildReleaseVoteEscrow,
+  buildSwitchVotingSystem,
   type ProtocolInput,
   type TransactionBuildResult,
   buildExecuteTreasuryTransferNativeSol,
@@ -46,8 +53,8 @@ import {
   decodeSolanaTransferProposalPayload,
 } from '@/lib/transactionBuilders';
 import { getNavePrograms } from '@/lib/naveProgram';
-import { getProposalPDA, getAssetConfigPDA, getNftVaultRecordPDA } from '@/lib/pdaDerivation';
-import { fetchTreasuryVault, fetchProposal, fetchProposalPayload, fetchProposalPayloadBytes } from '@/lib/onChainFetcher';
+import { getProposalPDA, getAssetConfigPDA, getNftVaultRecordPDA, getExecutionRequestPDA } from '@/lib/pdaDerivation';
+import { fetchTreasuryVault, fetchProposal, fetchProposalPayload, fetchProposalPayloadBytes, fetchExecutionRequest } from '@/lib/onChainFetcher';
 import {
   decodeConstitutionPayload,
   decodeEvmStrategyRequestPayload,
@@ -62,11 +69,14 @@ import {
   MARGINFI_STRATEGY_ENABLED,
 } from '@/lib/programConfig';
 import {
+  clearHaltViaProxy,
   dispatchViaProxy,
   setAgentsEnabledViaProxy,
   setAgentsEnabledViaProxyEvm,
+  solanaAccessSigner,
 } from '@/lib/edgeFunctionClient';
 import {
+  ExecutionStatus,
   ProposalStatus as OnChainProposalStatus,
   ProposalType as OnChainProposalType,
 } from '@/lib/onChainTypes';
@@ -131,9 +141,12 @@ export default function ProposalCard({
   const { publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
   const { chainKind, evmChainId, chainFamily } = useChain();
+  const { constitution } = useConstitution(daoAddress);
+  const { assets: treasuryAssets } = useTreasuryAssets(daoAddress);
   const charter = useCharterCheck(daoAddress, chainId, proposal.actionHash);
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
   const navigate = useNavigate();
   const tx = useSendTransaction();
   const [expanded, setExpanded] = useState(highlight);
@@ -214,14 +227,133 @@ export default function ProposalCard({
   const [lockAmount, setLockAmount] = useState('');
   const [finalizing, setFinalizing] = useState(false);
   const [createReqAmount, setCreateReqAmount] = useState('1');
-  const [createReqProtocol, setCreateReqProtocol] = useState<'kamino' | 'jito' | 'marginfi'>('kamino');
+  const [createReqProtocol, setCreateReqProtocol] = useState<'kamino' | 'jito' | 'marginfi' | 'jupiter'>('kamino');
+  const registeredTreasuryAssets = useMemo(
+    () => treasuryAssets.filter((a) => a.onChainRegistered && a.mint !== 'SOL' && a.mint !== 'ETH'),
+    [treasuryAssets],
+  );
+  const defaultReqAssetMint = useMemo(() => {
+    const wsol = registeredTreasuryAssets.find(
+      (a) => a.mint === 'So11111111111111111111111111111111111111112' || a.symbol.toUpperCase() === 'WSOL',
+    );
+    const usdc = registeredTreasuryAssets.find((a) => a.isStablecoin || a.symbol.toUpperCase().includes('USDC'));
+    if (createReqProtocol === 'jito' && wsol) return wsol.mint;
+    if ((createReqProtocol === 'kamino' || createReqProtocol === 'jupiter' || createReqProtocol === 'marginfi') && usdc) {
+      return usdc.mint;
+    }
+    return registeredTreasuryAssets[0]?.mint ?? votingMint ?? NATIVE_MINT.toBase58();
+  }, [registeredTreasuryAssets, createReqProtocol, votingMint]);
+  const [createReqAssetMint, setCreateReqAssetMint] = useState<string>(defaultReqAssetMint);
+  useEffect(() => {
+    setCreateReqAssetMint(defaultReqAssetMint);
+  }, [defaultReqAssetMint]);
   const [creatingReq, setCreatingReq] = useState(false);
   const [executingTransfer, setExecutingTransfer] = useState(false);
   const [executingPermission, setExecutingPermission] = useState(false);
+  const [executingSwitchVoting, setExecutingSwitchVoting] = useState(false);
   const [ratifying, setRatifying] = useState(false);
   const [ratifyMsg, setRatifyMsg] = useState<string | null>(null);
   const [releasing, setReleasing] = useState(false);
   const [releaseMsg, setReleaseMsg] = useState<string | null>(null);
+  const [haltedEr, setHaltedEr] = useState<{ address: string; reason: string } | null>(null);
+  const [clearingHalt, setClearingHalt] = useState(false);
+  const [clearHaltMsg, setClearHaltMsg] = useState<string | null>(null);
+  const [clearHaltError, setClearHaltError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!daoAddress || isMockDaoAddress(daoAddress) || proposal.type !== 'strategy') {
+      setHaltedEr(null);
+      return;
+    }
+    if (proposal.status !== 'passed' && proposal.status !== 'executed') {
+      setHaltedEr(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (chainKind === 'evm') {
+          if (!evmChainId) return;
+          const reqs = await fetchExecutionRequestsEvm(evmChainId, daoAddress, proposal.number + 1);
+          if (cancelled) return;
+          const match = reqs.find((r) => Number(r.proposal) === proposal.number);
+          if (match && (match.status === ExecutionStatus.Halted || match.operationalHalt)) {
+            setHaltedEr({ address: String(proposal.number), reason: match.operationalHaltReason });
+          } else {
+            setHaltedEr(null);
+          }
+          return;
+        }
+        const daoPk = new PublicKey(daoAddress);
+        const [propPda] = getProposalPDA(daoPk, proposal.number);
+        const er = await fetchExecutionRequest(propPda);
+        if (cancelled) return;
+        if (er && (er.status === ExecutionStatus.Halted || er.operationalHalt)) {
+          const [erPda] = getExecutionRequestPDA(propPda);
+          setHaltedEr({ address: erPda.toBase58(), reason: er.operationalHaltReason });
+        } else {
+          setHaltedEr(null);
+        }
+      } catch {
+        if (!cancelled) setHaltedEr(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [daoAddress, chainKind, evmChainId, proposal.number, proposal.status, proposal.type]);
+
+  async function handleClearProposalHalt() {
+    if (!daoAddress || !haltedEr || clearingHalt) return;
+    setClearingHalt(true);
+    setClearHaltError(null);
+    setClearHaltMsg(null);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmAddress || !evmChainId || !isTreasuryOpsFamily(chainFamily)) {
+          setClearHaltError('Connect your EVM founder wallet on Ethereum, Base, Robinhood, or Arc.');
+          return;
+        }
+        const { error } = await clearHaltViaProxy({
+          daoAddress,
+          walletAddress: evmAddress,
+          executionRequestAddress: haltedEr.address,
+          signChallenge: (m) => signMessageAsync({ message: m }),
+          chain: chainFamily,
+          chainId: evmChainId,
+          index: proposal.number,
+        });
+        if (error) {
+          setClearHaltError(error);
+          return;
+        }
+        setClearHaltMsg('Halt cleared on-chain. The execution request is back in the review window.');
+        setHaltedEr(null);
+        onChanged?.();
+        return;
+      }
+      if (!publicKey || !signMessage) {
+        setClearHaltError('Connect your Solana founder wallet with message signing support.');
+        return;
+      }
+      const { error } = await clearHaltViaProxy({
+        daoAddress,
+        walletAddress: publicKey.toBase58(),
+        executionRequestAddress: haltedEr.address,
+        signChallenge: solanaAccessSigner(signMessage),
+        chain: 'solana',
+      });
+      if (error) {
+        setClearHaltError(error);
+        return;
+      }
+      setClearHaltMsg('Halt cleared on-chain. The execution request is back in the review window.');
+      setHaltedEr(null);
+      onChanged?.();
+    } catch (err) {
+      setClearHaltError(err instanceof Error ? err.message : 'Failed to clear halt.');
+    } finally {
+      setClearingHalt(false);
+    }
+  }
 
   // Persist ratification across reloads (same pattern as vote persistence).
   const ratifyStorageKey = daoAddress ? `ratified:${daoAddress}:${proposal.id}` : null;
@@ -230,27 +362,8 @@ export default function ProposalCard({
     return localStorage.getItem(`ratified:${daoAddress}:${proposal.id}`) === 'true';
   });
 
-  // Also verify on-chain: if the constitution already has protocols, the first
-  // ratification is done. For subsequent proposals we keep localStorage as the
-  // source of truth since we don't track per-proposal application on-chain.
-  useEffect(() => {
-    if (alreadyRatified || proposal.status !== 'passed' || proposal.type !== 'policy' || !daoAddress) return;
-    // The Solana constitution read derives a PublicKey from daoAddress, which
-    // would throw on a 0x EVM address — skip it entirely for EVM DAOs.
-    if (chainKind === 'evm') return;
-    let cancelled = false;
-    import('@/lib/onChainFetcher').then(({ fetchConstitution }) => {
-      fetchConstitution(new PublicKey(daoAddress)).then(constitution => {
-        if (cancelled) return;
-        if (constitution && constitution.protocolCount > 0) {
-          if (ratifyStorageKey) localStorage.setItem(ratifyStorageKey, 'true');
-          setAlreadyRatified(true);
-        }
-      }).catch(() => {});
-    });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposal.id, proposal.status, proposal.type, daoAddress]);
+  // Ratification is per proposal. Creation itself writes protocols, so a
+  // live protocolCount must not mark a later passed policy proposal applied.
 
   async function handleRatifyTokenMint() {
     if (chainKind === 'evm') {
@@ -354,8 +467,8 @@ export default function ProposalCard({
     // ── EVM: execute the passed enable proposal via the founder-signed
     // agent-admin → /relay-evm path (Executive EOA calls toggleAgents(true)). ──
     if (chainKind === 'evm') {
-      if (!evmChainId || (chainFamily !== 'ethereum' && chainFamily !== 'base' && chainFamily !== 'robinhood')) {
-        setEnableError('Select an Ethereum, Base, or Robinhood network.');
+      if (!evmChainId || !isTreasuryOpsFamily(chainFamily)) {
+        setEnableError('Select an Ethereum, Base, Robinhood, or Arc network.');
         return;
       }
       if (!evmAddress) {
@@ -373,6 +486,17 @@ export default function ProposalCard({
           true,
           evmChainId,
           chainFamily,
+          {
+            signGuardianAction: signTypedDataAsync
+              ? (typed) =>
+                  signTypedDataAsync({
+                    domain: typed.domain,
+                    types: typed.types,
+                    primaryType: typed.primaryType,
+                    message: typed.message,
+                  })
+              : undefined,
+          },
         );
         if (error || !data?.success) {
           setEnableError(error || data?.error || 'Failed to enable agents on-chain.');
@@ -466,6 +590,9 @@ export default function ProposalCard({
             daoAddress,
             adapters,
             decoded.confidenceThreshold ?? 0,
+            constitution?.agentThresholdUsdMicro && constitution.agentThresholdUsdMicro > 0
+              ? constitution.agentThresholdUsdMicro
+              : 100_000_000,
           ),
         ];
         if (
@@ -517,7 +644,7 @@ export default function ProposalCard({
       // Re-resolve adapter program IDs at ratify time; skip protocols without one.
       const protocols: ProtocolInput[] = decoded.protocols
         .map((p): ProtocolInput | null => {
-          const programId = getAdapterProgramId(p.id as 'kamino' | 'jito' | 'marginfi');
+          const programId = getAdapterProgramId(p.id);
           if (!programId) return null;
           return {
             protocolId: p.id,
@@ -528,12 +655,34 @@ export default function ProposalCard({
         })
         .filter((p): p is ProtocolInput => p !== null);
 
+      let storedThresholdMicro: number | undefined;
+      try {
+        const rawThresh = localStorage.getItem(`nave_agent_threshold_micro::${daoAddress.toLowerCase()}`);
+        if (rawThresh) {
+          const parsed = Number(rawThresh);
+          if (Number.isFinite(parsed) && parsed > 0) storedThresholdMicro = parsed;
+        }
+      } catch { /* ignore */ }
+      const preservedThresholdMicro =
+        storedThresholdMicro ??
+        (constitution?.agentThresholdUsdMicro && constitution.agentThresholdUsdMicro > 0
+          ? constitution.agentThresholdUsdMicro
+          : undefined);
+
       // Split into two sequential transactions to stay within the 1232-byte
       // legacy-transaction size limit. update_constitution carries protocol
       // pubkeys + bps data; set_policy_parameters carries numeric policy fields.
       // Grouping both in one tx pushes the size to ~1245 bytes — 13 bytes over.
       const txGroups: TransactionBuildResult[][] = [
-        [await buildUpdateConstitution(daoPubkey, publicKey, protocols, decoded.confidenceThreshold)],
+        [
+          await buildUpdateConstitution(
+            daoPubkey,
+            publicKey,
+            protocols,
+            decoded.confidenceThreshold,
+            preservedThresholdMicro,
+          ),
+        ],
       ];
       if (
         decoded.minStablecoin != null ||
@@ -740,9 +889,10 @@ export default function ProposalCard({
       const isAlreadyVoted = isAlreadyVotedError(errLower);
 
       if (isAlreadyVoted) {
-        // The vote WAS cast on-chain in a previous session — mark as voted now.
+        // The attempt is not the vote that landed. Keep the stored choice.
         setVoted(true);
-        if (walletStr && daoAddress) persistVote(daoAddress, walletStr, proposal.id, vote);
+        const stored = walletStr && daoAddress ? loadPersistedVote(daoAddress, walletStr, proposal.id) : null;
+        setMyVote(stored);
         setVoteError('Your vote has already been recorded on-chain.');
         return;
       }
@@ -1140,7 +1290,13 @@ export default function ProposalCard({
           return;
         }
         const buildResult = (() => {
-          const decoded = decodeEvmStrategyRequestPayload(payload);
+          let decoded: { adapter: `0x${string}`; asset: `0x${string}`; amount: bigint };
+          try {
+            const d = decodeEvmStrategyProposalPayload(payload);
+            decoded = { adapter: d.adapter, asset: d.asset, amount: d.amount };
+          } catch {
+            decoded = decodeEvmStrategyRequestPayload(payload);
+          }
           return buildCreateStrategyRequestEvm(
             evmChainId,
             trio.execution,
@@ -1181,12 +1337,17 @@ export default function ProposalCard({
       }
       const daoPubkey = new PublicKey(daoAddress);
       const [proposalPubkey] = getProposalPDA(daoPubkey, proposal.number);
-      const mint = votingMint ? new PublicKey(votingMint) : NATIVE_MINT;
+      const selectedMintStr = createReqAssetMint || votingMint || NATIVE_MINT.toBase58();
+      const mint = new PublicKey(selectedMintStr);
+      const matchedAsset = registeredTreasuryAssets.find((a) => a.mint === selectedMintStr);
+      const amountBaseUnits = matchedAsset
+        ? parseUnits(createReqAmount.trim() || '1', matchedAsset.decimals)
+        : BigInt(Math.floor(amount));
       const result = await buildCreateExecutionRequest(
         daoPubkey,
         proposalPubkey,
         publicKey,
-        BigInt(Math.floor(amount)),
+        amountBaseUnits,
         protocolProgram,
         mint,
       );
@@ -1198,6 +1359,63 @@ export default function ProposalCard({
       }
     } finally {
       setCreatingReq(false);
+    }
+  }
+
+  async function handleExecuteSwitchVotingSystem() {
+    if (!daoAddress || executingSwitchVoting) return;
+    setVoteError(null);
+    setExecutingSwitchVoting(true);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmChainId) {
+          setVoteError('Select an Ethereum, Base, Robinhood, or Arc network.');
+          return;
+        }
+        const trio = await fetchDaoContracts(evmChainId, daoAddress);
+        if (!trio) {
+          setVoteError('EVM contracts are not configured for this network yet.');
+          return;
+        }
+        const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, 'switch-voting');
+        let newGovType = isTokenGov ? 0 : 1;
+        let newVotingToken = newGovType === 1 && votingMint ? votingMint : '0x0000000000000000000000000000000000000000';
+        if (payload?.length) {
+          try {
+            const dec = decodeEvmSwitchVotingPayload(payload);
+            newGovType = dec.governanceType;
+            newVotingToken = dec.votingToken;
+          } catch { /* fall back to inferred toggle */ }
+        }
+        const outcome = await tx.sendEvm(
+          buildExecuteSwitchVotingSystemEvm(evmChainId, trio.governor, proposal.number, newGovType, newVotingToken),
+          { successLabel: `Voting system switched — proposal #${proposal.number}` },
+        );
+        if (outcome.status === 'success' || outcome.status === 'mock') {
+          onChanged?.();
+        } else {
+          setVoteError(outcome.error || 'Failed to execute voting system switch.');
+        }
+        return;
+      }
+      if (!publicKey) {
+        setVoteError('Connect your Solana wallet to execute this voting system switch.');
+        return;
+      }
+      const daoPubkey = new PublicKey(daoAddress);
+      const outcome = await tx.send(
+        await buildSwitchVotingSystem(daoPubkey, publicKey, proposal.number),
+        { successLabel: `Voting system switched — proposal #${proposal.number}` },
+      );
+      if (outcome.status === 'success' || outcome.status === 'mock') {
+        onChanged?.();
+      } else {
+        setVoteError(outcome.error || 'Failed to execute voting system switch.');
+      }
+    } catch (err) {
+      setVoteError(err instanceof Error ? err.message : 'Failed to execute voting system switch.');
+    } finally {
+      setExecutingSwitchVoting(false);
     }
   }
 
@@ -1278,6 +1496,17 @@ export default function ProposalCard({
         onClick: (e) => {
           e.stopPropagation();
           void handleExecuteTreasuryTransfer();
+        },
+      };
+    } else if (proposal.type === 'switch-voting' && isMember) {
+      primaryAction = {
+        label: executingSwitchVoting ? 'Switching…' : 'Execute voting system switch',
+        icon: 'scale-balanced',
+        disabled: executingSwitchVoting,
+        loading: executingSwitchVoting,
+        onClick: (e) => {
+          e.stopPropagation();
+          void handleExecuteSwitchVotingSystem();
         },
       };
     } else {
@@ -1634,10 +1863,10 @@ export default function ProposalCard({
                   borderColor: 'hsl(var(--border-strong))',
                   backgroundColor: 'hsl(var(--surface-0))',
                   color: 'hsl(var(--foreground))',
-                  opacity: releasing || !isMember || !publicKey ? 0.6 : 1,
-                  cursor: releasing || !isMember || !publicKey ? 'not-allowed' : 'pointer',
+                  opacity: releasing || !isMember || !walletStr ? 0.6 : 1,
+                  cursor: releasing || !isMember || !walletStr ? 'not-allowed' : 'pointer',
                 }}
-                title={!publicKey ? 'Connect the wallet you voted with to reclaim locked tokens' : undefined}
+                title={!walletStr ? 'Connect the wallet you voted with to reclaim locked tokens' : undefined}
               >
                 <Fi icon={releasing ? 'arrows-rotate' : 'lock-open'} style={{ fontSize: '11px' }} className={releasing ? 'animate-spin' : ''} />
                 {releasing ? 'Reclaiming…' : 'Reclaim locked tokens'}
@@ -1912,7 +2141,7 @@ export default function ProposalCard({
             </div>
           )}
 
-          {/* Ratify a passed switch-voting proposal — founder applies the governance change */}
+          {/* Ratify a passed switch-voting proposal — execute the governance change on-chain */}
           {proposal.status === 'passed' && proposal.type === 'switch-voting' && (
             <div
               className="p-4 rounded-xl border space-y-3"
@@ -1922,8 +2151,79 @@ export default function ProposalCard({
                 Apply Voting System Change
               </div>
               <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                This proposal passed. Head to <strong>Settings → Voting System</strong> to apply the change on-chain now that governance has approved it.
+                This proposal passed. Execute the voting system switch on-chain to transition this DAO's governance model.
               </p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleExecuteSwitchVotingSystem();
+                }}
+                disabled={executingSwitchVoting || !isMember}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
+                style={{
+                  fontSize: '13px',
+                  backgroundColor: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
+                  opacity: executingSwitchVoting || !isMember ? 0.6 : 1,
+                }}
+              >
+                <Fi icon={executingSwitchVoting ? 'arrows-rotate' : 'scale-balanced'} style={{ fontSize: '12px' }} className={executingSwitchVoting ? 'animate-spin' : ''} />
+                {executingSwitchVoting ? 'Switching…' : 'Execute voting system switch'}
+              </button>
+              {voteError && (
+                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
+                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
+                  {voteError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Halted strategy execution request recovery */}
+          {haltedEr && (
+            <div
+              className="p-4 rounded-xl border space-y-3"
+              style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
+            >
+              <div className="text-display font-semibold" style={{ fontSize: '13.5px', color: 'hsl(0 60% 35%)' }}>
+                Execution Request Halted
+              </div>
+              <p style={{ fontSize: '12.5px', color: 'hsl(0 50% 35%)', lineHeight: 1.5 }}>
+                {haltedEr.reason || 'This execution request is currently halted by the Oversight agent.'}
+              </p>
+              {isFounder && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleClearProposalHalt();
+                  }}
+                  disabled={clearingHalt}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
+                  style={{
+                    fontSize: '13px',
+                    backgroundColor: 'hsl(var(--primary))',
+                    color: 'hsl(var(--primary-foreground))',
+                    opacity: clearingHalt ? 0.6 : 1,
+                  }}
+                >
+                  <Fi icon={clearingHalt ? 'arrows-rotate' : 'shield-check'} style={{ fontSize: '12px' }} className={clearingHalt ? 'animate-spin' : ''} />
+                  {clearingHalt ? 'Clearing…' : 'Clear Halt'}
+                </button>
+              )}
+              {clearHaltMsg && (
+                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
+                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
+                  {clearHaltMsg}
+                </div>
+              )}
+              {clearHaltError && (
+                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
+                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
+                  {clearHaltError}
+                </div>
+              )}
             </div>
           )}
 
@@ -1955,10 +2255,11 @@ export default function ProposalCard({
                 <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
                   Create an execution request so the agent approval pipeline can review, sign, and execute this proposal.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                   <input
                     type="number"
-                    min="1"
+                    min="0"
+                    step="any"
                     value={createReqAmount}
                     onChange={(e) => setCreateReqAmount(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
@@ -1973,7 +2274,7 @@ export default function ProposalCard({
                   />
                   <select
                     value={createReqProtocol}
-                    onChange={(e) => setCreateReqProtocol(e.target.value as 'kamino' | 'jito' | 'marginfi')}
+                    onChange={(e) => setCreateReqProtocol(e.target.value as 'kamino' | 'jito' | 'marginfi' | 'jupiter')}
                     onClick={(e) => e.stopPropagation()}
                     className="px-3 py-2 rounded-lg border"
                     style={{
@@ -1985,7 +2286,32 @@ export default function ProposalCard({
                   >
                     <option value="kamino">Kamino</option>
                     <option value="jito">Jito</option>
+                    <option value="jupiter">Jupiter</option>
                     {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">Marginfi</option>}
+                  </select>
+                  <select
+                    value={createReqAssetMint}
+                    onChange={(e) => setCreateReqAssetMint(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="px-3 py-2 rounded-lg border"
+                    style={{
+                      fontSize: '12.5px',
+                      backgroundColor: 'hsl(var(--surface-0))',
+                      borderColor: 'hsl(var(--border))',
+                      color: 'hsl(var(--foreground))',
+                    }}
+                  >
+                    {registeredTreasuryAssets.length > 0 ? (
+                      registeredTreasuryAssets.map((a) => (
+                        <option key={a.mint} value={a.mint}>
+                          {a.symbol}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={votingMint ?? NATIVE_MINT.toBase58()}>
+                        {votingMint ? `${votingMint.slice(0, 6)}…` : 'wSOL'}
+                      </option>
+                    )}
                   </select>
                   <button
                     onClick={(e) => {

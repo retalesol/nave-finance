@@ -1,7 +1,7 @@
 // Scheduled caller for VenueWatch.
 //
-// Posts kind "venue" to genlayer-adjudicator for Kamino, Aave V3, and
-// Compound V3 on testing-environment treasuries. Balancer is not included.
+// Posts kind "venue" to genlayer-adjudicator for Kamino, Jito, Aave V3,
+// and Compound V3 on testing-environment treasuries. Balancer is not included.
 // Each post is a real review_venue. A missing GenLayer session writes no row.
 
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     .from("dao_registry")
     .select("dao_onchain_address, chain, network")
     .in("network", ["testnet", "devnet"])
-    .in("chain", ["solana", "ethereum", "base"]);
+    .in("chain", ["solana", "ethereum", "base", "robinhood", "arc"]);
   if (daoError) return jsonResponse({ error: daoError.message }, 500);
 
   const jobs = venueWatchJobs((daos ?? []).map((dao) => ({

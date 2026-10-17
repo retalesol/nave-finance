@@ -1034,4 +1034,62 @@ contract ExecutionTest is NaveBase {
         vm.expectRevert(NaveErrors.ProposalNotPassed.selector);
         g.executeNftTransferProposal(idx, address(nft), to, tokenId);
     }
+
+    function _passAndBridge(MockBridgeAdapter bridge, uint256 amount, uint256 destChain, address destTreasury)
+        internal
+        returns (uint64 idx)
+    {
+        bytes memory payload = abi.encode(address(bridge), amount, address(usdc), destChain, destTreasury);
+        vm.prank(g1);
+        idx = g.createProposal(
+            NaveGovernor.CreateProposalParams({
+                title: "bridge",
+                description: "",
+                payload: payload,
+                proposalType: uint8(ProposalType.Strategy),
+                votingPeriodSeconds: 1 days,
+                votingMint: address(0)
+            })
+        );
+        vm.prank(g1);
+        g.castVoteWallet(idx, uint8(VoteChoice.For));
+        vm.prank(g2);
+        g.castVoteWallet(idx, uint8(VoteChoice.For));
+        g.finalizeProposal(idx);
+        e.createBridgeRequest(idx, amount, address(bridge), address(usdc), destChain, destTreasury);
+        bytes32 ph = PayloadHash.bridgeHash(address(bridge), amount, address(usdc), destChain, destTreasury);
+        vm.prank(exec);
+        e.executiveApprove(idx, RH);
+        vm.prank(fin);
+        e.financialApprove(idx, ph, RH);
+        vm.prank(over);
+        e.oversightApprove(idx, ph, RH);
+    }
+
+    function test_bridge_secondMoveInSameBlockHitsCap() public {
+        MockBridgeAdapter bridge = new MockBridgeAdapter();
+        _approveAdapterInConstitution(t, address(bridge));
+        uint256 destChain = 8453;
+        address destTreasury = makeAddr("remoteTreasury");
+        vm.prank(owner);
+        protocol.setRemoteTreasury(destChain, destTreasury, true);
+        vm.prank(founder);
+        t.setLinkedTreasury(destChain, destTreasury);
+
+        uint64 first = _passAndBridge(bridge, 400e6, destChain, destTreasury);
+        uint64 second = _passAndBridge(bridge, 200e6, destChain, destTreasury);
+        vm.warp(block.timestamp + 1 days + 1);
+        _revalueTreasury(t);
+
+        vm.prank(exec);
+        e.execute(first, 1);
+        assertEq(bridge.bridgedOut(), 400e6);
+        assertLt(t.currentNav(), FUND);
+        assertGt(t.deployedCapital(), 0);
+
+        vm.prank(exec);
+        vm.expectRevert(NaveErrors.DeploymentCapExceeded.selector);
+        e.execute(second, 1);
+        assertEq(bridge.bridgedOut(), 400e6);
+    }
 }
