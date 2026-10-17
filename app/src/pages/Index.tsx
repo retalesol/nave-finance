@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
@@ -11,15 +11,14 @@ import WalletNetworkMenu from '../components/WalletNetworkMenu';
 import DitherGlyph from '../components/homepage/DitherGlyph';
 import NaveMark from '../components/NaveMark';
 import HomeRoute from '../components/homepage/ChartedRoute';
-import { useAfterFirstPaint, usePrefersReducedMotion } from '../components/homepage/useHomeMotion';
+import Dither from '../components/Dither';
+import { usePrefersReducedMotion } from '../components/homepage/useHomeMotion';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS } from '../lib/chain/types';
 import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
 import { usePlatformTreasuryStats, formatHeroProtocolUsd } from '../hooks/usePlatformTreasuryStats';
 import { useNaveTokenStats, formatNavePrice, formatNaveMarketCap, formatNaveHolders } from '../hooks/useNaveTokenStats';
-
-const Dither = lazy(() => import('../components/Dither'));
 
 const INK: [number, number, number] = [0x0b / 255, 0x12 / 255, 0x20 / 255];
 const PAPER: [number, number, number] = [0xfa / 255, 0xf8 / 255, 0xf3 / 255];
@@ -172,7 +171,6 @@ function Hero() {
   }, [evmAddress, publicKey, isEvm, navigate]);
   const { stats, loading: statsLoading, error: statsError } = usePlatformTreasuryStats();
   const prefersReducedMotion = usePrefersReducedMotion();
-  const showDither = useAfterFirstPaint();
 
   const treasuriesDisplay = statsError ? '—' : statsLoading ? '…' : (stats?.treasuryCount ?? 0).toLocaleString();
   const tvlDisplay = statsError ? '—' : statsLoading ? '…' : formatHeroProtocolUsd(stats?.tvlUsd ?? 0);
@@ -267,32 +265,29 @@ function Hero() {
       </div>
       <div className="home-hero-map" aria-hidden>
         <div className="home-map-canvas">
-          {showDither && (
-            <Suspense fallback={null}>
-              <Dither
-                variant="isolines"
-                paletteA={INK}
-                paletteB={PAPER}
-                gain={0.62}
-                bias={-0.34}
-                isoLevels={6}
-                isoLineWidth={0.05}
-                isoLineValue={-0.8}
-                colorNum={5}
-                pixelSize={2}
-                waveSpeed={0.03}
-                waveFrequency={2.4}
-                waveAmplitude={0.3}
-                showMark
-                lightAngle={Math.PI * 0.75}
-                lightStrength={prefersReducedMotion ? 0 : 0.12}
-                tiltWithPointer={!prefersReducedMotion}
-                disableAnimation={prefersReducedMotion}
-                enableMouseInteraction={false}
-                mouseRadius={0}
-              />
-            </Suspense>
-          )}
+          <Dither
+            eager
+            variant="isolines"
+            paletteA={INK}
+            paletteB={PAPER}
+            gain={0.62}
+            bias={-0.34}
+            isoLevels={6}
+            isoLineWidth={0.05}
+            isoLineValue={-0.8}
+            colorNum={5}
+            pixelSize={2}
+            waveSpeed={0.03}
+            waveFrequency={2.4}
+            waveAmplitude={0.3}
+            showMark
+            lightAngle={Math.PI * 0.75}
+            lightStrength={prefersReducedMotion ? 0 : 0.12}
+            tiltWithPointer={!prefersReducedMotion}
+            disableAnimation={prefersReducedMotion}
+            enableMouseInteraction={false}
+            mouseRadius={0}
+          />
         </div>
         <Compass />
       </div>
@@ -429,32 +424,27 @@ const CONSTITUTION_ROWS = [
 
 function ConstitutionShowcase() {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const showDither = useAfterFirstPaint();
   return (
     <section id="governance" className="home-section home-deep home-constitution">
       <div className="home-const-sea" aria-hidden>
-        {showDither && (
-          <Suspense fallback={null}>
-            <Dither
-              variant="isolines"
-              paletteA={INK}
-              paletteB={DEEP_DOT_SOFT}
-              gain={0.9}
-              bias={0.1}
-              isoLevels={6}
-              isoLineWidth={0.08}
-              isoLineValue={1}
-              colorNum={4}
-              pixelSize={2}
-              waveSpeed={0.02}
-              waveFrequency={2.6}
-              waveAmplitude={0.42}
-              disableAnimation={prefersReducedMotion}
-              enableMouseInteraction={false}
-              mouseRadius={0}
-            />
-          </Suspense>
-        )}
+        <Dither
+          variant="isolines"
+          paletteA={INK}
+          paletteB={DEEP_DOT_SOFT}
+          gain={0.9}
+          bias={0.1}
+          isoLevels={6}
+          isoLineWidth={0.08}
+          isoLineValue={1}
+          colorNum={4}
+          pixelSize={2}
+          waveSpeed={0.02}
+          waveFrequency={2.6}
+          waveAmplitude={0.42}
+          disableAnimation={prefersReducedMotion}
+          enableMouseInteraction={false}
+          mouseRadius={0}
+        />
       </div>
       <div className="home-const-wash" aria-hidden />
       <div className="home-wrap home-const-grid">
@@ -574,7 +564,6 @@ const TOKEN_UTILITIES = [
 
 function Tokenomics() {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const showDither = useAfterFirstPaint();
   const { stats } = useNaveTokenStats();
   const [addressCopied, setAddressCopied] = useState(false);
   const contractAddress = stats?.contractAddress ?? 'EGg56E1YtL5YapzkF7vkRThHR8i5FeRvm2LLuySdYory';
@@ -624,21 +613,17 @@ function Tokenomics() {
           <Reveal variant="right">
             <div className="nave-card home-supply">
               <div className="home-supply-sea" aria-hidden>
-                {showDither && (
-                  <Suspense fallback={null}>
-                    <Dither
-                      waveColor={[0.82, 0.81, 0.79]}
-                      colorNum={5}
-                      pixelSize={2}
-                      waveAmplitude={0.28}
-                      waveFrequency={3}
-                      waveSpeed={0.06}
-                      disableAnimation={prefersReducedMotion}
-                      enableMouseInteraction={false}
-                      mouseRadius={0.25}
-                    />
-                  </Suspense>
-                )}
+                <Dither
+                  waveColor={[0.82, 0.81, 0.79]}
+                  colorNum={5}
+                  pixelSize={2}
+                  waveAmplitude={0.28}
+                  waveFrequency={3}
+                  waveSpeed={0.06}
+                  disableAnimation={prefersReducedMotion}
+                  enableMouseInteraction={false}
+                  mouseRadius={0.25}
+                />
               </div>
               {stats && stats.chain.length > 1 && (
                 <div className="home-supply-chart" aria-hidden>

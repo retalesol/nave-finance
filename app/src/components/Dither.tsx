@@ -1,5 +1,5 @@
 /* eslint-disable react/no-unknown-property */
-import { useRef, useEffect, forwardRef } from 'react';
+import { useRef, useEffect, useState, forwardRef } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import { EffectComposer, wrapEffect } from '@react-three/postprocessing';
 import { Effect } from 'postprocessing';
@@ -130,25 +130,25 @@ float sdTriangle(vec2 p, vec2 a, vec2 b, vec2 c) {
   return -sqrt(d.x) * sign(d.y);
 }
 
-const float bayerMatrix8x8[64] = float[64](
-  0.0/64.0, 48.0/64.0, 12.0/64.0, 60.0/64.0,  3.0/64.0, 51.0/64.0, 15.0/64.0, 63.0/64.0,
-  32.0/64.0,16.0/64.0, 44.0/64.0, 28.0/64.0, 35.0/64.0,19.0/64.0, 47.0/64.0, 31.0/64.0,
-  8.0/64.0, 56.0/64.0,  4.0/64.0, 52.0/64.0, 11.0/64.0,59.0/64.0,  7.0/64.0, 55.0/64.0,
-  40.0/64.0,24.0/64.0, 36.0/64.0, 20.0/64.0, 43.0/64.0,27.0/64.0, 39.0/64.0, 23.0/64.0,
-  2.0/64.0, 50.0/64.0, 14.0/64.0, 62.0/64.0,  1.0/64.0,49.0/64.0, 13.0/64.0, 61.0/64.0,
-  34.0/64.0,18.0/64.0, 46.0/64.0, 30.0/64.0, 33.0/64.0,17.0/64.0, 45.0/64.0, 29.0/64.0,
-  10.0/64.0,58.0/64.0,  6.0/64.0, 54.0/64.0,  9.0/64.0,57.0/64.0,  5.0/64.0, 53.0/64.0,
-  42.0/64.0,26.0/64.0, 38.0/64.0, 22.0/64.0, 41.0/64.0,25.0/64.0, 37.0/64.0, 21.0/64.0
-);
+// Pure-float 8x8 Bayer threshold (matches the 64-entry matrix bit-for-bit
+// while avoiding GLSL ES 3.00 array constructors and dynamic array indexing so
+// the shader compiles cleanly on both WebGL1 and WebGL2 drivers).
+float bayer8x8(vec2 p) {
+  vec2 p0 = mod(floor(p), 2.0);
+  vec2 p1 = floor(mod(floor(p), 4.0) * 0.5);
+  vec2 p2 = floor(mod(floor(p), 8.0) * 0.25);
+  float d0 = 2.0 * abs(p0.x - p0.y) + p0.x;
+  float d1 = 2.0 * abs(p1.x - p1.y) + p1.x;
+  float d2 = 2.0 * abs(p2.x - p2.y) + p2.x;
+  return (16.0 * d0 + 4.0 * d1 + d2) / 64.0;
+}
 
 // Scalar Bayer quantise, then a two-stop palette. Same matrix and threshold
 // as RetroEffect below. Only the palette branch calls this — waves/ocean keep
 // the postprocess pass so Bridge is unchanged.
 float quantizeScalar(float value) {
   vec2 block = floor(gl_FragCoord.xy / max(pixelSize, 1.0));
-  int x = int(mod(block.x, 8.0));
-  int y = int(mod(block.y, 8.0));
-  float threshold = bayerMatrix8x8[y * 8 + x] - 0.25;
+  float threshold = bayer8x8(block) - 0.25;
   float levels = max(colorNum, 2.0) - 1.0;
   float c = value * ditherGain + threshold / levels;
   c = clamp(c - ditherBias, 0.0, 1.0);
@@ -156,9 +156,10 @@ float quantizeScalar(float value) {
 }
 
 void main() {
-  vec2 uv = gl_FragCoord.xy / resolution.xy;
+  vec2 safeRes = max(resolution.xy, vec2(1.0));
+  vec2 uv = gl_FragCoord.xy / safeRes;
   uv -= 0.5;
-  uv.x *= resolution.x / resolution.y;
+  uv.x *= safeRes.x / safeRes.y;
 
   // Palette mode samples once per Bayer block, in the same pass as quantise,
   // so values outside 0..1 (contour lines, bright fbm) are not clamped by the
@@ -167,8 +168,8 @@ void main() {
   if (paletteEnabled > 0.5) {
     vec2 block = floor(gl_FragCoord.xy / max(pixelSize, 1.0));
     vec2 sc = (block + 0.5) * max(pixelSize, 1.0);
-    sampleUv = sc / resolution.xy - 0.5;
-    sampleUv.x *= resolution.x / resolution.y;
+    sampleUv = sc / safeRes - 0.5;
+    sampleUv.x *= safeRes.x / safeRes.y;
   }
   if (scrollParallax != 0.0) {
     sampleUv += vec2(0.0, scroll * scrollParallax);
@@ -178,8 +179,8 @@ void main() {
 
   // Wave-dent mouse interaction: waves mode only.
   if (sceneMode == 0 && enableMouseInteraction == 1) {
-    vec2 mouseNDC = (mousePos / resolution - 0.5) * vec2(1.0, -1.0);
-    mouseNDC.x *= resolution.x / resolution.y;
+    vec2 mouseNDC = (mousePos / safeRes - 0.5) * vec2(1.0, -1.0);
+    mouseNDC.x *= safeRes.x / safeRes.y;
     float dist = length(uv - mouseNDC);
     float effect = 1.0 - smoothstep(0.0, mouseRadius, dist);
     f -= 0.5 * effect;
@@ -203,8 +204,8 @@ void main() {
       float s = f * n;
       float band = floor(s) / n;
       float fr = fract(s);
-      float edge = min(fr, 1.0 - fr);
-      float line = 1.0 - smoothstep(0.0, max(isoLineWidth, 0.0001), edge);
+      float isoEdge = min(fr, 1.0 - fr);
+      float line = 1.0 - smoothstep(0.0, max(isoLineWidth, 0.0001), isoEdge);
       v = mix(band, isoLineValue, line);
     }
     // Homepage sail: the mark is the same grey/white field, lifted so the
@@ -223,11 +224,11 @@ void main() {
         mark = texture2D(markMap, mu).a;
       }
       float inside = smoothstep(0.55, 0.9, mark);
-      float edge = smoothstep(0.28, 0.55, mark) * (1.0 - smoothstep(0.72, 0.95, mark));
+      float markEdge = smoothstep(0.28, 0.55, mark) * (1.0 - smoothstep(0.72, 0.95, mark));
       float body = 0.84 + 0.08 * sin(time * 0.7 + mu.y * 5.0);
       float cloth = mix(body, clamp(v, 0.0, 1.0), 0.16);
       v = mix(v, cloth, inside);
-      v = mix(v, 0.05, edge);
+      v = mix(v, 0.05, markEdge);
     }
     if (paletteEnabled > 0.5) {
       float q = quantizeScalar(v);
@@ -280,22 +281,20 @@ const ditherFragmentShader = `
 precision highp float;
 uniform float colorNum;
 uniform float pixelSize;
-const float bayerMatrix8x8[64] = float[64](
-  0.0/64.0, 48.0/64.0, 12.0/64.0, 60.0/64.0,  3.0/64.0, 51.0/64.0, 15.0/64.0, 63.0/64.0,
-  32.0/64.0,16.0/64.0, 44.0/64.0, 28.0/64.0, 35.0/64.0,19.0/64.0, 47.0/64.0, 31.0/64.0,
-  8.0/64.0, 56.0/64.0,  4.0/64.0, 52.0/64.0, 11.0/64.0,59.0/64.0,  7.0/64.0, 55.0/64.0,
-  40.0/64.0,24.0/64.0, 36.0/64.0, 20.0/64.0, 43.0/64.0,27.0/64.0, 39.0/64.0, 23.0/64.0,
-  2.0/64.0, 50.0/64.0, 14.0/64.0, 62.0/64.0,  1.0/64.0,49.0/64.0, 13.0/64.0, 61.0/64.0,
-  34.0/64.0,18.0/64.0, 46.0/64.0, 30.0/64.0, 33.0/64.0,17.0/64.0, 45.0/64.0, 29.0/64.0,
-  10.0/64.0,58.0/64.0,  6.0/64.0, 54.0/64.0,  9.0/64.0,57.0/64.0,  5.0/64.0, 53.0/64.0,
-  42.0/64.0,26.0/64.0, 38.0/64.0, 22.0/64.0, 41.0/64.0,25.0/64.0, 37.0/64.0, 21.0/64.0
-);
+
+float bayer8x8(vec2 p) {
+  vec2 p0 = mod(floor(p), 2.0);
+  vec2 p1 = floor(mod(floor(p), 4.0) * 0.5);
+  vec2 p2 = floor(mod(floor(p), 8.0) * 0.25);
+  float d0 = 2.0 * abs(p0.x - p0.y) + p0.x;
+  float d1 = 2.0 * abs(p1.x - p1.y) + p1.x;
+  float d2 = 2.0 * abs(p2.x - p2.y) + p2.x;
+  return (16.0 * d0 + 4.0 * d1 + d2) / 64.0;
+}
 
 vec3 dither(vec2 uv, vec3 color) {
-  vec2 scaledCoord = floor(uv * resolution / pixelSize);
-  int x = int(mod(scaledCoord.x, 8.0));
-  int y = int(mod(scaledCoord.y, 8.0));
-  float threshold = bayerMatrix8x8[y * 8 + x] - 0.25;
+  vec2 scaledCoord = floor(uv * resolution / max(pixelSize, 1.0));
+  float threshold = bayer8x8(scaledCoord) - 0.25;
   float step = 1.0 / (colorNum - 1.0);
   color += threshold * step;
   float bias = 0.2;
@@ -480,7 +479,12 @@ function DitheredWaves({
   // and always mutate materialRef.current.uniforms in useFrame (not this ref).
   const initialUniforms = useRef<WaveUniforms>({
     time: new THREE.Uniform(0),
-    resolution: new THREE.Uniform(new THREE.Vector2(1, 1)),
+    resolution: new THREE.Uniform(
+      new THREE.Vector2(
+        Math.max(1, Math.floor(size.width * gl.getPixelRatio())),
+        Math.max(1, Math.floor(size.height * gl.getPixelRatio())),
+      ),
+    ),
     waveSpeed: new THREE.Uniform(waveSpeed),
     waveFrequency: new THREE.Uniform(waveFrequency),
     waveAmplitude: new THREE.Uniform(waveAmplitude),
@@ -513,8 +517,8 @@ function DitheredWaves({
 
   useEffect(() => {
     const dpr = gl.getPixelRatio();
-    const newWidth = Math.floor(size.width * dpr);
-    const newHeight = Math.floor(size.height * dpr);
+    const newWidth = Math.max(1, Math.floor(size.width * dpr));
+    const newHeight = Math.max(1, Math.floor(size.height * dpr));
     const mat = materialRef.current;
     if (!mat) return;
     const currentRes = mat.uniforms.resolution.value as THREE.Vector2;
@@ -583,10 +587,18 @@ function DitheredWaves({
   }, [showMark]);
 
   const prevColor = useRef([...waveColor]);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, size: frameSize, gl: frameGl }) => {
     const mat = materialRef.current;
     if (!mat) return;
     const u = mat.uniforms as WaveUniforms;
+
+    const dpr = frameGl.getPixelRatio();
+    const resW = Math.max(1, Math.floor(frameSize.width * dpr));
+    const resH = Math.max(1, Math.floor(frameSize.height * dpr));
+    const currentRes = u.resolution.value as THREE.Vector2;
+    if (currentRes.x !== resW || currentRes.y !== resH) {
+      currentRes.set(resW, resH);
+    }
 
     const t = clock.getElapsedTime();
     if (!disableAnimation) {
@@ -749,7 +761,224 @@ export interface DitherProps {
   scrollParallax?: number;
   /** Draw the sail mark in the centre of an isoline field, in the same dither. */
   showMark?: boolean;
+  /** Mount WebGL immediately without waiting for IntersectionObserver (used for above-the-fold hero). */
+  eager?: boolean;
   className?: string;
+}
+
+const BAYER_8X8 = [
+  0, 48, 12, 60, 3, 51, 15, 63,
+  32, 16, 44, 28, 35, 19, 47, 31,
+  8, 56, 4, 52, 11, 59, 7, 55,
+  40, 24, 36, 20, 43, 27, 39, 23,
+  2, 50, 14, 62, 1, 49, 13, 61,
+  34, 18, 46, 30, 33, 17, 45, 29,
+  10, 58, 6, 54, 9, 57, 5, 53,
+  42, 26, 38, 22, 41, 25, 37, 21,
+].map((v) => v / 64 - 0.25);
+
+function Dither2DFallback({
+  variant,
+  paletteA,
+  paletteB,
+  waveColor,
+  colorNum,
+  pixelSize,
+  gain,
+  bias,
+  isoLevels,
+  isoLineWidth,
+  isoLineValue,
+  waveSpeed,
+  waveFrequency,
+  waveAmplitude,
+  disableAnimation,
+  showMark,
+}: {
+  variant: DitherVariant;
+  paletteA: [number, number, number] | null;
+  paletteB: [number, number, number] | null;
+  waveColor: [number, number, number];
+  colorNum: number;
+  pixelSize: number;
+  gain: number;
+  bias: number;
+  isoLevels: number;
+  isoLineWidth: number;
+  isoLineValue: number;
+  waveSpeed: number;
+  waveFrequency: number;
+  waveAmplitude: number;
+  disableAnimation: boolean;
+  showMark: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let raf = 0;
+    let markAlpha: Uint8ClampedArray | null = null;
+    let markW = 0;
+    let markH = 0;
+
+    if (showMark) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const off = document.createElement('canvas');
+        off.width = 120;
+        off.height = Math.max(1, Math.round((120 * img.height) / Math.max(1, img.width)));
+        const octx = off.getContext('2d');
+        if (octx) {
+          octx.drawImage(img, 0, 0, off.width, off.height);
+          const data = octx.getImageData(0, 0, off.width, off.height).data;
+          const alpha = new Uint8ClampedArray(off.width * off.height);
+          for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * 4 + 3];
+          markAlpha = alpha;
+          markW = off.width;
+          markH = off.height;
+        }
+      };
+      img.src = '/brand/nave-mark.png';
+    }
+
+    const colA = paletteA ?? [0, 0, 0];
+    const colB = paletteB ?? waveColor;
+    const levels = Math.max(colorNum, 2) - 1;
+    const px = Math.max(1, Math.round(pixelSize));
+    const start = performance.now();
+
+    const noise2d = (x: number, y: number) => {
+      const s1 = Math.sin(x * 1.7 + y * 2.3) * Math.cos(x * 1.1 - y * 1.9);
+      const s2 = Math.sin(x * 3.1 - y * 2.7 + 1.4) * Math.cos(x * 2.5 + y * 3.3);
+      return Math.abs(s1) * 0.65 + Math.abs(s2) * 0.35;
+    };
+
+    const fbm = (x: number, y: number) => {
+      let val = 0;
+      let amp = 1;
+      let fx = x;
+      let fy = y;
+      for (let i = 0; i < 3; i++) {
+        val += amp * noise2d(fx, fy);
+        fx *= waveFrequency;
+        fy *= waveFrequency;
+        amp *= waveAmplitude;
+      }
+      return val;
+    };
+
+    const draw = (now: number) => {
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(1, Math.floor(rect.width / px));
+      const h = Math.max(1, Math.floor(rect.height / px));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      const imgData = ctx.createImageData(w, h);
+      const out = imgData.data;
+      const t = disableAnimation ? 0 : ((now - start) / 1000) * waveSpeed;
+      const aspect = w / h;
+      const nIso = Math.max(isoLevels, 1);
+
+      for (let by = 0; by < h; by++) {
+        const uy = -(by / h - 0.5);
+        for (let bx = 0; bx < w; bx++) {
+          const ux = (bx / w - 0.5) * aspect;
+          const p2 = fbm(ux - t, uy - t);
+          let v = fbm(ux + p2 * 0.4, uy + p2 * 0.4);
+          if (variant === 'isolines') {
+            const s = v * nIso;
+            const band = Math.floor(s) / nIso;
+            const fr = s - Math.floor(s);
+            const edge = Math.min(fr, 1 - fr);
+            const line = edge < isoLineWidth ? 1 - edge / Math.max(isoLineWidth, 0.0001) : 0;
+            v = band + (isoLineValue - band) * line;
+          }
+          if (showMark && markAlpha && markW > 0 && markH > 0) {
+            const mH = 0.68;
+            const mW = mH * (markW / markH);
+            const mx = ux / mW + 0.5;
+            const my = 1 - (uy / mH + 0.5);
+            if (mx > 0 && mx < 1 && my > 0 && my < 1) {
+              const ix = Math.min(markW - 1, Math.floor(mx * markW));
+              const iy = Math.min(markH - 1, Math.floor(my * markH));
+              const a = markAlpha[iy * markW + ix] / 255;
+              if (a > 0.5) {
+                v = 0.84;
+              } else if (a > 0.25) {
+                v = 0.05;
+              }
+            }
+          }
+          const threshold = BAYER_8X8[(by & 7) * 8 + (bx & 7)];
+          let c = v * gain + threshold / levels - bias;
+          if (c < 0) c = 0;
+          else if (c > 1) c = 1;
+          const q = Math.floor(c * levels + 0.5) / levels;
+          const idx = (by * w + bx) * 4;
+          out[idx] = Math.round((colA[0] + (colB[0] - colA[0]) * q) * 255);
+          out[idx + 1] = Math.round((colA[1] + (colB[1] - colA[1]) * q) * 255);
+          out[idx + 2] = Math.round((colA[2] + (colB[2] - colA[2]) * q) * 255);
+          out[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      if (!disableAnimation) {
+        raf = window.requestAnimationFrame(draw);
+      }
+    };
+
+    draw(performance.now());
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [
+    variant,
+    paletteA,
+    paletteB,
+    waveColor,
+    colorNum,
+    pixelSize,
+    gain,
+    bias,
+    isoLevels,
+    isoLineWidth,
+    isoLineValue,
+    waveSpeed,
+    waveFrequency,
+    waveAmplitude,
+    disableAnimation,
+    showMark,
+  ]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'block',
+        imageRendering: 'pixelated',
+        pointerEvents: 'none',
+      }}
+    />
+  );
+}
+
+function isWebGLAvailable(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return true;
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    return false;
+  }
 }
 
 export default function Dither({
@@ -777,8 +1006,36 @@ export default function Dither({
   scrollRef = null,
   scrollParallax = 0,
   showMark = false,
+  eager = false,
   className,
 }: DitherProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(eager);
+  const [use2DFallback, setUse2DFallback] = useState(() => !isWebGLAvailable());
+  const [canvasKey, setCanvasKey] = useState(0);
+
+  useEffect(() => {
+    if (eager) {
+      setInView(true);
+      return;
+    }
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          setInView(entry.isIntersecting);
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [eager]);
+
   // Ocean wind and the hero light use a window listener — keep those canvases
   // non-interactive so CTAs stay clickable.
   const canvasPointerEvents =
@@ -789,43 +1046,91 @@ export default function Dither({
         : 'none';
 
   return (
-    <Canvas
+    <div
+      ref={containerRef}
       className={className}
-      style={{ width: '100%', height: '100%', pointerEvents: canvasPointerEvents }}
-      camera={{ position: [0, 0, 6] }}
-      dpr={1}
-      frameloop="always"
-      gl={{ antialias: true, preserveDrawingBuffer: true, alpha: true }}
-      onCreated={({ gl }) => {
-        gl.setClearColor(0x000000, 0);
-      }}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      <DitheredWaves
-        waveSpeed={waveSpeed}
-        waveFrequency={waveFrequency}
-        waveAmplitude={waveAmplitude}
-        waveColor={waveColor}
-        colorNum={colorNum}
-        pixelSize={pixelSize}
-        disableAnimation={disableAnimation}
-        enableMouseInteraction={enableMouseInteraction}
-        mouseRadius={mouseRadius}
-        variant={variant}
-        paletteA={paletteA ?? null}
-        paletteB={paletteB ?? null}
-        gain={gain}
-        bias={bias}
-        lightAngle={lightAngle}
-        lightStrength={lightStrength}
-        tiltWithPointer={tiltWithPointer}
-        isoLevels={isoLevels}
-        isoLineWidth={isoLineWidth}
-        isoLineValue={isoLineValue}
-        scroll={scroll}
-        scrollRef={scrollRef}
-        scrollParallax={scrollParallax}
-        showMark={showMark}
-      />
-    </Canvas>
+      {inView &&
+        (use2DFallback ? (
+          <Dither2DFallback
+            variant={variant}
+            paletteA={paletteA ?? null}
+            paletteB={paletteB ?? null}
+            waveColor={waveColor}
+            colorNum={colorNum}
+            pixelSize={pixelSize}
+            gain={gain}
+            bias={bias}
+            isoLevels={isoLevels}
+            isoLineWidth={isoLineWidth}
+            isoLineValue={isoLineValue}
+            waveSpeed={waveSpeed}
+            waveFrequency={waveFrequency}
+            waveAmplitude={waveAmplitude}
+            disableAnimation={disableAnimation}
+            showMark={showMark}
+          />
+        ) : (
+          <Canvas
+            key={canvasKey}
+            style={{ width: '100%', height: '100%', pointerEvents: canvasPointerEvents }}
+            camera={{ position: [0, 0, 6] }}
+            dpr={1}
+            frameloop="always"
+            gl={{ antialias: true, preserveDrawingBuffer: true, alpha: true }}
+            onCreated={({ gl }) => {
+              gl.setClearColor(0x000000, 0);
+              const dom = gl.domElement;
+              const onLost = (e: Event) => {
+                e.preventDefault();
+                window.setTimeout(() => {
+                  try {
+                    if (gl.getContext().isContextLost()) {
+                      setUse2DFallback(true);
+                    } else {
+                      setCanvasKey((k) => k + 1);
+                    }
+                  } catch {
+                    setUse2DFallback(true);
+                  }
+                }, 400);
+              };
+              const onRestored = () => {
+                setCanvasKey((k) => k + 1);
+              };
+              dom.addEventListener('webglcontextlost', onLost, false);
+              dom.addEventListener('webglcontextrestored', onRestored, false);
+            }}
+          >
+            <DitheredWaves
+              waveSpeed={waveSpeed}
+              waveFrequency={waveFrequency}
+              waveAmplitude={waveAmplitude}
+              waveColor={waveColor}
+              colorNum={colorNum}
+              pixelSize={pixelSize}
+              disableAnimation={disableAnimation}
+              enableMouseInteraction={enableMouseInteraction}
+              mouseRadius={mouseRadius}
+              variant={variant}
+              paletteA={paletteA ?? null}
+              paletteB={paletteB ?? null}
+              gain={gain}
+              bias={bias}
+              lightAngle={lightAngle}
+              lightStrength={lightStrength}
+              tiltWithPointer={tiltWithPointer}
+              isoLevels={isoLevels}
+              isoLineWidth={isoLineWidth}
+              isoLineValue={isoLineValue}
+              scroll={scroll}
+              scrollRef={scrollRef}
+              scrollParallax={scrollParallax}
+              showMark={showMark}
+            />
+          </Canvas>
+        ))}
+    </div>
   );
 }

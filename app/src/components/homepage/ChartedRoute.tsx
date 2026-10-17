@@ -1,9 +1,8 @@
-import { lazy, Suspense, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import DitherGlyph from './DitherGlyph';
-import { useAfterFirstPaint, usePrefersReducedMotion } from './useHomeMotion';
+import Dither from '../Dither';
+import { usePrefersReducedMotion } from './useHomeMotion';
 import { usePinProgress } from '../../hooks/usePinProgress';
-
-const Dither = lazy(() => import('../Dither'));
 
 const DEEP: [number, number, number] = [0x0b / 255, 0x12 / 255, 0x20 / 255];
 const DEEP_DOT: [number, number, number] = [0x5b / 255, 0x6b / 255, 0x8c / 255];
@@ -106,7 +105,6 @@ function useNarrow() {
 
 export default function HomeRoute() {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const showDither = useAfterFirstPaint();
   const narrow = useNarrow();
   const stageRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -235,27 +233,23 @@ export default function HomeRoute() {
     <section id="protocol" ref={sectionRef} className={`home-route home-deep${narrow ? ' is-unpinned' : ''}`}>
       <div className="home-route-stage" ref={stageRef}>
         <div className="home-route-sea" aria-hidden>
-          {showDither && (
-            <Suspense fallback={null}>
-              <Dither
-                variant="waves"
-                paletteA={DEEP}
-                paletteB={DEEP_DOT}
-                gain={0.8}
-                bias={0.22}
-                colorNum={4}
-                pixelSize={3}
-                waveSpeed={0.05}
-                waveFrequency={3}
-                waveAmplitude={0.3}
-                scrollRef={scrollRef}
-                scrollParallax={0.35}
-                disableAnimation={prefersReducedMotion}
-                enableMouseInteraction={false}
-                mouseRadius={0}
-              />
-            </Suspense>
-          )}
+          <Dither
+            variant="waves"
+            paletteA={DEEP}
+            paletteB={DEEP_DOT}
+            gain={0.8}
+            bias={0.22}
+            colorNum={4}
+            pixelSize={3}
+            waveSpeed={0.05}
+            waveFrequency={3}
+            waveAmplitude={0.3}
+            scrollRef={scrollRef}
+            scrollParallax={0.35}
+            disableAnimation={prefersReducedMotion}
+            enableMouseInteraction={false}
+            mouseRadius={0}
+          />
         </div>
         <div className="home-route-vignette" aria-hidden />
         <svg className="home-route-chart" ref={svgRef} aria-hidden>

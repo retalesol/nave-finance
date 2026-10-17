@@ -46,6 +46,10 @@ interface PageTransitionProps {
 export function PageTransition({ children, layoutChild }: PageTransitionProps) {
   const location = useLocation();
 
+  if (location.pathname === '/') {
+    return <>{children}</>;
+  }
+
   return (
     <AnimatePresence mode="wait">
       <motion.div
