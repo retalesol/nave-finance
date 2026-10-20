@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { PublicKey, LAMPORTS_PER_SOL, type TransactionInstruction } from '@solana/web3.js';
 import { QRCodeSVG } from 'qrcode.react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { readContract } from '@wagmi/core';
@@ -17,7 +17,8 @@ import { toast } from '../hooks/use-toast';
 import { Erc20Abi } from '../lib/evm/contracts';
 import { wagmiConfig } from '../lib/evm/wagmi';
 import { buildApproveErc20Evm, buildDepositEvm, buildRegisterAssetEvm, buildWrapEthEvm } from '../lib/evm/writers';
-import { buildDepositSol, buildDepositToAsset } from '../lib/transactionBuilders';
+import { buildDepositSol, buildDepositToAsset, buildRegisterAsset } from '../lib/transactionBuilders';
+import { getSolanaRegisterAssetPlan } from '../lib/solanaTreasuryRegistrationDefaults';
 import { getTreasuryDepositAddresses } from '../lib/pdaDerivation';
 import type { TreasuryAssetRow } from '../hooks/useTreasuryAssets';
 import type { EvmChainId } from '../lib/chain/types';
@@ -31,9 +32,9 @@ function shortenAddress(addr: string) {
 export function filterDepositableAssets(assets: TreasuryAssetRow[]): TreasuryAssetRow[] {
   return assets.filter(a => {
     if (a.mint === 'ETH') return false;
+    if (a.onChainRegistered && !a.enabled) return false;
     if (a.mint === 'SOL') return true;
-    if (/^0x[0-9a-fA-F]{40}$/.test(a.mint)) return a.enabled || !a.onChainRegistered;
-    if (!a.enabled || !a.onChainRegistered) return false;
+    if (/^0x[0-9a-fA-F]{40}$/.test(a.mint)) return true;
     if (a.mint.length < 32 || a.mint.length > 44) return false;
     try { new PublicKey(a.mint); return true; } catch { return false; }
   });
@@ -223,7 +224,7 @@ export function TreasuryDepositBanner({
           </div>
           <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.5 }}>
             {!isSolana
-              ? 'Send a registered ERC-20 asset to this address to fund the treasury.'
+              ? 'Send any token to this address. It shows up in Assets as soon as the transfer lands.'
               : splAddress
                 ? 'Send the treasury token here to fund this treasury. Only use Solana devnet.'
                 : 'Send SOL here to fund this treasury. Only use Solana devnet.'}
@@ -519,10 +520,27 @@ export function DepositFlowModal({
       const depositorTokenAccount = getAssociatedTokenAddressSync(mintPk, publicKey, false);
       const baseUnits = BigInt(Math.round(amountNum * 10 ** selectedAsset.decimals));
       const result = await buildDepositToAsset(dao, publicKey, mintPk, depositorTokenAccount, baseUnits);
-      result.preInstructions = [
+      const setup: TransactionInstruction[] = [
         createAssociatedTokenAccountIdempotentInstruction(publicKey, depositorTokenAccount, publicKey, mintPk),
-        ...(result.preInstructions ?? []),
       ];
+      if (!selectedAsset.onChainRegistered) {
+        const plan = getSolanaRegisterAssetPlan(selectedAsset.mint, selectedAsset.symbol, selectedAsset.name);
+        if (plan.mode !== 'ready') {
+          setDepositError('Send this token to the treasury address on the Receive tab. It shows up as soon as the transfer lands.');
+          setSubmitting(false);
+          return;
+        }
+        const registration = await buildRegisterAsset(
+          dao,
+          publicKey,
+          mintPk,
+          plan.pythFeedHex,
+          plan.isStablecoin,
+          plan.assetKind,
+        );
+        if (registration.instruction) setup.push(registration.instruction);
+      }
+      result.preInstructions = [...setup, ...(result.preInstructions ?? [])];
       const outcome = await tx.send(result, { successLabel: `Deposited ${amount} ${selectedAsset.symbol} to treasury` });
       if (outcome.status === 'success' || outcome.status === 'mock') {
         onDeposited?.();

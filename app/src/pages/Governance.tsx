@@ -123,7 +123,7 @@ export default function Governance() {
               className="text-display font-semibold"
               style={{ fontSize: '22px', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))' }}
             >
-              Votes
+              Governance
             </h1>
             <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
               Vote on treasury proposals. Create rules changes from the Rules page, token mints from Tokens, and agent resumes from Automation.

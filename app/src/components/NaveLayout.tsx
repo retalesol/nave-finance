@@ -30,17 +30,14 @@ type NavItem = {
   tokenGovOnly?: boolean;
 };
 
-const PRIMARY_NAV: NavItem[] = [
+const NAV: NavItem[] = [
   { icon: 'landmark', label: 'Dashboard', path: '/dashboard' },
-  { icon: 'shield', label: 'Activity', path: '/governance' },
-  { icon: 'castle', label: 'Constitution', path: '/policy' },
-];
-
-const MORE_NAV: NavItem[] = [
   { icon: 'layer-group', label: 'Assets', path: '/assets' },
+  { icon: 'shield', label: 'Governance', path: '/governance' },
   { icon: 'users', label: 'Agents', path: '/agent' },
-  { icon: 'circle', label: 'Tokens', path: '/tokens', tokenGovOnly: true },
+  { icon: 'castle', label: 'Constitution', path: '/policy' },
   { icon: 'gear', label: 'Settings', path: '/settings' },
+  { icon: 'circle', label: 'Tokens', path: '/tokens', tokenGovOnly: true },
 ];
 
 /** Map IA route aliases to canonical nav paths for active-state highlighting. */
@@ -107,21 +104,14 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
   const { switchChainAsync } = useSwitchChain();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [pendingChainFamily, setPendingChainFamily] = useState<ChainFamily | null>(null);
   const { daoAddress, setDaoAddress } = useDaoContext();
   const { dao, loading: daoLoading } = useDaoRegistry(daoAddress);
   const daoName = dao?.name || (daoLoading ? 'Loading...' : 'No DAO Selected');
   const daoType = dao?.governanceType === 'token' ? 'Token Governance' : dao?.governanceType === 'wallet' ? 'Wallet Governance' : 'Treasury';
   const isTokenGov = dao?.governanceType === 'token';
-  const moreItems = MORE_NAV.filter((item) => !item.tokenGovOnly || isTokenGov);
+  const navItems = NAV.filter((item) => !item.tokenGovOnly || isTokenGov);
   const activeNavPath = navPathForActiveState(location.pathname);
-  const moreActive = moreItems.some((item) => activeNavPath === item.path);
-
-  // Mobile closes the sheet after navigation. Desktop keeps a More item visible.
-  useEffect(() => {
-    setMoreOpen(isMobile ? false : moreActive);
-  }, [location.pathname, isMobile, moreActive]);
 
   // DAO app only offers Base + Robinhood in the network picker.
   useEffect(() => {
@@ -263,7 +253,7 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-          {PRIMARY_NAV.map(({ icon, label, path }) => {
+          {navItems.map(({ icon, label, path }) => {
             const active = activeNavPath === path;
             return (
               <Link
@@ -277,52 +267,6 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
                   fontWeight: active ? '500' : '400',
                   color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                   backgroundColor: active ? 'hsl(var(--surface-1))' : 'transparent',
-                }}
-              >
-                <Fi
-                  icon={icon}
-                  style={{
-                    fontSize: '14px',
-                    width: '16px',
-                    textAlign: 'center',
-                    color: 'inherit',
-                  }}
-                />
-                {label}
-              </Link>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md transition-colors"
-            aria-expanded={moreOpen}
-            aria-label="More navigation"
-            style={{
-              fontSize: '13.5px',
-              fontWeight: moreOpen || moreActive ? '500' : '400',
-              color: moreOpen || moreActive ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-              backgroundColor: 'transparent',
-            }}
-          >
-            <Fi icon="ellipsis" style={{ fontSize: '14px', width: '16px', textAlign: 'center' }} />
-            More
-          </button>
-          {moreOpen && moreItems.map(({ icon, label, path }) => {
-            const active = activeNavPath === path;
-            return (
-              <Link
-                key={path}
-                to={path}
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-md no-underline transition-colors"
-                data-onboarding-id={`nav-${path.replace('/', '')}`}
-                style={{
-                  fontSize: '13.5px',
-                  fontWeight: active ? '500' : '400',
-                  color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  backgroundColor: active ? 'hsl(var(--surface-1))' : 'transparent',
-                  paddingLeft: '2.25rem',
                 }}
               >
                 <Fi
@@ -417,95 +361,35 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
 
       {/* ── Mobile bottom tab bar ─────────────────────────────── */}
       {isMobile && (
-        <>
-          {moreOpen && (
-            <div
-              className="fixed inset-0 z-40"
-              style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}
-              onClick={() => setMoreOpen(false)}
-            />
-          )}
-          {moreOpen && (
-            <div
-              className="fixed inset-x-0 z-50 border-t rounded-t-xl overflow-hidden"
-              style={{
-                bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
-                backgroundColor: 'hsl(var(--surface-0))',
-                borderColor: 'hsl(var(--border))',
-                boxShadow: 'var(--shadow-lg)',
-              }}
-            >
-              {moreItems.map(({ icon, label, path }) => {
-                const active = activeNavPath === path;
-                return (
-                  <Link
-                    key={path}
-                    to={path}
-                    onClick={() => setMoreOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 no-underline transition-colors border-b last:border-b-0"
-                    style={{
-                      borderColor: 'hsl(var(--border))',
-                      color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                      backgroundColor: active ? 'hsl(var(--surface-1))' : 'transparent',
-                    }}
-                  >
-                    <Fi icon={icon} style={{ fontSize: '15px', width: '18px', textAlign: 'center' }} />
-                    <span style={{ fontSize: '13.5px', fontWeight: active ? '600' : '400' }}>{label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-          <nav
-            className="fixed bottom-0 inset-x-0 z-50 flex items-stretch border-t"
-            style={{
-              minHeight: '56px',
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            }}
-          >
-            {PRIMARY_NAV.map(({ icon, label, path }) => {
-              const active = activeNavPath === path;
-              return (
-                <Link
-                  key={path}
-                  to={path}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline transition-colors"
-                  style={{
-                    color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  <Fi icon={icon} style={{ fontSize: '16px', color: 'inherit' }} />
-                  <span style={{ fontSize: '10px', fontWeight: active ? '600' : '400', letterSpacing: '0.02em' }}>
-                    {label}
-                  </span>
-                </Link>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setMoreOpen((open) => !open)}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 border-0 bg-transparent transition-colors"
-              style={{
-                color: moreOpen || moreActive ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-              }}
-              aria-expanded={moreOpen}
-              aria-label="More navigation"
-            >
-              <Fi icon="ellipsis" style={{ fontSize: '16px', color: 'inherit' }} />
-              <span
+        <nav
+          className="fixed bottom-0 inset-x-0 z-50 flex items-stretch border-t overflow-x-auto"
+          style={{
+            minHeight: '56px',
+            backgroundColor: 'hsl(var(--surface-0))',
+            borderColor: 'hsl(var(--border))',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          }}
+        >
+          {navItems.map(({ icon, label, path }) => {
+            const active = activeNavPath === path;
+            return (
+              <Link
+                key={path}
+                to={path}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline transition-colors"
                 style={{
-                  fontSize: '10px',
-                  fontWeight: moreOpen || moreActive ? '600' : '400',
-                  letterSpacing: '0.02em',
+                  minWidth: '4.5rem',
+                  color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                 }}
               >
-                More
-              </span>
-            </button>
-          </nav>
-        </>
+                <Fi icon={icon} style={{ fontSize: '15px', color: 'inherit' }} />
+                <span style={{ fontSize: '9.5px', fontWeight: active ? '600' : '400', letterSpacing: '0.01em' }}>
+                  {label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
       )}
 
       {pendingChainFamily && (

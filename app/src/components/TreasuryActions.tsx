@@ -19,6 +19,7 @@ import { getNavePrograms } from '../lib/naveProgram';
 import { ProposalType, type GovernanceType } from '../lib/onChainTypes';
 import { encodeEvmNftTransferProposalPayload, encodeEvmTransferProposalPayload } from '../lib/evm/writers';
 import type { TreasuryAssetRow } from '../hooks/useTreasuryAssets';
+import { isSendableTreasuryAsset } from '../lib/treasuryAssetEligibility';
 import type { TreasuryNft } from '../hooks/useTreasuryNfts';
 import { EVM_DEPLOYMENT_MODE, SOLANA_NETWORK } from '../lib/programConfig';
 import {
@@ -184,12 +185,11 @@ export function CreateTransactionModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const registeredNfts = useMemo(() => nfts.filter((n) => n.registered && !n.compressed), [nfts]);
+  const registeredNfts = useMemo(() => nfts.filter((n) => !n.compressed), [nfts]);
 
-  const assetsWithBalance = useMemo(() => assets.filter((a) => a.uiBalance > 0), [assets]);
   const transferableAssets = useMemo(
-    () => assetsWithBalance.filter((a) => a.onChainRegistered && a.enabled),
-    [assetsWithBalance],
+    () => assets.filter((a) => isSendableTreasuryAsset(a)),
+    [assets],
   );
   const filteredTransferable = useMemo(() => {
     const q = assetQuery.trim().toLowerCase();
@@ -206,9 +206,6 @@ export function CreateTransactionModal({
     filteredTransferable.find((a) => a.mint === assetMint) ?? filteredTransferable[0] ?? null;
 
   const selectedNft = registeredNfts.find((n) => n.mint === nftMint) ?? registeredNfts[0] ?? null;
-
-  const heldButNotSendable =
-    assetsWithBalance.length > 0 && transferableAssets.length === 0;
 
   const recipientValid = useMemo(() => {
     const r = recipient.trim();
@@ -308,7 +305,7 @@ export function CreateTransactionModal({
       }
 
       if (!publicKey) { setError('Connect your wallet first.'); return; }
-      if (!selectedNft) { setError('Register an NFT on the Assets page before sending.'); return; }
+      if (!selectedNft) { setError('This treasury has no NFTs to send.'); return; }
       if (!recipientValid) { setError('Enter a valid recipient address.'); return; }
 
       const dao = new PublicKey(daoAddress);
@@ -537,26 +534,16 @@ export function CreateTransactionModal({
 
           <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
             {mode === 'token'
-              ? 'Select a treasury asset, recipient wallet, and amount.'
-              : 'Propose sending a treasury-held NFT to a recipient. Solana NFTs must be registered on the Assets page first; EVM uses the ERC-721 collection address and token ID.'}
+              ? 'Select any asset the treasury holds, a recipient wallet, and an amount.'
+              : 'Propose sending a treasury-held NFT to a recipient. EVM uses the ERC-721 collection address and token ID.'}
           </p>
-
-          {mode === 'token' && heldButNotSendable && (
-            <div
-              className="px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}
-            >
-              This treasury holds tokens that are not registered for governance transfers yet. Open{' '}
-              <strong>Assets</strong> and use <strong>Enable for transfers</strong> (Solana) or <strong>Register Asset</strong> (EVM) for the mint you want to move.
-            </div>
-          )}
 
           {mode === 'nft' && chainKind === 'solana' && registeredNfts.length === 0 && (
             <div
               className="px-3 py-2.5 rounded-lg"
               style={{ backgroundColor: 'hsl(var(--surface-1))', fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}
             >
-              No governance-registered NFTs found. Open <strong>Assets → NFTs</strong> and use <strong>Register for governance</strong> on the NFT you want to send.
+              No NFTs are held by this treasury yet.
             </div>
           )}
 
@@ -587,11 +574,9 @@ export function CreateTransactionModal({
             >
               {filteredTransferable.length === 0 ? (
                 <option value="">
-                  {heldButNotSendable
-                    ? 'Register a held asset first'
-                    : assetQuery.trim()
-                      ? 'No assets match this search'
-                      : 'No deposited assets found'}
+                  {assetQuery.trim()
+                    ? 'No assets match this search'
+                    : 'No deposited assets found'}
                 </option>
               ) : filteredTransferable.map((a) => (
                 <option key={a.mint} value={a.mint}>
@@ -682,7 +667,7 @@ export function CreateTransactionModal({
                   </label>
                   <select value={selectedNft?.mint ?? ''} onChange={(e) => setNftMint(e.target.value)} style={inputStyle} disabled={registeredNfts.length === 0}>
                     {registeredNfts.length === 0 ? (
-                      <option value="">No registered NFTs</option>
+                      <option value="">No NFTs in this treasury</option>
                     ) : registeredNfts.map((n) => (
                       <option key={n.mint} value={n.mint}>{n.name}</option>
                     ))}

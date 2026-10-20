@@ -19,18 +19,8 @@ import { useActivityLog, type ActivityEntry } from '../hooks/useActivityLog';
 import { useMonthlyReports, type YearlyReportGroup, type MonthlyReport } from '../hooks/useMonthlyReports';
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
 import { useTokenRegistry } from '../hooks/useTokenRegistry';
-import { useChain } from '../hooks/useChain';
-import { useSendTransaction } from '../hooks/useSendTransaction';
-import { PublicKey } from '@solana/web3.js';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount } from 'wagmi';
-import { buildRevalueTreasury } from '../lib/transactionBuilders';
-import { buildRevalueTreasuryEvm } from '../lib/evm/writers';
 import { SOLANA_NETWORK } from '../lib/programConfig';
-
-const DASHBOARD_CHAINLINK_SOL_USD_DEVNET = '99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR';
-const DASHBOARD_CHAINLINK_SOL_USD_MAINNET = 'CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt';
-const DASHBOARD_WSOL_MINT = 'So11111111111111111111111111111111111111112';
+import { formatProjectedUsd, projectedYieldFromApy } from '../lib/projectedYield';
 import { daoNetworkLabel, isEvmAddress } from '../lib/chain/types';
 import { isMockDaoAddress } from '../lib/mockData';
 import { agentRoleLabel } from '../lib/agentRoleLabel';
@@ -556,31 +546,16 @@ function AssetTable({
   assets,
   onRefresh,
   refreshing,
-  onRevalue,
-  revaluing,
 }: {
   assets: AssetInfo[];
   onRefresh?: () => void;
   refreshing?: boolean;
-  onRevalue?: () => void;
-  revaluing?: boolean;
 }) {
   return (
     <div className="nave-card overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
         <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Treasury Assets</span>
         <div className="flex items-center gap-3">
-          {onRevalue && (
-            <button
-              onClick={onRevalue}
-              disabled={revaluing}
-              className="flex items-center gap-1.5"
-              style={{ fontSize: '12px', color: 'hsl(var(--foreground))', cursor: !revaluing ? 'pointer' : 'default', opacity: revaluing ? 0.6 : 1 }}
-            >
-              <Fi icon="calculator" style={{ fontSize: '11px' }} />
-              {revaluing ? 'Revaluing…' : 'Revalue NAV'}
-            </button>
-          )}
           <button
             onClick={onRefresh}
             disabled={!onRefresh || refreshing}
@@ -618,7 +593,7 @@ function AssetTable({
             <tbody>
               {assets.map((a, idx) => (
                 <tr
-                  key={a.symbol}
+                  key={`${a.symbol}-${a.name}-${idx}`}
                   style={{ borderBottom: idx < assets.length - 1 ? '1px solid hsl(var(--border))' : 'none' }}
                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
@@ -863,50 +838,6 @@ export default function Dashboard() {
   const monthlyReports = useMonthlyReports(daoAddress);
   const daoRegistry = useDaoRegistry(daoAddress);
   const tokenRegistry = useTokenRegistry(daoAddress);
-  const { chainKind, evmChainId } = useChain();
-  const { publicKey } = useWallet();
-  const { address: evmAddress } = useAccount();
-  const tx = useSendTransaction();
-  const [revaluingNav, setRevaluingNav] = useState(false);
-
-  async function handleDashboardRevalueNav() {
-    if (!daoAddress || revaluingNav) return;
-    setRevaluingNav(true);
-    try {
-      if (chainKind === 'evm') {
-        if (!evmChainId) return;
-        const out = await tx.sendEvm(buildRevalueTreasuryEvm(evmChainId, daoAddress), {
-          successLabel: 'Treasury NAV revalued',
-        });
-        if (out.status === 'success' || out.status === 'mock') {
-          treasuryAssets.refetch();
-          treasury.refetch();
-        }
-        return;
-      }
-      if (!publicKey) return;
-      const registered = treasuryAssets.assets.filter((a) => a.onChainRegistered && a.mint !== 'SOL');
-      if (registered.length === 0) return;
-      const solFeed = new PublicKey(
-        SOLANA_NETWORK === 'mainnet' ? DASHBOARD_CHAINLINK_SOL_USD_MAINNET : DASHBOARD_CHAINLINK_SOL_USD_DEVNET,
-      );
-      const built = await buildRevalueTreasury(
-        new PublicKey(daoAddress),
-        publicKey,
-        registered.map((a) => ({
-          mint: new PublicKey(a.mint),
-          priceUpdate: a.isStablecoin ? undefined : a.mint === DASHBOARD_WSOL_MINT ? solFeed : undefined,
-        })),
-      );
-      const out = await tx.send(built, { successLabel: 'Treasury NAV revalued' });
-      if (out.status === 'success' || out.status === 'mock') {
-        treasuryAssets.refetch();
-        treasury.refetch();
-      }
-    } finally {
-      setRevaluingNav(false);
-    }
-  }
   const daoChainId = daoRegistry.dao?.chainId ?? null;
   const charterActionHash = agentStatus.actionLogs.find((log) => isActionHash(log.payloadHash))?.payloadHash;
   const charter = useCharterCheck(daoAddress, daoChainId, charterActionHash);
@@ -965,27 +896,6 @@ export default function Dashboard() {
     return undefined;
   }, [monthlyReports.allMonths]);
 
-  // 24h treasury trend from live history snapshots.
-  const treasuryTrend24h = useMemo(() => {
-    const h = treasury.history;
-    if (h.length < 2) return undefined;
-    const latest = h[h.length - 1];
-    const latestTs = new Date(latest.snapshotAt).getTime();
-    let baseline = h[0];
-    for (let i = h.length - 2; i >= 0; i--) {
-      const ts = new Date(h[i].snapshotAt).getTime();
-      if (latestTs - ts >= 20 * 60 * 60 * 1000) {
-        baseline = h[i];
-        break;
-      }
-    }
-    if (baseline.totalValueUsd > 0) {
-      const pct = ((latest.totalValueUsd - baseline.totalValueUsd) / baseline.totalValueUsd) * 100;
-      return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-    }
-    return undefined;
-  }, [treasury.history]);
-
   // 7-day treasury trend from live history; blank for a fresh DAO.
   const treasuryTrend = useMemo(() => {
     const h = treasury.history;
@@ -1042,11 +952,11 @@ export default function Dashboard() {
   const totalDeployed = liveStrategies.reduce((s, r) => s + r.allocated, 0);
   const blendedRate   = blendedApy(liveStrategies.map((r) => ({ value: r.allocated, apy: r.apy })));
   const blendedAPY    = blendedRate != null ? blendedRate.toFixed(2) : null;
+  const yieldOutlook = blendedRate != null ? projectedYieldFromApy(totalDeployed, blendedRate) : null;
 
-  // ─── Multi-asset on-chain treasury (preferred over legacy SOL/USDC) ────
-  // When the DAO has registered assets, the on-chain AssetConfig/TreasuryAsset
-  // accounts + revalued USD NAV are authoritative for the asset table, total
-  // value and allocation donut. Fall back to the legacy snapshot view otherwise.
+  // ─── Multi-asset treasury (preferred over legacy SOL/USDC snapshots) ────
+  // Live balances and market prices drive the asset table, total value, and
+  // allocation. Fall back to the legacy snapshot view when no holdings are found.
   const hasOnchainAssets = !isMock && treasuryAssets.assets.length > 0;
 
   const displayAssets: AssetInfo[] = useMemo(() => {
@@ -1066,11 +976,9 @@ export default function Dashboard() {
   );
 
   const displayCurrentValue =
-    chainKind === 'evm' && treasuryAssets.onchainNavUsd != null
-      ? treasuryAssets.onchainNavUsd
-      : chainKind === 'evm' && displayAssetsValue > 0
-        ? displayAssetsValue
-      : hasOnchainAssets && treasuryAssets.onchainNavUsd != null
+    displayAssetsValue > 0
+      ? displayAssetsValue
+      : treasuryAssets.onchainNavUsd != null
         ? treasuryAssets.onchainNavUsd
         : treasury.currentValue;
 
@@ -1156,7 +1064,32 @@ export default function Dashboard() {
           </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => setDepositFundsOpen(true)}
+            data-onboarding-id="dashboard-deposit-button"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-medium transition-all"
+            style={{ fontSize: '13px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+          >
+            <Fi icon="arrow-down-to-bracket" style={{ fontSize: '11px' }} />
+            Add funds
+          </button>
+          {!isEmptyTreasury && (
+          <button
+            type="button"
+            onClick={() => setCreateTxOpen(true)}
+            data-onboarding-id="dashboard-create-transaction-button"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border font-medium transition-colors"
+            style={{ fontSize: '13px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+          >
+            <Fi icon="paper-plane" style={{ fontSize: '11px' }} />
+            <span className="hidden sm:inline">Propose transfer</span>
+            <span className="sm:hidden">Propose</span>
+          </button>
+          )}
           {!isEmptyTreasury && (
           <button
             onClick={() => setReportsOpen(true)}
@@ -1170,79 +1103,6 @@ export default function Dashboard() {
             Reports
           </button>
           )}
-        </div>
-      </div>
-
-      {/* Treasury hero — balance first */}
-      <div
-        className="nave-card overflow-hidden"
-        data-onboarding-id="dashboard-hero"
-        style={{ borderColor: 'hsl(var(--border))' }}
-      >
-        <div className="px-5 py-6 sm:py-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-          <div>
-            <div className="nave-label" style={{ fontSize: '11px', marginBottom: '6px' }}>Total balance</div>
-            <div
-              className="text-display font-bold nave-mono"
-              style={{ fontSize: 'clamp(28px, 5vw, 40px)', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))' }}
-            >
-              ${displayCurrentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="flex flex-wrap items-center gap-3 mt-2" style={{ fontSize: '12.5px' }}>
-              {treasuryTrend24h && (
-                <span
-                  className="flex items-center gap-1"
-                  style={{ color: treasuryTrend24h.startsWith('-') ? 'hsl(var(--destructive))' : 'hsl(var(--success))' }}
-                >
-                  <Fi icon={treasuryTrend24h.startsWith('-') ? 'arrow-trend-down' : 'arrow-trend-up'} style={{ fontSize: '11px' }} />
-                  {treasuryTrend24h}
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>24h</span>
-                </span>
-              )}
-              {treasuryTrend && (
-                <span
-                  className="flex items-center gap-1"
-                  style={{ color: treasuryTrend.startsWith('-') ? 'hsl(var(--destructive))' : 'hsl(var(--success))' }}
-                >
-                  <Fi icon={treasuryTrend.startsWith('-') ? 'arrow-trend-down' : 'arrow-trend-up'} style={{ fontSize: '11px' }} />
-                  {treasuryTrend}
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>7d</span>
-                </span>
-              )}
-              {!treasuryTrend24h && !treasuryTrend && (
-                <span style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {isEmptyTreasury ? 'Add funds to start tracking trends' : hasOnchainAssets ? 'On-chain USD NAV' : 'No history yet'}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setDepositFundsOpen(true)}
-              data-onboarding-id="dashboard-deposit-button"
-              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium transition-all"
-              style={{ fontSize: '14px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
-            >
-              <Fi icon="arrow-down-to-bracket" style={{ fontSize: '13px' }} />
-              Add funds
-            </button>
-            {!isEmptyTreasury && (
-            <button
-              type="button"
-              onClick={() => setCreateTxOpen(true)}
-              data-onboarding-id="dashboard-create-transaction-button"
-              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border font-medium transition-colors"
-              style={{ fontSize: '14px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-            >
-              <Fi icon="paper-plane" style={{ fontSize: '13px' }} />
-              <span className="hidden sm:inline">Propose transfer</span>
-              <span className="sm:hidden">Propose</span>
-            </button>
-            )}
-          </div>
         </div>
       </div>
 
@@ -1310,9 +1170,31 @@ export default function Dashboard() {
         initial="initial"
         animate="animate"
       >
-        <MetricCard label="Total Treasury Value"  value={`$${displayCurrentValue.toLocaleString()}`} trend={treasuryTrend} sub={treasuryTrend ? '7-day' : (hasOnchainAssets ? 'On-chain USD NAV' : 'No history yet')} up={!!treasuryTrend} />
+        <MetricCard label="Total Treasury Value"  value={`$${displayCurrentValue.toLocaleString()}`} trend={treasuryTrend} sub={treasuryTrend ? '7-day' : (displayAssetsValue > 0 ? 'Live holdings' : 'No history yet')} up={!!treasuryTrend} />
         <MetricCard label="Total Yield Earned"    value={`$${totalYield.toLocaleString()}`} trend={yieldTrend}  sub={latestMonthYield > 0 ? `$${latestMonthYield.toLocaleString()} this month` : 'Across all strategies'} up={!!yieldTrend && !yieldTrend.startsWith('-')} />
-        <MetricCard label="Blended APY"           value={blendedAPY != null ? `${blendedAPY}%` : '—'} sub={blendedAPY != null ? 'Measured from on-chain marks' : 'Needs a day of position marks'}                           />
+        <MetricCard
+          label="Blended APY"
+          value={blendedAPY != null ? `${blendedAPY}%` : '—'}
+          sub={blendedAPY != null ? 'Hover for projected yield' : 'Needs a day of position marks'}
+          tooltip={yieldOutlook ? (
+            <div className="space-y-1.5">
+              <div className="nave-label" style={{ fontSize: '10px' }}>Projected yield</div>
+              {([
+                ['Daily', yieldOutlook.daily],
+                ['Weekly', yieldOutlook.weekly],
+                ['Annual', yieldOutlook.annual],
+              ] as const).map(([label, amount]) => (
+                <div key={label} className="flex items-center justify-between gap-6">
+                  <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>{label}</span>
+                  <span className="nave-mono" style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>{formatProjectedUsd(amount)}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.4 }}>
+                From {blendedAPY}% on ${totalDeployed.toLocaleString()} deployed
+              </div>
+            </div>
+          ) : undefined}
+        />
         <MetricCard label="Agent Efficiency"      value={agentEfficiency}                    sub="Policy compliance rate"             up={agentEfficiency !== '—'} />
       </motion.div>
       )}
@@ -1457,6 +1339,23 @@ export default function Dashboard() {
       </>
       )}
 
+      {/* Asset table sits above agent status and recent activity */}
+      <div data-onboarding-id="dashboard-assets">
+        <AssetTable
+          assets={displayAssets}
+          onRefresh={() => {
+            treasuryAssets.refetch();
+            treasury.refetch();
+          }}
+          refreshing={treasuryAssets.loading}
+        />
+      </div>
+      {hasOnchainAssets && displayAssets.some((asset) => asset.balance > 0 && asset.valueUsd === 0) && (
+        <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, paddingLeft: '2px' }}>
+          Some balances do not have a market price yet. Refresh reads holdings directly and does not send a transaction.
+        </p>
+      )}
+
       {/* Agent status + Activity */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-onboarding-id="dashboard-agent-activity">
         <AgentStatusPanel
@@ -1469,28 +1368,6 @@ export default function Dashboard() {
           <ActivityFeed activities={activityLog.activities} onViewAll={() => navigate('/settings')} />
         </div>
       </div>
-
-      {/* Asset table */}
-      <div data-onboarding-id="dashboard-assets">
-        <AssetTable
-          assets={displayAssets}
-          onRefresh={treasuryAssets.refetch}
-          refreshing={treasuryAssets.loading}
-          onRevalue={
-            !isMock &&
-            treasuryAssets.assets.some((a) => a.onChainRegistered) &&
-            (chainKind === 'evm' ? !!evmAddress && !!evmChainId : !!publicKey)
-              ? () => void handleDashboardRevalueNav()
-              : undefined
-          }
-          revaluing={revaluingNav}
-        />
-      </div>
-      {hasOnchainAssets && (
-        <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, paddingLeft: '2px' }}>
-          Dollar amounts update after the treasury is priced. Token balances are already live.
-        </p>
-      )}
 
       {/* Strategy performance table */}
       {!isEmptyTreasury && (
@@ -1576,47 +1453,6 @@ export default function Dashboard() {
       </div>
       )}
 
-      {!isEmptyTreasury && (
-      <div
-        className="nave-card p-5"
-        data-onboarding-id="dashboard-projected-yield"
-        style={{ backgroundColor: 'hsl(var(--surface-1))' }}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'hsl(var(--primary))' }}
-            >
-              <Fi icon="bolt" style={{ fontSize: '16px', color: 'white' }} />
-            </div>
-            <div>
-              <div className="text-display font-semibold" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>
-                Projected Annual Yield
-              </div>
-              <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-                {blendedAPY != null
-                  ? `Based on the measured ${blendedAPY}% blended APY across $${totalDeployed.toLocaleString()} deployed`
-                  : 'Appears once positions have a day of on-chain marks'}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between sm:justify-end gap-6 sm:gap-8 flex-shrink-0">
-            {[
-              { label: 'Monthly', value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100) / 12).toLocaleString()}` : '—' },
-              { label: 'Weekly',  value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100) / 52).toLocaleString()}` : '—' },
-              { label: 'Annual',  value: blendedRate != null ? `${Math.round(totalDeployed * (blendedRate / 100)).toLocaleString()}` : '—' },
-            ].map(p => (
-              <div key={p.label} className="text-left sm:text-right">
-                <div className="nave-label" style={{ fontSize: '9.5px', marginBottom: '3px' }}>{p.label}</div>
-                <div className="nave-mono font-bold" style={{ fontSize: '16px', color: 'hsl(var(--foreground))' }}>{p.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      )}
-
       {/* Reports Drawer */}
       <ReportsDrawer open={reportsOpen} onClose={() => setReportsOpen(false)} reports={monthlyReports.reports} />
 
@@ -1629,7 +1465,7 @@ export default function Dashboard() {
           registeredAssets={treasuryAssets.assets}
           initialTab="address"
           onClose={() => setDepositFundsOpen(false)}
-          onDeposited={treasury.refetch}
+          onDeposited={() => { treasury.refetch(); treasuryAssets.refetch(); }}
         />
       )}
       {createTxOpen && daoAddress && (

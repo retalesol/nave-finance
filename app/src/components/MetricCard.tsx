@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import Fi from './Fi';
 import { staggerChild } from './PageTransition';
@@ -9,6 +10,8 @@ interface MetricCardProps {
   trend?: string;
   up?: boolean;
   icon?: string;
+  /** Shown above the card while it is hovered or focused. */
+  tooltip?: ReactNode;
 }
 
 export default function MetricCard({
@@ -18,9 +21,32 @@ export default function MetricCard({
   trend,
   up,
   icon,
+  tooltip,
 }: MetricCardProps) {
   return (
-    <motion.div className="nave-card p-5" variants={staggerChild}>
+    <motion.div
+      className="nave-card p-5 relative group"
+      variants={staggerChild}
+      tabIndex={tooltip ? 0 : undefined}
+      style={tooltip ? { cursor: 'help' } : undefined}
+    >
+      {tooltip && (
+        <div
+          role="tooltip"
+          className="absolute z-30 left-0 right-0 bottom-[calc(100%+8px)] hidden group-hover:block group-focus-within:block"
+        >
+          <div
+            className="rounded-xl border p-3"
+            style={{
+              backgroundColor: 'hsl(var(--card))',
+              borderColor: 'hsl(var(--border))',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+          >
+            {tooltip}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-2">
         <span className="nave-label">{label}</span>
         {icon && (

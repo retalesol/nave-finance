@@ -15,6 +15,7 @@ import { useSendTransaction } from '@/hooks/useSendTransaction';
 import { useChain } from '@/hooks/useChain';
 import { useConstitution } from '@/hooks/useConstitution';
 import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
+import { isSelectableTreasuryMint } from '@/lib/treasuryAssetEligibility';
 import { isTreasuryOpsFamily } from '@/lib/chain/types';
 import { fetchDaoContracts, fetchExecutionRequestsEvm } from '@/lib/evm/readers';
 import {
@@ -229,7 +230,7 @@ export default function ProposalCard({
   const [createReqAmount, setCreateReqAmount] = useState('1');
   const [createReqProtocol, setCreateReqProtocol] = useState<'kamino' | 'jito' | 'marginfi' | 'jupiter'>('kamino');
   const registeredTreasuryAssets = useMemo(
-    () => treasuryAssets.filter((a) => a.onChainRegistered && a.mint !== 'SOL' && a.mint !== 'ETH'),
+    () => treasuryAssets.filter((a) => isSelectableTreasuryMint(a)),
     [treasuryAssets],
   );
   const defaultReqAssetMint = useMemo(() => {
@@ -1238,11 +1239,7 @@ export default function ProposalCard({
       const { core } = getNavePrograms();
       const [assetCfgPda] = getAssetConfigPDA(daoPubkey, dec.mint);
       const cfg = await core.account.assetConfig.fetchNullable(assetCfgPda);
-      if (!cfg) {
-        setVoteError('This mint is not registered as a treasury asset for this DAO.');
-        return;
-      }
-      if (!cfg.enabled) {
+      if (cfg && !cfg.enabled) {
         setVoteError('This treasury asset is disabled on-chain.');
         return;
       }

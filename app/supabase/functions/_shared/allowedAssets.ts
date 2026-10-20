@@ -140,10 +140,10 @@ const STABLECOINS: AllowedAsset[] = [
 
 const SOL_LIKE: AllowedAsset[] = [
   {
-    symbol: "SOL",
+    symbol: "wSOL",
     name: "Wrapped SOL",
     assetClass: "sol-like",
-    mint: "So11111111111111111111111111111111111111112", // wSOL (same as native SOL on-chain)
+    mint: "So11111111111111111111111111111111111111112", // wrapped SOL mint, distinct from native lamports
     mintDevnet: "So11111111111111111111111111111111111111112",
     maxRisk: 30,
     eligiblePoolTypes: ["single-stake", "sol-stable-lp"],

@@ -35,7 +35,7 @@ export const ALLOWED_ASSETS: AllowedAsset[] = [
   { symbol: 'USDGO', name: 'USDGO (GooseFX)',         mint: 'USDGoPLv5RDKFK3DVEfHQaM3CcLPHTwEZBdqnKMFd7c', assetClass: 'stablecoin', maxRisk: 60, eligiblePoolTypes: ['single-stake'], decimals: 6 },
   { symbol: 'CASH',  name: 'CASH',                    mint: 'CASHVDm2wsJXfhj6VWxb7GiMdoLc17Du7paH4bNr5woT', assetClass: 'stablecoin', maxRisk: 65, eligiblePoolTypes: ['single-stake'], decimals: 6 },
   // ── SOL-like / Liquid Staking ────────────────────────────────────────────
-  { symbol: 'SOL',     name: 'Wrapped SOL',          mint: 'So11111111111111111111111111111111111111112', assetClass: 'sol-like', maxRisk: 30, eligiblePoolTypes: ['single-stake', 'sol-stable-lp'], decimals: 9 },
+  { symbol: 'wSOL',    name: 'Wrapped SOL',          mint: 'So11111111111111111111111111111111111111112', assetClass: 'sol-like', maxRisk: 30, eligiblePoolTypes: ['single-stake', 'sol-stable-lp'], decimals: 9 },
   { symbol: 'JitoSOL', name: 'Jito Staked SOL',      mint: 'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn', assetClass: 'sol-like', maxRisk: 30, eligiblePoolTypes: ['single-stake', 'sol-stable-lp'], decimals: 9 },
   { symbol: 'JupSOL',  name: 'Jupiter Staked SOL',   mint: 'jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v', assetClass: 'sol-like', maxRisk: 30, eligiblePoolTypes: ['single-stake', 'sol-stable-lp'], decimals: 9 },
   { symbol: 'mSOL',    name: 'Marinade Staked SOL',  mint: 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So', assetClass: 'sol-like', maxRisk: 30, eligiblePoolTypes: ['single-stake', 'sol-stable-lp'], decimals: 9 },

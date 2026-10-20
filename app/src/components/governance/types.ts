@@ -296,7 +296,7 @@ export function getProposalDescription(type: ProposalType): string {
     case 'emergency':
       return 'Emergency governance proposal. If passed, immediate action will be taken to protect treasury assets and halt or modify agent operations as specified. Requires multisig confirmation to resume normal operations.';
     case 'transfer':
-      return 'This proposal authorises moving idle treasury funds (native SOL or a registered SPL asset) to a recipient you specified in the payload. After the vote passes and the proposal is finalized, any member can submit the on-chain execute transfer transaction; autonomous agents are not required for this path.';
+      return 'This proposal authorises moving idle treasury funds (native SOL or any token the treasury holds) to a recipient you specified in the payload. After the vote passes and the proposal is finalized, any member can submit the on-chain execute transfer transaction; autonomous agents are not required for this path.';
     case 'agent-enable':
       return 'This proposal requests resuming the four autonomous agents for this treasury. Once it passes, the founder executes the on-chain enable so the Executive, Financial, Operational, and Oversight agents reconnect and begin checking this DAO for necessary actions.';
     case 'moonlight-request':

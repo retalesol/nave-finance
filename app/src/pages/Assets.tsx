@@ -16,7 +16,7 @@ import { DepositFlowModal } from '../components/DepositFlow';
 import NaveModal from '../components/NaveModal';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
-import { buildRegisterAssetEvm, buildRevalueTreasuryEvm, type EvmBuildResult } from '../lib/evm/writers';
+import { buildRegisterAssetEvm, type EvmBuildResult } from '../lib/evm/writers';
 import {
   buildInitStrategyPosition,
   buildInitStrategyEscrow,
@@ -24,22 +24,16 @@ import {
   buildConfigureMarginfiPosition,
   buildRegisterAsset,
   buildRegisterNftAsset,
-  buildRevalueTreasury,
   buildSetFeeAsset,
 } from '../lib/transactionBuilders';
 import { evmAllowedAssets, resolveAsset, riskLabel, type AllowedAsset, type EvmAllowedAsset } from '../lib/allowedAssets';
 import { fetchYieldData, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { getSolanaRegisterAssetPlan } from '../lib/solanaTreasuryRegistrationDefaults';
 import { getSolanaStrategyStatuses } from '../lib/strategyReadiness';
-import { SOLANA_NETWORK } from '../lib/programConfig';
-
-const CHAINLINK_SOL_USD_FEED_DEVNET = '99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR';
-const CHAINLINK_SOL_USD_FEED_MAINNET = 'CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt';
-const WSOL_MINT_STR = 'So11111111111111111111111111111111111111112';
+import type { EvmChainId } from '../lib/chain/types';
 
 const MARGINFI_STRATEGY_ENABLED = getSolanaStrategyStatuses().find((s) => s.id === 'marginfi')?.supported ?? false;
 const JUPITER_STRATEGY_BADGE = getSolanaStrategyStatuses().find((s) => s.id === 'jupiter')?.badge ?? null;
-import type { EvmChainId } from '../lib/chain/types';
 
 const USD = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -565,10 +559,6 @@ function AssetCard({ asset, canManage, onAction, hidden = false }: {
 }) {
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
-  const heldUnregistered = !asset.onChainRegistered && asset.uiBalance > 0;
-  const solMintOk =
-    asset.mint !== 'SOL' && asset.mint.length >= 32 && asset.mint.length <= 44;
-  const showEnableSolana = chainKind === 'solana' && heldUnregistered && solMintOk;
   const depositBlocked = chainKind === 'evm' && asset.mint === 'ETH';
   const dexHref = treasuryAssetDexScreenerUrl(asset, chainKind, evmChainId);
 
@@ -586,11 +576,6 @@ function AssetCard({ asset, canManage, onAction, hidden = false }: {
               <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))' }}>
                 {asset.assetKindLabel}
               </span>
-              {heldUnregistered && (
-                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'hsl(var(--surface-2))', color: 'hsl(var(--foreground))' }}>
-                  Held · not on registry
-                </span>
-              )}
               {asset.onChainRegistered && !asset.enabled && (
                 <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'hsl(var(--destructive-muted))', color: 'hsl(var(--destructive))' }}>Disabled</span>
               )}
@@ -654,16 +639,6 @@ function AssetCard({ asset, canManage, onAction, hidden = false }: {
           >
             <Fi icon="arrow-down" style={{ fontSize: 10 }} /> Add funds
           </button>
-          {showEnableSolana && (
-            <button
-              type="button"
-              onClick={() => onAction('registerSolana', asset)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-              style={{ borderColor: 'hsl(var(--primary))', color: 'hsl(var(--primary))' }}
-            >
-              <Fi icon="bolt" style={{ fontSize: 10 }} /> Enable
-            </button>
-          )}
           {chainKind !== 'evm' && asset.onChainRegistered && asset.isStablecoin && (
             <button onClick={() => onAction('feeAsset', asset)} disabled={tx.status === 'signing'} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
               style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>
@@ -672,13 +647,10 @@ function AssetCard({ asset, canManage, onAction, hidden = false }: {
           )}
           <button
             onClick={() => onAction('configure', asset)}
-            disabled={chainKind === 'solana' && !asset.onChainRegistered}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
             style={{
               borderColor: 'hsl(var(--border))',
               color: 'hsl(var(--foreground))',
-              opacity: chainKind === 'solana' && !asset.onChainRegistered ? 0.55 : 1,
-              cursor: chainKind === 'solana' && !asset.onChainRegistered ? 'not-allowed' : 'pointer',
             }}
           >
             <Fi icon="sliders" style={{ fontSize: 10 }} /> Yield setup
@@ -728,16 +700,7 @@ function NftCard({ nft, canManage, onAction }: {
           </div>
         )}
         <div className="flex flex-wrap gap-2 pt-1">
-          {!nft.registered && canManage && !nft.compressed && (
-            <button
-              onClick={() => onAction('registerNft', nft)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-              style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-            >
-              <Fi icon="shield-check" style={{ fontSize: 10 }} /> Register for governance
-            </button>
-          )}
-          {nft.registered && canManage && (
+          {canManage && !nft.compressed && (
             <button
               onClick={() => onAction('sendNft', nft)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
@@ -764,7 +727,7 @@ export default function Assets() {
   const { publicKey, signMessage } = useWallet();
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const { chainKind, evmChainId } = useChain();
+  const { chainKind } = useChain();
   const tx = useSendTransaction();
   const { assets, visibleAssets, hiddenAssets, onchainNavUsd, deployedUsd, loading, error, refetch, hideAsset, unhideAsset } = useTreasuryAssets(daoAddress);
   const { nfts, loading: nftsLoading, error: nftsError, unsupported: nftsUnsupported, refetch: refetchNfts } = useTreasuryNfts(daoAddress);
@@ -773,59 +736,9 @@ export default function Assets() {
   const [configureAsset, setConfigureAsset] = useState<TreasuryAssetRow | null>(null);
   const [registerEvmAsset, setRegisterEvmAsset] = useState(false);
   const [registerSolanaAsset, setRegisterSolanaAsset] = useState<TreasuryAssetRow | null>(null);
-  const [revaluing, setRevaluing] = useState(false);
   const [tab, setTab] = useState<'tokens' | 'hidden' | 'nfts'>('tokens');
 
   const canManage = !!daoAddress && !isMockMode && (chainKind === 'evm' ? !!evmAddress : !!publicKey);
-
-  async function handleRevalueNav() {
-    if (!daoAddress || revaluing) return;
-    setRevaluing(true);
-    try {
-      if (chainKind === 'evm') {
-        if (!evmChainId) {
-          toast({ variant: 'destructive', title: 'Select network', description: 'Select an EVM network to revalue treasury NAV.' });
-          return;
-        }
-        const out = await tx.sendEvm(buildRevalueTreasuryEvm(evmChainId, daoAddress), {
-          successLabel: 'Treasury NAV revalued',
-        });
-        if (out.status === 'success' || out.status === 'mock') {
-          refetch();
-        }
-        return;
-      }
-      if (!publicKey) {
-        toast({ variant: 'destructive', title: 'Connect wallet', description: 'Connect your founder wallet to revalue treasury NAV.' });
-        return;
-      }
-      const registered = assets.filter((a) => a.onChainRegistered && a.mint !== 'SOL');
-      if (registered.length === 0) {
-        toast({ variant: 'destructive', title: 'No registered assets', description: 'Enable at least one treasury asset before revaluing NAV.' });
-        return;
-      }
-      const solFeed = new PublicKey(
-        SOLANA_NETWORK === 'mainnet' ? CHAINLINK_SOL_USD_FEED_MAINNET : CHAINLINK_SOL_USD_FEED_DEVNET,
-      );
-      const revalueAssets = registered.map((a) => ({
-        mint: new PublicKey(a.mint),
-        priceUpdate: a.isStablecoin ? undefined : a.mint === WSOL_MINT_STR ? solFeed : undefined,
-      }));
-      const built = await buildRevalueTreasury(new PublicKey(daoAddress), publicKey, revalueAssets);
-      const out = await tx.send(built, { successLabel: 'Treasury NAV revalued' });
-      if (out.status === 'success' || out.status === 'mock') {
-        refetch();
-      }
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Revalue failed',
-        description: err instanceof Error ? err.message : 'Could not revalue treasury NAV.',
-      });
-    } finally {
-      setRevaluing(false);
-    }
-  }
 
   async function handleAction(action: string, asset: TreasuryAssetRow) {
     if (!canManage) return;
@@ -866,10 +779,6 @@ export default function Assets() {
           title: 'Use WETH',
           description: 'Add ETH by depositing WETH. Extra ETH in your wallet is wrapped automatically.',
         });
-        return;
-      }
-      if (chainKind === 'solana' && !asset.onChainRegistered && asset.mint !== 'SOL') {
-        setRegisterSolanaAsset(asset);
         return;
       }
       setDepositAsset(asset);
@@ -956,17 +865,6 @@ export default function Assets() {
             <button onClick={() => { setDepositAsset(null); setShowDeposit(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium"
               style={{ fontSize: 12.5, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>
               <Fi icon="arrow-down" style={{ fontSize: 11 }} /> Deposit
-            </button>
-          )}
-          {canManage && daoAddress && assets.some((a) => a.onChainRegistered) && (
-            <button
-              onClick={() => void handleRevalueNav()}
-              disabled={revaluing}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"
-              style={{ fontSize: 12.5, borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', opacity: revaluing ? 0.6 : 1 }}
-            >
-              <Fi icon="arrows-rotate" className={revaluing ? 'animate-spin' : ''} style={{ fontSize: 11 }} />
-              {revaluing ? 'Revaluing…' : 'Revalue NAV'}
             </button>
           )}
           <button onClick={() => { refetch(); refetchNfts(); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"
@@ -1065,7 +963,7 @@ export default function Assets() {
             <NaveEmptyState icon="image" title="NFT indexing unavailable" description="Your RPC does not support DAS (getAssetsByOwner). Use a Helius or Triton endpoint to enumerate treasury NFTs." />
           )}
           {!nftsLoading && !nftsError && !nftsUnsupported && nfts.length === 0 && (
-            <NaveEmptyState icon="image" title="No NFTs in treasury" description={chainKind === 'evm' ? 'Transfer an ERC-721 to the treasury contract to hold it under governance.' : 'Transfer a Metaplex NFT to the vault authority address. Register it here before sending via governance.'} />
+            <NaveEmptyState icon="image" title="No NFTs in treasury" description={chainKind === 'evm' ? 'Transfer an ERC-721 to the treasury contract to hold it under governance.' : 'Transfer a Metaplex NFT to the vault authority address. It can be sent from here as soon as it arrives.'} />
           )}
           {!nftsLoading && !nftsError && nfts.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

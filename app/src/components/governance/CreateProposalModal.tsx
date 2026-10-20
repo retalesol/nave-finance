@@ -10,6 +10,7 @@ import { scaleIn, fadeOverlay } from '@/components/PageTransition';
 import { useSendTransaction } from '@/hooks/useSendTransaction';
 import { useChain } from '@/hooks/useChain';
 import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
+import { isSelectableTreasuryMint } from '@/lib/treasuryAssetEligibility';
 import { fetchDaoContracts } from '@/lib/evm/readers';
 import { storeEvmProposalPayloadRemote } from '@/lib/evmProposalPayloadStore';
 import { buildCreateProposalEvm, encodeEvmPermissionPayload, encodeEvmStrategyProposalPayload } from '@/lib/evm/writers';
@@ -147,7 +148,7 @@ export default function CreateProposalModal({
 
   const { assets: treasuryAssets } = useTreasuryAssets(daoAddress);
   const registeredTreasuryAssets = useMemo(
-    () => treasuryAssets.filter((a) => a.onChainRegistered && a.mint !== 'SOL' && a.mint !== 'ETH'),
+    () => treasuryAssets.filter((a) => isSelectableTreasuryMint(a)),
     [treasuryAssets],
   );
   const configuredEvmAdapters = useMemo(

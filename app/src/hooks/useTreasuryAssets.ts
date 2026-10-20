@@ -18,18 +18,7 @@ import { useChain } from './useChain';
 import { isMockDaoAddress } from '../lib/mockData';
 import { getVaultAuthorityPDA } from '../lib/pdaDerivation';
 import { discoverErc20ContractAddressesFromTreasuryActivity } from '../lib/evmTreasuryTokenDiscovery';
-
-/** Known mint → display symbol/name (devnet + mainnet). Falls back to a
- *  truncated mint for unknown assets. */
-const KNOWN_MINTS: Record<string, { symbol: string; name: string }> = {
-  SOL: { symbol: 'SOL', name: 'Solana' },
-  So11111111111111111111111111111111111111112: { symbol: 'wSOL', name: 'Wrapped SOL' },
-  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: 'USDC', name: 'USD Coin' },
-  Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr: { symbol: 'USDC', name: 'USD Coin (devnet)' },
-  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: { symbol: 'USDT', name: 'Tether USD' },
-};
-
-const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+import { treasuryAssetLabel, WSOL_MINT } from '../lib/treasuryAssetLabels';
 
 const ASSET_KIND_LABEL: Record<number, string> = { 0: 'Stablecoin', 1: 'SOL-like', 2: 'Other' };
 
@@ -46,9 +35,9 @@ export interface TreasuryAssetRow extends RegisteredAssetView {
   /** Share of total on-chain NAV (0..100). */
   allocationPct: number;
   /**
-   * True when the asset is registered for treasury accounting on-chain
-   * (Solana `AssetConfig`, EVM `registerAsset`). Held-but-unregistered tokens
-   * still appear for visibility but cannot execute governance transfers until registered.
+   * True when the asset has an on-chain accounting record
+   * (Solana `AssetConfig`, EVM `registerAsset`). Held tokens can still be
+   * sent and shown without that record.
    */
   onChainRegistered: boolean;
 }
@@ -81,10 +70,6 @@ function hiddenChainFor(daoAddress: string, evmChainId: EvmChainId | null): stri
   if (cid === 4663 || cid === 46630) return 'robinhood';
   if (cid === 5042 || cid === 5042002) return 'arc';
   return 'ethereum';
-}
-
-function symbolFor(mint: string): { symbol: string; name: string } {
-  return KNOWN_MINTS[mint] || { symbol: `${mint.slice(0, 4)}…${mint.slice(-4)}`, name: 'Unknown asset' };
 }
 
 type DexToken = {
@@ -461,8 +446,11 @@ async function fetchTreasuryAssetsData(
           if (p && Number.isFinite(p.priceUsd) && p.priceUsd > 0) {
             row.priceUsd = p.priceUsd;
             row.priceSource = 'DexScreener';
-            if (typeof p.symbol === 'string' && p.symbol) row.symbol = p.symbol;
-            if (typeof p.name === 'string' && p.name) row.name = p.name;
+            const listed = allowedByAddress.has(lo);
+            if (!listed) {
+              if (typeof p.symbol === 'string' && p.symbol) row.symbol = p.symbol;
+              if (typeof p.name === 'string' && p.name) row.name = p.name;
+            }
             row.valueUsd = row.uiBalance * p.priceUsd;
             row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
             continue;
@@ -502,10 +490,10 @@ async function fetchTreasuryAssetsData(
 
         const totalValue = rows.reduce((sum, row) => sum + row.valueUsd, 0);
         const resolvedNavUsd =
-          navMicro != null && navMicro > 0
-            ? navMicro / 1_000_000
-            : totalValue > 0
-              ? totalValue
+          totalValue > 0
+            ? totalValue
+            : navMicro != null && navMicro > 0
+              ? navMicro / 1_000_000
               : null;
         return {
           assets: rows.map((row) => ({
@@ -549,7 +537,7 @@ async function fetchTreasuryAssetsData(
             pythFeedHex: registeredAsset?.pythFeedHex ?? '0'.repeat(64),
             isStablecoin: registeredAsset?.isStablecoin ?? false,
             assetKind: registeredAsset?.assetKind ?? 2,
-            enabled: registeredAsset ? registeredAsset.enabled : false,
+            enabled: registeredAsset ? registeredAsset.enabled : true,
             deposited: registeredAsset?.deposited ?? amount,
             deployedCapital: registeredAsset?.deployedCapital ?? 0,
             lastValuedUsd: registeredAsset?.lastValuedUsd ?? 0,
@@ -568,7 +556,7 @@ async function fetchTreasuryAssetsData(
           pythFeedHex: '0'.repeat(64),
           isStablecoin: false,
           assetKind: 1,
-          enabled: false,
+          enabled: true,
           deposited: solLamports,
           deployedCapital: 0,
           lastValuedUsd: 0,
@@ -588,38 +576,35 @@ async function fetchTreasuryAssetsData(
       let onchainNavUsd = navUsd;
       const deployedUsd = vault ? vault.deployedCapital / 1_000_000 : null;
 
-      const navMicro = vault ? vault.currentNav : 0;
       const rows: TreasuryAssetRow[] = discovered.map((a) => {
-        const known = symbolFor(a.mint);
         const priceKey = a.mint === 'SOL' ? WSOL_MINT : a.mint;
         const market = prices.get(priceKey);
-        const isStable = a.isStablecoin || known.symbol === 'USDC' || known.symbol === 'USDT';
+        const label = treasuryAssetLabel(a.mint, market);
+        const isStable = a.isStablecoin || label.symbol === 'USDC' || label.symbol === 'USDT';
         const priceUsd = isStable ? 1 : market?.priceUsd ?? null;
         const balance = a.vaultBalanceBaseUnits / Math.pow(10, a.decimals);
-        const valueUsd = a.lastValuedUsd > 0
-          ? a.lastValuedUsd / 1_000_000
-          : priceUsd != null ? balance * priceUsd : 0;
+        const markedUsd = a.lastValuedUsd > 0 ? a.lastValuedUsd / 1_000_000 : null;
+        const valueUsd = priceUsd != null ? balance * priceUsd : markedUsd ?? 0;
         const onChainRegistered = a.mint === 'SOL' ? false : registeredByMint.has(a.mint);
         return {
           ...a,
-          symbol: market?.symbol ?? known.symbol,
-          name: market?.name ?? known.name,
+          enabled: onChainRegistered ? a.enabled : true,
+          symbol: label.symbol,
+          name: label.name,
           assetKindLabel: ASSET_KIND_LABEL[a.assetKind] ?? 'Other',
           priceUsd,
-          priceSource: a.lastValuedUsd > 0 ? 'On-chain valuation' : priceUsd != null ? (isStable ? 'Stablecoin parity' : 'DexScreener') : 'Unpriced',
+          priceSource: priceUsd != null ? (isStable ? 'Stablecoin parity' : 'DexScreener') : markedUsd != null ? 'On-chain valuation' : 'Unpriced',
           uiBalance: balance,
           valueUsd,
-          allocationPct: navMicro > 0 ? (a.lastValuedUsd / navMicro) * 100 : 0,
+          allocationPct: 0,
           onChainRegistered,
         };
       });
       const estimatedNav = rows.reduce((sum, row) => sum + row.valueUsd, 0);
-      if (navMicro <= 0 && estimatedNav > 0) {
+      if (estimatedNav > 0) {
         rows.forEach((row) => {
           row.allocationPct = (row.valueUsd / estimatedNav) * 100;
         });
-      }
-      if (navUsd == null && estimatedNav > 0) {
         onchainNavUsd = estimatedNav;
       }
       return { assets: rows.sort((a, b) => b.valueUsd - a.valueUsd), onchainNavUsd, deployedUsd };
