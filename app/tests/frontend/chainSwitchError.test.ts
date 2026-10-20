@@ -24,3 +24,13 @@ test('an unrecognized chain asks to be added', () => {
 test('a user rejection is distinct from a failed switch', () => {
   assert.equal(classifyChainSwitchError({ code: 4001, message: 'User rejected the request.' }), 'rejected');
 });
+
+test('a wagmi connector/connection mismatch is not shown as a raw switch failure', () => {
+  assert.equal(
+    classifyChainSwitchError({
+      name: 'ConnectorChainMismatchError',
+      message: 'The current chain of the connector (id: 5042002) does not match the connection\'s chain (id: 11155111).',
+    }),
+    'mismatch',
+  );
+});

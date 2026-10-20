@@ -20,20 +20,55 @@ export function chainNameForId(chainId: number): string {
   return WAGMI_CHAIN_BY_ID[chainId as EvmChainId]?.name ?? `chain ${chainId}`;
 }
 
-/** The chain the injected wallet reports, falling back to wagmi's account. */
-export async function readWalletChainId(): Promise<number | null> {
-  const provider = ethereumProvider();
-  if (provider) {
+async function providerChainId(provider: EthProvider | null): Promise<number | null> {
+  if (!provider) return null;
+  try {
+    const hex = await provider.request({ method: 'eth_chainId' });
+    if (typeof hex === 'string' && /^0x[0-9a-fA-F]+$/.test(hex)) {
+      return Number.parseInt(hex, 16);
+    }
+  } catch {
+    // Provider locked or busy.
+  }
+  return null;
+}
+
+/**
+ * Chain id reported by the active wagmi connector. `getAccount().chainId` is the
+ * connection record and can say Sepolia while MetaMask is still on Arc.
+ */
+async function readConnectorChainId(): Promise<number | null> {
+  const connector = getAccount(wagmiConfig).connector;
+  if (connector) {
     try {
-      const hex = await provider.request({ method: 'eth_chainId' });
-      if (typeof hex === 'string' && /^0x[0-9a-fA-F]+$/.test(hex)) {
-        return Number.parseInt(hex, 16);
-      }
+      return await connector.getChainId();
     } catch {
-      // Fall through to wagmi when the provider is locked or rejects.
+      // Fall through to the injected provider.
+    }
+    if (typeof connector.getProvider === 'function') {
+      try {
+        const provider = await connector.getProvider() as EthProvider | undefined;
+        const id = await providerChainId(provider ?? null);
+        if (id != null) return id;
+      } catch {
+        // Fall through.
+      }
     }
   }
-  return getAccount(wagmiConfig).chainId ?? null;
+  return providerChainId(ethereumProvider());
+}
+
+/** Make wagmi's connection record match the chain the connector is actually on. */
+function syncWagmiChain(chainId: number) {
+  wagmiConfig.setState((state) => {
+    const current = state.current;
+    if (!current) return { ...state, chainId };
+    const connection = state.connections.get(current);
+    if (!connection || connection.chainId === chainId) return { ...state, chainId };
+    const connections = new Map(state.connections);
+    connections.set(current, { ...connection, chainId });
+    return { ...state, chainId, connections };
+  });
 }
 
 let inflight: { chainId: number; promise: Promise<void> } | null = null;
@@ -44,7 +79,10 @@ let inflight: { chainId: number; promise: Promise<void> } | null = null;
  * not reject a second `wallet_switchEthereumChain` with -32002.
  */
 export async function ensureWalletOnChain(chainId: EvmChainId): Promise<void> {
-  if ((await readWalletChainId()) === chainId) return;
+  if ((await readConnectorChainId()) === chainId) {
+    syncWagmiChain(chainId);
+    return;
+  }
 
   if (inflight?.chainId === chainId) return inflight.promise;
 
@@ -54,7 +92,10 @@ export async function ensureWalletOnChain(chainId: EvmChainId): Promise<void> {
     } catch {
       // The previous prompt finished (approved or declined). Switch next.
     }
-    if ((await readWalletChainId()) === chainId) return;
+    if ((await readConnectorChainId()) === chainId) {
+      syncWagmiChain(chainId);
+      return;
+    }
   }
 
   const promise = performSwitch(chainId).finally(() => {
@@ -66,7 +107,7 @@ export async function ensureWalletOnChain(chainId: EvmChainId): Promise<void> {
 
 async function performSwitch(chainId: EvmChainId): Promise<void> {
   const name = chainNameForId(chainId);
-  const started = await readWalletChainId();
+  const started = await readConnectorChainId();
   try {
     await switchChain(wagmiConfig, { chainId });
   } catch (err) {
@@ -74,46 +115,48 @@ async function performSwitch(chainId: EvmChainId): Promise<void> {
     if (kind === 'rejected') {
       throw new Error(`Switch to ${name} was declined in your wallet.`);
     }
-    if (kind === 'missing') {
-      await addChain(chainId);
-    } else     if (kind === 'pending') {
+    if (kind === 'missing' || kind === 'mismatch') {
+      await switchViaProvider(chainId);
+    } else if (kind === 'pending') {
       const landed = await waitForChainChange(started, 45_000);
       if (landed !== chainId) {
         if (landed == null) {
           throw new Error(`Approve the ${name} network switch already open in your wallet, then try again.`);
         }
-        try {
-          await switchChain(wagmiConfig, { chainId });
-        } catch (retryErr) {
-          const retryKind = classifyChainSwitchError(retryErr);
-          if (retryKind === 'rejected') throw new Error(`Switch to ${name} was declined in your wallet.`);
-          if (retryKind === 'missing') await addChain(chainId);
-          else if (retryKind === 'pending') {
-            throw new Error(`Approve the ${name} network switch already open in your wallet, then try again.`);
-          } else {
-            throw new Error(`Could not switch your wallet to ${name}.`);
-          }
-        }
+        await switchViaProvider(chainId);
       }
     } else {
-      throw new Error(`Could not switch your wallet to ${name}. ${err instanceof Error ? err.message : ''}`.trim());
+      throw new Error(`Could not switch your wallet to ${name}. Approve the network change in your wallet and try again.`);
     }
   }
 
-  const deadline = Date.now() + 4_000;
-  let live = await readWalletChainId();
+  const deadline = Date.now() + 8_000;
+  let live = await readConnectorChainId();
   while (live !== chainId && Date.now() < deadline) {
     await new Promise((resolve) => window.setTimeout(resolve, 200));
-    live = await readWalletChainId();
+    live = await readConnectorChainId();
   }
   if (live !== chainId) {
     const where = live != null ? chainNameForId(live) : 'another network';
     throw new Error(`Your wallet is still on ${where}. Switch to ${name} before continuing.`);
   }
+  syncWagmiChain(chainId);
 }
 
-async function addChain(chainId: EvmChainId): Promise<void> {
-  const provider = ethereumProvider();
+async function switchViaProvider(chainId: EvmChainId): Promise<void> {
+  const connector = getAccount(wagmiConfig).connector;
+  let provider = ethereumProvider();
+  if (connector && typeof connector.getProvider === 'function') {
+    try {
+      provider = (await connector.getProvider() as EthProvider | undefined) ?? provider;
+    } catch {
+      // Use window.ethereum.
+    }
+  }
+  await requestWalletChain(provider, chainId);
+}
+
+async function requestWalletChain(provider: EthProvider | null, chainId: EvmChainId): Promise<void> {
   const chain = WAGMI_CHAIN_BY_ID[chainId];
   const name = chainNameForId(chainId);
   if (!provider || !chain) {
@@ -122,48 +165,61 @@ async function addChain(chainId: EvmChainId): Promise<void> {
   const rpc = EVM_RPC_URLS[chainId] ?? chain.rpcUrls.default.http[0];
   try {
     await provider.request({
-      method: 'wallet_addEthereumChain',
-      params: [{
-        chainId: numberToHex(chainId),
-        chainName: chain.name,
-        nativeCurrency: chain.nativeCurrency,
-        rpcUrls: rpc ? [rpc] : chain.rpcUrls.default.http,
-        blockExplorerUrls: chain.blockExplorers?.default?.url
-          ? [chain.blockExplorers.default.url]
-          : undefined,
-      }],
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: numberToHex(chainId) }],
     });
   } catch (err) {
     const kind = classifyChainSwitchError(err);
-    if (kind === 'rejected') throw new Error(`Adding ${name} was declined in your wallet.`);
+    if (kind === 'rejected') throw new Error(`Switch to ${name} was declined in your wallet.`);
     if (kind === 'pending') {
-      const landed = await waitForChainChange(await readWalletChainId(), 45_000);
+      const landed = await waitForChainChange(await readConnectorChainId(), 45_000);
       if (landed === chainId) return;
-      throw new Error(`Approve the ${name} network request already open in your wallet, then try again.`);
+      throw new Error(`Approve the ${name} network switch already open in your wallet, then try again.`);
     }
-    throw new Error(`Could not add ${name} to your wallet.`);
+    if (kind !== 'missing') {
+      throw new Error(`Could not switch your wallet to ${name}. Approve the network change in your wallet and try again.`);
+    }
+    try {
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: numberToHex(chainId),
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: rpc ? [rpc] : chain.rpcUrls.default.http,
+          blockExplorerUrls: chain.blockExplorers?.default?.url
+            ? [chain.blockExplorers.default.url]
+            : undefined,
+        }],
+      });
+    } catch (addErr) {
+      const addKind = classifyChainSwitchError(addErr);
+      if (addKind === 'rejected') throw new Error(`Adding ${name} was declined in your wallet.`);
+      if (addKind === 'pending') {
+        const landed = await waitForChainChange(await readConnectorChainId(), 45_000);
+        if (landed === chainId) return;
+      }
+      throw new Error(`Could not add ${name} to your wallet.`);
+    }
   }
 }
 
 function waitForChainChange(started: number | null, timeoutMs: number): Promise<number | null> {
   return new Promise((resolve) => {
-    const provider = ethereumProvider();
     let settled = false;
     const finish = (value: number | null) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
       window.clearInterval(interval);
-      provider?.removeListener?.('chainChanged', onChanged);
       resolve(value);
     };
-    const onChanged = () => {
-      void readWalletChainId().then((id) => {
+    const tick = () => {
+      void readConnectorChainId().then((id) => {
         if (id != null && id !== started) finish(id);
       });
     };
     const timer = window.setTimeout(() => finish(null), timeoutMs);
-    const interval = window.setInterval(onChanged, 400);
-    provider?.on?.('chainChanged', onChanged);
+    const interval = window.setInterval(tick, 400);
   });
 }

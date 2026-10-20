@@ -1,6 +1,6 @@
 /** Classify wallet chain-switch failures without depending on wagmi. */
 
-export type ChainSwitchFailure = 'rejected' | 'pending' | 'missing' | 'other';
+export type ChainSwitchFailure = 'rejected' | 'pending' | 'missing' | 'mismatch' | 'other';
 
 function errorText(err: unknown): string {
   const parts: string[] = [];
@@ -33,6 +33,7 @@ export function classifyChainSwitchError(err: unknown): ChainSwitchFailure {
   const text = errorText(err).toLowerCase();
   if (/4001|user rejected|user denied|rejected the request/.test(text)) return 'rejected';
   if (/-32002|already pending/.test(text)) return 'pending';
+  if (/does not match the connection|connectorchainmismatch/.test(text)) return 'mismatch';
   if (/4902|unrecognized chain|has not been added|try adding the chain/.test(text)) return 'missing';
   return 'other';
 }
