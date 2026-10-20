@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { Transaction, type Connection } from '@solana/web3.js';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { writeContract, waitForTransactionReceipt, switchChain, getAccount, getPublicClient } from '@wagmi/core';
+import { writeContract, waitForTransactionReceipt, getAccount, getPublicClient } from '@wagmi/core';
 import { toast } from '../hooks/use-toast';
 import { USE_MOCKS, SOLANA_NETWORK, SOLANA_RPC_URL } from '../lib/programConfig';
 import type { TransactionBuildResult } from '../lib/transactionBuilders';
 import { wagmiConfig } from '../lib/evm/wagmi';
+import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { type EvmBuildResult } from '../lib/evm/writers';
 import { useChain } from './useChain';
 import type { EvmChainId } from '../lib/chain/types';
@@ -744,10 +745,9 @@ export function useSendTransaction() {
           const req = list[i].request!;
           lastChainId = req.chainId;
 
-          // Ensure the wallet is on the target chain before writing.
-          if (getAccount(wagmiConfig).chainId !== req.chainId) {
-            await switchChain(wagmiConfig, { chainId: req.chainId });
-          }
+          // One shared switch for the whole app. Signing on the wrong chain
+          // is what made MetaMask show Arc while the wizard said Base.
+          await ensureWalletOnChain(req.chainId);
 
           setState((prev) => ({ ...prev, status: i === 0 ? 'signing' : 'confirming' }));
 

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount, useDisconnect, useSwitchChain } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import Fi from './Fi';
 import ChainIcon from './ChainIcon';
 import ConnectNetworkButton from './ConnectNetworkButton';
 import { useChain } from '../hooks/useChain';
 import { WALLET_CHAINS, isEvmChainId, type ChainFamily } from '../lib/chain/types';
 import { activeEvmChainId, chainDisplayLabel } from '../lib/programConfig';
+import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 
 function shortenAddress(addr: string) {
   return addr.slice(0, 4) + '\u2026' + addr.slice(-4);
@@ -42,7 +43,6 @@ export default function WalletNetworkMenu({
   const { publicKey, disconnect: disconnectSolana } = useWallet();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedChainId } = useAccount();
   const { disconnect: disconnectEvm } = useDisconnect();
-  const { switchChainAsync } = useSwitchChain();
   const { target, chainFamily, setChainFamily } = useChain();
   const offeredChains = chains.length > 0 ? chains : WALLET_CHAINS;
 
@@ -95,7 +95,7 @@ export default function WalletNetworkMenu({
       const chainId = activeEvmChainId(family);
       if (connectedChainId !== chainId) {
         try {
-          await switchChainAsync?.({ chainId });
+          await ensureWalletOnChain(chainId);
         } catch {
           // Wallet rejected or cannot switch — chain family still updates for UI routing.
         }

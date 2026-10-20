@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import NaveModal from './NaveModal';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount } from 'wagmi';
 import Fi from './Fi';
 import WalletNetworkMenu from './WalletNetworkMenu';
 import NotificationFeed from './NotificationFeed';
@@ -15,6 +15,7 @@ import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS, chainFamilyLabel } from '../lib/chain/types';
 import type { ChainFamily } from '../lib/chain/types';
 import { activeEvmChainId } from '../lib/programConfig';
+import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { getDaoPublicUrl } from '../lib/daoSlug';
 
 interface NaveLayoutProps {
@@ -101,7 +102,6 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
   const navigate = useNavigate();
   const { chainFamily, setChainFamily } = useChain();
   const { isConnected: evmConnected, chainId: connectedChainId } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingChainFamily, setPendingChainFamily] = useState<ChainFamily | null>(null);
@@ -122,7 +122,7 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
 
   /**
    * Apply app + wallet chain change. WalletNetworkMenu skips its default
-   * switchChainAsync when onNetworkSelect is set, so this layout owns both.
+   * switch when onNetworkSelect is set, so this layout owns both.
    */
   async function applyChainFamily(family: ChainFamily) {
     setChainFamily(family);
@@ -130,7 +130,7 @@ export default function NaveLayout({ children }: NaveLayoutProps) {
       const chainId = activeEvmChainId(family);
       if (connectedChainId !== chainId) {
         try {
-          await switchChainAsync?.({ chainId });
+          await ensureWalletOnChain(chainId);
         } catch {
           // Wallet rejected or cannot switch — app chain family still updates
           // so lobby filtering / routing match the user's intent.

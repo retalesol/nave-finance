@@ -12,7 +12,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
-import { useAccount, useSignMessage, useSwitchChain } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { getTransactionReceipt, readContract } from '@wagmi/core';
 import { decodeEventLog, isAddress, parseEther, parseUnits, formatUnits, type Address } from 'viem';
@@ -35,6 +35,7 @@ import { useSendTransaction } from '../hooks/useSendTransaction';
 import { buildCreateDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTokenEvm, type EvmCreateDaoParams } from '../lib/evm/writers';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, Erc20Abi } from '../lib/evm/contracts';
 import { fetchFormationFeeEvm, fetchFactoryAddressEvm } from '../lib/evm/readers';
+import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { toAddress } from '../lib/evm/addresses';
 import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, activeEvmChainId, chainDisplayLabel, SYSTEM_CONFIDENCE_THRESHOLD, EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
 import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, evmActivationChainFamily, USER_CHAINS } from '../lib/chain/types';
@@ -1266,7 +1267,6 @@ export default function CreateDAO() {
   const { setChainFamily, rememberDaoChain } = useChain();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedEvmChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const { switchChainAsync } = useSwitchChain();
   const { signMessageAsync: signEvmMessage } = useSignMessage();
   const tx = useSendTransaction();
   const [setupMode, setSetupMode] = useState<SetupMode>('quick');
@@ -1301,9 +1301,13 @@ export default function CreateDAO() {
     setDeploySteps(template.map((s) => ({ ...s, status: 'pending' as DeployStepStatus })));
   }
 
-  function patchDeployStep(id: string, status: DeployStepStatus, detail?: string) {
+  function patchDeployStep(id: string, status: DeployStepStatus, detail?: string | null) {
     setDeploySteps((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status, detail: detail ?? s.detail } : s)),
+      prev.map((s) => (
+        s.id === id
+          ? { ...s, status, detail: detail === undefined ? s.detail : detail ?? undefined }
+          : s
+      )),
     );
   }
 
@@ -1343,17 +1347,18 @@ export default function CreateDAO() {
     setPolicyState(prev => ({ ...prev, ...partial }));
   }
 
-  // Keep the active chain (wallet gating + tx dispatch) synced to the selection,
-  // and ask the EVM wallet to switch so deploy reads and writes hit that chain.
+  // Keep the active chain synced to the selection. The wallet switch is the
+  // same request deploy awaits, so selecting a network and then deploying
+  // does not open a second MetaMask prompt.
   useEffect(() => {
     setChainFamily(config.chain);
     if (config.chain === 'solana' || !evmConnected) return;
     const targetId = activeEvmChainId(config.chain as Exclude<ChainFamily, 'solana'>);
     if (connectedEvmChainId === targetId) return;
-    void switchChainAsync?.({ chainId: targetId }).catch(() => {
-      // Wallet rejected or cannot switch — creation still targets the selected chain.
+    void ensureWalletOnChain(targetId).catch(() => {
+      // Deploy repeats this check and surfaces the wallet error there.
     });
-  }, [config.chain, setChainFamily, evmConnected, connectedEvmChainId, switchChainAsync]);
+  }, [config.chain, setChainFamily, evmConnected, connectedEvmChainId]);
 
   useEffect(() => {
     setPolicyState((prev) => policyForChain(config.chain, prev.riskPreset));
@@ -1499,6 +1504,9 @@ export default function CreateDAO() {
     try {
       const family = config.chain as DaoEvmChainFamily;
       const chainId = activeEvmChainId(family);
+      patchDeployStep('create', 'running', `Switching your wallet to ${chainDisplayLabel(family)}. Approve that prompt before signing.`);
+      await ensureWalletOnChain(chainId);
+      patchDeployStep('create', 'running', null);
       const founder = evmAddress as Address;
       const isTokenGov = config.governanceType === 'token';
       let votingTokenMint: Address | null = null;
@@ -1644,6 +1652,7 @@ export default function CreateDAO() {
         };
 
         currentSubStep = 'bind-keys';
+        await ensureWalletOnChain(chainId);
         const bindMsg = `nave-evm-keybind|${daoRef}|${treasury.toLowerCase()}|${chainId}|${Date.now()}`;
         const bindSig = await signEvmMessage({ message: bindMsg });
         const { error: bindError } = await bindEvmAgentKeys(daoRef, treasury, founder, chainId, family, bindMsg, bindSig);
@@ -1735,7 +1744,10 @@ export default function CreateDAO() {
               config.name || treasury,
               founder,
               treasury,
-              async (m) => signEvmMessage({ message: m }),
+              async (m) => {
+                await ensureWalletOnChain(chainId);
+                return signEvmMessage({ message: m });
+              },
               { chain: family, chainId },
             );
           } catch {
@@ -1766,7 +1778,10 @@ export default function CreateDAO() {
           social_discord: config.discord,
           chain: family,
           chain_id: chainId,
-        }, (m) => signEvmMessage({ message: m }));
+        }, async (m) => {
+          await ensureWalletOnChain(chainId);
+          return signEvmMessage({ message: m });
+        });
         if (registerError) {
           throw new Error(`Treasury created on-chain, but metadata sync failed: ${registerError}. Treasury address: ${treasury}`);
         }
@@ -1786,8 +1801,8 @@ export default function CreateDAO() {
           seedAmount,
           sendEvm: (r, opts) => tx.sendEvm(r, opts),
           signMessage: async (msg) => {
-            const sig = await signEvmMessage({ message: msg });
-            return sig;
+            await ensureWalletOnChain(chainId);
+            return signEvmMessage({ message: msg });
           },
           onStep: (label) => {
             if (label.includes('Activate')) beginDeployStep('activate');
@@ -2445,6 +2460,7 @@ export default function CreateDAO() {
     }
     const chainId = record.chainId as EvmChainId;
     const family = record.chain as DaoEvmChainFamily;
+    await ensureWalletOnChain(chainId);
     const treasury = record.daoAddress as Address;
     const founder = evmAddress as Address;
     const isTokenGov = record.governanceType === 'token';
@@ -2538,7 +2554,10 @@ export default function CreateDAO() {
       social_discord: record.discord,
       chain: family,
       chain_id: chainId,
-    }, (m) => signEvmMessage({ message: m }));
+    }, async (m) => {
+      await ensureWalletOnChain(chainId);
+      return signEvmMessage({ message: m });
+    });
     if (registerError) throw new Error(`Metadata sync failed: ${registerError}`);
     // register-dao auto-watches the creator wallet server-side.
 
@@ -2552,7 +2571,10 @@ export default function CreateDAO() {
       policy: record.policy,
       seedAmount: record.seedAmount,
       sendEvm: (r, opts) => tx.sendEvm(r, opts),
-      signMessage: async (msg) => signEvmMessage({ message: msg }),
+      signMessage: async (msg) => {
+        await ensureWalletOnChain(chainId);
+        return signEvmMessage({ message: msg });
+      },
       onStep: () => {},
     });
     if (!evmActivationResult.ok) {
