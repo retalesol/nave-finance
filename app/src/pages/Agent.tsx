@@ -1050,7 +1050,7 @@ export default function Agent() {
   }
 
   return (
-    <div className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in" data-onboarding-id="agent-root">
+    <div className="animate-fade-in" data-onboarding-id="agent-root">
       <ConfirmAgentToggleModal
         open={showConfirm}
         active={active}

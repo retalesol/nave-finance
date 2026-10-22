@@ -312,11 +312,10 @@ export default function Settings() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto"
+      className="animate-fade-in"
       data-onboarding-id="settings-root"
-      style={{ backgroundColor: 'hsl(var(--background))' }}
     >
-      <div className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10 pb-20">
+      <div>
         {/* Header */}
         <div>
           <div className="nave-label" style={{ marginBottom: '10px' }}>Settings</div>

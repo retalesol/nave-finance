@@ -186,7 +186,7 @@ export function ProposalCardSkeleton() {
 export function PageSkeleton({ variant = 'dashboard' }: { variant?: 'dashboard' | 'agent' | 'governance' | 'settings' }) {
   if (variant === 'agent') {
     return (
-      <div className="py-8 px-6 space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <Bar w="80px" h="10px" />
@@ -205,7 +205,7 @@ export function PageSkeleton({ variant = 'dashboard' }: { variant?: 'dashboard' 
 
   if (variant === 'governance') {
     return (
-      <div className="py-8 px-6 space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <Bar w="80px" h="10px" />
@@ -223,7 +223,7 @@ export function PageSkeleton({ variant = 'dashboard' }: { variant?: 'dashboard' 
 
   if (variant === 'settings') {
     return (
-      <div className="py-8 px-6 space-y-5 animate-fade-in">
+      <div className="space-y-5 animate-fade-in">
         <div className="space-y-2">
           <Bar w="70px" h="10px" />
           <Bar w="180px" h="28px" />
@@ -238,7 +238,7 @@ export function PageSkeleton({ variant = 'dashboard' }: { variant?: 'dashboard' 
 
   // dashboard default
   return (
-    <div className="py-8 px-6 space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <Bar w="90px" h="10px" />

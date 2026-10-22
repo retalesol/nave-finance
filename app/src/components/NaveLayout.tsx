@@ -39,8 +39,8 @@ const NAV: NavItem[] = [
   { icon: 'users', label: 'Agents', path: '/agents', onboardingId: 'nav-agent' },
   { icon: 'shield', label: 'Decisions', path: '/decisions', onboardingId: 'nav-governance' },
   { icon: 'castle', label: 'Rules', path: '/rules', onboardingId: 'nav-policy' },
-  { icon: 'file-lines', label: 'Reports', path: '/overview', state: { openReports: true }, onboardingId: 'nav-reports' },
-  { icon: 'right-left', label: 'Bridge & stake', path: '/bridge', onboardingId: 'nav-bridge' },
+  { icon: 'right-left', label: 'Bridge', path: '/bridge', onboardingId: 'nav-bridge' },
+  { icon: 'coins', label: 'Stake', path: '/stake', onboardingId: 'nav-stake' },
   { icon: 'gear', label: 'Settings', path: '/settings', onboardingId: 'nav-settings' },
   { icon: 'circle', label: 'Tokens', path: '/tokens', onboardingId: 'nav-tokens', tokenGovOnly: true },
 ];
@@ -335,7 +335,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               e.currentTarget.style.backgroundColor = 'transparent';
             }}
           >
-            <span>+ New Treasury</span>
+            <span>+ New treasury</span>
           </button>
         </nav>
       </aside>
@@ -382,9 +382,18 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
             paddingBottom: isMobile ? 'calc(76px + env(safe-area-inset-bottom, 0px))' : undefined,
           }}
         >
-          <div className={wide ? 'w-full' : 'max-w-[860px] mx-auto w-full'}>
+          <div
+            className={wide ? 'w-full' : 'max-w-[860px] mx-auto w-full'}
+            style={
+              wide
+                ? undefined
+                : {
+                    padding: isMobile ? '28px 20px 100px' : '44px 32px 90px',
+                  }
+            }
+          >
             {chainFamily === 'robinhood' && (
-              <div className="px-4 pt-4 -mb-2">
+              <div className="mb-4">
                 <RobinhoodTreasuryNotice />
               </div>
             )}

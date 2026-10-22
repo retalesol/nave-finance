@@ -1,19 +1,17 @@
-// ─── StakeBox — compact staking card for the unified Bridge & Stake page ─────
+// ─── StakeBox — calm hairline staking view for the in-treasury Stake page ────
 // Stake NAVE on Solana (central reward pool funded by the bridge's staking fee
-// leg) or wNAVE on Ethereum/Base/Robinhood (mirror pools). Rendered beside the
-// bridge form.
+// leg) or wNAVE on Ethereum/Base/Robinhood (mirror pools).
 
+import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
 import Fi from './Fi';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Badge } from './ui/badge';
-import ChainIcon from './ChainIcon';
 import ConnectNetworkButton from './ConnectNetworkButton';
 import OdometerNumber from './OdometerNumber';
+import { Stat, UnderlineTabs } from './calm';
 import { useStaking } from '../hooks/useStaking';
+import { useDaoContext } from '../hooks/useDaoContext';
 import { chainFamilyLabel } from '../lib/chain/types';
 import { NAVE_DECIMALS } from '../lib/programConfig';
 import type { StakePoolStats } from '../lib/staking/solanaStakingProgram';
@@ -30,9 +28,17 @@ function formatApy(apy: number | null): string {
   return `${apy.toFixed(2)}%`;
 }
 
+type StakeActionTab = 'stake' | 'unstake';
+
+const STAKE_TABS: readonly { id: StakeActionTab; label: string }[] = [
+  { id: 'stake', label: 'Stake' },
+  { id: 'unstake', label: 'Unstake' },
+];
+
 export default function StakeBox({ pool, apy }: { pool: StakePoolStats | null; apy: number | null }) {
   const { publicKey } = useWallet();
   const { address: evmAddress } = useAccount();
+  const { isMockMode } = useDaoContext();
 
   const {
     chain,
@@ -52,181 +58,305 @@ export default function StakeBox({ pool, apy }: { pool: StakePoolStats | null; a
     claim,
   } = useStaking();
 
+  const [actionTab, setActionTab] = useState<StakeActionTab>('stake');
+  const [mockDone, setMockDone] = useState<string | null>(null);
+
   const isSolana = chain === 'solana';
-  const connected = isSolana ? !!publicKey : !!evmAddress;
+  const connected = isMockMode || (isSolana ? !!publicKey : !!evmAddress);
   const tokenLabel = isSolana ? 'NAVE' : 'wNAVE';
-  // Show the live counter whenever we have a synced pending value OR a positive
-  // accrual rate (EVM share-of-Solana projection starts at 0 and ticks up).
+  const effectiveApy = apy ?? (isMockMode ? 6.2 : null);
+
   const showPendingCounter = pending != null || pendingRatePerSec > 0;
   const claimDisabled =
     isBusy ||
-    (!accruingFromSolana && pending != null && pending <= 0n && pendingRatePerSec <= 0);
+    (!isMockMode && !accruingFromSolana && pending != null && pending <= 0n && pendingRatePerSec <= 0);
+
+  const amountNum = Number(amount) || 0;
+  const estimatedAnnual =
+    effectiveApy != null && amountNum > 0
+      ? ((amountNum * effectiveApy) / 100).toLocaleString(undefined, { maximumFractionDigits: 3 })
+      : '0';
+
+  function handleMax() {
+    if (actionTab === 'unstake' && staked && staked > 0n) {
+      setAmount(formatNave(staked));
+      return;
+    }
+    if (staked && staked > 0n) {
+      setAmount(formatNave(staked));
+    } else if (isMockMode) {
+      setAmount('2500');
+    }
+  }
+
+  function handlePrimarySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (amountRaw <= 0n || isBusy) return;
+    if (isMockMode && (!enabled || !(isSolana ? !!publicKey : !!evmAddress))) {
+      setMockDone(actionTab === 'stake' ? 'Staked' : 'Unstaked');
+      return;
+    }
+    if (actionTab === 'stake') {
+      void stake();
+    } else {
+      void unstake();
+    }
+  }
+
+  function handleClaim() {
+    if (isMockMode && (!enabled || !(isSolana ? !!publicKey : !!evmAddress))) {
+      setMockDone('Rewards claimed');
+      return;
+    }
+    void claim();
+  }
 
   return (
-    <div
-      className="rounded-xl border p-5 space-y-5 h-fit"
-      style={{ backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))' }}
-    >
-      <div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-display font-semibold" style={{ fontSize: 17, color: 'hsl(var(--foreground))' }}>
-              Stake
-            </span>
-            <Badge variant="outline" className="flex items-center gap-1" style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>
-              <ChainIcon family={chainFamily} size={12} />
-              {chainFamilyLabel(chainFamily)}
-            </Badge>
-          </div>
-          <Fi icon="layer-group" style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))' }} />
-        </div>
-        <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 4, lineHeight: 1.55 }}>
-          Stake {tokenLabel} to earn a pro-rata share of every bridge fee. Rewards accrue
-          continuously and are claimable any time.
-        </p>
+    <div className="space-y-6">
+      {/* 3 Calm Stats Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <Stat
+          label={`Your staked ${tokenLabel}`}
+          value={
+            staked != null
+              ? `${formatNave(staked)} ${tokenLabel}`
+              : isMockMode
+                ? `12,500 ${tokenLabel}`
+                : `0 ${tokenLabel}`
+          }
+          caption={`On ${chainFamilyLabel(chainFamily)}${isSolana && pool ? ` · Pool ${formatNave(pool.totalStaked)} NAVE` : '.'}`}
+        />
+
+        <Stat
+          label="Claimable rewards"
+          value={
+            showPendingCounter ? (
+              <OdometerNumber
+                value={pending ?? 0n}
+                ratePerSec={pendingRatePerSec}
+                lastSyncedAt={lastSyncedAt}
+                suffix={` ${tokenLabel}`}
+              />
+            ) : isMockMode ? (
+              `142.8 ${tokenLabel}`
+            ) : (
+              `0 ${tokenLabel}`
+            )
+          }
+          caption={
+            accruingFromSolana
+              ? `Accruing from Solana pool, paid in ${tokenLabel}.`
+              : 'Earned from protocol bridge fees.'
+          }
+        />
+
+        <Stat
+          label="Current APY"
+          value={effectiveApy != null ? `${formatApy(effectiveApy)}/yr` : '—'}
+          caption="Protocol-wide across all networks."
+        />
       </div>
 
-      {!enabled ? (
-        <div
-          className="rounded-lg p-3.5"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-        >
-          <p style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))' }}>
+      {/* Staking Form Section */}
+      <div
+        style={{
+          paddingTop: '26px',
+          borderTop: '1px solid hsl(var(--surface-2))',
+        }}
+      >
+        {!enabled && !isMockMode ? (
+          <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
             Staking is not configured for this {isSolana ? 'Solana' : 'EVM'} deployment yet.
           </p>
-        </div>
-      ) : (
-        <>
-          {/* Live APY.
-              This is a SINGLE protocol-wide number (passed in from
-              useBridgeStats): the central Solana reward pool's annual emission
-              divided by the TOTAL NAVE staked across Solana + Ethereum + Base.
-              EVM staking is just a weighted claim on the one Solana reward
-              pool, so the APY is identical on every chain — do NOT reintroduce
-              a per-chain drip-rate calculation here. */}
-          <div
-            className="rounded-lg p-3.5 flex items-center justify-between"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-          >
-            <div className="flex items-center gap-1.5">
-              <Fi icon="chart-line-up" style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-              <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>Est. APY</span>
-            </div>
-            <span
-              className="text-display"
-              style={{ fontSize: 18, lineHeight: 1.1, fontWeight: 600, color: 'hsl(var(--foreground))' }}
-            >
-              {formatApy(apy)}
-            </span>
-          </div>
+        ) : (
+          <form onSubmit={handlePrimarySubmit} className="space-y-4">
+            <UnderlineTabs
+              tabs={STAKE_TABS}
+              activeTab={actionTab}
+              onChange={(tab) => {
+                setActionTab(tab);
+                setMockDone(null);
+              }}
+            />
 
-          {/* Your position */}
-          <div
-            className="rounded-lg p-3.5 space-y-2"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
-          >
-            <div className="flex items-center justify-between">
-              <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>Your stake</span>
-              <span style={{ fontSize: 12.5, fontFamily: 'var(--font-mono)', color: 'hsl(var(--foreground))' }}>
-                {staked != null ? `${formatNave(staked)} ${tokenLabel}` : '—'}
-              </span>
+            <div className="pt-2">
+              <div className="flex items-center justify-between" style={{ marginBottom: '7px' }}>
+                <label
+                  htmlFor="stake-amount"
+                  style={{
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  Amount ({tokenLabel})
+                </label>
+                <button
+                  type="button"
+                  onClick={handleMax}
+                  className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  Max
+                </button>
+              </div>
+
+              <input
+                id="stake-amount"
+                value={amount}
+                onChange={(e) => {
+                  setMockDone(null);
+                  setAmount(e.target.value);
+                }}
+                placeholder="0.0"
+                inputMode="decimal"
+                aria-label={`Amount of ${tokenLabel} to ${actionTab}`}
+                autoComplete="off"
+                style={{
+                  width: '100%',
+                  border: '1px solid hsl(var(--border))',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '10px',
+                  padding: '11px 13px',
+                  fontSize: '14.5px',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'hsl(var(--foreground))',
+                  outline: 'none',
+                }}
+              />
             </div>
-            <div className="flex items-center justify-between">
-              <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>Claimable rewards</span>
-              {showPendingCounter ? (
-                <OdometerNumber
-                  value={pending ?? 0n}
-                  ratePerSec={pendingRatePerSec}
-                  lastSyncedAt={lastSyncedAt}
-                  suffix={` ${tokenLabel}`}
-                />
+
+            {/* Live Estimate Notebox */}
+            <div
+              style={{
+                backgroundColor: 'hsl(var(--background))',
+                border: '1px solid hsl(var(--surface-2))',
+                borderRadius: '12px',
+                padding: '13px 14px',
+                fontSize: '13px',
+                color: 'hsl(var(--muted-foreground))',
+                lineHeight: 1.6,
+              }}
+            >
+              {actionTab === 'stake' ? (
+                <>
+                  Estimated earnings:{' '}
+                  <b className="nave-mono" style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>
+                    ≈ {estimatedAnnual} {tokenLabel} / year
+                  </b>
+                  . Unstake or claim any time. Your agents keep watching it like any other placement.
+                </>
               ) : (
-                <span style={{ fontSize: 12.5, fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                  —
-                </span>
+                <>
+                  Unstaking returns{' '}
+                  <b className="nave-mono" style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>
+                    {amountNum > 0 ? amountNum.toLocaleString() : '0'} {tokenLabel}
+                  </b>{' '}
+                  directly to your wallet on {chainFamilyLabel(chainFamily)} with no lockup.
+                </>
               )}
             </div>
-            {accruingFromSolana && (
-              <p style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', lineHeight: 1.45, marginTop: 2 }}>
-                Accruing your share of the Solana reward pool. Claiming wraps your rewards and
-                delivers them as {tokenLabel} on {chainFamilyLabel(chainFamily)}.
-              </p>
-            )}
-            {isSolana && pool && (
-              <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                <span style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>Pool total staked</span>
-                <span style={{ fontSize: 12.5, fontFamily: 'var(--font-mono)', color: 'hsl(var(--foreground))' }}>
-                  {formatNave(pool.totalStaked)} NAVE
-                </span>
+
+            {mockDone && (
+              <div
+                className="text-center pt-4"
+                style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+              >
+                <div
+                  className="mx-auto grid place-items-center rounded-full"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    border: '1px solid #BFE0CC',
+                    backgroundColor: '#F2F9F4',
+                    color: 'hsl(var(--success))',
+                    fontSize: '18px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  ✓
+                </div>
+                <h4
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 400,
+                    fontSize: '22px',
+                    margin: '0 0 6px',
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  {mockDone}
+                </h4>
+                <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+                  Recorded in your staking activity below.
+                </p>
               </div>
             )}
-          </div>
 
-          {/* Actions */}
-          <div className="space-y-2">
-            <Input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={`Amount of ${tokenLabel}`}
-              inputMode="decimal"
-              aria-label={`Amount of ${tokenLabel} to stake or unstake`}
-              autoComplete="off"
-              style={{ fontFamily: 'var(--font-mono)', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-            />
             {!connected ? (
               <ConnectNetworkButton
                 fullWidth
                 menuAlign="left"
                 label="Connect wallet to stake"
                 icon={<Fi icon="wallet" style={{ fontSize: 12 }} />}
-                className="w-full flex items-center justify-center gap-2"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-[9px] font-semibold"
                 style={{
-                  backgroundColor: 'hsl(var(--surface-1))',
+                  backgroundColor: '#ffffff',
                   color: 'hsl(var(--foreground))',
-                  border: '1px solid hsl(var(--border-strong))',
-                  borderRadius: 'var(--radius)',
-                  padding: '8px 16px',
-                  fontSize: 13,
-                  fontWeight: 500,
+                  border: '1px solid hsl(var(--border))',
+                  fontSize: '13px',
                 }}
               />
             ) : (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    onClick={() => void stake()}
-                    disabled={isBusy || amountRaw <= 0n}
-                    style={{ backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
-                  >
-                    {isBusy ? 'Working…' : 'Stake'}
-                  </Button>
-                  <Button
-                    onClick={() => void unstake()}
-                    disabled={isBusy || amountRaw <= 0n}
-                    style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--foreground))', border: '1px solid hsl(var(--border-strong))' }}
-                  >
-                    {isBusy ? 'Working…' : 'Unstake'}
-                  </Button>
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={() => void claim()}
+              <div
+                className="flex items-center justify-between gap-2 pt-4 flex-wrap"
+                style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+              >
+                <button
+                  type="button"
+                  onClick={handleClaim}
                   disabled={claimDisabled}
-                  style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--foreground))', border: '1px solid hsl(var(--border-strong))' }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-all"
+                  style={{
+                    fontSize: '13px',
+                    backgroundColor: '#ffffff',
+                    borderColor: 'hsl(var(--border))',
+                    color: 'hsl(var(--foreground))',
+                    opacity: claimDisabled ? 0.45 : 1,
+                    cursor: claimDisabled ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   {isBusy ? 'Working…' : 'Claim rewards'}
-                </Button>
-              </>
-            )}
-          </div>
+                </button>
 
-          <p style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-            {isSolana
-              ? 'Fees accrue to a central pool on Solana, and rewards are paid out in NAVE.'
-              : `Fees accrue to a central pool on Solana. When you claim on ${chainFamilyLabel(chainFamily)}, the protocol wraps the NAVE reward and pays you ${tokenLabel} on this chain.`}
-          </p>
-        </>
-      )}
+                <button
+                  type="submit"
+                  disabled={isBusy || amountRaw <= 0n}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                  style={{
+                    fontSize: '13px',
+                    backgroundColor: 'hsl(var(--foreground))',
+                    color: '#ffffff',
+                    border: '1px solid hsl(var(--foreground))',
+                    opacity: isBusy || amountRaw <= 0n ? 0.4 : 1,
+                    cursor: isBusy || amountRaw <= 0n ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isBusy
+                    ? 'Working…'
+                    : actionTab === 'stake'
+                      ? `Stake ${tokenLabel} →`
+                      : `Unstake ${tokenLabel} →`}
+                </button>
+              </div>
+            )}
+          </form>
+        )}
+      </div>
     </div>
   );
 }

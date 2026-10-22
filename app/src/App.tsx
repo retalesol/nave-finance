@@ -76,7 +76,7 @@ function PageLoader() {
 
 /*
  * Routes that use the app shell (sidebar + top bar).
- * Canonical paths (/overview, /money, /agents, /decisions, /rules, /settings, /tokens)
+ * Canonical paths (/overview, /money, /agents, /decisions, /rules, /bridge, /stake, /settings, /tokens)
  * alongside legacy paths (/dashboard, /assets, /agent, /automation, /governance, /votes, /policy, /team)
  * which redirect to their canonical counterparts while preserving location.state and query strings.
  */
@@ -93,6 +93,8 @@ const APP_ROUTES = [
   '/votes',
   '/rules',
   '/policy',
+  '/bridge',
+  '/stake',
   '/settings',
   '/team',
   '/tokens',
@@ -131,6 +133,8 @@ function AppRoutes() {
                   <Route path="/votes/:proposalId" element={<LegacyRedirect to="/decisions" />} />
                   <Route path="/rules" element={<PolicyEngine />} />
                   <Route path="/policy" element={<LegacyRedirect to="/rules" />} />
+                  <Route path="/bridge" element={<BridgePage mode="bridge" />} />
+                  <Route path="/stake" element={<BridgePage mode="stake" />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/team" element={<LegacyRedirect to="/settings" />} />
                   <Route path="/tokens" element={<Tokens />} />
@@ -148,9 +152,6 @@ function AppRoutes() {
       <PageTransition>
         <Routes location={location}>
           <Route path="/" element={<Index />} />
-          <Route path="/bridge" element={<BridgePage />} />
-          {/* Staking now lives on the unified Bridge & Stake page. */}
-          <Route path="/stake" element={<Navigate to="/bridge" replace />} />
           <Route path="/treasuries" element={<TreasuryLobby />} />
           <Route path="/create-dao" element={<CreateDAO />} />
           <Route path="/dao-created" element={<DaoCreated />} />

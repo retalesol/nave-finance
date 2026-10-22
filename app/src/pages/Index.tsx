@@ -89,7 +89,6 @@ const NAV_ITEMS = [
   { label: 'Governance', href: '#governance' },
   { label: 'Tokenomics', href: '#tokenomics' },
   { label: 'Pricing', href: '#pricing' },
-  { label: 'Bridge & Stake', href: '/bridge' },
   { label: 'Documentation', href: '/docs' },
 ];
 

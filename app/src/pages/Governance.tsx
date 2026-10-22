@@ -115,7 +115,7 @@ export default function Governance() {
 
   return (
     <div
-      className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in"
+      className="animate-fade-in"
       data-onboarding-id="governance-root"
     >
       {/* Header */}

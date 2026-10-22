@@ -248,7 +248,7 @@ export default function PolicyEngine() {
   }
 
   return (
-    <div className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in" data-onboarding-id="policy-root">
+    <div className="animate-fade-in" data-onboarding-id="policy-root">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

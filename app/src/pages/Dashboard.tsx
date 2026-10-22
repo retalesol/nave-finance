@@ -344,31 +344,20 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap pt-1">
-          {isEmptyTreasury ? (
-            <button
-              type="button"
-              onClick={() => setDepositFundsOpen(true)}
-              data-onboarding-id="dashboard-deposit-button"
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
-              style={{
-                fontSize: '13px',
-                backgroundColor: 'hsl(var(--foreground))',
-                color: '#ffffff',
-                border: '1px solid hsl(var(--foreground))',
-              }}
-            >
-              Add funds
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDepositFundsOpen(true)}
-              data-onboarding-id="dashboard-deposit-button"
-              className="sr-only"
-            >
-              Add funds
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setReportsOpen(true)}
+            data-onboarding-id="dashboard-reports-button"
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-colors"
+            style={{
+              fontSize: '13px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Reports
+          </button>
           <button
             type="button"
             onClick={() => setCreateTxOpen(true)}
@@ -379,18 +368,17 @@ export default function Dashboard() {
               backgroundColor: 'hsl(var(--foreground))',
               color: '#ffffff',
               border: '1px solid hsl(var(--foreground))',
-              display: isEmptyTreasury ? 'none' : 'inline-flex',
             }}
           >
             Propose a payment
           </button>
           <button
             type="button"
-            onClick={() => setReportsOpen(true)}
-            data-onboarding-id="dashboard-reports-button"
+            onClick={() => setDepositFundsOpen(true)}
+            data-onboarding-id="dashboard-deposit-button"
             className="sr-only"
           >
-            Reports
+            Add funds
           </button>
         </div>
       </div>

@@ -297,8 +297,8 @@ textarea.input{resize:vertical;min-height:74px;line-height:1.5}
       <button class="navitem" data-view="agents" onclick="go('agents')">Agents <span class="live" title="Active"></span></button>
       <button class="navitem" data-view="decisions" onclick="go('decisions')">Decisions <span class="n" id="decisionBadge">1</span></button>
       <button class="navitem" data-view="rules" onclick="go('rules')">Rules</button>
-      <button class="navitem" data-view="reports" onclick="go('reports')">Reports</button>
-      <button class="navitem" data-view="bridge" onclick="go('bridge')">Bridge & stake</button>
+      <button class="navitem" data-view="bridge" onclick="go('bridge')">Bridge</button>
+      <button class="navitem" data-view="stake" onclick="go('stake')">Stake</button>
       <button class="navitem" data-view="settings" onclick="go('settings')">Settings</button>
       <button class="navitem" data-view="create" onclick="go('create')" style="margin-top:14px">+ New treasury</button>
     </nav>
@@ -327,6 +327,7 @@ textarea.input{resize:vertical;min-height:74px;line-height:1.5}
           <p class="lede">Your agents earned $1,284 this month and followed every rule. One decision is waiting for you — nothing else needs attention.</p>
         </div>
         <div class="head-actions">
+          <button class="btn" onclick="go('reports')">Reports</button>
           <button class="btn btn-dark" onclick="openPayment()">Propose a payment</button>
         </div>
       </div>
@@ -617,13 +618,12 @@ textarea.input{resize:vertical;min-height:74px;line-height:1.5}
       <p class="footnote">Reports generate automatically. Nothing to prepare, nothing to reconcile by hand.</p>
     </section>
 
-    <!-- ══════════ BRIDGE & STAKE ══════════ -->
+    <!-- ══════════ BRIDGE ══════════ -->
     <section class="view" id="view-bridge">
-      <div class="label eyebrow">Bridge & stake</div>
-      <h1 class="page">Move money in, <em>put it to work.</em></h1>
-      <p class="lede">Bring assets from another network, or stake what you already hold. Quotes update as you type — all mock.</p>
+      <div class="label eyebrow">Bridge</div>
+      <h1 class="page">Move money in, <em>across networks.</em></h1>
+      <p class="lede">Bring assets from another network into your treasury. Quotes update as you type.</p>
       <div class="section narrow" style="margin-top:34px">
-        <div class="mtabs" style="max-width:320px"><button class="active" id="btabBridge" onclick="bridgeTab('bridge')">Bridge</button><button id="btabStake" onclick="bridgeTab('stake')">Stake</button></div>
         <div id="bridgePane">
           <form onsubmit="return submitBridge(event)">
             <div class="mrow2">
@@ -636,13 +636,22 @@ textarea.input{resize:vertical;min-height:74px;line-height:1.5}
             <div class="mactions"><button class="btn btn-dark" type="submit" id="bridgeBtn">Review bridge →</button></div>
           </form>
         </div>
-        <div id="stakePane" style="display:none">
+      </div>
+    </section>
+
+    <!-- ══════════ STAKE ══════════ -->
+    <section class="view" id="view-stake">
+      <div class="label eyebrow">Stake</div>
+      <h1 class="page">Put your tokens <em>to work.</em></h1>
+      <p class="lede">Stake NAVE to earn protocol rewards. Unstake or claim any time.</p>
+      <div class="section narrow" style="margin-top:34px">
+        <div id="stakePane">
           <form onsubmit="return submitStake(event)">
             <div class="mrow2">
-              <div class="mfield"><label>Asset</label><select class="input" id="stAsset" onchange="stakeQuote()"><option>ETH — 6.2%/yr</option><option>SOL — 7.1%/yr</option></select></div>
+              <div class="mfield"><label>Asset</label><select class="input" id="stAsset" onchange="stakeQuote()"><option>NAVE — 6.2%/yr</option><option>wNAVE — 6.2%/yr</option></select></div>
               <div class="mfield"><label>Amount</label><input class="input" id="stAmount" type="number" min="0" step="0.1" value="2" oninput="stakeQuote()"></div>
             </div>
-            <div class="notebox" id="stQuote">Estimated earnings: <b>≈ 0.124 ETH / year</b>. Withdrawable in about a day. Your agents keep watching it like any other placement.</div>
+            <div class="notebox" id="stQuote">Estimated earnings: <b>≈ 0.124 NAVE / year</b>. Unstake or claim any time. Your agents keep watching it like any other placement.</div>
             <div id="stakeResult"></div>
             <div class="mactions"><button class="btn btn-dark" type="submit" id="stakeBtn">Stake →</button></div>
           </form>
@@ -715,7 +724,7 @@ textarea.input{resize:vertical;min-height:74px;line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script>
-const TITLES={overview:'Overview',money:'Money',agents:'Agents',decisions:'Decisions',rules:'Rules',reports:'Reports',bridge:'Bridge & stake',settings:'Settings',create:'New treasury'};
+const TITLES={overview:'Overview',money:'Money',agents:'Agents',decisions:'Decisions',rules:'Rules',reports:'Reports',bridge:'Bridge',stake:'Stake',settings:'Settings',create:'New treasury'};
 function go(v){
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));

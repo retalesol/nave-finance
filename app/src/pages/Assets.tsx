@@ -898,7 +898,7 @@ export default function Assets() {
       : 'Across approved yield places.';
 
   return (
-    <div className="animate-fade-in pb-8" data-onboarding-id="assets-root">
+    <div className="animate-fade-in" data-onboarding-id="assets-root">
       {(showDeposit || depositAsset) && daoAddress && (
         <DepositFlowModal
           daoAddress={daoAddress}
