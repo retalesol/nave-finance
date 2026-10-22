@@ -4,62 +4,51 @@ import Fi from './Fi';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useNotifications, type NotificationItem, type NotificationKind } from '../hooks/useNotifications';
 
-const KIND_META: Record<NotificationKind, { icon: string; color: string }> = {
-  vote: { icon: 'check-to-slot', color: 'hsl(var(--primary))' },
-  proposal: { icon: 'gavel', color: 'hsl(var(--accent))' },
-  deposit: { icon: 'coins', color: 'hsl(152 50% 35%)' },
-  activity: { icon: 'bolt', color: 'hsl(214 80% 48%)' },
+const KIND_DOT_COLOR: Record<NotificationKind, string> = {
+  vote: 'hsl(var(--brass))',
+  proposal: 'hsl(var(--brass))',
+  deposit: 'hsl(var(--success))',
+  activity: 'hsl(var(--faint))',
 };
 
 function NotificationRow({ item, onNavigate }: { item: NotificationItem; onNavigate: () => void }) {
-  const meta = KIND_META[item.kind];
+  const dotColor = KIND_DOT_COLOR[item.kind];
   const content = (
     <div
-      className="flex items-start gap-3 px-3 py-2.5 rounded-lg transition-colors text-left w-full"
+      className="flex items-start gap-2.5 py-3 px-1 text-left w-full border-b last:border-b-0 group transition-colors"
       style={{
-        backgroundColor: item.unread ? 'hsl(var(--surface-1))' : 'transparent',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = item.unread ? 'hsl(var(--surface-1))' : 'transparent';
+        borderColor: 'hsl(var(--surface-2))',
       }}
     >
-      <div
-        className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: 'hsl(var(--surface-2))' }}
-      >
-        <Fi icon={meta.icon} style={{ fontSize: '12px', color: meta.color }} />
-      </div>
+      <span
+        className="flex-shrink-0 rounded-full"
+        style={{
+          width: '8px',
+          height: '8px',
+          marginTop: '6px',
+          backgroundColor: item.unread ? dotColor : 'hsl(var(--border))',
+        }}
+      />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className="font-medium truncate"
-            style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}
-          >
-            {item.title}
-          </span>
-          {item.unread && (
-            <span
-              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              style={{ backgroundColor: 'hsl(var(--primary))' }}
-            />
-          )}
+        <div
+          className="font-medium truncate group-hover:text-brass transition-colors"
+          style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}
+        >
+          {item.title}
         </div>
         <p
           className="truncate"
-          style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}
+          style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}
         >
           {item.body}
         </p>
-        <span
-          className="nave-mono"
-          style={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', display: 'block' }}
-        >
-          {item.time}
-        </span>
       </div>
+      <span
+        className="flex-shrink-0"
+        style={{ fontSize: '11.5px', color: 'hsl(var(--faint))', paddingTop: '2px' }}
+      >
+        {item.time}
+      </span>
     </div>
   );
 
@@ -111,12 +100,16 @@ export default function NotificationFeed() {
       <button
         type="button"
         onClick={handleOpen}
-        className="relative flex items-center justify-center w-8 h-8 rounded-md border transition-colors"
+        className="relative flex items-center justify-center rounded-full border transition-colors"
         style={{
-          borderColor: 'hsl(var(--border))',
-          backgroundColor: open ? 'hsl(var(--surface-2))' : 'hsl(var(--surface-1))',
-          color: 'hsl(var(--muted-foreground))',
+          width: '36px',
+          height: '36px',
+          borderColor: open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
+          backgroundColor: '#ffffff',
+          color: 'hsl(var(--foreground))',
         }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'hsl(var(--border-strong))')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))')}
         title="Notifications"
         aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
         aria-expanded={open}
@@ -127,9 +120,10 @@ export default function NotificationFeed() {
             className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center"
             style={{
               fontSize: '9px',
+              fontWeight: 700,
               fontFamily: 'var(--font-mono)',
-              backgroundColor: 'hsl(var(--primary))',
-              color: 'hsl(var(--primary-foreground))',
+              backgroundColor: 'hsl(var(--brass))',
+              color: '#ffffff',
             }}
           >
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -139,18 +133,26 @@ export default function NotificationFeed() {
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-2 w-80 rounded-xl border shadow-lg z-50 overflow-hidden"
+          className="absolute right-0 top-full mt-2 w-80 rounded-[18px] border z-50 overflow-hidden"
           style={{
-            backgroundColor: 'hsl(var(--surface-0))',
+            backgroundColor: '#ffffff',
             borderColor: 'hsl(var(--border))',
             boxShadow: 'var(--shadow-xl)',
           }}
         >
           <div
-            className="flex items-center justify-between px-4 py-3 border-b"
-            style={{ borderColor: 'hsl(var(--border))' }}
+            className="flex items-center justify-between px-5 pt-4 pb-3 border-b"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
           >
-            <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
+            <span
+              className="text-display"
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '19px',
+                fontWeight: 400,
+                color: 'hsl(var(--foreground))',
+              }}
+            >
               Notifications
             </span>
             {notifications.length > 0 && (
@@ -160,15 +162,15 @@ export default function NotificationFeed() {
                   markAllSeen();
                   setOpen(false);
                 }}
-                style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}
-                className="bg-transparent border-0 cursor-pointer"
+                style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+                className="bg-transparent border-0 cursor-pointer hover:underline underline-offset-4"
               >
                 Mark all read
               </button>
             )}
           </div>
 
-          <div className="max-h-80 overflow-y-auto p-2">
+          <div className="max-h-80 overflow-y-auto px-4 py-1">
             {!daoAddress ? (
               <div className="px-3 py-8 text-center" style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
                 Select a treasury to see updates.
@@ -191,19 +193,19 @@ export default function NotificationFeed() {
 
           {daoAddress && (
             <div
-              className="border-t px-3 py-2"
-              style={{ borderColor: 'hsl(var(--border))' }}
+              className="border-t px-4 py-2.5"
+              style={{ borderColor: 'hsl(var(--surface-2))' }}
             >
               <button
                 type="button"
                 onClick={() => {
                   setOpen(false);
-                  navigate('/governance');
+                  navigate('/decisions');
                 }}
-                className="w-full py-2 rounded-lg transition-colors"
-                style={{ fontSize: '12px', color: 'hsl(var(--foreground))', backgroundColor: 'hsl(var(--surface-1))' }}
+                className="w-full py-1.5 rounded-[9px] transition-colors font-medium"
+                style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))', backgroundColor: 'hsl(var(--background))' }}
               >
-                View all governance
+                View all decisions
               </button>
             </div>
           )}

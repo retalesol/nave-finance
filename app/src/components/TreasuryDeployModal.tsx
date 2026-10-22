@@ -1,4 +1,3 @@
-import Fi from './Fi';
 import NaveModal from './NaveModal';
 
 export type DeployStepStatus = 'pending' | 'running' | 'done' | 'error' | 'skipped';
@@ -22,24 +21,8 @@ interface TreasuryDeployModalProps {
   onRetry?: () => void;
 }
 
-function stepIcon(status: DeployStepStatus): { icon: string; color: string; spin?: boolean } {
-  switch (status) {
-    case 'done':
-      return { icon: 'circle-check', color: 'hsl(var(--success))' };
-    case 'error':
-      return { icon: 'circle-xmark', color: 'hsl(var(--destructive))' };
-    case 'skipped':
-      return { icon: 'circle-minus', color: 'hsl(var(--muted-foreground))' };
-    case 'running':
-      return { icon: 'arrows-rotate', color: 'hsl(var(--primary))', spin: true };
-    default:
-      return { icon: 'circle', color: 'hsl(var(--muted-foreground))' };
-  }
-}
-
 /**
- * Guided overlay for multi-signature treasury deployment. Keeps the wizard on the
- * review step while walking the user through each wallet confirmation.
+ * Guided overlay for multi-signature treasury deployment. Matches demo.html .progstep rows.
  */
 export default function TreasuryDeployModal({
   open,
@@ -59,41 +42,72 @@ export default function TreasuryDeployModal({
     <NaveModal
       open={open}
       onClose={canClose ? onClose : () => {}}
-      title="Deploying treasury"
-      icon="rocket"
+      title="Launching your treasury"
       maxWidth={480}
       hideClose={!canClose}
     >
-      <div className="px-5 py-5 space-y-5">
-        <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+      <div style={{ padding: '18px 22px 22px' }} className="space-y-4">
+        <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
           Confirm each step in your wallet on <strong style={{ color: 'hsl(var(--foreground))' }}>{chainLabel}</strong>.
           {' '}Stay on this screen — your wallet will open for each signature.
         </p>
 
-        <div className="space-y-2">
-          {steps.map((step) => {
-            const { icon, color, spin } = stepIcon(step.status);
+        <div>
+          {steps.map((step, idx) => {
+            const isDone = step.status === 'done' || step.status === 'skipped';
+            const isDoing = step.status === 'running';
+            const isErr = step.status === 'error';
             return (
               <div
                 key={step.id}
-                className="flex items-start gap-3 px-3 py-2.5 rounded-lg border"
+                className="flex items-start gap-2.5"
                 style={{
-                  borderColor: step.status === 'running' ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                  backgroundColor:
-                    step.status === 'running' ? 'hsl(var(--surface-1))' : 'hsl(var(--surface-0))',
+                  padding: '9px 0',
+                  fontSize: '13.5px',
+                  color: isDoing
+                    ? 'hsl(var(--foreground))'
+                    : isDone
+                      ? 'hsl(var(--muted-foreground))'
+                      : isErr
+                        ? 'hsl(var(--destructive))'
+                        : 'hsl(var(--faint))',
                 }}
               >
-                <Fi
-                  icon={icon}
-                  className={spin ? 'animate-spin' : undefined}
-                  style={{ fontSize: '13px', color, marginTop: '2px', flexShrink: 0 }}
-                />
-                <div className="flex-1 min-w-0">
-                  <div style={{ fontSize: '13px', fontWeight: step.status === 'running' ? 600 : 500, color: 'hsl(var(--foreground))' }}>
+                <span
+                  className="grid place-items-center flex-shrink-0"
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    border: `1.5px solid ${
+                      isDone
+                        ? 'hsl(var(--success))'
+                        : isDoing
+                          ? 'hsl(var(--foreground))'
+                          : isErr
+                            ? 'hsl(var(--destructive))'
+                            : 'hsl(var(--border))'
+                    }`,
+                    backgroundColor: isDone ? 'hsl(var(--success))' : '#ffffff',
+                    color: isDone
+                      ? '#ffffff'
+                      : isDoing
+                        ? 'hsl(var(--foreground))'
+                        : isErr
+                          ? 'hsl(var(--destructive))'
+                          : 'hsl(var(--faint))',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                  }}
+                >
+                  {isDone ? '✓' : isErr ? '!' : idx + 1}
+                </span>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <div style={{ fontWeight: isDoing ? 600 : 400 }}>
                     {step.label}
                   </div>
                   {step.detail && (
-                    <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '3px', lineHeight: 1.45 }}>
+                    <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '3px', lineHeight: 1.45 }}>
                       {step.detail}
                     </div>
                   )}
@@ -105,37 +119,34 @@ export default function TreasuryDeployModal({
 
         {deploying && !error && (
           <div
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', border: '1px solid hsl(var(--border-strong))' }}
+            className="rounded-[12px] border p-3"
+            style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--surface-2))', fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
           >
-            <Fi icon="signature" style={{ fontSize: '13px', color: 'hsl(var(--primary))', flexShrink: 0 }} />
-            <span style={{ fontSize: '12.5px', color: 'hsl(var(--accent-muted-foreground))', lineHeight: 1.5 }}>
-              {activeHint ?? 'Waiting for your wallet…'}
-            </span>
+            {activeHint ?? 'Waiting for your wallet…'}
           </div>
         )}
 
         {error && (
           <div
-            className="px-3 py-3 rounded-lg border"
-            style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
+            className="rounded-[12px] border p-3"
+            style={{ backgroundColor: '#FFF9F8', borderColor: '#F2C7C2' }}
           >
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', lineHeight: 1.5 }}>
+            <p style={{ fontSize: '12.5px', color: '#B42318', lineHeight: 1.5, margin: 0 }}>
               {error}
             </p>
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-1">
-          <span style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
+        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+          <span style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}>
             {completed} of {total} steps complete
           </span>
           {error && onRetry && (
             <button
               type="button"
               onClick={onRetry}
-              className="px-4 py-2 rounded-lg font-medium transition-all"
-              style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+              className="px-4 py-2 rounded-[9px] font-semibold transition-all"
+              style={{ fontSize: '13px', backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
             >
               Try again
             </button>

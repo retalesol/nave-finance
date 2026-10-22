@@ -19,19 +19,25 @@ function shorten(addr: string) {
 function SummaryTable({ title, rows }: { title: string; rows: { label: string; value: string }[] }) {
   return (
     <div>
-      <div className="nave-label mb-2">{title}</div>
-      <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'hsl(var(--border))' }}>
-        {rows.map((r, i) => (
+      <div className="nave-label" style={{ marginBottom: '6px' }}>{title}</div>
+      <div>
+        {rows.map((r) => (
           <div
             key={r.label}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between gap-4"
             style={{
-              borderBottom: i < rows.length - 1 ? '1px solid hsl(var(--border))' : 'none',
-              backgroundColor: i % 2 === 0 ? 'hsl(var(--surface-1))' : 'hsl(var(--surface-0))',
+              padding: '10px 0',
+              borderBottom: '1px solid hsl(var(--surface-2))',
+              fontSize: '13px',
             }}
           >
-            <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
-            <span className="nave-mono" style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}>{r.value}</span>
+            <span style={{ color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
+            <span
+              className="nave-mono text-right"
+              style={{ fontSize: '12.5px', fontWeight: 500, color: 'hsl(var(--foreground))' }}
+            >
+              {r.value}
+            </span>
           </div>
         ))}
       </div>

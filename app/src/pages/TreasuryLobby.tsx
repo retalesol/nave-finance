@@ -9,6 +9,7 @@ import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import WalletNetworkMenu from '../components/WalletNetworkMenu';
 import RobinhoodTreasuryNotice from '../components/RobinhoodTreasuryNotice';
+import { Section, Notice } from '../components/calm';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS, chainFamilyLabel, evmTarget, isEvmAddress, isEvmChainId } from '../lib/chain/types';
 import { useWatchedDaos } from '../hooks/useWatchedDaos';
@@ -50,8 +51,6 @@ export default function TreasuryLobby() {
   const [removingDao, setRemovingDao] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const walletAddr = isEvm ? (evmAddress ?? null) : (publicKey?.toBase58() || null);
-  // Signs private-DAO access checks and the `watch-dao` challenge. Only invoked
-  // from explicit user actions (join), never on page load.
   const accessSigner: DaoAccessMessageSigner | undefined = isEvm
     ? (m) => signEvmMessage(wagmiConfig, { message: m })
     : solanaSignMessage
@@ -59,9 +58,6 @@ export default function TreasuryLobby() {
       : undefined;
   const { daos: watchedDaos, loading: watchLoading, watchDao, unwatchDao } = useWatchedDaos(walletAddr, accessSigner);
 
-  // Lobby is scoped to the selected network (Base vs Robinhood). Watched rows
-  // are wallet-wide in Supabase; filter here so switching networks shows only
-  // treasuries that live on the active chain.
   const networkDaos = useMemo(
     () =>
       watchedDaos.filter((d) => {
@@ -71,7 +67,6 @@ export default function TreasuryLobby() {
         if (!isEvmAddress(d.daoOnchainAddress)) {
           return target.kind === 'solana';
         }
-        // EVM address without registry chain_id — ambiguous across Base/RH.
         return false;
       }),
     [watchedDaos, target.family, target.kind],
@@ -79,7 +74,6 @@ export default function TreasuryLobby() {
 
   const networkLabel = chainFamilyLabel(target.family);
 
-  /** Open the wallet connect modal for the currently-selected chain. */
   function openConnect() {
     if (isEvm) {
       openConnectModal?.();
@@ -141,7 +135,6 @@ export default function TreasuryLobby() {
       }
 
       if (walletAddr) {
-        // Private DAOs require proving wallet ownership with a signed message.
         const { data: access, error: accessError } = await checkDaoAccess(addr, walletAddr, accessSigner);
         if (accessError) {
           setJoinError(accessError);
@@ -161,7 +154,7 @@ export default function TreasuryLobby() {
       }
 
       await watchDao(addr);
-      navigate('/dashboard', { state: { treasuryAddress: addr } });
+      navigate('/overview', { state: { treasuryAddress: addr } });
     } catch {
       setJoinError('Could not join that treasury. Try again.');
     } finally {
@@ -194,63 +187,52 @@ export default function TreasuryLobby() {
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="w-full max-w-md text-center">
             {target.family === 'robinhood' && <RobinhoodTreasuryNotice />}
-            <div
-              className="mx-auto mb-6 flex items-center justify-center rounded-2xl"
+            <div className="nave-label" style={{ marginBottom: '10px' }}>Treasuries</div>
+            <h1
               style={{
-                width: '64px',
-                height: '64px',
-                backgroundColor: 'hsl(var(--surface-1))',
-                border: '1px solid hsl(var(--border))',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '34px',
+                lineHeight: 1.1,
+                letterSpacing: '-0.02em',
+                color: 'hsl(var(--foreground))',
+                margin: '0 0 10px',
               }}
             >
-              <Fi icon="landmark" style={{ fontSize: '24px', color: 'hsl(var(--foreground))' }} />
-            </div>
-            <h1
-              className="text-display"
-              style={{ fontSize: '26px', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))', marginBottom: '8px' }}
-            >
-              Your Treasuries
+              Your <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>treasuries.</em>
             </h1>
-            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))', marginBottom: '20px' }}>
+            <p style={{ fontSize: '14.5px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))', marginBottom: '24px' }}>
               Connect your wallet to view treasuries you belong to, or join one by DAO name (e.g. nave) or contract address.
             </p>
-            <button
-              onClick={openConnect}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all"
-              style={{
-                fontSize: '14px',
-                backgroundColor: 'hsl(var(--primary))',
-                color: 'hsl(var(--primary-foreground))',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-              onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-            >
-              {isEvm ? `Connect ${chainFamilyLabel(target.family)} Wallet` : 'Connect Wallet'}
-            </button>
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={openConnect}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-[9px] font-semibold transition-all"
+                style={{
+                  fontSize: '13.5px',
+                  backgroundColor: 'hsl(var(--foreground))',
+                  color: '#ffffff',
+                }}
+              >
+                {isEvm ? `Connect ${chainFamilyLabel(target.family)} Wallet` : 'Connect Wallet'}
+              </button>
 
-            {DEMO_TREASURY_NAV_ENABLED && (
-            <button
-              onClick={() => navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } })}
-              className="w-full flex items-center justify-center gap-2 mt-3 py-3 rounded-xl border font-medium transition-all"
-              style={{
-                fontSize: '13.5px',
-                color: 'hsl(var(--foreground))',
-                borderColor: 'hsl(var(--border-strong))',
-                backgroundColor: 'hsl(var(--surface-0))',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))';
-                e.currentTarget.style.borderColor = 'hsl(var(--foreground))';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))';
-                e.currentTarget.style.borderColor = 'hsl(var(--border-strong))';
-              }}
-            >
-              <Fi icon="eye" style={{ fontSize: '13px' }} />
-              Nave Test DAO (demo)
-            </button>
-            )}
+              {DEMO_TREASURY_NAV_ENABLED && (
+                <button
+                  onClick={() => navigate('/overview', { state: { treasuryAddress: MOCK_DAO_ADDRESS } })}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-[9px] border font-semibold transition-all"
+                  style={{
+                    fontSize: '13.5px',
+                    color: 'hsl(var(--foreground))',
+                    borderColor: 'hsl(var(--border))',
+                    backgroundColor: '#ffffff',
+                  }}
+                >
+                  <Fi icon="eye" style={{ fontSize: '13px' }} />
+                  Nave Test DAO (demo)
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -267,73 +249,53 @@ export default function TreasuryLobby() {
     >
       <Header />
 
-      <div className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 py-10">
+      <div className="flex-1 max-w-[680px] mx-auto w-full px-4 sm:px-6 pt-10 pb-20">
         {target.family === 'robinhood' && <RobinhoodTreasuryNotice />}
 
         {/* Heading */}
-        <div className="mb-8">
-          <h1
-            className="text-display"
-            style={{ fontSize: '26px', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))' }}
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
+          <div>
+            <div className="nave-label" style={{ marginBottom: '10px' }}>Treasuries</div>
+            <h1
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '34px',
+                lineHeight: 1.1,
+                letterSpacing: '-0.02em',
+                color: 'hsl(var(--foreground))',
+                margin: '0 0 8px',
+              }}
+            >
+              Your <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>treasuries.</em>
+            </h1>
+            <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+              Connected as <span className="nave-mono">{shortAddr}</span>
+              {' · '}
+              {networkLabel}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/create-dao')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold mt-1"
+            style={{ fontSize: '13px', backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
           >
-            Your Treasuries
-          </h1>
-          <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
-            Connected as <span className="nave-mono">{shortAddr}</span>
-            {' · '}
-            {networkLabel}
-          </p>
+            + New treasury
+          </button>
         </div>
 
         {DEMO_TREASURY_NAV_ENABLED && (
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={() => navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } })}
-            className="w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all"
-            style={{
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--primary) / 0.35)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'hsl(var(--primary))';
-              e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'hsl(var(--primary) / 0.35)';
-              e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))';
-            }}
+          <Notice
+            tone="brass"
+            actionLabel="Open demo →"
+            onAction={() => navigate('/overview', { state: { treasuryAddress: MOCK_DAO_ADDRESS } })}
+            className="mb-6"
           >
-            <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'hsl(var(--primary))' }}
-            >
-              <Fi icon="wand-magic-sparkles" style={{ fontSize: '15px', color: 'white' }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>
-                Nave Test DAO
-              </div>
-              <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                Demo treasury · full dashboard without a live on-chain DAO
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <span
-                className="px-2 py-0.5 rounded-full"
-                style={{
-                  fontSize: '11px',
-                  backgroundColor: 'hsl(var(--surface-1))',
-                  border: '1px solid hsl(var(--border))',
-                  color: 'hsl(var(--muted-foreground))',
-                }}
-              >
-                Demo
-              </span>
-              <Fi icon="chevron-right" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }} />
-            </div>
-          </button>
-        </div>
+            <span>
+              <strong>Nave Test DAO</strong> — explore the full dashboard without a live on-chain DAO.
+            </span>
+          </Notice>
         )}
 
         {/* Treasury list or empty state */}
@@ -343,7 +305,7 @@ export default function TreasuryLobby() {
             <CardSkeleton lines={2} />
           </div>
         ) : networkDaos.length > 0 ? (
-          <div className="space-y-3 mb-8">
+          <div className="mb-8" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             {networkDaos.map(t => {
               const isRemoving = removingDao === t.daoOnchainAddress;
               const isPendingConfirm = confirmRemove === t.daoOnchainAddress;
@@ -353,7 +315,7 @@ export default function TreasuryLobby() {
                 if (typeof t.chainId === 'number' && isEvmChainId(t.chainId)) {
                   rememberDaoChain(t.daoOnchainAddress, t.chainId);
                 }
-                navigate('/dashboard', { state: { treasuryAddress: t.daoOnchainAddress } });
+                navigate('/overview', { state: { treasuryAddress: t.daoOnchainAddress } });
               }
               return (
                 <DaoCard
@@ -384,55 +346,18 @@ export default function TreasuryLobby() {
               }
               action={{ label: 'Create Treasury', icon: 'plus', onClick: () => navigate('/create-dao') }}
             />
-
-            {DEMO_TREASURY_NAV_ENABLED && (
-            <button
-              onClick={() => navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } })}
-              className="w-full flex items-center justify-center gap-2.5 mt-3 py-3 rounded-xl border transition-all"
-              style={{
-                fontSize: '13.5px',
-                fontWeight: '500',
-                color: 'hsl(var(--foreground))',
-                borderColor: 'hsl(var(--border-strong))',
-                backgroundColor: 'hsl(var(--surface-0))',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))';
-                e.currentTarget.style.borderColor = 'hsl(var(--foreground))';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))';
-                e.currentTarget.style.borderColor = 'hsl(var(--border-strong))';
-              }}
-            >
-              <Fi icon="eye" style={{ fontSize: '13px' }} />
-              Nave Test DAO (demo)
-            </button>
-            )}
           </div>
         )}
 
         {/* Join by address */}
-        <div
-          className="rounded-xl border p-5"
-          style={{
-            backgroundColor: 'hsl(var(--surface-0))',
-            borderColor: 'hsl(var(--border))',
-          }}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <Fi icon="arrow-right-to-bracket" style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }} />
-            <span style={{ fontSize: '13.5px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>
-              Join a Treasury
-            </span>
-          </div>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5, marginBottom: '12px' }}>
+        <Section title="Join a treasury">
+          <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: '0 0 14px' }}>
             Enter a DAO name like <span className="nave-mono">nave</span> or <span className="nave-mono">nave.dao</span>, or paste the on-chain treasury address. If your wallet holds governance tokens, you can participate in proposals and voting.
           </p>
           {routeState.joinDaoName && routeState.joinInput && (
             <p
-              className="mb-3 px-3 py-2 rounded-lg"
-              style={{ fontSize: '12px', backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--foreground))' }}
+              className="mb-3 px-3 py-2 rounded-[10px] border"
+              style={{ fontSize: '12.5px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
             >
               Opening <strong>{routeState.joinDaoName}</strong> ({formatDaoSlugLabel(routeState.joinInput.replace(/\.dao$/i, ''))}) — connect your wallet and tap Join.
             </p>
@@ -443,11 +368,11 @@ export default function TreasuryLobby() {
               value={joinInput}
               onChange={e => { setJoinInput(e.target.value); setJoinError(''); }}
               placeholder="DAO name or treasury address…"
-              className="flex-1 px-3 py-2.5 rounded-lg border outline-none transition-colors"
+              className="flex-1 px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
               style={{
-                fontSize: '13px',
+                fontSize: '14px',
                 fontFamily: joinInput.includes('.') && joinInput.length < 32 ? 'var(--font-body)' : 'var(--font-mono)',
-                backgroundColor: 'hsl(var(--surface-0))',
+                backgroundColor: '#ffffff',
                 borderColor: joinError ? 'hsl(var(--destructive))' : 'hsl(var(--border))',
                 color: 'hsl(var(--foreground))',
               }}
@@ -462,30 +387,30 @@ export default function TreasuryLobby() {
             <button
               onClick={handleJoin}
               disabled={joining}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg font-medium transition-all flex-shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[9px] font-semibold transition-all flex-shrink-0"
               style={{
                 fontSize: '13px',
-                backgroundColor: joining ? 'hsl(var(--muted))' : 'hsl(var(--primary))',
-                color: joining ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary-foreground))',
+                backgroundColor: 'hsl(var(--foreground))',
+                color: '#ffffff',
+                opacity: joining ? 0.5 : 1,
                 cursor: joining ? 'not-allowed' : 'pointer',
               }}
             >
-              <Fi icon="arrow-right" style={{ fontSize: '11px' }} />
-              {joining ? 'Joining…' : 'Join'}
+              {joining ? 'Joining…' : 'Join →'}
             </button>
           </div>
           {joinError && (
-            <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', marginTop: '6px' }}>
+            <p style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', marginTop: '6px' }}>
               {joinError}
             </p>
           )}
-        </div>
+        </Section>
       </div>
     </div>
   );
 }
 
-/* ── DAO card ───────────────────────────────────────────── */
+/* ── DAO row ────────────────────────────────────────────── */
 function DaoCard({
   name,
   governanceType,
@@ -527,107 +452,73 @@ function DaoCard({
 
   return (
     <div
-      className="rounded-xl border overflow-hidden transition-all"
+      className="flex items-start gap-3 py-4 transition-opacity"
       style={{
-        backgroundColor: 'hsl(var(--surface-0))',
-        borderColor: isPendingConfirm ? 'hsl(var(--destructive))' : 'hsl(var(--border))',
+        borderBottom: '1px solid hsl(var(--surface-2))',
         opacity: isRemoving ? 0.5 : 1,
       }}
       onMouseLeave={onMouseLeave}
     >
-      {/* Row 1 — icon + name + open chevron */}
       <button
-        className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left transition-colors"
+        type="button"
         onClick={onOpen}
         disabled={isRemoving}
-        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+        className="flex-1 min-w-0 text-left group"
       >
         <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: 'hsl(var(--primary))' }}
+          className="group-hover:text-brass transition-colors truncate"
+          style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))', lineHeight: 1.4 }}
         >
-          <Fi icon="landmark" style={{ fontSize: '14px', color: 'white' }} />
+          {name}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium truncate" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>
-            {name}
-          </div>
-          <div className="flex items-center gap-1.5 flex-wrap" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
-            <span>{govLabel}</span>
-            <span style={{ opacity: 0.5 }}>·</span>
-            <span
-              className="px-1.5 py-0.5 rounded-full"
-              style={{
-                fontSize: '10px',
-                backgroundColor: 'hsl(var(--surface-1))',
-                border: '1px solid hsl(var(--border))',
-                color: 'hsl(var(--muted-foreground))',
-              }}
-            >
-              {chainLabel}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span
-            className="px-2 py-0.5 rounded-full"
-            style={{ fontSize: '10.5px', backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-          >
-            Member
+        <div
+          className="flex items-center gap-2 flex-wrap mt-0.5"
+          style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          <span>{chainLabel}</span>
+          <span>·</span>
+          <span>{govLabel}</span>
+          <span>·</span>
+          <span className="nave-mono" style={{ fontSize: '12px' }}>
+            {shareUrl ? shareUrl.replace(/^https?:\/\//, '') : shareLabel}
           </span>
-          <Fi icon="chevron-right" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }} />
         </div>
       </button>
 
-      {/* Row 2 — shareable link + copy + remove */}
-      <div
-        className="flex items-center gap-2 px-4 py-2.5 border-t"
-        style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}
-      >
-        <Fi icon="link" style={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', flexShrink: 0 }} />
-        <span
-          className="nave-mono flex-1 min-w-0 truncate"
-          style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}
-        >
-          {shareUrl
-            ? shareUrl.replace(/^https?:\/\//, '')
-            : shareLabel}
-        </span>
+      <div className="flex items-center gap-3 ml-auto flex-shrink-0 pt-0.5">
         {shareUrl && (
           <button
+            type="button"
             onClick={copyLink}
             title="Copy shareable link"
-            className="flex items-center gap-1 px-2 py-0.5 rounded transition-colors flex-shrink-0"
-            style={{ fontSize: '10.5px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            className="hover:underline underline-offset-4"
+            style={{ fontSize: '12.5px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }}
           >
-            <Fi icon={copied ? 'check' : 'copy'} style={{ fontSize: '10px' }} />
-            {copied ? 'Copied' : 'Copy'}
+            {copied ? 'Copied' : 'Copy link'}
           </button>
         )}
         <button
+          type="button"
           onClick={e => { e.stopPropagation(); onRemove(); }}
           disabled={isRemoving}
           title={isPendingConfirm ? 'Click again to confirm removal' : 'Remove from Your Treasuries'}
-          className="flex items-center gap-1 px-2 py-0.5 rounded transition-colors flex-shrink-0"
+          className="hover:underline underline-offset-4"
           style={{
-            fontSize: '10.5px',
+            fontSize: '12.5px',
             fontWeight: isPendingConfirm ? 600 : 400,
             color: isPendingConfirm ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))',
           }}
-          onMouseEnter={e => {
-            e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))';
-            e.currentTarget.style.color = 'hsl(var(--destructive))';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.backgroundColor = '';
-            e.currentTarget.style.color = isPendingConfirm ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))';
-          }}
         >
-          <Fi icon={isRemoving ? 'spinner' : 'xmark'} style={{ fontSize: '10px' }} />
-          {isPendingConfirm ? 'Confirm remove' : 'Remove'}
+          {isPendingConfirm ? 'Confirm remove' : 'Remove…'}
+        </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={isRemoving}
+          style={{ color: 'hsl(var(--faint))', fontSize: '11px' }}
+          aria-label={`Open ${name}`}
+        >
+          <Fi icon="chevron-right" style={{ fontSize: '11px' }} />
         </button>
       </div>
     </div>
@@ -640,23 +531,34 @@ function Header() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b"
+      className="sticky top-0 z-50 flex items-center justify-between px-6 py-3.5 border-b"
       style={{
-        backgroundColor: 'hsl(var(--surface-0))',
-        borderColor: 'hsl(var(--border))',
-        backdropFilter: 'blur(10px)',
+        backgroundColor: 'rgba(250, 248, 243, 0.9)',
+        borderColor: 'hsl(var(--surface-2))',
+        backdropFilter: 'blur(12px)',
       }}
     >
       <button
         onClick={() => navigate('/')}
-        className="text-display no-underline"
-        style={{ fontSize: '19px', color: 'hsl(var(--foreground))' }}
+        className="flex items-center gap-2 no-underline"
+        style={{ color: 'hsl(var(--foreground))' }}
       >
-        Nave
+        <span
+          className="grid place-items-center rounded-[6px]"
+          style={{
+            width: '20px',
+            height: '20px',
+            backgroundColor: 'hsl(var(--foreground))',
+            color: '#ffffff',
+            fontFamily: 'var(--font-display)',
+            fontSize: '13px',
+          }}
+        >
+          N
+        </span>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px' }}>Nave</span>
       </button>
 
-      {/* Unified wallet + network control (network selector lives inside the
-          dropdown, same as the Bridge/Stake header). */}
       <WalletNetworkMenu chains={APP_WALLET_CHAINS} />
     </header>
   );

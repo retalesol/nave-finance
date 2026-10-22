@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { PublicKey, Keypair, SystemProgram } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
@@ -16,6 +15,8 @@ import {
 import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
+import NaveModal from '../components/NaveModal';
+import { UnderlineTabs } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useTokenRegistry, type TokenInfo } from '../hooks/useTokenRegistry';
 import { useSendTransaction } from '../hooks/useSendTransaction';
@@ -70,7 +71,7 @@ function tokenRevokeRewardLabel(chainKind: 'solana' | 'evm'): string {
   return chainKind === 'evm' ? `${TOKEN_REVOKE_REWARD_ETH} ETH` : `${TOKEN_REVOKE_REWARD_SOL} SOL`;
 }
 
-/* ── Token Card ──────────────────────────────────────────── */
+/* ── Token Row ───────────────────────────────────────────── */
 function TokenCard({
   token,
   chainKind,
@@ -81,178 +82,171 @@ function TokenCard({
   onAction: (action: string, token: TokenInfo) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const holders = useHolderCount(token.mint);
   const revokeReward = tokenRevokeRewardLabel(chainKind);
 
+  function copyMint(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(token.mint);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
   return (
-    <div
-      className="rounded-xl border p-5 transition-all"
-      style={{
-        backgroundColor: 'hsl(var(--surface-0))',
-        borderColor: 'hsl(var(--border))',
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0"
-            style={{ backgroundColor: 'hsl(var(--surface-1))' }}
-          >
-            {token.imageUri ? (
-              <img src={token.imageUri} alt={token.symbol} className="w-full h-full object-cover" />
-            ) : (
-              <Fi icon="coins" style={{ fontSize: '16px', color: 'hsl(var(--foreground))' }} />
-            )}
-          </div>
-          <div>
-            <div className="text-display font-semibold" style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }}>
-              {token.name}
-            </div>
-            <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-              ${token.symbol}
-              {token.isNaveManaged && (
-                <span
-                  className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                  style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))' }}
-                >
-                  Nave Managed
-                </span>
-              )}
-              {!token.isNaveManaged && (
-                <span
-                  className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium"
-                  style={{ backgroundColor: 'hsl(var(--warning-muted))', color: 'hsl(38 60% 35%)' }}
-                >
-                  External
-                </span>
-              )}
-            </div>
-          </div>
+    <div style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+        className="flex items-start gap-3.5 py-4 cursor-pointer group"
+      >
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 border"
+          style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }}
+        >
+          {token.imageUri ? (
+            <img src={token.imageUri} alt={token.symbol} className="w-full h-full object-cover" />
+          ) : (
+            <span className="nave-mono font-semibold" style={{ fontSize: '10px', color: 'hsl(var(--foreground))' }}>
+              {token.symbol.slice(0, 3).toUpperCase()}
+            </span>
+          )}
         </div>
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="p-1.5 rounded-lg transition-colors"
-          style={{ color: 'hsl(var(--muted-foreground))' }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-        >
-          <Fi icon={expanded ? 'chevron-up' : 'chevron-down'} style={{ fontSize: '14px' }} />
-        </button>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        {[
-          { label: 'Supply', value: token.supply.toLocaleString() },
-          { label: 'Decimals', value: token.decimals.toString() },
-          { label: 'Holders', value: holders === null ? '—' : holders >= 20 ? '20+' : holders.toString() },
-          { label: 'Created', value: token.createdAt ? new Date(token.createdAt * 1000).toLocaleDateString() : '—' },
-        ].map((s) => (
-          <div key={s.label} className="p-2.5 rounded-lg" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-            <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginBottom: '2px' }}>{s.label}</div>
-            <div className="text-display font-semibold" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Mint Address */}
-      <div className="flex items-center gap-2 p-2.5 rounded-lg mb-4" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-        <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>Mint:</span>
-        <code style={{ fontSize: '12px', color: 'hsl(var(--foreground))', fontFamily: 'var(--font-mono, monospace)' }}>
-          {token.mint.length > 20 ? `${token.mint.slice(0, 8)}…${token.mint.slice(-8)}` : token.mint}
-        </code>
-        <button
-          onClick={() => navigator.clipboard.writeText(token.mint)}
-          className="ml-auto p-1 rounded transition-colors"
-          style={{ color: 'hsl(var(--muted-foreground))' }}
-        >
-          <Fi icon="copy" style={{ fontSize: '11px' }} />
-        </button>
-      </div>
-
-      {/* Authority Status */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {[
-          { label: 'Mint Authority', revoked: token.mintAuthorityRevoked },
-          { label: 'Freeze Authority', revoked: token.freezeAuthorityRevoked },
-          { label: 'Metadata Authority', revoked: token.metadataAuthorityRevoked },
-        ].map((a) => (
-          <div
-            key={a.label}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
-            style={{
-              backgroundColor: a.revoked ? 'hsl(var(--destructive-muted))' : 'hsl(var(--success-muted))',
-              color: a.revoked ? 'hsl(var(--destructive))' : 'hsl(var(--success))',
-            }}
-          >
-            <Fi icon={a.revoked ? 'lock' : 'unlock'} style={{ fontSize: '10px' }} />
-            {a.label}: {a.revoked ? 'Revoked' : 'Active'}
-          </div>
-        ))}
-      </div>
-
-      {/* Expanded: Action Buttons (each creates a governance proposal) */}
-      {expanded && token.isNaveManaged && (
-        <div className="pt-4 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-          <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginBottom: '10px' }}>
-            Token Management — revoking all authorities returns {revokeReward} to the treasury
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {!token.mintAuthorityRevoked && (
-              <button
-                onClick={() => onAction('mint', token)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors"
-                style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-              >
-                <Fi icon="plus" style={{ fontSize: '10px' }} />
-                Mint More
-              </button>
-            )}
-            {!token.metadataAuthorityRevoked && (
-              <button
-                onClick={() => onAction('metadata', token)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors"
-                style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-              >
-                <Fi icon="pen" style={{ fontSize: '10px' }} />
-                Edit Metadata
-              </button>
-            )}
-            <button
-              onClick={() => onAction('revoke', token)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors"
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="group-hover:text-brass transition-colors"
+              style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}
+            >
+              {token.name}
+            </span>
+            <span className="nave-mono" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+              ${token.symbol}
+            </span>
+            <span
               style={{
-                borderColor: 'hsl(0 72% 80%)',
-                color: 'hsl(var(--destructive))',
-                backgroundColor: 'hsl(var(--destructive-muted))',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                color: token.isNaveManaged ? 'hsl(var(--success))' : 'hsl(var(--warning))',
               }}
             >
-              <Fi icon="ban" style={{ fontSize: '10px' }} />
-              Revoke Authority (+{revokeReward})
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* External token — monitoring only */}
-      {expanded && !token.isNaveManaged && (
-        <div className="pt-4 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-          <div
-            className="flex items-center gap-2 p-3 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--warning-muted))' }}
-          >
-            <Fi icon="info-circle" style={{ fontSize: '12px', color: 'hsl(38 60% 35%)' }} />
-            <span style={{ fontSize: '12px', color: 'hsl(38 60% 35%)' }}>
-              This token is externally managed. Monitoring only — no management actions available.
+              · {token.isNaveManaged ? 'Nave Managed' : 'External'}
             </span>
           </div>
+          <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '3px' }}>
+            Supply {token.supply.toLocaleString()} · {token.decimals} decimals
+            {holders !== null && ` · ${holders >= 20 ? '20+' : holders} holders`}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 ml-auto flex-shrink-0 pt-0.5">
+          <span className="nave-mono hidden sm:inline" style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}>
+            {token.mint.length > 20 ? `${token.mint.slice(0, 6)}…${token.mint.slice(-4)}` : token.mint}
+          </span>
+          <span style={{ color: 'hsl(var(--faint))', fontSize: '11px' }}>
+            <Fi icon={expanded ? 'chevron-up' : 'chevron-down'} style={{ fontSize: '11px' }} />
+          </span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="pb-4 pl-12 space-y-3" style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
+          {/* Key-value details */}
+          <div>
+            <div className="flex justify-between py-2" style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}>
+              <span>Mint address</span>
+              <span className="flex items-center gap-2">
+                <code className="nave-mono" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>
+                  {token.mint.length > 20 ? `${token.mint.slice(0, 8)}…${token.mint.slice(-8)}` : token.mint}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyMint}
+                  className="hover:underline underline-offset-4"
+                  style={{ fontSize: '12px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </span>
+            </div>
+            {token.createdAt ? (
+              <div className="flex justify-between py-2" style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}>
+                <span>Created</span>
+                <span style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>
+                  {new Date(token.createdAt * 1000).toLocaleDateString()}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex justify-between py-2" style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}>
+              <span>Authorities</span>
+              <span className="flex items-center gap-3 flex-wrap">
+                {[
+                  { label: 'Mint', revoked: token.mintAuthorityRevoked },
+                  { label: 'Freeze', revoked: token.freezeAuthorityRevoked },
+                  { label: 'Metadata', revoked: token.metadataAuthorityRevoked },
+                ].map((a) => (
+                  <span
+                    key={a.label}
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: a.revoked ? 'hsl(var(--muted-foreground))' : 'hsl(var(--success))',
+                    }}
+                  >
+                    {a.label}: {a.revoked ? 'Revoked' : 'Active'}
+                  </span>
+                ))}
+              </span>
+            </div>
+          </div>
+
+          {token.isNaveManaged ? (
+            <div className="pt-1 flex items-center gap-2 flex-wrap">
+              {!token.mintAuthorityRevoked && (
+                <button
+                  type="button"
+                  onClick={() => onAction('mint', token)}
+                  className="px-3.5 py-1.5 rounded-[9px] border font-semibold transition-colors"
+                  style={{ fontSize: '12.5px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                >
+                  Mint More
+                </button>
+              )}
+              {!token.metadataAuthorityRevoked && (
+                <button
+                  type="button"
+                  onClick={() => onAction('metadata', token)}
+                  className="px-3.5 py-1.5 rounded-[9px] border font-semibold transition-colors"
+                  style={{ fontSize: '12.5px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                >
+                  Edit Metadata
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onAction('revoke', token)}
+                className="px-3.5 py-1.5 rounded-[9px] border font-semibold transition-colors"
+                style={{
+                  fontSize: '12.5px',
+                  backgroundColor: '#FFF9F8',
+                  borderColor: '#E5A49E',
+                  color: '#B42318',
+                }}
+              >
+                Revoke Authority (+{revokeReward})
+              </button>
+            </div>
+          ) : (
+            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+              This token is externally managed. Monitoring only — no management actions available.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -409,13 +403,6 @@ function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenM
       const groups = [[createResult, registerResult]];
 
       // 3. Optionally mint the initial supply to the treasury vault.
-      //    This is the ONLY direct buildMintAdditionalTokens call in the UI — it is
-      //    the token's genesis supply, minted once at creation before any governance
-      //    exists (on-chain this is the supply==0 genesis path, which needs no
-      //    proposal). Every POST-creation mint MUST go through a TokenMint
-      //    governance proposal: mint_additional_tokens now binds the passed
-      //    proposal account on-chain (audit M11), and the "Mint More" action routes
-      //    to /governance where ratification (handleRatifyTokenMint) supplies it.
       const supplyNum = Number(supply);
       if (Number.isFinite(supplyNum) && supplyNum > 0) {
         const mintMore = await buildMintAdditionalTokens(
@@ -457,111 +444,99 @@ function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenM
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-      <div className="rounded-2xl overflow-hidden w-full" style={{ maxWidth: 460, backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))' }}>
-        <div className="px-5 py-3.5 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: 15 }}>Mint a token</span>
+  return (
+    <NaveModal open={true} onClose={onClose} title="Mint a token" maxWidth={480}>
+      <div style={{ padding: '18px 22px 22px' }} className="space-y-4">
+        <div
+          className="rounded-[12px] border p-3.5"
+          style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--surface-2))', fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}
+        >
+          Minting a token costs <strong style={{ color: 'hsl(var(--foreground))' }}>{mintFeeLabel}</strong> from the treasury, with full mint/freeze/metadata authority held by the DAO. Revoking all authorities later returns <strong style={{ color: 'hsl(var(--foreground))' }}>{revokeRewardLabel}</strong> to the treasury.
         </div>
-        <div className="px-5 py-4 space-y-4">
-          <div
-            className="flex items-start gap-2 p-3 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', border: '1px solid hsl(var(--border-strong))' }}
-          >
-            <Fi icon="circle-info" style={{ fontSize: 13, color: 'hsl(var(--accent))', flexShrink: 0, marginTop: 2 }} />
-            <p style={{ fontSize: 12, color: 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6 }}>
-              Minting a token costs <strong>{mintFeeLabel}</strong> from the treasury, with full mint/freeze/metadata authority held by the DAO. Revoking all authorities later returns <strong>{revokeRewardLabel}</strong> to the treasury.
-            </p>
-          </div>
 
-          {/* Token image */}
-          <div className="space-y-1.5">
-            <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Token image <span style={{ fontWeight: 400, color: 'hsl(var(--muted-foreground))' }}>(optional)</span></label>
-            <div className="flex items-center gap-3">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer border"
-                style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {imagePreview ? (
-                  <img src={imagePreview} alt="Token preview" className="w-full h-full object-cover" />
-                ) : (
-                  <Fi icon="image" style={{ fontSize: 18, color: 'hsl(var(--muted-foreground))' }} />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-                  style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                >
-                  <Fi icon="upload" style={{ fontSize: 10 }} />
-                  {imageFile ? 'Change image' : 'Upload image'}
-                </button>
-                {imageFile && (
-                  <p style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>{imageFile.name}</p>
-                )}
-              </div>
+        {/* Token image */}
+        <div>
+          <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>
+            Token image <span style={{ fontWeight: 400, color: 'hsl(var(--muted-foreground))' }}>(optional)</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer border"
+              style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))' }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {imagePreview ? (
+                <img src={imagePreview} alt="Token preview" className="w-full h-full object-cover" />
+              ) : (
+                <Fi icon="image" style={{ fontSize: 18, color: 'hsl(var(--muted-foreground))' }} />
+              )}
             </div>
+            <div className="flex-1 min-w-0">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-[9px] border text-xs font-semibold"
+                style={{ backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+              >
+                <Fi icon="upload" style={{ fontSize: 10 }} />
+                {imageFile ? 'Change image' : 'Upload image'}
+              </button>
+              {imageFile && (
+                <p style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>{imageFile.name}</p>
+              )}
+            </div>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={handleImageChange}
+          />
+        </div>
+
+        {[
+          { label: 'Token name', value: name, set: setName, ph: 'e.g. Builders Token', mono: false },
+          { label: 'Symbol', value: symbol, set: setSymbol, ph: 'e.g. BUILD', mono: true },
+          { label: 'Initial supply', value: supply, set: setSupply, ph: '1000000', mono: true },
+        ].map((f) => (
+          <div key={f.label}>
+            <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>{f.label}</label>
             <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={handleImageChange}
+              value={f.value}
+              onChange={(e) => f.set(e.target.value)}
+              placeholder={f.ph}
+              className="w-full px-3 py-2.5 rounded-[10px] border outline-none"
+              style={{ fontSize: 14, fontFamily: f.mono ? 'var(--font-mono)' : 'var(--font-body)', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
             />
           </div>
-
-          {[
-            { label: 'Token name', value: name, set: setName, ph: 'e.g. Builders Token', mono: false },
-            { label: 'Symbol', value: symbol, set: setSymbol, ph: 'e.g. BUILD', mono: true },
-            { label: 'Initial supply', value: supply, set: setSupply, ph: '1000000', mono: true },
-          ].map((f) => (
-            <div key={f.label} className="space-y-1.5">
-              <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>{f.label}</label>
-              <input
-                value={f.value}
-                onChange={(e) => f.set(e.target.value)}
-                placeholder={f.ph}
-                className="w-full px-3 py-2.5 rounded-lg border outline-none"
-                style={{ fontSize: 13, fontFamily: f.mono ? 'var(--font-mono)' : 'var(--font-body)', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-              />
-            </div>
-          ))}
-          {err && <p style={{ fontSize: 12, color: 'hsl(var(--destructive))' }}>{err}</p>}
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
-            <button onClick={submit} disabled={busy} className="px-4 py-2 rounded-lg font-medium" style={{ fontSize: 13, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>
-              {busy ? 'Minting…' : `Mint token (${mintFeeLabel})`}
-            </button>
-          </div>
+        ))}
+        {err && <p style={{ fontSize: 12.5, color: 'hsl(var(--destructive))' }}>{err}</p>}
+        <div className="flex items-center justify-end gap-2 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+          <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-[9px] border font-semibold" style={{ fontSize: 13, backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>Cancel</button>
+          <button type="button" onClick={submit} disabled={busy} className="px-4 py-2 rounded-[9px] font-semibold" style={{ fontSize: 13, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}>
+            {busy ? 'Minting…' : `Mint token (${mintFeeLabel})`}
+          </button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </NaveModal>
   );
 }
 
 /* ── Token action modals (replace window.prompt/confirm) ─────── */
 function TokenModalShell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-      <div className="rounded-2xl overflow-hidden w-full" style={{ maxWidth: 460, backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))' }}>
-        <div className="px-5 py-3.5 border-b flex items-center justify-between" style={{ borderColor: 'hsl(var(--border))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: 15 }}>{title}</span>
-          <button onClick={onClose} style={{ color: 'hsl(var(--muted-foreground))' }}><Fi icon="xmark" style={{ fontSize: 14 }} /></button>
-        </div>
-        <div className="px-5 py-4 space-y-4">{children}</div>
+  return (
+    <NaveModal open={true} onClose={onClose} title={title} maxWidth={460}>
+      <div style={{ padding: '18px 22px 22px' }} className="space-y-4">
+        {children}
       </div>
-    </div>,
-    document.body,
+    </NaveModal>
   );
 }
 
 const tokenInputStyle: React.CSSProperties = {
-  fontSize: 13,
-  backgroundColor: 'hsl(var(--surface-0))',
+  fontSize: 14,
+  backgroundColor: '#ffffff',
   borderColor: 'hsl(var(--border))',
   color: 'hsl(var(--foreground))',
 };
@@ -573,32 +548,33 @@ function MintMoreModal({ token, mintFeeLabel, onSubmit, onClose }: {
   const [err, setErr] = useState<string | null>(null);
   return (
     <TokenModalShell title={`Mint more ${token.symbol}`} onClose={onClose}>
-      <div className="rounded-lg p-3" style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}>
-        <div style={{ fontSize: 12.5, color: 'hsl(var(--foreground))' }}>{token.name} <span style={{ color: 'hsl(var(--muted-foreground))' }}>({token.symbol})</span></div>
-        <div style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+      <div className="rounded-[12px] p-3.5 border" style={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--surface-2))' }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'hsl(var(--foreground))' }}>{token.name} <span style={{ color: 'hsl(var(--muted-foreground))' }}>({token.symbol})</span></div>
+        <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
           Current supply: {token.supply.toLocaleString()} {token.symbol}
         </div>
       </div>
-      <p style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6, margin: 0 }}>
         Minting requires a governance <strong>TokenMint</strong> proposal. Once it passes, the founder executes the on-chain mint into the treasury. This increases total supply.
       </p>
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Amount to mint ({token.symbol})</label>
+      <div>
+        <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>Amount to mint ({token.symbol})</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000"
-          className="w-full px-3 py-2.5 rounded-lg border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
+          className="w-full px-3 py-2.5 rounded-[10px] border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
       </div>
-      <p style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))' }}>Estimated mint fee: {mintFeeLabel} from the treasury.</p>
-      {err && <p style={{ fontSize: 12, color: 'hsl(var(--destructive))' }}>{err}</p>}
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
+      <p style={{ fontSize: 12, color: 'hsl(var(--faint))', margin: 0 }}>Estimated mint fee: {mintFeeLabel} from the treasury.</p>
+      {err && <p style={{ fontSize: 12.5, color: 'hsl(var(--destructive))' }}>{err}</p>}
+      <div className="flex items-center justify-end gap-2 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+        <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-[9px] border font-semibold" style={{ fontSize: 13, backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>Cancel</button>
         <button
+          type="button"
           onClick={() => {
             setErr(null);
             const n = Number(amount);
             if (!amount.trim() || !Number.isFinite(n) || n <= 0) { setErr('Enter a positive amount'); return; }
             if (onSubmit(amount.trim())) onClose();
           }}
-          className="px-4 py-2 rounded-lg font-medium" style={{ fontSize: 13, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+          className="px-4 py-2 rounded-[9px] font-semibold" style={{ fontSize: 13, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
         >
           Create Mint Proposal
         </button>
@@ -616,23 +592,24 @@ function EditMetadataModal({ token, onSubmit, onClose }: {
   const [err, setErr] = useState<string | null>(null);
   return (
     <TokenModalShell title={`Edit ${token.symbol} metadata`} onClose={onClose}>
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Token name</label>
+      <div>
+        <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>Token name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Token name"
-          className="w-full px-3 py-2.5 rounded-lg border outline-none" style={tokenInputStyle} />
+          className="w-full px-3 py-2.5 rounded-[10px] border outline-none" style={tokenInputStyle} />
       </div>
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Symbol</label>
+      <div>
+        <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>Symbol</label>
         <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="SYMBOL" maxLength={8}
-          className="w-full px-3 py-2.5 rounded-lg border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
+          className="w-full px-3 py-2.5 rounded-[10px] border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
       </div>
-      <p style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: 'hsl(var(--faint))', lineHeight: 1.6, margin: 0 }}>
         Updates the on-chain Metaplex metadata. Symbol is upper-cased and capped at 8 characters.
       </p>
-      {err && <p style={{ fontSize: 12, color: 'hsl(var(--destructive))' }}>{err}</p>}
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
+      {err && <p style={{ fontSize: 12.5, color: 'hsl(var(--destructive))' }}>{err}</p>}
+      <div className="flex items-center justify-end gap-2 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+        <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-[9px] border font-semibold" style={{ fontSize: 13, backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>Cancel</button>
         <button
+          type="button"
           disabled={busy}
           onClick={async () => {
             setErr(null);
@@ -642,7 +619,7 @@ function EditMetadataModal({ token, onSubmit, onClose }: {
             catch (e) { setErr(e instanceof Error ? e.message : 'Update failed'); }
             finally { setBusy(false); }
           }}
-          className="px-4 py-2 rounded-lg font-medium" style={{ fontSize: 13, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))', opacity: busy ? 0.6 : 1 }}
+          className="px-4 py-2 rounded-[9px] font-semibold" style={{ fontSize: 13, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff', opacity: busy ? 0.6 : 1 }}
         >
           {busy ? 'Saving…' : 'Save metadata'}
         </button>
@@ -660,24 +637,24 @@ function RevokeAuthorityModal({ token, revokeRewardLabel, onConfirm, onClose }: 
   const matches = confirmText.trim().toUpperCase() === token.symbol.toUpperCase();
   return (
     <TokenModalShell title={`Revoke ${token.symbol} authorities`} onClose={onClose}>
-      <div className="rounded-lg p-3 flex items-start gap-2" style={{ backgroundColor: 'hsl(var(--destructive-muted))', border: '1px solid hsl(var(--destructive) / 0.4)' }}>
-        <Fi icon="triangle-exclamation" style={{ fontSize: 14, color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: 2 }} />
-        <p style={{ fontSize: 12, color: 'hsl(var(--destructive))', lineHeight: 1.6 }}>
+      <div className="rounded-[12px] p-3.5 border" style={{ backgroundColor: '#FFF9F8', borderColor: '#F2C7C2' }}>
+        <p style={{ fontSize: 13, color: '#B42318', lineHeight: 1.6, margin: 0 }}>
           This permanently and <strong>irreversibly</strong> revokes the <strong>Mint</strong> and <strong>Freeze</strong> authorities for {token.symbol}. After this, no more {token.symbol} can ever be minted or frozen.
         </p>
       </div>
-      <p style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6, margin: 0 }}>
         The revocation cost is paid by the protocol. After this transaction confirms, <strong>{revokeRewardLabel}</strong> will be credited to your treasury balance from the protocol rewards pool — revoking <em>adds</em> funds to the treasury, it does not cost it.
       </p>
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Type <span style={{ fontFamily: 'var(--font-mono)' }}>{token.symbol}</span> to confirm</label>
+      <div>
+        <label className="block mb-1.5" style={{ fontSize: 12.5, fontWeight: 600 }}>Type <span style={{ fontFamily: 'var(--font-mono)' }}>{token.symbol}</span> to confirm</label>
         <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={token.symbol}
-          className="w-full px-3 py-2.5 rounded-lg border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
+          className="w-full px-3 py-2.5 rounded-[10px] border outline-none" style={{ ...tokenInputStyle, fontFamily: 'var(--font-mono)' }} />
       </div>
-      {err && <p style={{ fontSize: 12, color: 'hsl(var(--destructive))' }}>{err}</p>}
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
+      {err && <p style={{ fontSize: 12.5, color: 'hsl(var(--destructive))' }}>{err}</p>}
+      <div className="flex items-center justify-end gap-2 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+        <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-[9px] border font-semibold" style={{ fontSize: 13, backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>Cancel</button>
         <button
+          type="button"
           disabled={!matches || busy}
           onClick={async () => {
             setErr(null);
@@ -686,7 +663,7 @@ function RevokeAuthorityModal({ token, revokeRewardLabel, onConfirm, onClose }: 
             catch (e) { setErr(e instanceof Error ? e.message : 'Revoke failed'); }
             finally { setBusy(false); }
           }}
-          className="px-4 py-2 rounded-lg font-medium" style={{ fontSize: 13, backgroundColor: 'hsl(var(--destructive))', color: 'white', opacity: !matches || busy ? 0.5 : 1, cursor: !matches || busy ? 'not-allowed' : 'pointer' }}
+          className="px-4 py-2 rounded-[9px] font-semibold" style={{ fontSize: 13, backgroundColor: 'hsl(var(--destructive))', color: 'white', opacity: !matches || busy ? 0.5 : 1, cursor: !matches || busy ? 'not-allowed' : 'pointer' }}
         >
           {busy ? 'Revoking…' : 'Revoke authorities'}
         </button>
@@ -707,7 +684,7 @@ export default function Tokens() {
   const [activeTab, setActiveTab] = useState<'tokens' | 'holders'>('tokens');
   const [showCreate, setShowCreate] = useState(false);
 
-  const canManage = !!daoAddress && !isMockMode && (chainKind === 'evm' ? !!evmAddress : !!publicKey);
+  const canManage = !!daoAddress && (isMockMode || (chainKind === 'evm' ? !!evmAddress : !!publicKey));
   const slotsFull = tokenCount >= 3;
   const mintFeeLabel = tokenMintFeeLabel(chainKind);
   const revokeRewardLabel = tokenRevokeRewardLabel(chainKind);
@@ -757,7 +734,7 @@ export default function Tokens() {
     return false;
   }
 
-  /** Build the governance mint proposal and route to /governance. */
+  /** Build the governance mint proposal and route to /decisions. */
   function executeMint(token: TokenInfo, amountStr: string): boolean {
     if (!daoAddress) return false;
     // ── EVM ──
@@ -779,7 +756,7 @@ export default function Tokens() {
         toast({ variant: 'destructive', title: 'Payload error', description: err instanceof Error ? err.message : 'Failed to encode EVM mint payload.' });
         return false;
       }
-      navigate('/governance', {
+      navigate('/decisions', {
         state: {
           proposeTokenMint: {
             title: `Token Mint — ${formattedAmount} ${token.symbol}`,
@@ -819,7 +796,7 @@ export default function Tokens() {
     view.setUint32(68, hi, true);
 
     const formattedAmount = amount.toLocaleString();
-    navigate('/governance', {
+    navigate('/decisions', {
       state: {
         proposeTokenMint: {
           title: `Token Mint — ${formattedAmount} ${token.symbol}`,
@@ -866,7 +843,7 @@ export default function Tokens() {
   }
 
   return (
-    <div className="px-4 sm:px-6 py-5 sm:py-6 space-y-5 pb-8" data-onboarding-id="tokens-root">
+    <div className="max-w-[860px] mx-auto px-4 sm:px-8 pt-10 pb-20" data-onboarding-id="tokens-root">
       {showCreate && canManage && (
         <CreateTokenModal
           daoAddress={daoAddress!}
@@ -898,28 +875,34 @@ export default function Tokens() {
           onClose={() => setRevokeToken(null)}
         />
       )}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-7">
         <div>
-          <h1 className="text-display font-semibold" style={{ fontSize: '20px', color: 'hsl(var(--foreground))' }}>
-            Tokens
+          <div className="nave-label" style={{ marginBottom: '10px' }}>Tokens</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Treasury <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>tokens.</em>
           </h1>
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-            Manage DAO tokens, authority permissions, and holder data
+          <p style={{ fontSize: '14.5px', color: 'hsl(var(--muted-foreground))', margin: 0, maxWidth: '520px' }}>
+            Manage DAO tokens, authority permissions, and holder data · {tokenCount}/3 slots
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          <div
-            className="px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))' }}
-          >
-            {tokenCount} / 3 slots used
-          </div>
+        <div className="flex items-center gap-2 pt-1">
           {canManage && !slotsFull && (
             <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium"
-              style={{ fontSize: 12.5, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold"
+              style={{ fontSize: 13, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
             >
               <Fi icon="plus" style={{ fontSize: 11 }} />
               Mint a Token
@@ -929,27 +912,18 @@ export default function Tokens() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-        {(['tokens', 'holders'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-all capitalize"
-            style={{
-              backgroundColor: activeTab === tab ? 'hsl(var(--surface-0))' : 'transparent',
-              color: activeTab === tab ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-              boxShadow: activeTab === tab ? 'var(--shadow-sm)' : 'none',
-            }}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      <UnderlineTabs
+        tabs={[
+          { id: 'tokens', label: 'Tokens' },
+          { id: 'holders', label: 'Holders' },
+        ]}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+      />
 
       {/* Content */}
       {activeTab === 'tokens' && (
-        <div className="space-y-4">
-          {/* Loading state */}
+        <div className="mt-4">
           {loading && (
             <div className="space-y-3">
               <CardSkeleton lines={4} />
@@ -957,7 +931,6 @@ export default function Tokens() {
             </div>
           )}
 
-          {/* Pre-mint state */}
           {!loading && !hasMintedToken && (
             <NaveEmptyState
               icon="coins"
@@ -966,78 +939,30 @@ export default function Tokens() {
             />
           )}
 
-          {/* Token cards */}
-          {!loading &&
-            tokens.map((token) => (
-              <TokenCard key={token.mint} token={token} chainKind={chainKind} onAction={handleTokenAction} />
-            ))}
-
-          {/* Empty slot indicator */}
-          {!loading && tokenCount < 3 && hasMintedToken && (
-            <div
-              className="p-5 rounded-xl border border-dashed text-center"
-              style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-            >
-              <Fi icon="plus-circle" style={{ fontSize: '18px', marginBottom: '6px' }} />
-              <p style={{ fontSize: '13px' }}>
-                {3 - tokenCount} token slot{3 - tokenCount > 1 ? 's' : ''} available — create a Token Mint proposal to use
-              </p>
+          {!loading && tokens.length > 0 && (
+            <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+              {tokens.map((token) => (
+                <TokenCard key={token.mint} token={token} chainKind={chainKind} onAction={handleTokenAction} />
+              ))}
             </div>
+          )}
+
+          {!loading && tokenCount < 3 && hasMintedToken && (
+            <p style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', marginTop: '16px' }}>
+              {3 - tokenCount} token slot{3 - tokenCount > 1 ? 's' : ''} available — create a Token Mint proposal to use.
+            </p>
           )}
         </div>
       )}
 
       {activeTab === 'holders' && (
-        <div className="space-y-4">
-          {/* Holder annotations section */}
-          <div
-            className="rounded-xl border p-5"
-            style={{
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="text-display font-semibold" style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }}>
-                  Holder Annotations
-                </div>
-                <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-                  Set data on holder wallets — becomes public only after holder approval
-                </div>
-              </div>
-            </div>
-
-            {/* Placeholder — no annotations yet */}
-            <div
-              className="p-6 rounded-lg text-center"
-              style={{ backgroundColor: 'hsl(var(--surface-1))' }}
-            >
-              <Fi icon="user-tag" style={{ fontSize: '20px', color: 'hsl(var(--muted-foreground))', marginBottom: '8px' }} />
-              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-                No holder annotations yet. Annotations will appear here once set via governance.
-              </p>
-            </div>
+        <div className="mt-5 max-w-[620px] space-y-3" style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '20px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
+            No holder annotations yet
           </div>
-
-          {/* Info banner */}
-          <div
-            className="flex items-start gap-3 p-4 rounded-xl border"
-            style={{
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-            }}
-          >
-            <Fi icon="info-circle" style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }} />
-            <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-              <strong style={{ color: 'hsl(var(--foreground))' }}>How holder annotations work:</strong>
-              <br />
-              The DAO can set annotation data on any holder wallet address through governance.
-              The holder sees the pending data and must approve or deny it with a wallet signature.
-              Only approved annotations become publicly visible. This protects holder privacy while
-              allowing DAOs to assign roles, labels, or metadata to their token holders.
-            </div>
-          </div>
+          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6, margin: 0 }}>
+            The DAO can set annotation data on any holder wallet address through governance. Only approved annotations become publicly visible, protecting holder privacy while allowing DAOs to assign roles or labels.
+          </p>
         </div>
       )}
     </div>

@@ -130,9 +130,31 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
 
   if (confirmed) {
     return (
-      <div className="px-5 py-8 text-center">
-        <Fi icon="circle-check" style={{ fontSize: '28px', color: 'hsl(var(--accent))', marginBottom: '12px', display: 'block' }} />
-        <h3 className="text-display" style={{ fontSize: '18px', color: 'hsl(var(--foreground))', marginBottom: '4px' }}>
+      <div
+        className="py-5 text-center"
+        style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}
+      >
+        <div
+          className="mx-auto mb-3 grid place-items-center rounded-full"
+          style={{
+            width: '40px',
+            height: '40px',
+            border: '1px solid #BFE0CC',
+            backgroundColor: '#F2F9F4',
+            color: 'hsl(var(--success))',
+          }}
+        >
+          <Fi icon="check" style={{ fontSize: '15px' }} />
+        </div>
+        <h3
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '20px',
+            fontWeight: 400,
+            color: 'hsl(var(--foreground))',
+            marginBottom: '4px',
+          }}
+        >
           Trusted wallets saved
         </h3>
         <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
@@ -143,29 +165,48 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
   }
 
   return (
-    <div className="px-5 py-4 space-y-5">
-      <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+    <div
+      className="py-4 space-y-4"
+      style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}
+    >
+      <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
         Your connected wallet is already a trusted signer. Add another person only if you want shared emergency approval — otherwise confirm and continue.
       </p>
 
       {connectedWallet && (
         <div
-          className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
+          className="flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-[10px]"
+          style={{ backgroundColor: '#ffffff', border: '1px solid hsl(var(--border))' }}
         >
-          <Fi icon="shield-check" style={{ fontSize: '13px', color: 'hsl(var(--accent))', flexShrink: 0 }} />
-          <div className="min-w-0">
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>You</div>
-            <div className="nave-mono truncate" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
-              {connectedWallet.slice(0, 6)}…{connectedWallet.slice(-4)}
-            </div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              style={{
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                backgroundColor: 'hsl(var(--success))',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '13px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>You (connected)</span>
           </div>
+          <span className="nave-mono truncate" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
+            {connectedWallet.slice(0, 6)}…{connectedWallet.slice(-4)}
+          </span>
         </div>
       )}
 
       {trustedWallets.length < 2 && (
         <div>
-          <label className="nave-label" style={{ fontSize: '12px', fontWeight: '500', marginBottom: '6px', display: 'block' }}>
+          <label
+            style={{
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: 'hsl(var(--foreground))',
+              marginBottom: '6px',
+              display: 'block',
+            }}
+          >
             Add a trusted wallet <span style={{ color: 'hsl(var(--muted-foreground))', fontWeight: 400 }}>(optional)</span>
           </label>
           <div className="flex gap-2">
@@ -174,22 +215,27 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Paste their wallet address…"
-              className="flex-1 px-3 py-2.5 rounded-lg border outline-none transition-colors"
+              className="flex-1 px-3 py-2 rounded-[10px] border outline-none transition-colors"
               style={{
-                fontSize: '12.5px',
+                fontSize: '13px',
                 fontFamily: 'var(--font-mono)',
-                backgroundColor: 'hsl(var(--surface-0))',
+                backgroundColor: '#ffffff',
                 borderColor: 'hsl(var(--border))',
                 color: 'hsl(var(--foreground))',
               }}
               onKeyDown={(e) => e.key === 'Enter' && addTrustedWallet()}
             />
             <button
+              type="button"
               onClick={addTrustedWallet}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium transition-all flex-shrink-0"
-              style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-colors flex-shrink-0"
+              style={{
+                fontSize: '12.5px',
+                backgroundColor: '#ffffff',
+                borderColor: 'hsl(var(--border))',
+                color: 'hsl(var(--foreground))',
+              }}
             >
-              <Fi icon="plus" style={{ fontSize: '11px' }} />
               Add
             </button>
           </div>
@@ -201,11 +247,16 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
           {trustedWallets.map((s) => (
             <div
               key={s}
-              className="flex items-center justify-between px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
+              className="flex items-center justify-between px-3.5 py-2 rounded-[10px]"
+              style={{ backgroundColor: '#ffffff', border: '1px solid hsl(var(--border))' }}
             >
               <span className="nave-mono truncate" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>{s}</span>
-              <button onClick={() => removeTrustedWallet(s)} className="p-1 rounded transition-colors flex-shrink-0" style={{ color: 'hsl(var(--muted-foreground))' }}>
+              <button
+                type="button"
+                onClick={() => removeTrustedWallet(s)}
+                className="p-1 rounded transition-colors flex-shrink-0"
+                style={{ color: 'hsl(var(--muted-foreground))' }}
+              >
                 <Fi icon="xmark" style={{ fontSize: '12px' }} />
               </button>
             </div>
@@ -217,10 +268,10 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
         type="button"
         onClick={() => setShowAdvanced((v) => !v)}
         className="flex items-center gap-1.5"
-        style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+        style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
       >
         <Fi icon={showAdvanced ? 'chevron-up' : 'chevron-down'} style={{ fontSize: '10px' }} />
-        Advanced — approval count
+        Advanced — approval count ({threshold} of {signers.length})
       </button>
       {showAdvanced && (
         <div>
@@ -232,15 +283,16 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
               const sel = threshold === n;
               return (
                 <button
+                  type="button"
                   key={n}
                   onClick={() => setThresholdOverride(n)}
-                  className="flex-1 py-2.5 rounded-lg border text-center transition-all"
+                  className="px-3.5 py-1.5 rounded-full border text-center transition-all"
                   style={{
-                    fontSize: '13px',
-                    fontWeight: sel ? '600' : '400',
-                    backgroundColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--surface-0))',
-                    borderColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                    color: sel ? 'white' : 'hsl(var(--foreground))',
+                    fontSize: '12.5px',
+                    fontWeight: sel ? 600 : 400,
+                    backgroundColor: sel ? 'hsl(var(--foreground))' : '#ffffff',
+                    borderColor: sel ? 'hsl(var(--foreground))' : 'hsl(var(--border))',
+                    color: sel ? '#ffffff' : 'hsl(var(--foreground))',
                   }}
                 >
                   {n} of {signers.length}
@@ -255,25 +307,28 @@ function SignerSetupPanel({ daoAddress, onComplete }: { daoAddress: string; onCo
         <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>{submitError}</p>
       )}
 
-      <button
-        onClick={() => void handleConfirm()}
-        disabled={!canConfirm}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all"
-        style={{
-          fontSize: '14px',
-          backgroundColor: canConfirm ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
-          color: canConfirm ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-          cursor: canConfirm ? 'pointer' : 'not-allowed',
-        }}
-      >
-        <Fi icon="shield-check" style={{ fontSize: '13px' }} />
-        {submitting ? 'Saving…' : 'Confirm and continue'}
-      </button>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => void handleConfirm()}
+          disabled={!canConfirm}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+          style={{
+            fontSize: '13px',
+            backgroundColor: 'hsl(var(--foreground))',
+            color: '#ffffff',
+            opacity: canConfirm ? 1 : 0.45,
+            cursor: canConfirm ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {submitting ? 'Saving…' : 'Confirm and continue'}
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Single prioritized activation surface — replaces stacked banners + ActivationChecklist. */
+/** Single prioritized activation surface — calm hairline Notice strip. */
 export default function ActivationHub({ onOpenDeposit, onSignerComplete }: ActivationHubProps) {
   const { daoAddress } = useDaoContext();
   const { loading: daoLoading } = useDaoRegistry(daoAddress);
@@ -281,6 +336,7 @@ export default function ActivationHub({ onOpenDeposit, onSignerComplete }: Activ
   const guardianConfig = useGuardianConfig(daoAddress);
   const { isFounder } = useDaoMembership();
   const isMock = isMockDaoAddress(daoAddress);
+  const [signerExpanded, setSignerExpanded] = useState(false);
 
   const dismissKey = daoAddress ? `${DISMISS_KEY}_${daoAddress}` : DISMISS_KEY;
   const [dismissed, setDismissed] = useState(
@@ -308,17 +364,28 @@ export default function ActivationHub({ onOpenDeposit, onSignerComplete }: Activ
   const funding = !needsSignerSetup && treasuryBalance.resolved && !funded;
 
   return (
-    <div
-      className="nave-card overflow-hidden"
-      data-onboarding-id="activation-checklist"
-      style={{ borderColor: 'hsl(var(--border))' }}
-    >
+    <div data-onboarding-id="activation-checklist">
       <div
-        className="flex items-start justify-between gap-3 px-5 py-4 border-b"
-        style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}
+        className="flex items-center gap-2.5 flex-wrap"
+        style={{
+          padding: '11px 0',
+          borderTop: '1px solid hsl(var(--surface-2))',
+          borderBottom: '1px solid hsl(var(--surface-2))',
+          fontSize: '13.5px',
+          color: 'hsl(var(--foreground))',
+        }}
       >
-        <div>
-          <div className="text-display font-semibold" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>
+        <span
+          style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '50%',
+            backgroundColor: watching ? 'hsl(var(--success))' : 'hsl(var(--brass))',
+            flexShrink: 0,
+          }}
+        />
+        <div className="flex-1 min-w-0">
+          <strong style={{ fontWeight: 600 }}>
             {needsSignerSetup
               ? 'Add a trusted wallet'
               : loading
@@ -326,51 +393,67 @@ export default function ActivationHub({ onOpenDeposit, onSignerComplete }: Activ
                 : watching
                   ? 'Agents are watching'
                   : 'Fund your treasury'}
-          </div>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.5 }}>
+          </strong>{' '}
+          <span style={{ color: 'hsl(var(--muted-foreground))' }}>
+            —{' '}
             {loading
               ? 'Checking on-chain status…'
               : needsSignerSetup
                 ? 'Your wallet is already included. Confirm to continue, or add one more person.'
                 : watching
-                  ? 'Agents are watching. They record drift and do not move capital until a check passes.'
+                  ? 'They record drift and do not move capital until a check passes.'
                   : 'Next step: fund the treasury. After that, agents are watching.'}
-          </p>
+          </span>
         </div>
-        {!needsSignerSetup && (
-          <button
-            type="button"
-            onClick={dismiss}
-            className="p-1 rounded transition-colors flex-shrink-0"
-            title="Dismiss"
-            style={{ color: 'hsl(var(--muted-foreground))' }}
-          >
-            <Fi icon="xmark" style={{ fontSize: '13px' }} />
-          </button>
-        )}
+
+        <div className="ml-auto flex items-center gap-3 flex-shrink-0">
+          {needsSignerSetup && (
+            <button
+              type="button"
+              onClick={() => setSignerExpanded((v) => !v)}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                color: 'hsl(var(--foreground))',
+                fontWeight: 600,
+                fontSize: '13px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {signerExpanded ? 'Hide' : 'Configure →'}
+            </button>
+          )}
+          {funding && onOpenDeposit && (
+            <button
+              type="button"
+              onClick={onOpenDeposit}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                color: 'hsl(var(--foreground))',
+                fontWeight: 600,
+                fontSize: '13px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Add funds →
+            </button>
+          )}
+          {!needsSignerSetup && (
+            <button
+              type="button"
+              onClick={dismiss}
+              className="p-1 rounded transition-colors flex-shrink-0"
+              title="Dismiss"
+              style={{ color: 'hsl(var(--muted-foreground))' }}
+            >
+              <Fi icon="xmark" style={{ fontSize: '12px' }} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {needsSignerSetup && daoAddress ? (
+      {needsSignerSetup && signerExpanded && daoAddress && (
         <SignerSetupPanel daoAddress={daoAddress} onComplete={() => onSignerComplete?.()} />
-      ) : funding ? (
-        <div className="px-5 py-4">
-          <button
-            type="button"
-            onClick={onOpenDeposit}
-            disabled={!onOpenDeposit}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all"
-            style={{
-              fontSize: '14px',
-              backgroundColor: 'hsl(var(--primary))',
-              color: 'hsl(var(--primary-foreground))',
-              opacity: onOpenDeposit ? 1 : 0.6,
-            }}
-          >
-            <Fi icon="arrow-down-to-bracket" style={{ fontSize: '13px' }} />
-            Add funds
-          </button>
-        </div>
-      ) : null}
+      )}
     </div>
   );
 }

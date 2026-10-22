@@ -110,10 +110,10 @@ export default function WalletNetworkMenu({
         label="Connect Wallet"
         chains={offeredChains}
         icon={<Fi icon="circle-user" style={{ fontSize: '13px' }} />}
-        className="flex items-center gap-1.5 px-4 py-1.5 rounded-md font-medium transition-all"
+        className="flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-all"
         style={{
-          backgroundColor: 'hsl(var(--primary))',
-          color: 'hsl(var(--primary-foreground))',
+          backgroundColor: '#111827',
+          color: '#ffffff',
           fontSize: '13px',
         }}
       />
@@ -128,39 +128,42 @@ export default function WalletNetworkMenu({
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md border transition-colors"
+        className="flex items-center gap-1.5 rounded-full border transition-colors"
         style={{
+          padding: '6px 11px',
           fontSize: '12.5px',
           fontWeight: 500,
-          color: 'hsl(var(--foreground))',
-          backgroundColor: 'hsl(var(--surface-1))',
-          borderColor: 'hsl(var(--border))',
+          color: 'hsl(var(--muted-foreground))',
+          backgroundColor: '#ffffff',
+          borderColor: open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
           fontFamily: 'var(--font-mono)',
         }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'hsl(var(--border-strong))')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))')}
       >
-        <ChainIcon family={chainFamily} size={14} />
         <span
-          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-          style={{ backgroundColor: 'hsl(var(--success))' }}
+          className="rounded-full flex-shrink-0"
+          style={{ width: '6px', height: '6px', backgroundColor: 'hsl(var(--success))' }}
         />
-        {shortenAddress(activeAddress)}
-        <Fi icon="angle-down" style={{ fontSize: '10px' }} />
+        <ChainIcon family={chainFamily} size={13} />
+        <span style={{ color: 'hsl(var(--foreground))' }}>{shortenAddress(activeAddress)}</span>
+        <span style={{ fontSize: '10px', color: 'hsl(var(--faint))' }}>⌄</span>
       </button>
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1.5 w-52 rounded-lg border z-50 overflow-hidden"
+          className="absolute right-0 top-full mt-1.5 w-56 rounded-[14px] border z-50 overflow-hidden"
           style={{
-            backgroundColor: 'hsl(var(--card))',
+            backgroundColor: '#ffffff',
             borderColor: 'hsl(var(--border))',
             boxShadow: 'var(--shadow-lg)',
           }}
         >
           <div
-            className="px-3 py-2 border-b"
-            style={{ borderColor: 'hsl(var(--border))' }}
+            className="px-3.5 py-2.5 border-b"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
           >
-            <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'hsl(var(--muted-foreground))' }}>
+            <div className="nave-label">
               Network
             </div>
             <div className="flex items-center gap-2 mt-2">
@@ -172,12 +175,12 @@ export default function WalletNetworkMenu({
                     type="button"
                     title={chainDisplayLabel(family)}
                     onClick={() => void handleNetworkSelect(family)}
-                    className="flex items-center justify-center rounded-md border transition-colors"
+                    className="flex items-center justify-center rounded-[8px] border transition-colors"
                     style={{
                       width: 32,
                       height: 32,
-                      borderColor: active ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                      backgroundColor: active ? 'hsl(var(--surface-1))' : 'transparent',
+                      borderColor: active ? '#111827' : 'hsl(var(--border))',
+                      backgroundColor: active ? 'hsl(var(--background))' : '#ffffff',
                     }}
                   >
                     <ChainIcon family={family} size={16} />
@@ -185,26 +188,26 @@ export default function WalletNetworkMenu({
                 );
               })}
             </div>
-            <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: 6 }}>
+            <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 6 }}>
               {networkLabel}
             </div>
           </div>
 
           <button
             onClick={handleCopy}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
-            style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
+            className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left transition-colors border-b"
+            style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))', borderColor: 'hsl(var(--surface-2))' }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
           >
-            <Fi icon={copied ? 'check' : 'copy'} style={{ fontSize: '12px' }} />
+            <Fi icon={copied ? 'check' : 'copy'} style={{ fontSize: '12px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }} />
             {copied ? 'Copied' : 'Copy Address'}
           </button>
           <button
             onClick={handleDisconnect}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
+            className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left transition-colors"
             style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))' }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
           >
             <Fi icon="right-from-bracket" style={{ fontSize: '12px' }} />

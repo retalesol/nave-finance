@@ -15,71 +15,51 @@ export default function PolicySlider({
   min = 0,
   max = 100,
   hint,
-  accent = false,
 }: PolicySliderProps) {
   const pct = ((value - min) / (max - min)) * 100;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
-          <span style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>
-            {label}
-          </span>
-          {hint && (
-            <div
-              style={{
-                fontSize: '11.5px',
-                color: 'hsl(var(--muted-foreground))',
-                marginTop: '1px',
-              }}
-            >
-              {hint}
-            </div>
-          )}
-        </div>
+    <div
+      style={{
+        padding: '14px 0',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+      }}
+    >
+      <div className="flex items-center justify-between" style={{ fontSize: '13.5px' }}>
+        <b style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{label}</b>
         <span
-          className="nave-mono font-semibold px-2 py-0.5 rounded"
-          style={{
-            fontSize: '13px',
-            backgroundColor: accent
-              ? 'hsl(var(--accent-muted))'
-              : 'hsl(var(--surface-1))',
-            color: accent
-              ? 'hsl(var(--accent-muted-foreground))'
-              : 'hsl(var(--foreground))',
-            border: `1px solid ${
-              accent ? 'hsl(var(--foreground))' : 'hsl(var(--border))'
-            }`,
-          }}
+          className="nave-mono"
+          style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}
         >
           {value}
           {max === 100 ? '%' : ''}
         </span>
       </div>
+      {hint && (
+        <p
+          style={{
+            fontSize: '12.5px',
+            color: 'hsl(var(--muted-foreground))',
+            margin: '4px 0 8px',
+          }}
+        >
+          {hint}
+        </p>
+      )}
       <input
         type="range"
         min={min}
         max={max}
         value={value}
-        onChange={e => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(Number(e.target.value))}
         className="w-full"
         aria-label={label}
         style={{
-          background: `linear-gradient(to right, hsl(var(--accent)) 0%, hsl(var(--accent)) ${pct}%, hsl(var(--border)) ${pct}%, hsl(var(--border)) 100%)`,
+          accentColor: '#111827',
+          background: `linear-gradient(to right, #111827 0%, #111827 ${pct}%, hsl(var(--border)) ${pct}%, hsl(var(--border)) 100%)`,
+          marginTop: hint ? 0 : '8px',
         }}
       />
-      <div
-        className="flex justify-between"
-        style={{
-          fontSize: '10px',
-          color: 'hsl(var(--muted-foreground))',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
-        <span>{min}%</span>
-        <span>{max}%</span>
-      </div>
     </div>
   );
 }

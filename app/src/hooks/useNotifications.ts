@@ -91,7 +91,7 @@ export function useNotifications(daoAddress: string | null) {
         body: `Proposal #${p.index} is awaiting your vote.`,
         time: formatRelativeTime(p.createdAt * 1000 || now),
         timestamp: p.createdAt * 1000 || now,
-        href: '/governance',
+        href: '/decisions',
         unread: !seen.has(`vote-${p.index}`),
       });
     }
@@ -115,7 +115,7 @@ export function useNotifications(daoAddress: string | null) {
         body: `Proposal #${p.index} is now ${status}.`,
         time: formatRelativeTime(ts),
         timestamp: ts,
-        href: '/governance',
+        href: '/decisions',
         unread: !seen.has(`proposal-${p.index}-${status}`),
       });
     }
@@ -128,7 +128,7 @@ export function useNotifications(daoAddress: string | null) {
         body: 'Funds were detected in your treasury vault.',
         time: 'Just now',
         timestamp: now,
-        href: '/dashboard',
+        href: '/overview',
         unread: true,
       });
     }
@@ -144,7 +144,7 @@ export function useNotifications(daoAddress: string | null) {
         body: a.description,
         time: formatRelativeTime(ts),
         timestamp: ts,
-        href: '/agent',
+        href: '/agents',
         unread: !seen.has(`activity-${a.id}`),
       });
     }

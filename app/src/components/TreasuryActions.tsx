@@ -109,39 +109,62 @@ const overlay: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: '16px',
-  backgroundColor: 'rgba(0,0,0,0.45)',
+  backgroundColor: 'rgba(17, 24, 39, 0.48)',
+  backdropFilter: 'blur(3px)',
 };
 
 const panel: React.CSSProperties = {
   width: '100%',
-  maxWidth: '420px',
-  borderRadius: '16px',
+  maxWidth: '520px',
+  borderRadius: '18px',
   border: '1px solid hsl(var(--border))',
-  backgroundColor: 'hsl(var(--background))',
-  boxShadow: 'var(--shadow-lg)',
+  backgroundColor: '#ffffff',
+  boxShadow: '0 24px 70px -12px rgba(17, 24, 39, 0.35)',
   overflow: 'hidden',
 };
 
-function ModalHeader({ title, icon, onClose }: { title: string; icon: string; onClose: () => void }) {
+function ModalHeader({ title, icon: _icon, onClose }: { title: string; icon?: string; onClose: () => void }) {
   return (
     <div
-      className="flex items-center justify-between px-5 py-4 border-b"
-      style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}
+      className="flex items-start justify-between gap-3.5"
+      style={{ padding: '20px 22px 0', backgroundColor: '#ffffff' }}
     >
-      <div className="flex items-center gap-2">
-        <Fi icon={icon} style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }} />
-        <span className="text-display font-semibold" style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }}>
-          {title}
-        </span>
-      </div>
-      <button
-        onClick={onClose}
-        className="p-1.5 rounded-lg transition-colors"
-        style={{ color: 'hsl(var(--muted-foreground))' }}
-        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+      <span
+        className="text-display"
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 400,
+          fontSize: '23px',
+          letterSpacing: '-0.02em',
+          lineHeight: 1.15,
+          color: 'hsl(var(--foreground))',
+        }}
       >
-        <Fi icon="xmark" style={{ fontSize: '15px' }} />
+        {title}
+      </span>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="flex items-center justify-center flex-shrink-0 transition-colors"
+        style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '50%',
+          backgroundColor: 'hsl(var(--background))',
+          border: '1px solid hsl(var(--surface-2))',
+          color: 'hsl(var(--muted-foreground))',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = 'hsl(var(--foreground))';
+          e.currentTarget.style.borderColor = 'hsl(var(--border))';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = 'hsl(var(--muted-foreground))';
+          e.currentTarget.style.borderColor = 'hsl(var(--surface-2))';
+        }}
+      >
+        <Fi icon="xmark" style={{ fontSize: '14px' }} />
       </button>
     </div>
   );
@@ -490,12 +513,12 @@ export function CreateTransactionModal({
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    fontSize: '13px',
+    fontSize: '13.5px',
     fontFamily: 'var(--font-mono)',
-    padding: '10px 12px',
+    padding: '10px 13px',
     borderRadius: '10px',
     border: '1px solid hsl(var(--border))',
-    backgroundColor: 'hsl(var(--surface-0))',
+    backgroundColor: '#ffffff',
     color: 'hsl(var(--foreground))',
     outline: 'none',
   };
@@ -508,23 +531,26 @@ export function CreateTransactionModal({
     <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={panel}>
         <ModalHeader title="Propose Transfer" icon="paper-plane" onClose={onClose} />
-        <div className="p-5 space-y-4">
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+        <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
+          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5, marginTop: '-10px' }}>
             Creates a governance proposal — guardians must vote before any funds move.
           </p>
-          <div className="flex gap-0.5 p-0.5 rounded-lg w-fit" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
+          <div
+            className="flex gap-1 p-1 rounded-[10px]"
+            style={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--surface-2))' }}
+          >
             {(['token', 'nft'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
-                className="px-3.5 py-1.5 rounded-md transition-all"
+                className="flex-1 px-3 py-1.5 rounded-[8px] transition-all"
                 style={{
                   fontSize: 12.5,
-                  fontWeight: mode === m ? 500 : 400,
-                  backgroundColor: mode === m ? 'hsl(var(--surface-0))' : 'transparent',
+                  fontWeight: mode === m ? 600 : 500,
+                  backgroundColor: mode === m ? '#ffffff' : 'transparent',
                   color: mode === m ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  boxShadow: mode === m ? 'var(--shadow-xs)' : 'none',
+                  boxShadow: mode === m ? '0 1px 3px rgba(17, 24, 39, 0.08)' : 'none',
                 }}
               >
                 {m === 'token' ? 'Token transfer' : 'NFT transfer'}
@@ -624,20 +650,20 @@ export function CreateTransactionModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div className="p-3 rounded-lg border" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}>
-              <div className="nave-label" style={{ fontSize: '10.5px', marginBottom: 4 }}>Estimated value</div>
-              <div className="nave-mono" style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
+          <div className="border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+            <div className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13.5px' }}>
+              <span style={{ color: 'hsl(var(--muted-foreground))' }}>Estimated value</span>
+              <b className="nave-mono" style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>
                 {estimatedValue == null ? '—' : `$${estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-              </div>
+              </b>
             </div>
-            <div className="p-3 rounded-lg border" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}>
-              <div className="nave-label" style={{ fontSize: '10.5px', marginBottom: 4 }}>Estimated fee</div>
-              <div className="nave-mono" style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>{estimatedFee}</div>
+            <div className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13.5px' }}>
+              <span style={{ color: 'hsl(var(--muted-foreground))' }}>Estimated fee</span>
+              <b className="nave-mono" style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{estimatedFee}</b>
             </div>
           </div>
 
-          <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+          <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
             Estimated USD uses DexScreener (or stable parity) for orientation only. On-chain agents and risk checks use oracle-backed prices at execution time, not this estimate.
           </p>
           </>
@@ -686,26 +712,37 @@ export function CreateTransactionModal({
           {error && (
             <div
               className="px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--destructive-muted))', fontSize: '12px', color: 'hsl(0 60% 40%)', lineHeight: 1.4 }}
+              style={{ backgroundColor: 'hsl(var(--destructive-muted))', fontSize: '12px', color: 'hsl(var(--destructive))', lineHeight: 1.4 }}
             >
               {error}
             </div>
           )}
 
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all"
-            style={{
-              fontSize: '14px',
-              backgroundColor: canSubmit ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
-              color: canSubmit ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-              cursor: canSubmit ? 'pointer' : 'not-allowed',
-            }}
-          >
-            <Fi icon="paper-plane" style={{ fontSize: '13px' }} />
-            {submitting ? 'Creating proposal…' : 'Confirm Proposal'}
-          </button>
+          <div className="pt-3 border-t flex justify-end gap-2" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-[9px] transition-colors"
+              style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+              style={{
+                fontSize: '13px',
+                backgroundColor: '#111827',
+                color: '#ffffff',
+                opacity: canSubmit ? 1 : 0.4,
+                cursor: canSubmit ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <Fi icon="paper-plane" style={{ fontSize: '12px' }} />
+              {submitting ? 'Creating proposal…' : 'Confirm Proposal'}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

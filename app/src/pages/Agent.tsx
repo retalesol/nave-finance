@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { motion } from 'framer-motion';
 import Fi from '../components/Fi';
 import NaveModal from '../components/NaveModal';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
-import { staggerContainer, staggerChild } from '../components/PageTransition';
+import { Section, Stat, Notice, HairlineRow } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useAgentStatus, type AgentStatusInfo, type AgentActionLog } from '../hooks/useAgentStatus';
 import { useActivityLog } from '../hooks/useActivityLog';
@@ -45,42 +44,64 @@ function ConfirmAgentToggleModal({
     <NaveModal
       open={open}
       onClose={onCancel}
-      title={active ? 'Pause All Agents?' : 'Resume All Agents?'}
+      title={active ? 'Pause the team?' : 'Restart the team?'}
       icon={active ? 'pause' : 'play'}
-      maxWidth={384}
+      maxWidth={460}
     >
-      <div className="px-5 py-4 space-y-4">
-        <p style={{ fontSize: '13.5px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))' }}>
+      <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
+        <p style={{ fontSize: '13.5px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))', margin: 0 }}>
           {active
             ? 'Pausing disconnects this DAO from the four Nave agents immediately. Your wallet signs a single emergency_pause_agents transaction — no other signatures are required. Funds remain secure, and you can resume the agents later via a governance proposal.'
             : 'Agents will resume all autonomous operations under the current constitutional policy. Any pending operations will execute in sequence.'}
         </p>
         {active && (
-          <p style={{ fontSize: '12px', lineHeight: 1.5, color: 'hsl(var(--muted-foreground))', fontStyle: 'italic' }}>
-            Any founder or guardian can pause instantly. This action is scoped to this DAO only and does not affect other treasuries.
-          </p>
+          <div className="space-y-1">
+            {[
+              'Agents stop signing and moving money immediately.',
+              'The Watcher keeps monitoring and can still freeze.',
+              'Restarting later requires a community vote.',
+            ].map((item) => (
+              <div
+                key={item}
+                className="flex items-start gap-2.5"
+                style={{
+                  fontSize: '13px',
+                  padding: '8px 0',
+                  borderBottom: '1px solid hsl(var(--surface-2))',
+                  color: 'hsl(var(--muted-foreground))',
+                  lineHeight: 1.5,
+                }}
+              >
+                <span style={{ color: 'hsl(var(--success))', fontWeight: 700, flexShrink: 0 }}>•</span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
         )}
-        <div className="flex items-center gap-2 pb-1">
+        <div
+          className="flex items-center justify-end gap-2 pt-4 border-t"
+          style={{ borderColor: 'hsl(var(--surface-2))' }}
+        >
           <button
-            onClick={onConfirm}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-            style={{
-              fontSize: '13.5px',
-              backgroundColor: active ? 'hsl(var(--destructive))' : 'hsl(var(--primary))',
-              color: 'white',
-            }}
+            type="button"
+            onClick={onCancel}
+            className="px-3.5 py-2 rounded-[9px] transition-colors"
+            style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
           >
-            <Fi icon={active ? 'pause' : 'play'} style={{ fontSize: '12px' }} />
-            {active ? 'Pause Agents' : 'Resume Agents'}
+            {active ? 'Keep them running' : 'Cancel'}
           </button>
           <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-lg border transition-colors"
-            style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            type="button"
+            onClick={onConfirm}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-colors"
+            style={{
+              fontSize: '13px',
+              backgroundColor: active ? 'hsl(var(--foreground))' : 'hsl(var(--primary))',
+              color: '#ffffff',
+            }}
           >
-            Cancel
+            <Fi icon={active ? 'pause' : 'play'} style={{ fontSize: '11px' }} />
+            {active ? 'Pause Agents' : 'Resume Agents'}
           </button>
         </div>
       </div>
@@ -94,6 +115,7 @@ const AGENTS = [
     id: 'executive',
     role: 'Executive Agent',
     tag: 'Strategic Coordinator',
+    summary: 'Turns decisions into plans. Signs first.',
     icon: 'crown',
     responsibilities: [
       'Interprets DAO governance proposals',
@@ -110,6 +132,7 @@ const AGENTS = [
     id: 'financial',
     role: 'Financial Agent',
     tag: 'Operations Layer',
+    summary: 'Moves money to approved earning places. Signs second.',
     icon: 'money-bill-wave',
     responsibilities: [
       'Treasury execution and yield optimization',
@@ -126,6 +149,7 @@ const AGENTS = [
     id: 'oversight',
     role: 'Operational Agent',
     tag: 'Safeguard Layer',
+    summary: 'Checks every move against your rules. Signs last — or refuses.',
     icon: 'eye',
     responsibilities: [
       'Constitutional policy enforcement',
@@ -142,6 +166,7 @@ const AGENTS = [
     id: 'operational',
     role: 'Oversight Agent',
     tag: 'Monitoring Layer',
+    summary: 'Watches around the clock. Can freeze everything instantly.',
     icon: 'gear',
     responsibilities: [
       'Treasury monitoring and accounting',
@@ -171,94 +196,79 @@ function statusColor(s: string) {
   return 'hsl(var(--muted-foreground))';
 }
 
-/* ── Agent Card ─────────────────────────────────────────── */
-function AgentCard({ agent, frozen = false }: { agent: Omit<typeof AGENTS[0], 'status'> & { status: string; statusDisplay: AgentStatusDisplay }; frozen?: boolean }) {
+/* ── Agent Row ─────────────────────────────────────────── */
+function AgentRow({
+  agent,
+  frozen = false,
+}: {
+  agent: Omit<typeof AGENTS[0], 'status'> & { status: string; statusDisplay: AgentStatusDisplay };
+  frozen?: boolean;
+}) {
   const { statusDisplay } = agent;
-  const enabled = statusDisplay.enabled;
+  const isHealthy = statusDisplay.enabled && !frozen;
   return (
-    <div className="nave-card p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
+    <HairlineRow
+      title={agent.role}
+      subtitle={`${agent.tag} · ${agent.summary}`}
+      meta={
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 600,
+            color: frozen
+              ? 'hsl(var(--destructive))'
+              : isHealthy
+                ? 'hsl(var(--success))'
+                : statusDisplay.color,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {frozen ? 'Frozen' : statusDisplay.label}
+        </span>
+      }
+      when={`${agent.actionsToday} ops · ${agent.lastAction}`}
+      expandableContent={
+        <div className="space-y-3 pt-1">
+          <ul className="space-y-1 pl-4" style={{ listStyle: 'disc', margin: 0 }}>
+            {agent.responsibilities.map((r) => (
+              <li key={r} style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+                {r}
+              </li>
+            ))}
+          </ul>
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
-            style={{
-              backgroundColor: enabled ? 'hsl(var(--primary))' : 'hsl(var(--surface-2))',
-              transition: 'background-color 0.2s',
-            }}
+            className="flex flex-wrap items-center gap-6 pt-2.5 border-t"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
           >
-            <Fi
-              icon={agent.icon}
-              style={{ fontSize: '16px', color: enabled ? 'white' : 'hsl(var(--muted-foreground))' }}
-            />
-          </div>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>{agent.role}</div>
-            <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--muted-foreground))', letterSpacing: '0.04em' }}>
-              {agent.tag}
+            <div>
+              <div className="nave-label">Last Action</div>
+              <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>
+                {agent.lastAction}
+              </div>
+            </div>
+            <div>
+              <div className="nave-label">24h Ops</div>
+              <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>
+                {agent.actionsToday} ops
+              </div>
+            </div>
+            <div>
+              <div className="nave-label">Signing</div>
+              <div
+                className="nave-mono"
+                style={{
+                  fontSize: '12px',
+                  marginTop: '2px',
+                  color: agent.signsTransactions ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                }}
+              >
+                {agent.signsTransactions ? 'Yes' : 'No'}
+              </div>
             </div>
           </div>
         </div>
-        <span
-          className="px-2 py-0.5 rounded-full"
-          style={{
-            fontSize: '11px',
-            fontWeight: 500,
-            fontFamily: 'var(--font-mono)',
-            color: statusDisplay.color,
-            backgroundColor: statusDisplay.bg,
-            letterSpacing: '0.04em',
-          }}
-        >
-          {statusDisplay.label}
-        </span>
-      </div>
-
-      <div className="space-y-1.5 mb-4">
-        {agent.responsibilities.map(r => (
-          <div key={r} className="flex items-start gap-2">
-            <Fi icon="angle-right" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '3px' }} />
-            <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>{r}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-4 pt-3 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-        <div>
-          <div className="nave-label" style={{ fontSize: '9px' }}>Last Action</div>
-          <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>{agent.lastAction}</div>
-        </div>
-        <div>
-          <div className="nave-label" style={{ fontSize: '9px' }}>24h Ops</div>
-          <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>{agent.actionsToday} ops</div>
-        </div>
-        <div>
-          <div className="nave-label" style={{ fontSize: '9px' }}>Signing</div>
-          <div
-            className="nave-mono"
-            style={{ fontSize: '12px', marginTop: '2px', color: agent.signsTransactions ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))' }}
-          >
-            {agent.signsTransactions ? 'Yes' : 'No'}
-          </div>
-        </div>
-        {frozen && (
-          <div className="ml-auto">
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
-              style={{
-                fontSize: '9px',
-                fontFamily: 'var(--font-mono)',
-                backgroundColor: 'hsl(var(--destructive-muted))',
-                color: 'hsl(0 60% 40%)',
-                letterSpacing: '0.06em',
-              }}
-            >
-              <Fi icon="lock" style={{ fontSize: '7px' }} />
-              FROZEN
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -299,75 +309,112 @@ function LiveExecutionRow({
   onClearHalt?: () => void;
 }) {
   const { label, tone } = executionStatusLabel(exec.status);
-  const currentStageIdx = EXECUTION_STAGES.findIndex(s => s.status === exec.status);
+  const currentStageIdx = EXECUTION_STAGES.findIndex((s) => s.status === exec.status);
   const isHalted = exec.status === ExecutionStatus.Halted || exec.operationalHalt;
+  const activeStageLabel =
+    EXECUTION_STAGES[currentStageIdx]?.label ??
+    (isHalted ? `Halted: ${exec.operationalHaltReason || 'flagged by Oversight agent'}` : label);
+  const proposalShort =
+    exec.proposal.length > 12 ? `${exec.proposal.slice(0, 8)}…${exec.proposal.slice(-4)}` : `#${exec.proposal}`;
+
   return (
-    <div className="rounded-lg border p-3" style={{ borderColor: 'hsl(var(--border))' }}>
-      <div className="flex items-center justify-between mb-2">
-        <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--foreground))' }}>
-          {exec.proposal.length > 12 ? `${exec.proposal.slice(0, 8)}…${exec.proposal.slice(-4)}` : `#${exec.proposal}`} · {exec.protocolName || 'strategy'}
+    <HairlineRow
+      dotColor={tone === 'complete' ? 'green' : tone === 'halt' ? 'red' : 'brass'}
+      title={`${proposalShort} · ${exec.protocolName || 'strategy'}`}
+      subtitle={activeStageLabel}
+      meta={
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 600,
+            color:
+              tone === 'complete'
+                ? 'hsl(var(--success))'
+                : tone === 'halt'
+                  ? 'hsl(var(--destructive))'
+                  : 'hsl(var(--warning))',
+          }}
+        >
+          {label}
         </span>
-        <span style={{
-          fontSize: '11px', fontWeight: 500,
-          color: tone === 'complete' ? 'hsl(var(--success))' : tone === 'halt' ? 'hsl(var(--destructive))' : 'hsl(var(--warning))',
-        }}>{label}</span>
-      </div>
-      <div className="space-y-1">
-        {EXECUTION_STAGES.map((stage) => {
-          const stageIdx = EXECUTION_STAGES.indexOf(stage);
-          const done = currentStageIdx >= 0 && stageIdx < currentStageIdx;
-          const active = stageIdx === currentStageIdx;
-          if (exec.status === ExecutionStatus.Executed && stage.status !== ExecutionStatus.Executed && stageIdx > 0) {
-            // collapse intermediate stages once executed
-          }
-          return (
-            <div key={stage.status} className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style={{
-                backgroundColor: done || (active && exec.status === ExecutionStatus.Executed) ? 'hsl(var(--primary))' : 'hsl(var(--surface-2))',
-                border: active && exec.status !== ExecutionStatus.Executed ? '2px solid hsl(var(--warning))' : 'none',
-              }}>
-                {done ? <Fi icon="check" style={{ fontSize: '8px', color: 'white' }} /> : null}
+      }
+      defaultExpanded={isHalted}
+      expandableContent={
+        <div className="space-y-2 pt-1">
+          {EXECUTION_STAGES.map((stage) => {
+            const stageIdx = EXECUTION_STAGES.indexOf(stage);
+            const done = currentStageIdx >= 0 && stageIdx < currentStageIdx;
+            const active = stageIdx === currentStageIdx;
+            return (
+              <div key={stage.status} className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{
+                    backgroundColor:
+                      done || (active && exec.status === ExecutionStatus.Executed)
+                        ? 'hsl(var(--success))'
+                        : 'hsl(var(--surface-2))',
+                    border: active && exec.status !== ExecutionStatus.Executed ? '2px solid hsl(var(--brass))' : 'none',
+                  }}
+                >
+                  {done ? <Fi icon="check" style={{ fontSize: '8px', color: 'white' }} /> : null}
+                </div>
+                <span
+                  style={{
+                    fontSize: '12.5px',
+                    color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                  }}
+                >
+                  {stage.label}
+                </span>
               </div>
-              <span style={{ fontSize: '12px', color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))' }}>{stage.label}</span>
+            );
+          })}
+          {isHalted && (
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <div style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
+                Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
+              </div>
+              {canClearHalt && onClearHalt && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClearHalt();
+                  }}
+                  disabled={clearingHalt}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] border font-semibold"
+                  style={{
+                    fontSize: '12px',
+                    borderColor: 'hsl(var(--border-strong))',
+                    backgroundColor: '#ffffff',
+                    color: 'hsl(var(--foreground))',
+                    opacity: clearingHalt ? 0.6 : 1,
+                  }}
+                >
+                  <Fi
+                    icon={clearingHalt ? 'arrows-rotate' : 'shield-check'}
+                    style={{ fontSize: 10 }}
+                    className={clearingHalt ? 'animate-spin' : ''}
+                  />
+                  {clearingHalt ? 'Clearing…' : 'Clear Halt'}
+                </button>
+              )}
             </div>
-          );
-        })}
-        {isHalted && (
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <div style={{ fontSize: '11px', color: 'hsl(var(--destructive))' }}>
-              Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
+          )}
+          {clearHaltError && (
+            <div style={{ fontSize: '12px', color: 'hsl(var(--destructive))', marginTop: '4px' }}>
+              {clearHaltError}
             </div>
-            {canClearHalt && onClearHalt && (
-              <button
-                type="button"
-                onClick={onClearHalt}
-                disabled={clearingHalt}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium"
-                style={{
-                  borderColor: 'hsl(var(--border-strong))',
-                  backgroundColor: 'hsl(var(--surface-0))',
-                  color: 'hsl(var(--foreground))',
-                  opacity: clearingHalt ? 0.6 : 1,
-                }}
-              >
-                <Fi icon={clearingHalt ? 'arrows-rotate' : 'shield-check'} style={{ fontSize: 10 }} className={clearingHalt ? 'animate-spin' : ''} />
-                {clearingHalt ? 'Clearing…' : 'Clear Halt'}
-              </button>
-            )}
-          </div>
-        )}
-        {clearHaltError && (
-          <div style={{ fontSize: '11px', color: 'hsl(var(--destructive))', marginTop: '4px' }}>
-            {clearHaltError}
-          </div>
-        )}
-        {exec.status === ExecutionStatus.InReview && exec.timeRemainingSeconds > 0 && (
-          <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
-            Review window: {Math.ceil(exec.timeRemainingSeconds / 60)}m remaining
-          </div>
-        )}
-      </div>
-    </div>
+          )}
+          {exec.status === ExecutionStatus.InReview && exec.timeRemainingSeconds > 0 && (
+            <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
+              Review window: {Math.ceil(exec.timeRemainingSeconds / 60)}m remaining
+            </div>
+          )}
+        </div>
+      }
+    />
   );
 }
 
@@ -423,23 +470,16 @@ function ExecutionPipeline({
   onClearHalt?: (exec: ExecutionInfo) => void;
 }) {
   return (
-    <div className="nave-card">
-      <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'hsl(var(--border))' }}>
-        <div>
-          <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Execution Pipeline</span>
-          <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '1px' }}>3-key autonomous multisig coordination</div>
+    <Section title="Execution Pipeline" hint="3-key autonomous multisig coordination">
+      {loading && (
+        <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>Loading execution requests…</div>
+      )}
+      {!loading && executions.length === 0 && (
+        <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
+          No active execution requests. Passed strategy proposals will appear here as they move through the agent pipeline.
         </div>
-        <Fi icon="lock-keyhole" style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }} />
-      </div>
-      <div className="p-5 space-y-3">
-        {loading && (
-          <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>Loading execution requests…</div>
-        )}
-        {!loading && executions.length === 0 && (
-          <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-            No active execution requests. Passed strategy proposals will appear here as they move through the agent pipeline.
-          </div>
-        )}
+      )}
+      <div>
         {executions.map((exec) => (
           <LiveExecutionRow
             key={exec.proposal}
@@ -451,7 +491,7 @@ function ExecutionPipeline({
           />
         ))}
       </div>
-    </div>
+    </Section>
   );
 }
 
@@ -460,13 +500,13 @@ function decisionColor(decision: string | null): string {
   if (!decision) return 'hsl(var(--muted-foreground))';
   if (decision === 'approve' || decision === 'continue') return 'hsl(var(--success))';
   if (decision === 'reject' || decision === 'halt') return 'hsl(var(--destructive))';
-  if (decision === 'request_review' || decision === 'clear_halt') return 'hsl(var(--warning))';
+  if (decision === 'request_review' || decision === 'clear_halt') return 'hsl(var(--brass))';
   return 'hsl(var(--muted-foreground))';
 }
 
 function decisionLabel(decision: string | null): string {
   if (!decision) return 'Pending';
-  return decision.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return decision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function confidenceColor(score: number | null): string {
@@ -498,7 +538,7 @@ function ConstitutionCheckPanel({ check }: { check: Record<string, unknown> }) {
               fontSize: '10.5px',
               fontFamily: 'var(--font-mono)',
               backgroundColor: val ? 'hsl(var(--success-muted))' : 'hsl(var(--destructive-muted))',
-              color: val ? 'hsl(152 50% 28%)' : 'hsl(0 60% 40%)',
+              color: val ? 'hsl(var(--success))' : 'hsl(var(--destructive))',
               letterSpacing: '0.02em',
             }}
           >
@@ -516,338 +556,236 @@ function ConstitutionCheckPanel({ check }: { check: Record<string, unknown> }) {
   );
 }
 
-/* ── Claude Reasoning Activity Log ────────────────────── */
+/* ── Claude Reasoning Activity Log ("Their diary") ────── */
 function ClaudeActivityLog({ logs, onRefresh }: { logs: AgentActionLog[]; onRefresh: () => void }) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
   return (
-    <div className="nave-card">
-      <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'hsl(var(--border))' }}>
-        <div>
-          <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Agent Reasoning Log</span>
-          <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '1px' }}>Claude Sonnet-powered autonomous decisions</div>
-        </div>
-        <button onClick={onRefresh} aria-label="Refresh log" style={{ color: 'hsl(var(--muted-foreground))' }}>
-          <Fi icon="arrows-rotate" style={{ fontSize: '12px' }} />
+    <Section
+      title="Their diary"
+      hint="Plain English · proof on tap"
+      action={
+        <button
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh log"
+          className="hover:underline underline-offset-4"
+          style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          Refresh
         </button>
-      </div>
-      <div className="divide-y" style={{ borderColor: 'hsl(var(--border))' }}>
-        {logs.map(log => {
-          const isExpanded = expandedId === log.id;
+      }
+    >
+      <div>
+        {logs.map((log) => {
           const hasRiskFlags = log.riskFlags && log.riskFlags.length > 0;
           const hasConstitutionCheck = log.constitutionCheck && Object.keys(log.constitutionCheck).length > 0;
+          const snippet = log.reasoning.length > 120 ? `${log.reasoning.slice(0, 120)}…` : log.reasoning;
+          const timeStr = new Date(log.createdAt).toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
 
           return (
-            <div key={log.id}>
-              <button
-                className="w-full flex items-start gap-3 px-5 py-3.5 text-left transition-colors"
-                onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-              >
-                {/* Status dot */}
-                <div
-                  className="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0"
-                  style={{ backgroundColor: decisionColor(log.decision) }}
-                />
-
-                {/* Main content */}
-                <div className="flex-1 min-w-0">
-                  <p style={{ fontSize: '13px', color: 'hsl(var(--foreground))', lineHeight: 1.5 }}>
-                    {log.reasoning.length > 120 ? `${log.reasoning.slice(0, 120)}...` : log.reasoning}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
-                      style={{
-                        fontSize: '10px',
-                        fontFamily: 'var(--font-mono)',
-                        backgroundColor: 'hsl(var(--surface-2))',
-                        color: 'hsl(var(--foreground))',
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      {roleLabel(log.agentRole)}
+            <HairlineRow
+              key={log.id}
+              dotColor={decisionColor(log.decision)}
+              title={`${roleLabel(log.agentRole)} — ${snippet}`}
+              subtitle={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span>{log.actionType}</span>
+                  {log.decision && (
+                    <span style={{ color: decisionColor(log.decision), fontWeight: 500 }}>
+                      · {decisionLabel(log.decision)}
                     </span>
-                    <span
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
-                      style={{
-                        fontSize: '10px',
-                        fontFamily: 'var(--font-mono)',
-                        backgroundColor: 'hsl(var(--surface-2))',
-                        color: 'hsl(var(--muted-foreground))',
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      {log.actionType}
+                  )}
+                  {log.confidenceScore !== null && (
+                    <span style={{ color: confidenceColor(log.confidenceScore) }}>
+                      · {log.confidenceScore}% confident
                     </span>
-                    {log.decision && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full"
-                        style={{
-                          fontSize: '10px',
-                          fontFamily: 'var(--font-mono)',
-                          color: decisionColor(log.decision),
-                          backgroundColor:
-                            log.decision === 'approve' || log.decision === 'continue'
-                              ? 'hsl(var(--success-muted))'
-                              : log.decision === 'reject' || log.decision === 'halt'
-                                ? 'hsl(var(--destructive-muted))'
-                                : 'hsl(var(--warning-muted))',
-                        }}
-                      >
-                        <Fi
-                          icon={
-                            log.decision === 'approve' || log.decision === 'continue'
-                              ? 'check'
-                              : log.decision === 'reject' || log.decision === 'halt'
-                                ? 'xmark'
-                                : 'clock'
-                          }
-                          style={{ fontSize: '7px' }}
-                        />
-                        {decisionLabel(log.decision)}
-                      </span>
-                    )}
-                    {log.confidenceScore !== null && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
-                        style={{
-                          fontSize: '10px',
-                          fontFamily: 'var(--font-mono)',
-                          color: confidenceColor(log.confidenceScore),
-                          backgroundColor: 'hsl(var(--surface-2))',
-                        }}
-                      >
-                        <Fi icon="signal" style={{ fontSize: '7px' }} />
-                        {log.confidenceScore}%
-                      </span>
-                    )}
-                    {hasRiskFlags && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full"
-                        style={{
-                          fontSize: '10px',
-                          fontFamily: 'var(--font-mono)',
-                          color: 'hsl(var(--warning))',
-                          backgroundColor: 'hsl(var(--warning-muted))',
-                        }}
-                      >
-                        <Fi icon="triangle-exclamation" style={{ fontSize: '7px' }} />
-                        {log.riskFlags.length} flag{log.riskFlags.length > 1 ? 's' : ''}
-                      </span>
-                    )}
-                    <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--muted-foreground))' }}>
-                      {new Date(log.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  )}
+                  {hasRiskFlags && (
+                    <span style={{ color: 'hsl(var(--warning))' }}>
+                      · {log.riskFlags.length} flag{log.riskFlags.length > 1 ? 's' : ''}
                     </span>
+                  )}
+                </span>
+              }
+              when={timeStr}
+              expandableContent={
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Full Reasoning</div>
+                    <p style={{ fontSize: '13px', color: 'hsl(var(--foreground))', lineHeight: 1.6, margin: 0 }}>
+                      {log.reasoning}
+                    </p>
                   </div>
-                </div>
 
-                {/* Expand icon */}
-                <Fi
-                  icon={isExpanded ? 'chevron-up' : 'chevron-down'}
-                  style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0 }}
-                />
-              </button>
-
-              {/* Expanded reasoning panel */}
-              {isExpanded && (
-                <div className="px-5 pb-4 pt-0 ml-8">
-                  <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}>
-                    {/* Full reasoning */}
+                  <div
+                    className="flex flex-wrap items-center gap-5 pt-2.5 border-t"
+                    style={{ borderColor: 'hsl(var(--surface-2))' }}
+                  >
                     <div>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Full Reasoning</div>
-                      <p style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))', lineHeight: 1.6 }}>
-                        {log.reasoning}
+                      <span className="nave-label" style={{ fontSize: '9px' }}>Decision</span>
+                      <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: decisionColor(log.decision) }}>
+                        {decisionLabel(log.decision)}
+                      </div>
+                    </div>
+                    {log.confidenceScore !== null && (
+                      <div>
+                        <span className="nave-label" style={{ fontSize: '9px' }}>Confidence</span>
+                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: confidenceColor(log.confidenceScore) }}>
+                          {log.confidenceScore}%
+                        </div>
+                      </div>
+                    )}
+                    {log.claudeModel && (
+                      <div>
+                        <span className="nave-label" style={{ fontSize: '9px' }}>Model</span>
+                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--muted-foreground))' }}>
+                          {log.claudeModel.replace('claude-', '').replace(/-\d{8}$/, '')}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
+                      <div
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12px',
+                          marginTop: '2px',
+                          color:
+                            log.status === 'error' || log.status === 'guardrail_blocked'
+                              ? 'hsl(var(--destructive))'
+                              : 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {log.status}
+                      </div>
+                    </div>
+                    {log.retryCount > 0 && (
+                      <div>
+                        <span className="nave-label" style={{ fontSize: '9px' }}>Retries</span>
+                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--warning))' }}>
+                          {log.retryCount}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {hasConstitutionCheck && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                      <ConstitutionCheckPanel check={log.constitutionCheck} />
+                    </div>
+                  )}
+
+                  {hasRiskFlags && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '6px' }}>Risk Flags</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {log.riskFlags.map((flag, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+                            style={{
+                              fontSize: '10.5px',
+                              fontFamily: 'var(--font-mono)',
+                              backgroundColor: 'hsl(var(--warning-muted))',
+                              color: 'hsl(var(--warning))',
+                            }}
+                          >
+                            <Fi icon="triangle-exclamation" style={{ fontSize: '8px' }} />
+                            {flag.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {log.payloadHash && log.payloadHash.length > 0 && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Payload Hash</div>
+                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
+                        {log.payloadHash}
+                      </div>
+                    </div>
+                  )}
+
+                  {log.reasoningHash && log.reasoningHash.length > 0 && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Reasoning Hash</div>
+                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
+                        {log.reasoningHash}
+                      </div>
+                    </div>
+                  )}
+
+                  {log.txSignature && log.txSignature.length > 0 && (
+                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>On-chain Signature</div>
+                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--foreground))', wordBreak: 'break-all' }}>
+                        {log.txSignature}
+                      </div>
+                    </div>
+                  )}
+
+                  {log.errorMessage && log.errorMessage.length > 0 && (
+                    <div
+                      className="flex items-start gap-2 p-2.5 rounded-lg"
+                      style={{ backgroundColor: 'hsl(var(--destructive-muted))' }}
+                    >
+                      <Fi icon="circle-exclamation" style={{ fontSize: '11px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
+                      <p style={{ fontSize: '11.5px', color: 'hsl(var(--destructive))', lineHeight: 1.5, margin: 0 }}>
+                        {log.errorMessage}
                       </p>
                     </div>
-
-                    {/* Metadata row */}
-                    <div className="flex flex-wrap items-center gap-4 pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                      <div>
-                        <span className="nave-label" style={{ fontSize: '9px' }}>Decision</span>
-                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: decisionColor(log.decision) }}>
-                          {decisionLabel(log.decision)}
-                        </div>
-                      </div>
-                      {log.confidenceScore !== null && (
-                        <div>
-                          <span className="nave-label" style={{ fontSize: '9px' }}>Confidence</span>
-                          <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: confidenceColor(log.confidenceScore) }}>
-                            {log.confidenceScore}%
-                          </div>
-                        </div>
-                      )}
-                      {log.claudeModel && (
-                        <div>
-                          <span className="nave-label" style={{ fontSize: '9px' }}>Model</span>
-                          <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--muted-foreground))' }}>
-                            {log.claudeModel.replace('claude-', '').replace(/-\d{8}$/, '')}
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
-                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: log.status === 'error' || log.status === 'guardrail_blocked' ? 'hsl(var(--destructive))' : 'hsl(var(--foreground))' }}>
-                          {log.status}
-                        </div>
-                      </div>
-                      {log.retryCount > 0 && (
-                        <div>
-                          <span className="nave-label" style={{ fontSize: '9px' }}>Retries</span>
-                          <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--warning))' }}>
-                            {log.retryCount}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Constitution check */}
-                    {hasConstitutionCheck && (
-                      <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                        <ConstitutionCheckPanel check={log.constitutionCheck} />
-                      </div>
-                    )}
-
-                    {/* Risk flags */}
-                    {hasRiskFlags && (
-                      <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                        <div className="nave-label" style={{ fontSize: '9px', marginBottom: '6px' }}>Risk Flags</div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {log.riskFlags.map((flag, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
-                              style={{
-                                fontSize: '10.5px',
-                                fontFamily: 'var(--font-mono)',
-                                backgroundColor: 'hsl(var(--warning-muted))',
-                                color: 'hsl(38 60% 30%)',
-                              }}
-                            >
-                              <Fi icon="triangle-exclamation" style={{ fontSize: '8px' }} />
-                              {flag.replace(/_/g, ' ')}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Payload hash */}
-                    {log.payloadHash && log.payloadHash.length > 0 && (
-                      <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                        <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Payload Hash</div>
-                        <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
-                          {log.payloadHash}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Reasoning hash (deterministic integrity commitment) */}
-                    {log.reasoningHash && log.reasoningHash.length > 0 && (
-                      <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                        <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Reasoning Hash</div>
-                        <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
-                          {log.reasoningHash}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* On-chain signer outcome */}
-                    {log.txSignature && log.txSignature.length > 0 && (
-                      <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                        <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>On-chain Signature</div>
-                        <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--primary))', wordBreak: 'break-all' }}>
-                          {log.txSignature}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Error message */}
-                    {log.errorMessage && log.errorMessage.length > 0 && (
-                      <div
-                        className="flex items-start gap-2 p-2.5 rounded-lg"
-                        style={{ backgroundColor: 'hsl(var(--destructive-muted))' }}
-                      >
-                        <Fi icon="circle-exclamation" style={{ fontSize: '11px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-                        <p style={{ fontSize: '11.5px', color: 'hsl(0 60% 35%)', lineHeight: 1.5 }}>
-                          {log.errorMessage}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
+              }
+            />
           );
         })}
       </div>
-    </div>
+    </Section>
   );
 }
 
 /* ── Legacy Activity Log (fallback when no Claude logs) ── */
 function AgentActivityLog({ items }: { items: typeof ACTIVITY_LOG }) {
-  const [expanded, setExpanded] = useState<number | null>(null);
-
   return (
-    <div className="nave-card">
-      <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'hsl(var(--border))' }}>
-        <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Agent Activity Log</span>
-        <button aria-label="Refresh log" style={{ color: 'hsl(var(--muted-foreground))' }}>
-          <Fi icon="arrows-rotate" style={{ fontSize: '12px' }} />
-        </button>
-      </div>
-      <div className="divide-y" style={{ borderColor: 'hsl(var(--border))' }}>
-        {items.map(item => (
-          <div key={item.id}>
-            <button
-              className="w-full flex items-start gap-3 px-5 py-3.5 text-left transition-colors"
-              onClick={() => setExpanded(expanded === item.id ? null : item.id)}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-            >
-              <div className="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: statusColor(item.status) }} />
-              <div className="flex-1 min-w-0">
-                <p style={{ fontSize: '13px', color: 'hsl(var(--foreground))', lineHeight: 1.5 }}>{item.desc}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--muted-foreground))' }}>{item.agent}</span>
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'hsl(var(--muted-foreground))' }}>{item.time}</span>
-                </div>
-              </div>
-              <Fi
-                icon={expanded === item.id ? 'chevron-up' : 'chevron-down'}
-                style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0 }}
-              />
-            </button>
-            {expanded === item.id && (
-              <div className="px-5 pb-3.5 pt-0 ml-8">
-                <div className="flex items-center gap-4 p-3 rounded-lg" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-                  <div>
-                    <span className="nave-label" style={{ fontSize: '9px' }}>Agent</span>
-                    <div className="nave-mono" style={{ color: 'hsl(var(--foreground))', marginTop: '2px', fontSize: '12px' }}>{item.agent}</div>
+    <Section title="Their diary" hint="Plain English · proof on tap">
+      <div>
+        {items.map((item) => (
+          <HairlineRow
+            key={item.id}
+            dotColor={statusColor(item.status)}
+            title={item.desc}
+            subtitle={item.agent}
+            when={item.time}
+            expandableContent={
+              <div className="flex items-center gap-6 pt-1">
+                <div>
+                  <span className="nave-label" style={{ fontSize: '9px' }}>Agent</span>
+                  <div className="nave-mono" style={{ color: 'hsl(var(--foreground))', marginTop: '2px', fontSize: '12px' }}>
+                    {item.agent}
                   </div>
-                  <div>
-                    <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
-                    <div className="nave-mono" style={{ color: statusColor(item.status), marginTop: '2px', fontSize: '12px' }}>{item.status}</div>
+                </div>
+                <div>
+                  <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
+                  <div className="nave-mono" style={{ color: statusColor(item.status), marginTop: '2px', fontSize: '12px' }}>
+                    {item.status}
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            }
+          />
         ))}
       </div>
-    </div>
+    </Section>
   );
 }
 
 /* ── Agent Gate panel ───────────────────────────────────── */
-// Surfaces the on-chain agent gate (agents_enabled + frozen) and a plain-language
-// breakdown of exactly which agent capabilities are currently permitted vs.
-// blocked, mirroring the orchestrator's gate matrix:
-//   frozen        → all capital movement paused; monitoring (halt/expire) active.
-//   agents paused → no new approvals/executions; halts allowed.
-//   open          → all actions permitted under constitutional policy.
 type GateUiState = 'open' | 'frozen' | 'disabled';
 
 interface GateCapability {
@@ -859,19 +797,13 @@ function gateView(state: GateUiState): {
   label: string;
   summary: string;
   color: string;
-  bg: string;
-  border: string;
-  icon: string;
   capabilities: GateCapability[];
 } {
   if (state === 'frozen') {
     return {
       label: 'Frozen',
       summary: 'Emergency freeze: all capital movement is paused. Monitoring stays active — the Oversight agent can still halt and expire requests.',
-      color: 'hsl(0 60% 40%)',
-      bg: 'hsl(var(--destructive-muted))',
-      border: 'hsl(0 72% 80%)',
-      icon: 'lock',
+      color: 'hsl(var(--destructive))',
       capabilities: [
         { label: 'New multisig approvals', allowed: false },
         { label: 'Strategy execution / capital deployment', allowed: false },
@@ -886,10 +818,7 @@ function gateView(state: GateUiState): {
     return {
       label: 'Agents Paused',
       summary: 'Agents are disabled: no new approvals or executions will be signed. Emergency halts and expiry of timed-out requests remain allowed.',
-      color: 'hsl(38 60% 30%)',
-      bg: 'hsl(var(--warning-muted))',
-      border: 'hsl(38 92% 75%)',
-      icon: 'pause',
+      color: 'hsl(var(--warning))',
       capabilities: [
         { label: 'New multisig approvals', allowed: false },
         { label: 'Strategy execution / capital deployment', allowed: false },
@@ -903,10 +832,7 @@ function gateView(state: GateUiState): {
   return {
     label: 'Active',
     summary: 'Agent gate open: the four agents operate normally under the current constitutional policy.',
-    color: 'hsl(152 50% 28%)',
-    bg: 'hsl(var(--success-muted))',
-    border: 'hsl(152 40% 70%)',
-    icon: 'circle-check',
+    color: 'hsl(var(--success))',
     capabilities: [
       { label: 'New multisig approvals', allowed: true },
       { label: 'Strategy execution / capital deployment', allowed: true },
@@ -922,49 +848,41 @@ function AgentGatePanel({ frozen, agentsEnabled }: { frozen: boolean; agentsEnab
   const state: GateUiState = frozen ? 'frozen' : !agentsEnabled ? 'disabled' : 'open';
   const view = gateView(state);
   return (
-    <div className="nave-card">
-      <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'hsl(var(--border))' }}>
-        <div>
-          <span style={{ fontSize: '14px', fontWeight: '500', color: 'hsl(var(--foreground))' }}>Agent Gate</span>
-          <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '1px' }}>
-            On-chain pause / freeze state and what it permits
+    <HairlineRow
+      dotColor={state === 'open' ? 'green' : state === 'frozen' ? 'red' : 'brass'}
+      title={`Agent gate: ${view.label}`}
+      subtitle={view.summary}
+      meta={
+        <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+          What is currently permitted / blocked
+        </span>
+      }
+      expandableContent={
+        <div className="pt-2">
+          <div className="nave-label" style={{ fontSize: '9px', marginBottom: '8px' }}>
+            {state === 'open' ? 'All capabilities active' : 'What is currently permitted / blocked'}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {view.capabilities.map((cap) => (
+              <div key={cap.label} className="flex items-center gap-2">
+                <span
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: cap.allowed ? 'hsl(var(--success-muted))' : 'hsl(var(--destructive-muted))' }}
+                >
+                  <Fi
+                    icon={cap.allowed ? 'check' : 'xmark'}
+                    style={{ fontSize: '8px', color: cap.allowed ? 'hsl(var(--success))' : 'hsl(var(--destructive))' }}
+                  />
+                </span>
+                <span style={{ fontSize: '12.5px', color: cap.allowed ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))', lineHeight: 1.4 }}>
+                  {cap.label}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
-        <span
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-          style={{ fontSize: '11px', fontWeight: 500, fontFamily: 'var(--font-mono)', color: view.color, backgroundColor: view.bg, border: `1px solid ${view.border}`, letterSpacing: '0.04em' }}
-        >
-          <Fi icon={view.icon} style={{ fontSize: '9px' }} />
-          {view.label}
-        </span>
-      </div>
-      <div className="p-5">
-        <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: '14px' }}>
-          {view.summary}
-        </p>
-        <div className="nave-label" style={{ fontSize: '9px', marginBottom: '8px' }}>
-          {state === 'open' ? 'All capabilities active' : 'What is currently blocked'}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-          {view.capabilities.map((cap) => (
-            <div key={cap.label} className="flex items-center gap-2">
-              <span
-                className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: cap.allowed ? 'hsl(var(--success-muted))' : 'hsl(var(--destructive-muted))' }}
-              >
-                <Fi
-                  icon={cap.allowed ? 'check' : 'xmark'}
-                  style={{ fontSize: '8px', color: cap.allowed ? 'hsl(152 50% 28%)' : 'hsl(0 60% 40%)' }}
-                />
-              </span>
-              <span style={{ fontSize: '12.5px', color: cap.allowed ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))', lineHeight: 1.4 }}>
-                {cap.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -1080,9 +998,9 @@ export default function Agent() {
   const displayAgents = useMemo(() => {
     if (agentStatus.agents.length > 0) {
       return agentStatus.agents.map((a: AgentStatusInfo) => {
-        const mock = AGENTS.find(m => m.id === a.role);
+        const mock = AGENTS.find((m) => m.id === a.role);
         // Enrich with health data if available
-        const healthEntry = agentHealth.agents.find(h => h.role === a.role) ?? null;
+        const healthEntry = agentHealth.agents.find((h) => h.role === a.role) ?? null;
         // Per-agent status grounded in on-chain enablement (not the global toggle).
         const statusDisplay = computeAgentStatus({
           agentsEnabled: active,
@@ -1107,7 +1025,7 @@ export default function Agent() {
     // Only fall back to illustrative agents for the demo DAO; real DAOs with no
     // agents render an empty state rather than fake data.
     if (!isMock) return [];
-    return AGENTS.map(m => ({
+    return AGENTS.map((m) => ({
       ...m,
       statusDisplay: computeAgentStatus({
         agentsEnabled: active,
@@ -1122,7 +1040,7 @@ export default function Agent() {
   // Build display-ready activity log from live data, falling back to mock
   const displayActivity = useMemo(() => {
     if (activityLog.activities.length > 0) {
-      return activityLog.activities.slice(0, 10).map(a => ({
+      return activityLog.activities.slice(0, 10).map((a) => ({
         id: Number(a.id) || Math.random(),
         desc: a.description,
         agent: a.agentRole || a.actor,
@@ -1138,7 +1056,7 @@ export default function Agent() {
     if (agentHealth.agents.length === 0) return [];
     const totalActions24h = agentHealth.agents.reduce((s, a) => s + a.actions_24h, 0);
     const totalErrors24h = agentHealth.agents.reduce((s, a) => s + a.errors_24h, 0);
-    const healthyCount = agentHealth.agents.filter(a => getAgentHealthLevel(a) === 'healthy').length;
+    const healthyCount = agentHealth.agents.filter((a) => getAgentHealthLevel(a) === 'healthy').length;
     const uptimePct = ((healthyCount / agentHealth.agents.length) * 100).toFixed(1);
     return [
       { label: 'Actions (24h)', value: totalActions24h.toString() },
@@ -1160,7 +1078,7 @@ export default function Agent() {
   function handlePauseClick() {
     setToggleError(null);
     if (!canManageAgents) {
-      setToggleError('Only the founder or a guardian can pause this DAO\'s agents.');
+      setToggleError("Only the founder or a guardian can pause this DAO's agents.");
       return;
     }
     setShowConfirm(true);
@@ -1173,31 +1091,24 @@ export default function Agent() {
    */
   function handleProposeEnable() {
     setToggleError(null);
-    // EVM enabling mirrors Solana: a governance proposal gates the resume, then
-    // the founder executes it (Governance.handleExecuteEnableAgents → the EVM
-    // relay calls Executive toggleAgents(true)). Proposal creation is EVM-wired,
-    // so we let the navigate proceed for both chains.
     if (!canManageAgents) {
       setToggleError('Only the founder or a guardian can propose enabling the agents.');
       return;
     }
-    // Agents have nothing to manage on an empty treasury — fund it first.
     if (!isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance) {
       setToggleError('Fund the treasury before proposing to enable the agents — they cannot operate on an empty DAO.');
       return;
     }
     if (isMock) {
-      // Demo: optimistically reflect the enabled state without a real proposal.
       setPendingActive(true);
       return;
     }
-    navigate('/governance', {
+    navigate('/decisions', {
       state: {
         proposeAgentEnable: {
           title: AGENT_ENABLE_PROPOSAL_TITLE,
           description:
             'Resume the four autonomous agents (Executive, Financial, Operational, Oversight) for this treasury. Once this proposal passes, the founder executes the on-chain enable so the agents reconnect and begin checking the DAO for necessary actions under the current constitution.',
-          // 1-byte marker tags this as an agent-enable proposal in addition to the title.
           payload: [1],
         },
       },
@@ -1212,10 +1123,6 @@ export default function Agent() {
       setPendingActive(false);
       return;
     }
-    // ── EVM: guardian M-of-N pause via the founder-signed agent-admin →
-    // /relay-evm path. The founder wallet is itself a guardian, so it signs the
-    // EIP-712 GuardianAction(DISABLE_AGENTS) here; the signer adds the custodied
-    // guardian signature(s) and broadcasts guardianAction(DISABLE_AGENTS, sigs). ──
     if (chainKind === 'evm') {
       if (!daoAddress) { setToggleError('Select a treasury to pause the agents.'); return; }
       if (!evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
@@ -1268,9 +1175,6 @@ export default function Agent() {
     setPendingActive(false);
 
     try {
-      // Instant pause: either the founder or any single guardian may sign a
-      // single emergency_pause_agents transaction. No M-of-N, no window.
-      // This is PER-DAO — it cannot affect other DAOs' agent states.
       const { PublicKey: PK } = await import('@solana/web3.js');
       const daoPubkey = new PK(daoAddress);
       const result = await buildEmergencyPauseAgents(daoPubkey, publicKey);
@@ -1315,253 +1219,233 @@ export default function Agent() {
   }
 
   return (
-    <div className="px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6 animate-fade-in" data-onboarding-id="agent-root">
+    <div className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in" data-onboarding-id="agent-root">
       <ConfirmAgentToggleModal
         open={showConfirm}
         active={active}
         onConfirm={handleConfirmToggle}
         onCancel={() => setShowConfirm(false)}
       />
-      {/* Emergency freeze banner */}
-      {isFrozen && (
-        <div
-          className="flex items-center gap-3 px-4 py-3.5 rounded-xl border"
-          style={{
-            backgroundColor: 'hsl(var(--destructive-muted))',
-            borderColor: 'hsl(0 72% 80%)',
-          }}
-        >
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: 'hsl(var(--destructive))' }}
-          >
-            <Fi icon="shield-halved" style={{ fontSize: '14px', color: 'white' }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div style={{ fontSize: '13.5px', fontWeight: '600', color: 'hsl(0 60% 35%)' }}>
-              All Agents Halted — Emergency Freeze Active
-            </div>
-            <div style={{ fontSize: '12px', color: 'hsl(0 40% 45%)', marginTop: '1px' }}>
-              Agent dispatching, signing, and monitoring are suspended. Treasury operations frozen by guardian action.
-            </div>
-          </div>
-          <div
-            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md flex-shrink-0"
-            style={{ backgroundColor: 'hsl(0 60% 92%)', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'hsl(0 60% 40%)', letterSpacing: '0.04em' }}
-          >
-            <Fi icon="lock" style={{ fontSize: '8px' }} />
-            FROZEN
-          </div>
-        </div>
-      )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-display" style={{ fontSize: '24px', letterSpacing: '-0.01em' }}>
-            Multi-Agent Coordination
+          <div className="nave-label" style={{ marginBottom: '10px' }}>Agents</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            A small team, <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>quietly working.</em>
           </h1>
-          <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
-            Identity-bound fiduciary operators acting under constitutional mandates
+          <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: '14.5px', margin: 0, maxWidth: '520px' }}>
+            Four specialists who can only act inside your rules. Every move needs three of them to agree.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
           <button
-            onClick={() => navigate('/policy')}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border transition-colors"
-            style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))', fontSize: '12.5px' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            type="button"
+            onClick={() => navigate('/rules')}
+            className="hover:underline underline-offset-4 transition-colors"
+            style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
           >
-            <Fi icon="castle" style={{ fontSize: '12px' }} />
-            Constitution
-            <Fi icon="arrow-right" style={{ fontSize: '11px' }} />
+            Rules →
           </button>
+
+          <span style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
+            {isFrozen ? 'Frozen' : active ? 'Active' : 'Paused'}
+          </span>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={active && !isFrozen}
+            aria-label="Pause or resume agents"
+            onClick={active ? handlePauseClick : handleProposeEnable}
+            disabled={toggling || (!active && startBlocked) || !canManageAgents}
+            className="relative flex-shrink-0 rounded-full transition-colors"
+            style={{
+              width: '42px',
+              height: '24px',
+              backgroundColor: active && !isFrozen ? 'hsl(var(--foreground))' : '#E5E0D2',
+              opacity: toggling || (!active && startBlocked) || !canManageAgents ? 0.5 : 1,
+              cursor:
+                toggling ? 'wait' : (!active && startBlocked) || !canManageAgents ? 'not-allowed' : 'pointer',
+            }}
+            title={
+              !canManageAgents
+                ? 'Only the founder or a guardian can manage the agents'
+                : !active && startBlocked
+                  ? 'Fund the treasury before proposing to enable the agents'
+                  : active
+                    ? 'Pause All Agents'
+                    : 'Propose to Enable Agents'
+            }
+          >
+            <span
+              className="absolute top-[2px] rounded-full bg-white transition-all"
+              style={{
+                width: '20px',
+                height: '20px',
+                left: active && !isFrozen ? '20px' : '2px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+              }}
+            />
+          </button>
+
           {active ? (
             <button
+              type="button"
               onClick={handlePauseClick}
               disabled={toggling || !canManageAgents}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all"
+              className="px-3 py-1.5 rounded-[9px] border font-semibold transition-colors"
               style={{
-                fontSize: '13px',
-                backgroundColor: 'hsl(var(--destructive-muted))',
-                color: 'hsl(var(--destructive))',
-                border: '1px solid hsl(0 72% 80%)',
-                opacity: toggling || !canManageAgents ? 0.6 : 1,
-                cursor: toggling ? 'wait' : !canManageAgents ? 'not-allowed' : 'pointer',
+                fontSize: '12.5px',
+                borderColor: 'hsl(var(--border))',
+                backgroundColor: '#ffffff',
+                color: 'hsl(var(--foreground))',
+                opacity: toggling || !canManageAgents ? 0.5 : 1,
               }}
-              title={!canManageAgents ? 'Only the founder or a guardian can pause the agents' : undefined}
             >
-              <Fi icon={toggling ? 'spinner' : 'pause'} style={{ fontSize: '12px' }} />
               {toggling ? 'Pausing…' : 'Pause All Agents'}
             </button>
           ) : (
             <button
+              type="button"
               onClick={handleProposeEnable}
               disabled={toggling || startBlocked || !canManageAgents}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all"
+              className="px-3.5 py-1.5 rounded-[9px] font-semibold transition-colors"
               style={{
-                fontSize: '13px',
-                backgroundColor: 'hsl(var(--primary))',
-                color: 'white',
-                border: 'none',
-                opacity: toggling || startBlocked || !canManageAgents ? 0.6 : 1,
-                cursor: startBlocked || !canManageAgents ? 'not-allowed' : 'pointer',
+                fontSize: '12.5px',
+                backgroundColor: 'hsl(var(--foreground))',
+                color: '#ffffff',
+                opacity: toggling || startBlocked || !canManageAgents ? 0.5 : 1,
               }}
-              title={
-                !canManageAgents
-                  ? 'Only the founder or a guardian can propose enabling the agents'
-                  : startBlocked
-                    ? 'Fund the treasury before proposing to enable the agents'
-                    : undefined
-              }
             >
-              <Fi icon="scale-balanced" style={{ fontSize: '12px' }} />
               Propose to Enable Agents
             </button>
           )}
         </div>
       </div>
 
-      {/* Toggle error */}
-      {toggleError && (
-        <div
-          className="flex items-start gap-2.5 p-3.5 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-        >
-          <Fi icon="triangle-exclamation" style={{ fontSize: '13px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-          <p style={{ fontSize: '12.5px', color: 'hsl(0 60% 35%)', lineHeight: 1.5 }}>{toggleError}</p>
-        </div>
-      )}
+      {/* Notices */}
+      <div className="mt-6 space-y-2">
+        {isFrozen && (
+          <Notice
+            tone="red"
+            actionLabel="Emergency controls →"
+            onAction={() => navigate('/settings')}
+          >
+            <b style={{ fontWeight: 600 }}>Treasury frozen.</b> All agent dispatching and capital movement are suspended. Monitoring continues.
+          </Notice>
+        )}
 
-      {/* Agent data fetch errors — surfaced instead of console-only */}
-      {(agentHealth.error || agentStatus.error) && (
-        <div
-          className="flex items-start gap-2.5 p-3.5 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-        >
-          <Fi icon="triangle-exclamation" style={{ fontSize: '13px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-          <p style={{ fontSize: '12.5px', color: 'hsl(0 60% 35%)', lineHeight: 1.5 }}>
-            <strong>Agent data failed to load.</strong>{' '}
+        {toggleError && (
+          <Notice tone="red">{toggleError}</Notice>
+        )}
+
+        {(agentHealth.error || agentStatus.error) && (
+          <Notice tone="red">
+            <b style={{ fontWeight: 600 }}>Agent data failed to load.</b>{' '}
             {agentHealth.error && <span>Health: {agentHealth.error}. </span>}
             {agentStatus.error && <span>Status: {agentStatus.error}.</span>}
-          </p>
-        </div>
-      )}
+          </Notice>
+        )}
 
-      {treasuryWatch && (
-        <div
-          className="flex items-start gap-3 px-4 py-3.5 rounded-xl border"
-          style={{
-            backgroundColor: treasuryWatch.state === 'blocked' ? 'hsl(var(--destructive-muted))' : 'hsl(var(--accent-muted))',
-            borderColor: treasuryWatch.state === 'blocked' ? 'hsl(0 72% 80%)' : 'hsl(var(--border-strong))',
-          }}
-        >
-          <Fi
-            icon={treasuryWatch.state === 'blocked' ? 'ban' : 'eye'}
-            style={{
-              fontSize: '14px',
-              color: treasuryWatch.state === 'blocked' ? 'hsl(var(--destructive))' : 'hsl(var(--accent))',
-              flexShrink: 0,
-              marginTop: '2px',
-            }}
-          />
-          <div>
-            <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-              {treasuryWatch.state === 'blocked' ? 'Blocked' : 'Watching'}
-            </div>
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.5 }}>
-              {treasuryWatch.state === 'blocked'
-                ? treasuryWatch.detail
-                : 'Agents are watching this treasury. Capital moves only after the constitution check passes.'}
-            </p>
-          </div>
-        </div>
-      )}
+        {treasuryWatch && (
+          <Notice tone={treasuryWatch.state === 'blocked' ? 'red' : 'brass'}>
+            <b style={{ fontWeight: 600 }}>
+              {treasuryWatch.state === 'blocked' ? 'Blocked:' : 'Watching:'}
+            </b>{' '}
+            {treasuryWatch.state === 'blocked'
+              ? treasuryWatch.detail
+              : 'Agents are watching this treasury. Capital moves only after the constitution check passes.'}
+          </Notice>
+        )}
 
+        {!active && startBlocked && (
+          <Notice
+            tone="brass"
+            actionLabel="Add funds →"
+            onAction={() => navigate('/overview', { state: { openDeposit: true } })}
+          >
+            <b style={{ fontWeight: 600 }}>Deposit funds before starting the agents.</b> The treasury needs a balance to cover transaction fees and capital for yield strategies.
+          </Notice>
+        )}
+
+        {!active && !startBlocked && !toggleError && (
+          <Notice
+            tone="brass"
+            actionLabel={canManageAgents ? 'Propose to Enable Agents →' : undefined}
+            onAction={canManageAgents ? handleProposeEnable : undefined}
+          >
+            All agents are paused — treasury operations are halted. Resuming requires a governance vote.
+          </Notice>
+        )}
+      </div>
+
+      {/* 4-stat hairline strip */}
       {displayMetrics.length > 0 && (
-      <motion.div
-        className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3"
-        variants={staggerContainer}
-        initial="initial"
-        animate="animate"
-      >
-        {displayMetrics.map(({ label, value }) => (
-          <motion.div key={label} className="nave-card p-4" variants={staggerChild}>
-            <div className="nave-label mb-1.5" style={{ fontSize: '9.5px' }}>{label}</div>
-            <div style={{ fontSize: '22px', fontFamily: 'var(--font-display)', color: 'hsl(var(--foreground))' }}>{value}</div>
-          </motion.div>
-        ))}
-      </motion.div>
-      )}
-
-      {/* Agent gate — explicit pause/freeze state + what it permits */}
-      <AgentGatePanel frozen={isFrozen} agentsEnabled={active} />
-
-      {/* Status banners when not active */}
-      {!active && startBlocked && (
-        <div
-          className="flex items-start gap-2.5 p-4 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(38 92% 75%)' }}
-        >
-          <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--warning))', flexShrink: 0, marginTop: '2px' }} />
-          <div style={{ fontSize: '13px', color: 'hsl(38 50% 28%)', lineHeight: 1.55 }}>
-            <strong>Deposit funds before starting the agents.</strong> The treasury needs a balance to cover
-            transaction fees and capital for yield strategies.{' '}
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard', { state: { openDeposit: true } })}
-              style={{ fontWeight: 600, textDecoration: 'underline', background: 'none', border: 'none', padding: 0, color: 'inherit', cursor: 'pointer' }}
-            >
-              Add funds
-            </button>
-            , then return here to start the agents.
+        <Section>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+            {displayMetrics.map(({ label, value }) => (
+              <Stat key={label} label={label} value={value} />
+            ))}
           </div>
-        </div>
-      )}
-      {!active && !startBlocked && !toggleError && (
-        <div
-          className="flex items-start gap-2.5 p-4 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(38 92% 75%)' }}
-        >
-          <Fi icon="triangle-exclamation" style={{ fontSize: '14px', color: 'hsl(var(--warning))', flexShrink: 0, marginTop: '2px' }} />
-          <p style={{ fontSize: '13px', color: 'hsl(38 50% 28%)', lineHeight: 1.55 }}>
-            All agents are paused — treasury operations are halted. Resuming requires a governance vote: click <strong>Propose to Enable Agents</strong> to put it to the DAO.
-          </p>
-        </div>
+        </Section>
       )}
 
-      {/* 4 Agent cards */}
-      <motion.div
-        className="grid grid-cols-1 md:grid-cols-2 gap-4"
-        variants={staggerContainer}
-        initial="initial"
-        animate="animate"
-      >
-        {displayAgents.map(agent => (
-          <motion.div key={agent.id} variants={staggerChild}>
-            <AgentCard agent={agent} frozen={isFrozen} />
-          </motion.div>
+      {/* Agent Rows + Gate */}
+      <Section>
+        <AgentGatePanel frozen={isFrozen} agentsEnabled={active} />
+        {displayAgents.map((agent) => (
+          <AgentRow key={agent.id} agent={agent} frozen={isFrozen} />
         ))}
-      </motion.div>
+      </Section>
 
-      {!isMock && (
-        <ExecutionPipeline
-          executions={executionPipeline.executions}
-          loading={executionPipeline.loading}
-          canClearHalt={isFounder}
-          clearingProposal={clearingProposal}
-          clearHaltErrors={clearHaltErrors}
-          onClearHalt={(exec) => void handleClearHalt(exec)}
-        />
-      )}
+      {/* Execution Pipeline */}
+      <ExecutionPipeline
+        executions={executionPipeline.executions}
+        loading={executionPipeline.loading}
+        canClearHalt={isFounder}
+        clearingProposal={clearingProposal}
+        clearHaltErrors={clearHaltErrors}
+        onClearHalt={(exec) => void handleClearHalt(exec)}
+      />
 
-      {/* Claude Reasoning Log — shown when action logs exist */}
+      {/* Their diary (Claude Reasoning Log or fallback Activity Log) */}
       {agentStatus.actionLogs.length > 0 ? (
         <ClaudeActivityLog logs={agentStatus.actionLogs} onRefresh={agentStatus.refetch} />
       ) : displayActivity.length > 0 ? (
         <AgentActivityLog items={displayActivity} />
       ) : null}
+
+      {/* Footnote */}
+      <p
+        style={{
+          marginTop: '36px',
+          fontSize: '12.5px',
+          color: 'hsl(var(--faint))',
+          lineHeight: 1.6,
+        }}
+      >
+        Pausing is instant and needs no vote — any founder or guardian can do it. Restarting always takes a community vote.{' '}
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          className="hover:underline underline-offset-4"
+          style={{ color: 'hsl(var(--destructive))', fontSize: '12.5px' }}
+        >
+          Emergency freeze…
+        </button>
+      </p>
     </div>
   );
 }

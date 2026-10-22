@@ -76,11 +76,11 @@ function PolicySummaryFromPayload({ payloadBytes }: { payloadBytes: number[] }) 
   return (
     <div>
       <div className="nave-label mb-2">Policy details</div>
-      <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'hsl(var(--border))' }}>
-        {rows.map((r, i) => (
-          <div key={r.label} className="flex items-center justify-between px-3 py-2" style={{ borderBottom: i < rows.length - 1 ? '1px solid hsl(var(--border))' : 'none', backgroundColor: i % 2 === 0 ? 'hsl(var(--surface-1))' : 'hsl(var(--surface-0))' }}>
-            <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
-            <span className="nave-mono" style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}>{r.value}</span>
+      <div className="border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13.5px' }}>
+            <span style={{ color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
+            <span className="nave-mono" style={{ fontSize: '13px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>{r.value}</span>
           </div>
         ))}
       </div>
@@ -463,28 +463,41 @@ export default function CreateProposalModal({
   return createPortal(
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'rgba(17, 24, 39, 0.48)', backdropFilter: 'blur(3px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       {...fadeOverlay}
     >
       <motion.div
-        className="w-full max-w-lg rounded-2xl border shadow-xl"
+        className="w-full max-w-[520px] rounded-[18px] border"
         style={{
-          backgroundColor: 'hsl(var(--surface-0))',
+          backgroundColor: '#ffffff',
           borderColor: 'hsl(var(--border))',
-          boxShadow: 'var(--shadow-xl)',
-          maxHeight: '90vh',
+          boxShadow: '0 24px 70px -12px rgba(17, 24, 39, 0.35)',
+          maxHeight: '86vh',
           overflowY: 'auto',
         }}
         {...scaleIn}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'hsl(var(--border))' }}>
+        <div
+          className="flex items-start justify-between gap-3.5"
+          style={{ padding: '20px 22px 0' }}
+        >
           <div>
-            <div className="text-display font-semibold" style={{ fontSize: '16px' }}>
+            <div
+              className="text-display"
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '23px',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
+                color: 'hsl(var(--foreground))',
+              }}
+            >
               {isReview ? 'Review & Submit Proposal' : 'Create Proposal'}
             </div>
-            <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
+            <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.5 }}>
               {isReview
                 ? 'Review the auto-generated proposal details, then confirm to put it to a vote'
                 : 'Submit a governance proposal for community vote'}
@@ -493,28 +506,58 @@ export default function CreateProposalModal({
           <button
             onClick={onClose}
             aria-label="Close modal"
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ color: 'hsl(var(--muted-foreground))' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            className="flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              backgroundColor: 'hsl(var(--background))',
+              border: '1px solid hsl(var(--surface-2))',
+              color: 'hsl(var(--muted-foreground))',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'hsl(var(--foreground))';
+              e.currentTarget.style.borderColor = 'hsl(var(--border))';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'hsl(var(--muted-foreground))';
+              e.currentTarget.style.borderColor = 'hsl(var(--surface-2))';
+            }}
           >
-            <Fi icon="xmark" style={{ fontSize: '16px' }} />
+            <Fi icon="xmark" style={{ fontSize: '14px' }} />
           </button>
         </div>
 
         {submitted ? (
-          <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: 'hsl(var(--accent-muted))' }}>
-              <Fi icon="circle-check" style={{ fontSize: '22px', color: 'hsl(var(--accent))' }} />
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center mb-3.5"
+              style={{
+                backgroundColor: '#F2F9F4',
+                border: '1px solid #BFE0CC',
+                color: 'hsl(var(--success))',
+              }}
+            >
+              <Fi icon="check" style={{ fontSize: '20px', color: 'hsl(var(--success))' }} />
             </div>
-            <div className="text-display font-semibold" style={{ fontSize: '16px' }}>Proposal submitted</div>
-            <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
+            <div
+              className="text-display"
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '24px',
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Proposal submitted
+            </div>
+            <div style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
               Your proposal has been created and is now open for community vote.
             </div>
           </div>
         ) : isReview ? (
           /* ── Review mode — everything is read-only ─────────────────── */
-          <div className="p-6 space-y-5">
+          <div className="space-y-5" style={{ padding: '18px 22px 22px' }}>
             {/* Type badge + voting period picker */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -545,13 +588,14 @@ export default function CreateProposalModal({
                           periodTouched.current = true;
                           setReviewPeriodSecs(opt.secs);
                         }}
-                        className="px-3 py-1.5 rounded-lg border transition-all"
+                        className="px-3 py-1.5 rounded-full border transition-all"
                         style={{
                           fontSize: '12px',
                           fontFamily: 'var(--font-mono)',
-                          backgroundColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--surface-1))',
-                          borderColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                          color: sel ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
+                          fontWeight: sel ? 600 : 400,
+                          backgroundColor: sel ? '#111827' : '#ffffff',
+                          borderColor: sel ? '#111827' : 'hsl(var(--border))',
+                          color: sel ? '#ffffff' : 'hsl(var(--muted-foreground))',
                         }}
                       >
                         {opt.label}
@@ -566,8 +610,8 @@ export default function CreateProposalModal({
             <div>
               <div className="nave-label mb-2">Proposal Title</div>
               <div
-                className="px-3 py-2.5 rounded-lg border"
-                style={{ fontSize: '14px', fontWeight: 500, backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', lineHeight: 1.4 }}
+                className="px-3 py-2.5 rounded-[10px] border"
+                style={{ fontSize: '14px', fontWeight: 500, backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--surface-2))', color: 'hsl(var(--foreground))', lineHeight: 1.4 }}
               >
                 {resolvedTitle}
               </div>
@@ -580,8 +624,8 @@ export default function CreateProposalModal({
               <div>
                 <div className="nave-label mb-2">Description</div>
                 <div
-                  className="px-3 py-3 rounded-lg border overflow-y-auto"
-                  style={{ fontSize: '13px', backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, whiteSpace: 'pre-wrap', maxHeight: '200px' }}
+                  className="px-3 py-3 rounded-[10px] border overflow-y-auto"
+                  style={{ fontSize: '13px', backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--surface-2))', color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, whiteSpace: 'pre-wrap', maxHeight: '200px' }}
                 >
                   {resolvedDescription}
                 </div>
@@ -590,48 +634,52 @@ export default function CreateProposalModal({
 
             {/* Governance note */}
             <div
-              className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
+              className="flex items-start gap-2 rounded-[12px]"
+              style={{
+                padding: '13px 14px',
+                backgroundColor: 'hsl(var(--background))',
+                border: '1px solid hsl(var(--surface-2))',
+              }}
             >
-              <Fi icon="circle-info" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '2px' }} />
-              <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+              <Fi icon="circle-info" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '3px' }} />
+              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
                 Submitting this transaction opens a guardian vote. It can be finalized immediately once the yes votes cannot be overturned. Otherwise anyone can finalize it after the voting window closes.
               </p>
             </div>
 
             {error && (
-              <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)', color: 'hsl(var(--destructive))' }}>
+              <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(4 60% 80%)', color: 'hsl(var(--destructive))' }}>
                 {error}
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-1">
+            <div className="flex items-center justify-end gap-2 pt-4 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
               <button
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg border transition-colors"
-                style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                className="px-4 py-2 rounded-[9px] transition-colors"
+                style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all"
-                style={{ fontSize: '13.5px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+                className="flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff' }}
               >
-                <Fi icon="paper-plane" style={{ fontSize: '13px' }} />
+                <Fi icon="paper-plane" style={{ fontSize: '12px' }} />
                 Confirm & Submit
               </button>
             </div>
           </div>
         ) : (
           /* ── Manual mode — minimal form for ad-hoc proposals ──────── */
-          <div className="p-6 space-y-5">
+          <div className="space-y-5" style={{ padding: '18px 22px 22px' }}>
             {/* Template picker */}
             <div>
               <label className="nave-label mb-2 block">Start from a template</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {PROPOSAL_TEMPLATES.map((t) => {
                   const active = selectedTemplate === t.id;
                   return (
@@ -639,12 +687,13 @@ export default function CreateProposalModal({
                       key={t.id}
                       type="button"
                       onClick={() => applyTemplate(t.id)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
                       style={{
                         fontSize: '12px',
-                        backgroundColor: active ? 'hsl(var(--primary))' : 'hsl(var(--surface-1))',
-                        borderColor: active ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                        color: active ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
+                        fontWeight: active ? 600 : 400,
+                        backgroundColor: active ? '#111827' : '#ffffff',
+                        borderColor: active ? '#111827' : 'hsl(var(--border))',
+                        color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
                       }}
                     >
                       <Fi icon={t.icon} style={{ fontSize: '11px' }} />
@@ -658,7 +707,7 @@ export default function CreateProposalModal({
             {/* Type selector */}
             <div>
               <label className="nave-label mb-2 block">Proposal Type</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {((['policy', 'strategy', 'permission', 'transfer', 'token-mint', 'general'] as ProposalType[])).map(t => {
                   const m = TYPE_META[t];
                   const active = form.type === t;
@@ -666,12 +715,13 @@ export default function CreateProposalModal({
                     <button
                       key={t}
                       onClick={() => setForm(f => ({ ...f, type: t }))}
-                      className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-left transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-left transition-all"
                       style={{
                         fontSize: '12px',
-                        backgroundColor: active ? 'hsl(var(--primary))' : 'hsl(var(--surface-1))',
-                        borderColor: active ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                        color: active ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
+                        fontWeight: active ? 600 : 400,
+                        backgroundColor: active ? '#111827' : '#ffffff',
+                        borderColor: active ? '#111827' : 'hsl(var(--border))',
+                        color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
                       }}
                     >
                       <Fi icon={m.icon} style={{ fontSize: '11px', flexShrink: 0 }} />
@@ -684,30 +734,30 @@ export default function CreateProposalModal({
 
             {/* Title */}
             <div>
-              <label className="nave-label mb-2 block">Title</label>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>Title</label>
               <input
                 type="text"
                 value={form.title}
                 onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                 placeholder="Concise proposal title…"
-                className="w-full px-3 py-2.5 rounded-lg border outline-none transition-colors"
-                style={{ fontSize: '13.5px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
+                className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="nave-label mb-2 block">Description</label>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>Description</label>
               <textarea
                 value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="Describe the rationale, impact, and implementation details…"
-                rows={5}
-                className="w-full px-3 py-2.5 rounded-lg border outline-none transition-colors resize-none"
-                style={{ fontSize: '13.5px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', lineHeight: 1.6 }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
+                rows={4}
+                className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors resize-vertical"
+                style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', lineHeight: 1.55 }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
               />
             </div>
@@ -839,28 +889,28 @@ export default function CreateProposalModal({
             )}
 
             {error && (
-              <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)', color: 'hsl(var(--destructive))' }}>
+              <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(4 60% 80%)', color: 'hsl(var(--destructive))' }}>
                 {error}
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-4 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
               <button
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg border transition-colors"
-                style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                className="px-4 py-2 rounded-[9px] transition-colors"
+                style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={!form.title.trim() || !form.description.trim()}
-                className="flex items-center gap-2 px-5 py-2 rounded-lg font-medium transition-all"
-                style={{ fontSize: '13.5px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))', opacity: !form.title.trim() || !form.description.trim() ? 0.5 : 1 }}
+                className="flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff', opacity: !form.title.trim() || !form.description.trim() ? 0.4 : 1 }}
               >
-                <Fi icon="paper-plane" style={{ fontSize: '13px' }} />
+                <Fi icon="paper-plane" style={{ fontSize: '12px' }} />
                 Submit Proposal
               </button>
             </div>

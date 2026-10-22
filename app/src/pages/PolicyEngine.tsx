@@ -1,16 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
 import Fi from '../components/Fi';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
+import { Notice } from '../components/calm';
 import ConstitutionStep, {
   type PolicyState,
   DEFAULT_POLICY,
   PROTOCOLS_EVM,
   PROTOCOLS_SOLANA,
+  RISK_PRESETS,
   formatConstitutionBps,
+  secsToRebalanceFreq,
   tierBoundedCaps,
 } from '../components/ConstitutionStep';
 import { useDaoContext } from '../hooks/useDaoContext';
@@ -22,7 +25,6 @@ import { useChain } from '../hooks/useChain';
 import {
   getAdapterProgramId,
   getConfiguredEvmAdapters,
-  getEvmAdapterStatuses,
   MARGINFI_STRATEGY_ENABLED,
   SELECTABLE_SOLANA_PROTOCOLS,
   type EvmAdapterProtocolId,
@@ -33,13 +35,6 @@ import {
   encodeConstitutionPayload,
   type ConstitutionPayloadProtocol,
 } from '../lib/constitutionPayload';
-
-// PolicyState type is imported from ConstitutionStep (shared with wizard)
-
-/* ── Constants ──────────────────────────────────────────── */
-// DEFAULT_POLICY and PolicyState imported from ConstitutionStep
-
-
 
 /* ── Page ───────────────────────────────────────────────── */
 export default function PolicyEngine() {
@@ -53,15 +48,6 @@ export default function PolicyEngine() {
   const treasuryBalance = useTreasuryBalance(daoAddress);
   const { chainKind, evmChainId } = useChain();
   const isMock = isMockDaoAddress(daoAddress);
-  const evmAdapterStatuses = useMemo(
-    () => (evmChainId ? getEvmAdapterStatuses(evmChainId) : []),
-    [evmChainId],
-  );
-  const evmStatusByProtocol = useMemo(
-    () => new Map(evmAdapterStatuses.map((status) => [status.protocolId, status])),
-    [evmAdapterStatuses],
-  );
-  const protocolOptions = chainKind === 'evm' ? PROTOCOLS_EVM : PROTOCOLS_SOLANA;
 
   // Membership: only treasury members may propose a constitution change. The
   // proposal tx is signed by this wallet, which is the on-chain membership proof.
@@ -121,7 +107,7 @@ export default function PolicyEngine() {
           ? Math.round(constitution.agentThresholdUsdMicro / 1_000_000)
           : prev.agentThresholdUsd ?? 100,
     }));
-  }, [constitution, constitutionOnChain, chainKind, evmAdapterStatuses]);
+  }, [constitution, constitutionOnChain, chainKind]);
 
   function setPolicy(partial: Partial<PolicyState>) {
     setPolicyState(prev => ({ ...prev, ...partial }));
@@ -153,9 +139,6 @@ export default function PolicyEngine() {
       }
     }
 
-    // Title is auto-generated and not editable by the user.
-    // First-ever constitution: "Policy Change - Constitution Ratification" (unique).
-    // Subsequent updates are numbered from 1.
     const isFirstConstitution = !constitution;
     const policyChangeCount =
       (dao?.proposalCount ?? 0) + (dao?.archivedProposalCount ?? 0);
@@ -163,9 +146,6 @@ export default function PolicyEngine() {
       ? 'Policy Change - Constitution Ratification'
       : `Policy Change - Updating Constitution #${policyChangeCount}`;
 
-    // All supported protocols for the active chain go into the governance
-    // proposal payload. EVM adapter addresses are not configured in this app
-    // yet, so EVM ratification will require those addresses before submitting.
     const capFor = tierBoundedCaps(chainKind === 'evm' ? 'evm' : 'solana', evmChainId, policy);
     let protocols: ConstitutionPayloadProtocol[];
     if (chainKind === 'evm') {
@@ -191,20 +171,17 @@ export default function PolicyEngine() {
       }));
     } else {
       protocols = [
-            ...SELECTABLE_SOLANA_PROTOCOLS
-              .map((id): ConstitutionPayloadProtocol | null => {
-                if (!getAdapterProgramId(id)) return null;
-                return { id, approved: !!policy.approvedProtocols[id], maxAllocationBps: capFor(id) };
-              })
-              .filter((p): p is ConstitutionPayloadProtocol => p !== null),
-            { id: 'jupiter', approved: !!policy.approvedProtocols['jupiter'], maxAllocationBps: capFor('jupiter') },
-          ];
+        ...SELECTABLE_SOLANA_PROTOCOLS
+          .map((id): ConstitutionPayloadProtocol | null => {
+            if (!getAdapterProgramId(id)) return null;
+            return { id, approved: !!policy.approvedProtocols[id], maxAllocationBps: capFor(id) };
+          })
+          .filter((p): p is ConstitutionPayloadProtocol => p !== null),
+        { id: 'jupiter', approved: !!policy.approvedProtocols['jupiter'], maxAllocationBps: capFor('jupiter') },
+      ];
     }
     const confidenceThreshold = SYSTEM_CONFIDENCE_THRESHOLD;
 
-    // Keep description SHORT — the on-chain payload already holds the full policy.
-    // Long descriptions bloat the create_proposal instruction past the 1232-byte
-    // transaction limit when combined with the JSON payload bytes.
     const description = isFirstConstitution
       ? 'Constitution ratification. Full policy is encoded in the proposal payload.'
       : 'Constitution update. Full policy is encoded in the proposal payload.';
@@ -235,9 +212,7 @@ export default function PolicyEngine() {
       return;
     }
 
-    // Hand off to Governance, which opens the create-proposal flow prefilled with
-    // this policy. The wallet signs the create_proposal transaction there.
-    navigate('/governance', {
+    navigate('/decisions', {
       state: { proposePolicy: { title, description, payload } },
     });
   }
@@ -262,15 +237,60 @@ export default function PolicyEngine() {
   }
 
   return (
-    <div className="px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6 animate-fade-in" data-onboarding-id="policy-root">
+    <div className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in" data-onboarding-id="policy-root">
       {/* Header */}
-      <div>
-        <h1 className="text-display" style={{ fontSize: '24px', letterSpacing: '-0.01em' }}>
-          Treasury Constitution
-        </h1>
-        <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
-          Define the constitutional parameters all four autonomous agents must operate within
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="nave-label" style={{ marginBottom: '10px' }}>Rules</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            The rules your agents <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>must obey.</em>
+          </h1>
+          <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: '14.5px', margin: 0, maxWidth: '520px' }}>
+            Set by the community, checked on every move, changeable only by a vote.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 pt-1">
+          {!amending ? (
+            <button
+              type="button"
+              onClick={() => setAmending(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-colors"
+              style={{
+                fontSize: '13px',
+                borderColor: 'hsl(var(--border))',
+                backgroundColor: '#ffffff',
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Suggest a change
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAmending(false)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[9px] transition-colors"
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'hsl(var(--muted-foreground))',
+              }}
+            >
+              <Fi icon="arrow-left" style={{ fontSize: '11px' }} />
+              Back to readout
+            </button>
+          )}
+        </div>
       </div>
 
       {!amending ? (
@@ -280,155 +300,107 @@ export default function PolicyEngine() {
           onAmend={() => setAmending(true)}
         />
       ) : (
-      <>
-      <div className="flex items-center justify-between gap-3">
-        <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-          Amendments are a governance proposal. The treasury keeps the on-chain rules until that proposal passes.
-        </p>
-        <button
-          type="button"
-          onClick={() => setAmending(false)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border flex-shrink-0"
-          style={{ fontSize: '12.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-        >
-          <Fi icon="arrow-left" style={{ fontSize: '11px' }} />
-          Back
-        </button>
-      </div>
+        <div className="max-w-[620px]" style={{ marginTop: '24px' }}>
+          <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: '8px' }}>
+            Amendments are a governance proposal. The treasury keeps the on-chain rules until that proposal passes and is ratified.
+          </p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
-        {/* Left col — uses shared ConstitutionStep component */}
-        <div className="lg:col-span-2 space-y-4">
           <ConstitutionStep
             policy={policy}
             setPolicy={setPolicy}
             chain={chainKind === 'evm' ? 'evm' : 'solana'}
             evmChainId={evmChainId ?? undefined}
           />
-        </div>
 
-        {/* Right col */}
-        <div className="space-y-4">
-          {/* Policy summary card */}
-          <div className="nave-card p-5 space-y-4">
-            <span className="text-display font-semibold" style={{ fontSize: '14px' }}>Constitution Summary</span>
-            <div className="space-y-2">
-              {[
-                { label: 'Risk Profile', value: policy.riskPreset.charAt(0).toUpperCase() + policy.riskPreset.slice(1) },
-                { label: 'Min Reserve', value: `${policy.minStablecoin}%` },
-                { label: 'Max Deploy', value: `${policy.maxDeployment}%` },
-                { label: 'Max Lending', value: `${policy.maxLending}%` },
-                { label: 'Rebalancing', value: policy.rebalanceFreq },
-                { label: 'Agent Threshold', value: `$${(policy.agentThresholdUsd ?? 100).toLocaleString()}` },
-                { label: 'Protocols', value: protocolOptions.filter(p => policy.approvedProtocols[p.key] && (chainKind !== 'evm' || evmStatusByProtocol.get(p.key as EvmAdapterProtocolId)?.configured)).length + ' approved' },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between">
-                  <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>{label}</span>
-                  <span className="nave-mono" style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}>{value}</span>
-                </div>
-              ))}
-            </div>
-            <div className="pt-3 border-t space-y-1.5" style={{ borderColor: 'hsl(var(--border))' }}>
-              <label className="nave-label" style={{ fontSize: '11px', display: 'block' }}>
-                Agent Deployment Threshold (USD)
-              </label>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={policy.agentThresholdUsd ?? 100}
-                onChange={(e) => {
-                  const val = Math.max(1, Number(e.target.value) || 1);
-                  setPolicy({ agentThresholdUsd: val });
-                }}
-                className="w-full px-3 py-2 rounded-lg border outline-none nave-mono"
-                style={{
-                  fontSize: '13px',
-                  backgroundColor: 'hsl(var(--surface-0))',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              />
-              <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.45 }}>
-                Minimum treasury NAV required before autonomous agents deploy capital.
-              </p>
-            </div>
-          </div>
-
-          {/* Governance note */}
+          {/* Agent deployment threshold field */}
           <div
-            className="p-4 rounded-xl border"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
+            style={{
+              padding: '24px 0',
+              borderTop: '1px solid hsl(var(--surface-2))',
+            }}
           >
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-              Constitution changes are submitted as governance proposals signed by your wallet, require a
-              passing vote, and are then ratified by the founder before the agents follow them.
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '8px',
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Agent Deployment Threshold (USD)
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={policy.agentThresholdUsd ?? 100}
+              onChange={(e) => {
+                const val = Math.max(1, Number(e.target.value) || 1);
+                setPolicy({ agentThresholdUsd: val });
+              }}
+              className="w-full max-w-xs px-3.5 py-2.5 rounded-[10px] border outline-none nave-mono"
+              style={{
+                fontSize: '14px',
+                backgroundColor: '#ffffff',
+                borderColor: 'hsl(var(--border))',
+                color: 'hsl(var(--foreground))',
+              }}
+            />
+            <p style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', marginTop: '7px' }}>
+              Minimum treasury NAV required before autonomous agents deploy capital.
             </p>
           </div>
 
           {/* Empty-treasury guard */}
           {!isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance && (
-            <div
-              className="flex items-start gap-2.5 p-3.5 rounded-xl border"
-              style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(38 92% 75%)' }}
-            >
-              <Fi icon="triangle-exclamation" style={{ fontSize: '13px', color: 'hsl(var(--warning))', flexShrink: 0, marginTop: '2px' }} />
-              <p style={{ fontSize: '12.5px', color: 'hsl(38 50% 28%)', lineHeight: 1.55 }}>
-                The treasury holds no funds yet. Deposit assets before proposing a constitution — the
-                agents cannot be activated on an empty DAO.
-              </p>
+            <div className="mb-4">
+              <Notice tone="brass">
+                The treasury holds no funds yet. Deposit assets before proposing a constitution — the agents cannot be activated on an empty DAO.
+              </Notice>
             </div>
           )}
 
           {/* Tx error */}
           {txError && (
-            <div
-              className="flex items-center gap-2 p-3 rounded-xl border animate-fade-in"
-              style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-            >
-              <Fi icon="circle-xmark" style={{ fontSize: '13px', color: 'hsl(var(--destructive))' }} />
-              <span style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))', flex: 1 }}>{txError}</span>
-              <button onClick={() => setTxError(null)} style={{ fontSize: '11px', color: 'hsl(var(--destructive))', textDecoration: 'underline' }}>dismiss</button>
+            <div className="mb-4">
+              <Notice tone="red" actionLabel="Dismiss" onAction={() => setTxError(null)}>
+                {txError}
+              </Notice>
             </div>
           )}
 
           {/* Action buttons */}
-          <div className="space-y-2 pt-1">
-            {/* Primary: Propose Change */}
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 pt-5 border-t"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
+          >
             <button
-              onClick={handleProposeChange}
-              disabled={!isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance}
-              className="flex items-center justify-center gap-1.5 w-full px-3.5 py-2.5 rounded-lg border font-medium transition-colors"
-              style={{
-                fontSize: '13px',
-                borderColor: 'hsl(var(--border-strong))',
-                color: 'hsl(var(--foreground))',
-                backgroundColor: 'hsl(var(--surface-0))',
-                opacity: !isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance ? 0.5 : 1,
-                cursor: !isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance ? 'not-allowed' : 'pointer',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))')}
+              type="button"
+              onClick={handleReset}
+              className="hover:underline underline-offset-4 transition-colors"
+              style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
             >
-              <Fi icon="lightbulb" style={{ fontSize: '12px' }} />
-              Propose Change
+              Reset to defaults
             </button>
 
-            {/* Tertiary: Reset (text link style) */}
             <button
-              onClick={handleReset}
-              className="flex items-center justify-center gap-1.5 w-full py-1.5 transition-colors"
-              style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
+              type="button"
+              onClick={handleProposeChange}
+              disabled={!isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[9px] font-semibold transition-all"
+              style={{
+                fontSize: '13px',
+                backgroundColor: '#111827',
+                color: '#ffffff',
+                opacity: !isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance ? 0.45 : 1,
+                cursor: !isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance ? 'not-allowed' : 'pointer',
+              }}
             >
-              <Fi icon="rotate-left" style={{ fontSize: '11px' }} />
-              Reset to defaults
+              Propose Change
             </button>
           </div>
         </div>
-      </div>
-      </>
       )}
     </div>
   );
@@ -449,63 +421,192 @@ function ConstitutionReadout({
   onAmend: () => void;
 }) {
   const venues = (constitution?.approvedProtocols ?? []).filter((protocol) => protocol.approved);
-  const sentences = constitution
+  const reserveBps = constitution?.minLiquidityBps ?? constitution?.minReservesBps ?? 0;
+  const thresholdUsd =
+    constitution?.agentThresholdUsdMicro != null && constitution.agentThresholdUsdMicro > 0
+      ? Math.round(constitution.agentThresholdUsdMicro / 1_000_000)
+      : 100;
+  const rebalanceLabel = constitution
+    ? secsToRebalanceFreq(constitution.rebalanceFrequencySeconds)
+    : 'Weekly';
+  const presetLabel =
+    RISK_PRESETS.find((r) => r.id === constitution?.riskPreset)?.label ??
+    (constitution?.riskPreset
+      ? constitution.riskPreset.charAt(0).toUpperCase() + constitution.riskPreset.slice(1)
+      : 'Balanced');
+
+  const rules = constitution
     ? [
-        constitution.minLiquidityBps != null
-          ? `At least ${formatConstitutionBps(constitution.minLiquidityBps)} of the treasury stays liquid.`
-          : `At least ${formatConstitutionBps(constitution.minReservesBps)} of the treasury stays liquid.`,
-        `At most ${formatConstitutionBps(constitution.maxTotalDeployedBps)} of the treasury can be deployed.`,
-        `No single venue can hold more than ${formatConstitutionBps(constitution.maxSingleAllocationBps)}.`,
-        ...(constitution.agentThresholdUsdMicro != null && constitution.agentThresholdUsdMicro > 0
-          ? [`Autonomous agents require at least $${(constitution.agentThresholdUsdMicro / 1_000_000).toLocaleString()} in treasury NAV.`]
-          : []),
+        {
+          no: '01',
+          title: `Keep at least ${formatConstitutionBps(reserveBps)} in safe, stable funds`,
+          sub: 'So bills and surprises are always covered.',
+          status: 'Followed ✓',
+        },
+        {
+          no: '02',
+          title: `Put at most ${formatConstitutionBps(constitution.maxTotalDeployedBps)} to work earning`,
+          sub: 'The rest always stays within reach.',
+          status: 'Followed ✓',
+        },
+        {
+          no: '03',
+          title: `Never more than ${formatConstitutionBps(constitution.maxSingleAllocationBps)} in any single place`,
+          sub: 'So no single venue can hurt you too much.',
+          status: 'Followed ✓',
+        },
+        {
+          no: '04',
+          title:
+            venues.length > 0
+              ? `Approved places only: ${venues.map((v) => venueName(v.protocolId, chainKind)).join(', ')}`
+              : 'No external earning places approved yet',
+          sub: 'Adding a new one always takes a vote.',
+          status: venues.length > 0 ? 'Followed ✓' : 'Idle only',
+        },
+        {
+          no: '05',
+          title: `Rebalance ${rebalanceLabel.toLowerCase()}, only above $${thresholdUsd.toLocaleString()}`,
+          sub: 'Avoids fiddling with small balances.',
+          status: 'Followed ✓',
+        },
+        {
+          no: '06',
+          title: 'Any founder or guardian can freeze everything, instantly',
+          sub: 'Restarting requires a vote. No exceptions.',
+          status: 'Ready ✓',
+        },
       ]
     : null;
 
   return (
-    <div className="nave-card p-5 space-y-4">
-      {sentences ? (
-        <div className="space-y-2">
-          {sentences.map((sentence) => (
-            <p key={sentence} style={{ fontSize: '14px', color: 'hsl(var(--foreground))', lineHeight: 1.55 }}>
-              {sentence}
-            </p>
+    <div className="max-w-[620px]" style={{ marginTop: '34px' }}>
+      {rules ? (
+        <div
+          style={{
+            borderTop: '1px solid hsl(var(--surface-2))',
+          }}
+        >
+          {rules.map((r) => (
+            <div
+              key={r.no}
+              className="flex items-start gap-3.5"
+              style={{
+                padding: '15px 0',
+                borderBottom: '1px solid hsl(var(--surface-2))',
+              }}
+            >
+              <span
+                className="nave-mono"
+                style={{ fontSize: '11px', color: 'hsl(var(--faint))', paddingTop: '3px' }}
+              >
+                {r.no}
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3
+                  style={{
+                    fontFamily: 'var(--font-body)',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    margin: 0,
+                    color: 'hsl(var(--foreground))',
+                  }}
+                >
+                  {r.title}
+                </h3>
+                <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', margin: '3px 0 0' }}>
+                  {r.sub}
+                </p>
+              </div>
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  fontSize: '12px',
+                  color: '#2F7D4F',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  paddingTop: '2px',
+                }}
+              >
+                {r.status}
+              </span>
+            </div>
           ))}
         </div>
       ) : (
-        <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
-          This treasury has no constitution on chain yet.
-        </p>
+        <div
+          style={{
+            padding: '20px 0',
+            borderTop: '1px solid hsl(var(--surface-2))',
+            borderBottom: '1px solid hsl(var(--surface-2))',
+          }}
+        >
+          <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
+            This treasury has no constitution on chain yet.
+          </p>
+        </div>
       )}
-      <div>
-        <div className="nave-label" style={{ fontSize: '10px', marginBottom: '6px' }}>Approved venues</div>
+
+      {/* Approved venues chips */}
+      <div style={{ marginTop: '22px' }}>
+        <div className="nave-label" style={{ marginBottom: '8px' }}>Approved venues</div>
         {venues.length > 0 ? (
-          <ul className="space-y-1">
+          <div className="flex flex-wrap gap-2">
             {venues.map((venue) => (
-              <li key={venue.protocolId} style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
-                {venueName(venue.protocolId, chainKind)}
-                {venue.maxAllocationBps > 0 ? ` (${formatConstitutionBps(venue.maxAllocationBps)})` : ''}
-              </li>
+              <span
+                key={venue.protocolId}
+                className="inline-flex items-center gap-1.5 rounded-full border bg-white"
+                style={{
+                  fontSize: '12.5px',
+                  padding: '5px 12px',
+                  borderColor: 'hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
+                }}
+              >
+                <span>{venueName(venue.protocolId, chainKind)}</span>
+                {venue.maxAllocationBps > 0 && (
+                  <span className="nave-mono" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
+                    {formatConstitutionBps(venue.maxAllocationBps)}
+                  </span>
+                )}
+              </span>
             ))}
-          </ul>
+          </div>
         ) : (
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>No venues are approved.</p>
+          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+            No venues are approved.
+          </p>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onAmend}
-        className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg border font-medium"
+
+      <div style={{ marginTop: '24px' }}>
+        <button
+          type="button"
+          onClick={onAmend}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] border font-semibold transition-colors"
+          style={{
+            fontSize: '13px',
+            borderColor: 'hsl(var(--border))',
+            color: 'hsl(var(--foreground))',
+            backgroundColor: '#ffffff',
+          }}
+        >
+          <Fi icon="sliders" style={{ fontSize: '11px' }} />
+          Amend constitution
+        </button>
+      </div>
+
+      <p
         style={{
-          fontSize: '13px',
-          borderColor: 'hsl(var(--border-strong))',
-          color: 'hsl(var(--foreground))',
-          backgroundColor: 'hsl(var(--surface-0))',
+          marginTop: '36px',
+          fontSize: '12.5px',
+          color: 'hsl(var(--faint))',
+          lineHeight: 1.6,
         }}
       >
-        <Fi icon="sliders" style={{ fontSize: '12px' }} />
-        Amend constitution
-      </button>
+        If a move would break a rule, the Guardrail refuses to sign and the move is cancelled before any money moves. &nbsp;·&nbsp; Posture:{' '}
+        <b style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>{presetLabel}</b>
+      </p>
     </div>
   );
 }

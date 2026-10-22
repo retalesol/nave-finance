@@ -4,60 +4,62 @@
 
 /* ─────────────────────────────────────────────────────────
    NAVE — Design System Tokens (Phase 1)
-   Institutional treasury aesthetic. White + black + minimal grey.
+   Warm paper + ink + brass aesthetic matching public/demo.html.
    Instrument Serif for display, DM Sans for interface, JetBrains Mono.
 ───────────────────────────────────────────────────────── */
 
 @layer base {
   :root {
     /* ── Surfaces ── */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 6%;
+    --background: 43 33% 97%;
+    --foreground: 221 39% 11%;
 
     --surface-0: 0 0% 100%;
-    --surface-1: 0 0% 97.5%;
-    --surface-2: 0 0% 94%;
+    --surface-1: 40 27% 94%;
+    --surface-2: 38 23% 91%;
     --surface-raised: 0 0% 100%;
 
     /* ── Cards / Popovers ── */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 6%;
+    --card-foreground: 221 39% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 6%;
+    --popover-foreground: 221 39% 11%;
 
-    /* ── Primary (near-black) ── */
-    --primary: 0 0% 6%;
+    /* ── Primary (ink) ── */
+    --primary: 221 39% 11%;
     --primary-foreground: 0 0% 100%;
 
-    /* ── Secondary (warm grey) ── */
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 18%;
+    /* ── Secondary (warm paper-surface) ── */
+    --secondary: 40 27% 94%;
+    --secondary-foreground: 221 39% 11%;
 
-    /* ── Muted text ── */
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    /* ── Muted / Faint text ── */
+    --muted: 40 27% 94%;
+    --muted-foreground: 220 9% 46%;
+    --faint: 218 11% 65%;
 
-    /* ── Accent — subtle ink / operational ── */
-    --accent: 0 0% 6%;
-    --accent-foreground: 0 0% 100%;
-    --accent-muted: 0 0% 96%;
-    --accent-muted-foreground: 0 0% 25%;
+    /* ── Accent & Brass ── */
+    --accent: 40 27% 94%;
+    --accent-foreground: 221 39% 11%;
+    --accent-muted: 40 27% 94%;
+    --accent-muted-foreground: 220 9% 46%;
+    --brass: 41 43% 52%;
 
     /* ── Status ── */
-    --success: 152 60% 38%;
-    --success-muted: 152 40% 96%;
-    --warning: 38 92% 50%;
-    --warning-muted: 38 100% 96%;
-    --destructive: 0 72% 51%;
+    --success: 145 45% 34%;
+    --success-muted: 145 38% 95%;
+    --warning: 43 77% 34%;
+    --warning-muted: 43 60% 95%;
+    --destructive: 4 74% 40%;
     --destructive-foreground: 0 0% 98%;
-    --destructive-muted: 0 86% 97%;
+    --destructive-muted: 6 78% 96%;
 
     /* ── Borders ── */
-    --border: 0 0% 90%;
-    --border-strong: 0 0% 78%;
-    --input: 0 0% 90%;
-    --ring: 0 0% 6%;
+    --border: 39 24% 87%;
+    --border-strong: 38 18% 76%;
+    --input: 39 24% 87%;
+    --ring: 221 39% 11%;
 
     /* ── Typography ── */
     --font-display: 'Instrument Serif', serif;
@@ -65,17 +67,17 @@
     --font-mono: 'JetBrains Mono', monospace;
 
     /* ── Radius ── */
-    --radius: 0.5rem;
+    --radius: 0.5625rem;
     --radius-sm: 0.25rem;
     --radius-lg: 0.75rem;
-    --radius-xl: 1rem;
+    --radius-xl: 1.125rem;
 
     /* ── Shadows ── */
-    --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.03);
-    --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.04), 0 1px 2px -1px hsl(0 0% 0% / 0.03);
-    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.05), 0 2px 4px -2px hsl(0 0% 0% / 0.03);
-    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.06), 0 4px 6px -4px hsl(0 0% 0% / 0.03);
-    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.07), 0 8px 10px -6px hsl(0 0% 0% / 0.03);
+    --shadow-xs: 0 1px 2px 0 rgba(17, 24, 39, 0.03);
+    --shadow-sm: 0 1px 3px 0 rgba(17, 24, 39, 0.05);
+    --shadow-md: 0 4px 10px -2px rgba(17, 24, 39, 0.06);
+    --shadow-lg: 0 12px 28px -6px rgba(17, 24, 39, 0.12);
+    --shadow-xl: 0 24px 70px -12px rgba(17, 24, 39, 0.35);
 
     /* ── Transitions ── */
     --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
@@ -84,14 +86,14 @@
     --duration-slow: 350ms;
 
     /* ── Sidebar (shadcn compat) ── */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 0 0% 18%;
-    --sidebar-primary: 0 0% 6%;
+    --sidebar-background: 43 33% 97%;
+    --sidebar-foreground: 220 9% 46%;
+    --sidebar-primary: 221 39% 11%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 96%;
-    --sidebar-accent-foreground: 0 0% 10%;
-    --sidebar-border: 0 0% 92%;
-    --sidebar-ring: 0 0% 6%;
+    --sidebar-accent: 0 0% 100%;
+    --sidebar-accent-foreground: 221 39% 11%;
+    --sidebar-border: 38 23% 91%;
+    --sidebar-ring: 221 39% 11%;
   }
 
   /* ── Base resets ── */
@@ -133,31 +135,29 @@
 
 @layer utilities {
   .nave-card {
-    background-color: hsl(var(--card));
+    background-color: #ffffff;
     border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-xs);
+    border-radius: 12px;
+    box-shadow: none;
   }
 
   .nave-card-hover {
-    transition: border-color var(--duration-base) var(--ease-ui),
-                box-shadow var(--duration-base) var(--ease-ui),
-                transform var(--duration-base) var(--ease-ui);
+    transition: border-color var(--duration-base) var(--ease-ui);
   }
 
   .nave-card-hover:hover {
     border-color: hsl(var(--border-strong));
-    box-shadow: var(--shadow-sm);
-    transform: translateY(-1px);
+    box-shadow: none;
+    transform: none;
   }
 
   .nave-label {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: hsl(var(--muted-foreground));
+    color: hsl(var(--faint));
   }
 
   .nave-badge-active {
@@ -169,8 +169,8 @@
     font-weight: 500;
     border-radius: 999px;
     background-color: hsl(var(--success-muted));
-    color: hsl(152 50% 28%);
-    border: 1px solid hsl(152 40% 84%);
+    color: hsl(var(--success));
+    border: 1px solid hsl(145 35% 84%);
   }
 
   .nave-badge-active::before {
@@ -190,9 +190,9 @@
     font-size: 11.5px;
     font-weight: 500;
     border-radius: 999px;
-    background-color: hsl(0 0% 95%);
-    color: hsl(0 0% 32%);
-    border: 1px solid hsl(0 0% 88%);
+    background-color: hsl(var(--surface-1));
+    color: hsl(var(--muted-foreground));
+    border: 1px solid hsl(var(--border));
   }
 
   .nave-mono {
@@ -209,9 +209,85 @@
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: hsl(var(--muted-foreground));
+    color: hsl(var(--faint));
+  }
+
+  /* ── Calm primitives (demo.html utility mirrors) ── */
+  .calm-section {
+    padding: 30px 0;
+    border-top: 1px solid hsl(var(--surface-2));
+    margin-top: 30px;
+  }
+
+  .calm-notice {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 0;
+    border-top: 1px solid hsl(var(--surface-2));
+    border-bottom: 1px solid hsl(var(--surface-2));
+    font-size: 13.5px;
+  }
+
+  .calm-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    width: 100%;
+    text-align: left;
+    padding: 14px 0;
+    border-bottom: 1px solid hsl(var(--surface-2));
+  }
+
+  .calm-row:last-child {
+    border-bottom: 0;
+  }
+
+  .calm-stat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .calm-summary-line {
+    font-family: var(--font-display);
+    font-size: 21px;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    padding: 20px 0;
+    border-top: 1px solid hsl(var(--surface-2));
+    border-bottom: 1px solid hsl(var(--surface-2));
+  }
+
+  .calm-summary-line em {
+    color: hsl(var(--brass));
+    font-style: italic;
+  }
+
+  .calm-tabs {
+    display: flex;
+    gap: 20px;
+    border-bottom: 1px solid hsl(var(--border));
+    margin-bottom: 6px;
+  }
+
+  .btn-brass {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 9px;
+    padding: 8px 14px;
+    border: 1px solid hsl(var(--brass));
+    background-color: hsl(var(--brass));
+    color: #ffffff;
+    transition: opacity var(--duration-fast) var(--ease-ui);
+  }
+
+  .btn-brass:hover:not(:disabled) {
+    opacity: 0.92;
   }
 
   .text-display {
@@ -668,13 +744,12 @@ input[type='range']::-moz-range-thumb {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: hsl(0 0% 85%); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(0 0% 72%); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--border-strong)); }
 
 /* ─────────────────────────────────────────────────────────
    Toast — Nave design system overrides
-   Matches the institutional aesthetic (DM Sans, tight radii,
-   hairline borders, surface-raised backgrounds).
+   Matches the warm paper / white / brass aesthetic.
 ───────────────────────────────────────────────────────── */
 
 [data-radix-toast-viewport] {
@@ -685,11 +760,11 @@ input[type='range']::-moz-range-thumb {
 [data-sonner-toast],
 [role="status"][data-state] {
   font-family: var(--font-body) !important;
-  border-radius: var(--radius-lg) !important;
+  border-radius: 12px !important;
   box-shadow: var(--shadow-lg) !important;
   padding: 14px 16px !important;
   border: 1px solid hsl(var(--border)) !important;
-  background-color: hsl(var(--surface-raised)) !important;
+  background-color: #ffffff !important;
   color: hsl(var(--foreground)) !important;
 }
 
@@ -697,8 +772,8 @@ input[type='range']::-moz-range-thumb {
 [role="status"][data-state].destructive,
 [role="status"][data-state][data-type="destructive"] {
   background-color: hsl(var(--destructive-muted)) !important;
-  border-color: hsl(0 72% 82%) !important;
-  color: hsl(0 55% 30%) !important;
+  border-color: hsl(4 60% 82%) !important;
+  color: hsl(var(--destructive)) !important;
 }
 
 [role="status"][data-state].destructive [data-title],
@@ -735,25 +810,29 @@ input[type='range']::-moz-range-thumb {
   opacity: 1;
 }
 
-/* Toast action link (Solscan explorer) */
-[data-radix-toast-viewport] a[href*="solscan"] {
+/* Toast action link (Solscan / explorer) */
+[data-radix-toast-viewport] a[href*="solscan"],
+[data-radix-toast-viewport] a[href*="scan"] {
   font-family: var(--font-mono) !important;
   font-size: 11.5px !important;
-  color: hsl(var(--foreground)) !important;
+  color: hsl(var(--brass)) !important;
   border-color: hsl(var(--border)) !important;
+  background-color: hsl(var(--background)) !important;
   border-radius: var(--radius) !important;
   padding: 0 10px !important;
   height: 28px !important;
   transition: background-color var(--duration-fast) var(--ease-ui);
 }
 
-[data-radix-toast-viewport] a[href*="solscan"]:hover {
-  background-color: hsl(var(--surface-2)) !important;
+[data-radix-toast-viewport] a[href*="solscan"]:hover,
+[data-radix-toast-viewport] a[href*="scan"]:hover {
+  background-color: hsl(var(--surface-1)) !important;
 }
 
 /* ─────────────────────────────────────────────────────────
-   Homepage only. Tokens live on .home so Dashboard, Bridge,
-   and docs keep the greyscale :root palette.
+   Homepage only. Intentional app-vs-home token boundary:
+   .home keeps its own scoped tokens (e.g. --home-brass #C9A24A)
+   independent of the app shell :root palette (--brass #B9974F).
 ───────────────────────────────────────────────────────── */
 
 .home {

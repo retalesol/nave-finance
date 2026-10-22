@@ -12,32 +12,36 @@ interface NaveEmptyStateProps {
 }
 
 /**
- * Reusable empty-state card matching the Nave design system.
- * Drop into any section where data is absent.
+ * Reusable empty-state block matching the calm demo.html aesthetic:
+ * plain centered block with hairline top/bottom, serif/clean heading, and ink CTA.
  */
 export default function NaveEmptyState({ icon, title, description, action }: NaveEmptyStateProps) {
   return (
     <div
-      className="rounded-xl border p-8 text-center"
+      className="py-10 px-6 text-center border-t border-b"
       style={{
-        backgroundColor: 'hsl(var(--surface-0))',
-        borderColor: 'hsl(var(--border))',
+        borderColor: 'hsl(var(--surface-2))',
       }}
     >
       <div
-        className="mx-auto mb-4 flex items-center justify-center rounded-xl"
+        className="mx-auto mb-3 flex items-center justify-center rounded-full"
         style={{
-          width: '56px',
-          height: '56px',
-          backgroundColor: 'hsl(var(--surface-1))',
+          width: '40px',
+          height: '40px',
+          backgroundColor: '#ffffff',
           border: '1px solid hsl(var(--border))',
         }}
       >
-        <Fi icon={icon} style={{ fontSize: '22px', color: 'hsl(var(--muted-foreground))' }} />
+        <Fi icon={icon} style={{ fontSize: '16px', color: 'hsl(var(--muted-foreground))' }} />
       </div>
       <h3
-        className="text-display font-semibold"
-        style={{ fontSize: '16px', color: 'hsl(var(--foreground))', marginBottom: '6px' }}
+        style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: '15px',
+          fontWeight: 600,
+          color: 'hsl(var(--foreground))',
+          margin: '0 0 6px',
+        }}
       >
         {title}
       </h3>
@@ -54,22 +58,17 @@ export default function NaveEmptyState({ icon, title, description, action }: Nav
       </p>
       {action && (
         <button
+          type="button"
           onClick={action.onClick}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all mt-5"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-colors mt-4"
           style={{
             fontSize: '13px',
-            backgroundColor: 'hsl(var(--primary))',
-            color: 'hsl(var(--primary-foreground))',
-            boxShadow: 'var(--shadow-sm)',
+            backgroundColor: '#111827',
+            color: '#ffffff',
+            border: '1px solid #111827',
           }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = '';
-            e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-          }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#1F2937')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#111827')}
         >
           {action.icon && <Fi icon={action.icon} style={{ fontSize: '12px' }} />}
           {action.label}

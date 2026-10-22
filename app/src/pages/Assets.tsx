@@ -7,6 +7,7 @@ import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import MetricCard from '../components/MetricCard';
+import { Notice, Section, UnderlineTabs } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useTreasuryAssets, type TreasuryAssetRow } from '../hooks/useTreasuryAssets';
 import { useTreasuryNfts, type TreasuryNft } from '../hooks/useTreasuryNfts';
@@ -16,7 +17,7 @@ import { DepositFlowModal } from '../components/DepositFlow';
 import NaveModal from '../components/NaveModal';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
-import { buildRegisterAssetEvm, type EvmBuildResult } from '../lib/evm/writers';
+import { buildRegisterAssetEvm } from '../lib/evm/writers';
 import {
   buildInitStrategyPosition,
   buildInitStrategyEscrow,
@@ -30,7 +31,6 @@ import { evmAllowedAssets, resolveAsset, riskLabel, type AllowedAsset, type EvmA
 import { fetchYieldData, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { getSolanaRegisterAssetPlan } from '../lib/solanaTreasuryRegistrationDefaults';
 import { getSolanaStrategyStatuses } from '../lib/strategyReadiness';
-import type { EvmChainId } from '../lib/chain/types';
 
 const MARGINFI_STRATEGY_ENABLED = getSolanaStrategyStatuses().find((s) => s.id === 'marginfi')?.supported ?? false;
 const JUPITER_STRATEGY_BADGE = getSolanaStrategyStatuses().find((s) => s.id === 'jupiter')?.badge ?? null;
@@ -39,32 +39,71 @@ const USD = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const FIELD_STYLE: React.CSSProperties = {
-  fontSize: 13,
-  backgroundColor: 'hsl(var(--surface-0))',
-  borderColor: 'hsl(var(--border))',
+  width: '100%',
+  fontSize: '14px',
+  padding: '11px 13px',
+  borderRadius: '10px',
+  backgroundColor: '#ffffff',
+  border: '1px solid hsl(var(--border))',
   color: 'hsl(var(--foreground))',
+  outline: 'none',
 };
 
-function ModalShell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+function ModalShell({
+  title,
+  subtitle,
+  children,
+  onClose,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
   return (
-    <NaveModal open title={title} onClose={onClose} maxWidth={460}>
-      <div className="px-5 py-4 space-y-4">{children}</div>
+    <NaveModal open title={title} subtitle={subtitle} onClose={onClose} maxWidth={480}>
+      <div style={{ padding: '18px 22px 22px' }} className="space-y-4">
+        {children}
+      </div>
     </NaveModal>
   );
 }
 
-function Field({ label, value, onChange, placeholder, mono }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean;
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  mono?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>{label}</label>
+    <div>
+      <label
+        style={{
+          fontSize: '12.5px',
+          fontWeight: 600,
+          color: 'hsl(var(--foreground))',
+          marginBottom: '7px',
+          display: 'block',
+        }}
+      >
+        {label}
+      </label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2.5 rounded-lg border outline-none"
-        style={{ ...FIELD_STYLE, fontFamily: mono ? 'var(--font-mono)' : 'var(--font-body)' }}
+        style={{
+          ...FIELD_STYLE,
+          fontSize: mono ? '12.5px' : '14px',
+          fontFamily: mono ? 'var(--font-mono)' : 'var(--font-body)',
+        }}
       />
     </div>
   );
@@ -72,14 +111,35 @@ function Field({ label, value, onChange, placeholder, mono }: {
 
 function Err({ msg }: { msg: string | null }) {
   if (!msg) return null;
-  return <p style={{ fontSize: 12, color: 'hsl(var(--destructive))' }}>{msg}</p>;
+  return <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', margin: 0 }}>{msg}</p>;
 }
 
-function PrimaryBtn({ onClick, busy, disabled, children }: { onClick: () => void; busy: boolean; disabled?: boolean; children: React.ReactNode }) {
+function PrimaryBtn({
+  onClick,
+  busy,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  busy: boolean;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   const isDisabled = busy || !!disabled;
   return (
-    <button onClick={onClick} disabled={isDisabled} className="px-4 py-2 rounded-lg font-medium"
-      style={{ fontSize: 13, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))', opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? 'not-allowed' : 'pointer' }}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isDisabled}
+      className="px-4 py-2 rounded-[9px] font-semibold transition-all"
+      style={{
+        fontSize: '13px',
+        backgroundColor: 'hsl(var(--foreground))',
+        color: '#ffffff',
+        opacity: isDisabled ? 0.45 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+      }}
+    >
       {children}
     </button>
   );
@@ -125,8 +185,18 @@ async function discoverPoolsForAsset(
 }
 
 /* ── Configure position targets (adaptive) ──────────────────── */
-function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: {
-  daoAddress: string; founder: PublicKey; asset: TreasuryAssetRow; onClose: () => void; onDone: () => void;
+function ConfigureTargetsModal({
+  daoAddress,
+  founder,
+  asset,
+  onClose,
+  onDone,
+}: {
+  daoAddress: string;
+  founder: PublicKey | null;
+  asset: TreasuryAssetRow;
+  onClose: () => void;
+  onDone: () => void;
 }) {
   const tx = useSendTransaction();
   const { chainKind } = useChain();
@@ -159,7 +229,6 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
         setErr(`No live pools found for ${asset.symbol} on ${protocol}. Enter addresses manually.`);
       } else {
         setDiscoveredPools(pools);
-        // Auto-select the best (highest adjustedScore)
         const best = pools[0];
         setSelectedPoolId(best.poolId);
         setExtMarket(best.extMarket);
@@ -183,19 +252,26 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
   async function submit() {
     setErr(null);
     if (chainKind === 'evm') {
-      // Intentional Solana-only: this binds a Kamino/Jito/marginfi market+reserve
-      // PDA (Solana `configure_position_targets` / `init_strategy_*`). On EVM each
-      // adapter (Aave/Compound/Balancer) encodes its own underlying target,
-      // so there is no per-position binding — approve adapters + set allocation
-      // caps via the constitution (Policy) instead. See FEATURE_PARITY_MATRIX ❎.
-      toast({ variant: 'destructive', title: 'Solana-only step', description: 'EVM adapters self-target their pool — approve adapters and set caps via the Policy constitution instead.' });
+      toast({
+        variant: 'destructive',
+        title: 'Solana-only step',
+        description:
+          'EVM adapters self-target their pool — approve adapters and set caps via the Policy constitution instead.',
+      });
+      return;
+    }
+    if (!founder) {
+      setErr('Connect your wallet to configure strategy targets on-chain.');
       return;
     }
     let market: PublicKey, reserve: PublicKey;
     try {
       market = new PublicKey(extMarket.trim());
       reserve = new PublicKey(extReserve.trim());
-    } catch { setErr('Market and reserve must be valid Solana addresses'); return; }
+    } catch {
+      setErr('Market and reserve must be valid Solana addresses');
+      return;
+    }
     setBusy(true);
     try {
       const dao = new PublicKey(daoAddress);
@@ -203,34 +279,47 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
       const initPos = await buildInitStrategyPosition(dao, founder, protocol, mintKey);
       const initEsc = await buildInitStrategyEscrow(dao, founder, protocol, mintKey);
       if (protocol === 'marginfi') {
-        // configure_marginfi_position(ext_market=marginfi_group, ext_reserve=bank)
-        // — a dedicated instruction (not the generic configure_position_targets):
-        // it additionally provisions the DAO's cross-margin MarginfiAccount
-        // ledger via a fresh keypair that must co-sign this call.
         const configure = await buildConfigureMarginfiPosition(dao, founder, mintKey, market, reserve);
-        const out = await tx.sendGrouped([[initPos, initEsc, configure]], { successLabel: 'MarginFi position configured' });
-        if (out.status === 'success' || out.status === 'mock') { onDone(); onClose(); }
-        else setErr(out.error || 'Configuration failed');
+        const out = await tx.sendGrouped([[initPos, initEsc, configure]], {
+          successLabel: 'MarginFi position configured',
+        });
+        if (out.status === 'success' || out.status === 'mock') {
+          onDone();
+          onClose();
+        } else setErr(out.error || 'Configuration failed');
         return;
       }
       let collateral: PublicKey;
       try {
         collateral = new PublicKey((collateralMint || extMarket).trim());
-      } catch { setErr('Collateral mint must be a valid Solana address'); return; }
-      const configure = await buildConfigurePositionTargets(dao, founder, protocol, mintKey, collateral, market, reserve);
-      const out = await tx.sendGrouped([[initPos, initEsc, configure]], { successLabel: 'Strategy targets configured' });
-      if (out.status === 'success' || out.status === 'mock') { onDone(); onClose(); }
-      else setErr(out.error || 'Configuration failed');
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Configuration failed'); }
-    finally { setBusy(false); }
+      } catch {
+        setErr('Collateral mint must be a valid Solana address');
+        return;
+      }
+      const configure = await buildConfigurePositionTargets(
+        dao,
+        founder,
+        protocol,
+        mintKey,
+        collateral,
+        market,
+        reserve,
+      );
+      const out = await tx.sendGrouped([[initPos, initEsc, configure]], {
+        successLabel: 'Strategy targets configured',
+      });
+      if (out.status === 'success' || out.status === 'mock') {
+        onDone();
+        onClose();
+      } else setErr(out.error || 'Configuration failed');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Configuration failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const canSubmit = !!extMarket && !!extReserve;
-  // NOTE: marginfi's `market`/`reserve` map to configure_marginfi_position's
-  // (ext_market=marginfi_group, ext_reserve=bank) — distinct from the generic
-  // configure_position_targets(protocol_id, ext_market, ext_reserve) shape the
-  // other protocols use (where collateral is also required). MarginFi has no
-  // collateral-mint concept here, so that field is hidden for it below.
   const fieldLabels: Record<string, { collateral: string; market: string; reserve: string }> = {
     kamino:   { collateral: 'Reserve collateral mint', market: 'Lending market', reserve: 'Reserve' },
     jito:     { collateral: 'Pool mint (poolSOL)',     market: 'Stake pool',     reserve: 'Reserve stake' },
@@ -240,24 +329,45 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
   const labels = fieldLabels[protocol] ?? fieldLabels.kamino;
 
   return (
-    <ModalShell title={`Configure ${asset.symbol} strategy targets`} onClose={onClose}>
-      {/* Context */}
-      <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-        We pick the best yield pool for {asset.symbol}. Confirm to continue.
-      </p>
-
+    <ModalShell
+      title={`Configure ${asset.symbol} strategy targets`}
+      subtitle={`We pick the best yield pool for ${asset.symbol}. Confirm to continue.`}
+      onClose={onClose}
+    >
       {/* Protocol selector */}
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Protocol</label>
-        <select value={protocol} onChange={(e) => { setProtocol(e.target.value); setDiscoveredPools([]); setSelectedPoolId(null); }}
-          className="w-full px-3 py-2.5 rounded-lg border outline-none" style={FIELD_STYLE}>
+      <div>
+        <label
+          style={{
+            fontSize: '12.5px',
+            fontWeight: 600,
+            color: 'hsl(var(--foreground))',
+            marginBottom: '7px',
+            display: 'block',
+          }}
+        >
+          Protocol
+        </label>
+        <select
+          value={protocol}
+          onChange={(e) => {
+            setProtocol(e.target.value);
+            setDiscoveredPools([]);
+            setSelectedPoolId(null);
+          }}
+          style={FIELD_STYLE}
+        >
           <option value="kamino">Kamino (klend)</option>
           <option value="jito">Jito (SPL stake pool)</option>
           {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">MarginFi (lending)</option>}
-          <option value="jupiter">Jupiter (Lend Earn){JUPITER_STRATEGY_BADGE === 'beta' ? ' — Beta' : ''}</option>
+          <option value="jupiter">
+            Jupiter (Lend Earn){JUPITER_STRATEGY_BADGE === 'beta' ? ' — Beta' : ''}
+          </option>
         </select>
         {discovering && (
-          <p style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))' }} className="flex items-center gap-1.5">
+          <p
+            style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}
+            className="flex items-center gap-1.5"
+          >
             <Fi icon="arrows-rotate" className="animate-spin" style={{ fontSize: 10 }} />
             Scanning live pools…
           </p>
@@ -266,40 +376,73 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
 
       {/* Discovered pools list */}
       {discoveredPools.length > 0 && (
-        <div className="space-y-1.5">
-          <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>
+        <div>
+          <label
+            style={{
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: 'hsl(var(--foreground))',
+              marginBottom: '7px',
+              display: 'block',
+            }}
+          >
             Live pools found — ranked by risk-adjusted yield
           </label>
-          <div className="space-y-1 max-h-40 overflow-y-auto">
+          <div
+            className="max-h-44 overflow-y-auto"
+            style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+          >
             {discoveredPools.map((pool) => {
               const rl = riskLabel(pool.riskScore);
               const selected = pool.poolId === selectedPoolId;
               return (
                 <button
+                  type="button"
                   key={pool.poolId}
                   onClick={() => selectPool(pool)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-all"
+                  className="w-full flex items-center justify-between text-left transition-colors"
                   style={{
-                    fontSize: 12,
-                    backgroundColor: selected ? 'hsl(var(--surface-1))' : 'hsl(var(--surface-0))',
-                    borderColor: selected ? 'hsl(var(--ring))' : 'hsl(var(--border))',
+                    padding: '10px 4px',
+                    borderBottom: '1px solid hsl(var(--surface-2))',
+                    fontSize: '12.5px',
                   }}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {selected && <Fi icon="circle-check" style={{ fontSize: 10, color: 'hsl(var(--primary))', flexShrink: 0 }} />}
-                    <span className="nave-mono truncate" style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      style={{
+                        width: '15px',
+                        height: '15px',
+                        borderRadius: '50%',
+                        border: `1.5px solid ${selected ? 'hsl(var(--foreground))' : '#CFC8B8'}`,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {selected && (
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: 'hsl(var(--foreground))',
+                          }}
+                        />
+                      )}
+                    </span>
+                    <span className="nave-mono truncate" style={{ color: 'hsl(var(--foreground))' }}>
                       {pool.source}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                    <span className="nave-mono" style={{ fontSize: 11, color: 'hsl(var(--success))' }}>
+                    <span className="nave-mono" style={{ fontSize: '11.5px', color: 'hsl(var(--success))', fontWeight: 600 }}>
                       {(pool.apyBps / 100).toFixed(2)}% APY
                     </span>
-                    <span style={{ fontSize: 10.5, color: rl.color, fontFamily: 'var(--font-mono)' }}>
+                    <span style={{ fontSize: '11px', color: rl.color, fontFamily: 'var(--font-mono)' }}>
                       {rl.label} risk
                     </span>
                     {pool.tvlUsd > 0 && (
-                      <span style={{ fontSize: 10.5, color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ fontSize: '11px', color: 'hsl(var(--faint))', fontFamily: 'var(--font-mono)' }}>
                         ${(pool.tvlUsd / 1e6).toFixed(0)}M TVL
                       </span>
                     )}
@@ -314,43 +457,96 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
       {/* Manual fields — Advanced */}
       <button
         type="button"
-        onClick={() => setShowAdvanced(v => !v)}
+        onClick={() => setShowAdvanced((v) => !v)}
         className="flex items-center gap-1.5 w-full text-left"
-        style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}
+        style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
       >
         <Fi icon={showAdvanced ? 'chevron-up' : 'chevron-down'} style={{ fontSize: 10 }} />
         Advanced — manual pool addresses
       </button>
       {showAdvanced && (
-        <div className="space-y-3 pt-1">
+        <div
+          className="space-y-3 pt-3"
+          style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+        >
           <button
             type="button"
             onClick={handleDiscover}
             disabled={discovering || busy}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"
-            style={{ fontSize: 12, borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border font-semibold"
+            style={{
+              fontSize: '12px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
           >
-            <Fi icon={discovering ? 'arrows-rotate' : 'magnifying-glass'} style={{ fontSize: 11 }} className={discovering ? 'animate-spin' : ''} />
+            <Fi
+              icon={discovering ? 'arrows-rotate' : 'magnifying-glass'}
+              style={{ fontSize: 11 }}
+              className={discovering ? 'animate-spin' : ''}
+            />
             {discovering ? 'Scanning…' : 'Re-scan pools'}
           </button>
           {protocol !== 'marginfi' && (
-            <Field label={labels.collateral} value={collateralMint} onChange={setCollateralMint} placeholder="cToken / pool / jlToken mint…" mono />
+            <Field
+              label={labels.collateral}
+              value={collateralMint}
+              onChange={setCollateralMint}
+              placeholder="cToken / pool / jlToken mint…"
+              mono
+            />
           )}
-          <Field label={labels.market} value={extMarket} onChange={setExtMarket} placeholder="ext market / lending PDA…" mono />
-          <Field label={labels.reserve} value={extReserve} onChange={setExtReserve} placeholder="ext reserve / vault…" mono />
+          <Field
+            label={labels.market}
+            value={extMarket}
+            onChange={setExtMarket}
+            placeholder="ext market / lending PDA…"
+            mono
+          />
+          <Field
+            label={labels.reserve}
+            value={extReserve}
+            onChange={setExtReserve}
+            placeholder="ext reserve / vault…"
+            mono
+          />
         </div>
       )}
 
       {allowedAsset && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'hsl(var(--surface-1))', fontSize: 11.5, color: 'hsl(var(--muted-foreground))' }}>
-          <Fi icon="circle-info" style={{ fontSize: 11 }} />
-          {allowedAsset.symbol} is in the curated allowlist — asset class: {allowedAsset.assetClass}, max risk: {allowedAsset.maxRisk}/100.
+        <div
+          style={{
+            backgroundColor: 'hsl(var(--background))',
+            border: '1px solid hsl(var(--surface-2))',
+            borderRadius: '12px',
+            padding: '11px 13px',
+            fontSize: '12px',
+            color: 'hsl(var(--muted-foreground))',
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: 'hsl(var(--foreground))' }}>{allowedAsset.symbol}</strong> is in the curated allowlist — asset class: {allowedAsset.assetClass}, max risk: {allowedAsset.maxRisk}/100.
         </div>
       )}
 
       <Err msg={err} />
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
+      <div
+        className="flex items-center justify-end gap-2"
+        style={{
+          marginTop: '20px',
+          paddingTop: '16px',
+          borderTop: '1px solid hsl(var(--surface-2))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3.5 py-2 rounded-[9px] font-semibold"
+          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          Cancel
+        </button>
         <PrimaryBtn onClick={submit} busy={busy} disabled={!canSubmit}>
           {busy ? 'Configuring…' : 'Configure targets'}
         </PrimaryBtn>
@@ -360,8 +556,14 @@ function ConfigureTargetsModal({ daoAddress, founder, asset, onClose, onDone }: 
 }
 
 /* ── Register EVM asset ───────────────────────────────────── */
-function RegisterEvmAssetModal({ daoAddress, onClose, onDone }: {
-  daoAddress: string; onClose: () => void; onDone: () => void;
+function RegisterEvmAssetModal({
+  daoAddress,
+  onClose,
+  onDone,
+}: {
+  daoAddress: string;
+  onClose: () => void;
+  onDone: () => void;
 }) {
   const tx = useSendTransaction();
   const { evmChainId } = useChain();
@@ -383,11 +585,20 @@ function RegisterEvmAssetModal({ daoAddress, onClose, onDone }: {
 
   async function submit() {
     setErr(null);
-    if (!evmChainId) { setErr('Select an Ethereum or Base network.'); return; }
-    if (!asset) { setErr('Select an asset to register.'); return; }
+    if (!evmChainId) {
+      setErr('Select an Ethereum or Base network.');
+      return;
+    }
+    if (!asset) {
+      setErr('Select an asset to register.');
+      return;
+    }
     const feedHex = pythPresetLocked ? defaultFeed : pythFeed;
     const feed = normalizePythFeed(feedHex);
-    if (!feed) { setErr('Pyth feed id must be 32 bytes / 64 hex chars. Stablecoins use all zeros.'); return; }
+    if (!feed) {
+      setErr('Pyth feed id must be 32 bytes / 64 hex chars. Stablecoins use all zeros.');
+      return;
+    }
     setBusy(true);
     try {
       const out = await tx.sendEvm(
@@ -401,8 +612,10 @@ function RegisterEvmAssetModal({ daoAddress, onClose, onDone }: {
         ),
         { successLabel: `${asset.symbol} registered` },
       );
-      if (out.status === 'success' || out.status === 'mock') { onDone(); onClose(); }
-      else setErr(out.error || 'Registration failed');
+      if (out.status === 'success' || out.status === 'mock') {
+        onDone();
+        onClose();
+      } else setErr(out.error || 'Registration failed');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Registration failed');
     } finally {
@@ -411,35 +624,78 @@ function RegisterEvmAssetModal({ daoAddress, onClose, onDone }: {
   }
 
   return (
-    <ModalShell title="Add a token" onClose={onClose}>
-      <p style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-        Choose a supported token. Setup happens automatically so you can deposit next.
-      </p>
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: 12, fontWeight: 500 }}>Asset</label>
+    <ModalShell
+      title="Add a token"
+      subtitle="Choose a supported token. Setup happens automatically so you can deposit next."
+      onClose={onClose}
+    >
+      <div>
+        <label
+          style={{
+            fontSize: '12.5px',
+            fontWeight: 600,
+            color: 'hsl(var(--foreground))',
+            marginBottom: '7px',
+            display: 'block',
+          }}
+        >
+          Asset
+        </label>
         <select
           value={asset?.address ?? ''}
           onChange={(e) => selectAsset(e.target.value)}
-          className="w-full px-3 py-2.5 rounded-lg border outline-none"
           style={FIELD_STYLE}
         >
           {assets.map((a) => (
-            <option key={a.address} value={a.address}>{a.symbol} — {a.name}</option>
+            <option key={a.address} value={a.address}>
+              {a.symbol} — {a.name}
+            </option>
           ))}
         </select>
       </div>
       {!pythPresetLocked && (
-        <details>
-          <summary style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', cursor: 'pointer' }}>Advanced</summary>
-          <div className="pt-2">
-            <Field label="Price feed id" value={pythFeed} onChange={setPythFeed} placeholder={ZERO_PYTH_FEED} mono />
+        <details style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '12px' }}>
+          <summary
+            style={{
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: 'hsl(var(--muted-foreground))',
+              cursor: 'pointer',
+            }}
+          >
+            Advanced
+          </summary>
+          <div className="pt-3">
+            <Field
+              label="Price feed id"
+              value={pythFeed}
+              onChange={setPythFeed}
+              placeholder={ZERO_PYTH_FEED}
+              mono
+            />
           </div>
         </details>
       )}
       <Err msg={err} />
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
-        <PrimaryBtn onClick={submit} busy={busy} disabled={!asset}>{busy ? 'Adding…' : 'Add token'}</PrimaryBtn>
+      <div
+        className="flex items-center justify-end gap-2"
+        style={{
+          marginTop: '20px',
+          paddingTop: '16px',
+          borderTop: '1px solid hsl(var(--surface-2))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3.5 py-2 rounded-[9px] font-semibold"
+          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          Cancel
+        </button>
+        <PrimaryBtn onClick={submit} busy={busy} disabled={!asset}>
+          {busy ? 'Adding…' : 'Add token'}
+        </PrimaryBtn>
       </div>
     </ModalShell>
   );
@@ -478,7 +734,9 @@ function RegisterSolanaHeldAssetModal({
     } else {
       const h = advancedFeed.trim().replace(/^0x/i, '');
       if (!/^[0-9a-fA-F]{64}$/.test(h)) {
-        setErr('Pyth price feed id must be 32 bytes (64 hex characters). Use the feed id from Pyth for this token.');
+        setErr(
+          'Pyth price feed id must be 32 bytes (64 hex characters). Use the feed id from Pyth for this token.',
+        );
         return;
       }
       pythHex = h;
@@ -494,7 +752,13 @@ function RegisterSolanaHeldAssetModal({
       if (out.status === 'success' || out.status === 'mock') {
         onDone();
         onClose();
-      } else setErr(describeTransactionError(out.error, { programHint: 'core', fallback: 'Registration failed' }));
+      } else
+        setErr(
+          describeTransactionError(out.error, {
+            programHint: 'core',
+            fallback: 'Registration failed',
+          }),
+        );
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Registration failed');
     } finally {
@@ -503,14 +767,24 @@ function RegisterSolanaHeldAssetModal({
   }
 
   return (
-    <ModalShell title={`Enable ${asset.symbol}`} onClose={onClose}>
-      <p style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-        Enables {asset.symbol} for deposits and transfers from this treasury.
-      </p>
+    <ModalShell
+      title={`Enable ${asset.symbol}`}
+      subtitle={`Enables ${asset.symbol} for deposits and transfers from this treasury.`}
+      onClose={onClose}
+    >
       {plan.mode === 'needs_pyth_feed' && (
-        <details open>
-          <summary style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', cursor: 'pointer' }}>Advanced — price feed</summary>
-          <div className="pt-2">
+        <details open style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '12px' }}>
+          <summary
+            style={{
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: 'hsl(var(--muted-foreground))',
+              cursor: 'pointer',
+            }}
+          >
+            Advanced — price feed
+          </summary>
+          <div className="pt-3">
             <Field
               label="Price feed id"
               value={advancedFeed}
@@ -522,14 +796,40 @@ function RegisterSolanaHeldAssetModal({
         </details>
       )}
       {plan.mode === 'ready' && (
-        <div className="px-3 py-2 rounded-lg" style={{ backgroundColor: 'hsl(var(--surface-1))', fontSize: 12, color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-          {asset.symbol} is ready to enable.
+        <div
+          style={{
+            backgroundColor: 'hsl(var(--background))',
+            border: '1px solid hsl(var(--surface-2))',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            fontSize: '13px',
+            color: 'hsl(var(--muted-foreground))',
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: 'hsl(var(--foreground))' }}>{asset.symbol}</strong> is ready to enable.
         </div>
       )}
       <Err msg={err} />
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>Cancel</button>
-        <PrimaryBtn onClick={submit} busy={busy}>{busy ? 'Confirming…' : 'Enable asset'}</PrimaryBtn>
+      <div
+        className="flex items-center justify-end gap-2"
+        style={{
+          marginTop: '20px',
+          paddingTop: '16px',
+          borderTop: '1px solid hsl(var(--surface-2))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3.5 py-2 rounded-[9px] font-semibold"
+          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          Cancel
+        </button>
+        <PrimaryBtn onClick={submit} busy={busy}>
+          {busy ? 'Confirming…' : 'Enable asset'}
+        </PrimaryBtn>
       </div>
     </ModalShell>
   );
@@ -553,174 +853,371 @@ function treasuryAssetDexScreenerUrl(
   return null;
 }
 
-/* ── Asset card ─────────────────────────────────────────────── */
-function AssetCard({ asset, canManage, onAction, hidden = false }: {
-  asset: TreasuryAssetRow; canManage: boolean; onAction: (a: string, asset: TreasuryAssetRow) => void; hidden?: boolean;
+/* ── Asset row (calm hairline style replacing heavy card) ─── */
+function AssetCard({
+  asset,
+  canManage,
+  onAction,
+  hidden = false,
+}: {
+  asset: TreasuryAssetRow;
+  canManage: boolean;
+  onAction: (a: string, asset: TreasuryAssetRow) => void;
+  hidden?: boolean;
 }) {
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [copiedMint, setCopiedMint] = useState(false);
   const depositBlocked = chainKind === 'evm' && asset.mint === 'ETH';
   const dexHref = treasuryAssetDexScreenerUrl(asset, chainKind, evmChainId);
+  const inUseUi = asset.deployedCapital / Math.pow(10, asset.decimals);
+
+  function copyMint() {
+    navigator.clipboard.writeText(asset.mint);
+    setCopiedMint(true);
+    setTimeout(() => setCopiedMint(false), 1400);
+  }
 
   return (
-    <div className="rounded-xl border p-5" style={{ backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))' }}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-            <Fi icon="coins" style={{ fontSize: '16px', color: 'hsl(var(--foreground))' }} />
-          </div>
-          <div>
-            <div className="text-display font-semibold" style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }}>{asset.symbol}</div>
-            <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-              {asset.name}
-              <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))' }}>
-                {asset.assetKindLabel}
+    <div
+      style={{
+        padding: '15px 0',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+      }}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: '14.5px',
+                fontWeight: 600,
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              {asset.symbol}
+            </span>
+            <span style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}>
+              · {asset.name}
+            </span>
+            <span
+              className="nave-mono"
+              style={{
+                fontSize: '10px',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'hsl(var(--faint))',
+              }}
+            >
+              {asset.assetKindLabel}
+            </span>
+            {asset.onChainRegistered && !asset.enabled && (
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'hsl(var(--destructive))',
+                }}
+              >
+                Disabled
               </span>
-              {asset.onChainRegistered && !asset.enabled && (
-                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'hsl(var(--destructive-muted))', color: 'hsl(var(--destructive))' }}>Disabled</span>
-              )}
-            </div>
+            )}
           </div>
-        </div>
-        <div className="text-right">
-          <div className="text-display font-semibold" style={{ fontSize: '15px', color: 'hsl(var(--foreground))' }}>{USD(asset.valueUsd)}</div>
-          <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>{asset.allocationPct.toFixed(1)}% of NAV</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        {[
-          { label: 'Available', value: asset.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 }) },
-          { label: 'In use', value: (asset.deployedCapital / Math.pow(10, asset.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 }) },
-        ].map((s) => (
-          <div key={s.label} className="p-2.5 rounded-lg" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-            <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginBottom: '2px' }}>{s.label}</div>
-            <div className="text-display font-semibold" style={{ fontSize: '14px', color: 'hsl(var(--foreground))' }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <details className="mb-4">
-        <summary style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', cursor: 'pointer' }}>Details</summary>
-        <div className="flex items-center gap-2 p-2.5 rounded-lg mt-2" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-          <code style={{ fontSize: '11px', color: 'hsl(var(--foreground))', fontFamily: 'var(--font-mono, monospace)', wordBreak: 'break-all' }}>
-            {asset.mint}
-          </code>
-          <button type="button" onClick={() => navigator.clipboard.writeText(asset.mint)} className="ml-auto p-1 rounded flex-shrink-0" style={{ color: 'hsl(var(--muted-foreground))' }} title="Copy">
-            <Fi icon="copy" style={{ fontSize: '11px' }} />
-          </button>
-        </div>
-        {dexHref && (
-          <a
-            href={dexHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-lg border text-xs font-medium"
-            style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-          >
-            <Fi icon="arrow-up-right-from-square" style={{ fontSize: 10 }} /> Market
-          </a>
-        )}
-      </details>
-
-      {canManage && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => onAction('deposit', asset)}
-            disabled={depositBlocked}
-            title={depositBlocked ? 'Use WETH to add ETH to the treasury.' : undefined}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
+          <div
             style={{
-              borderColor: 'hsl(var(--border))',
-              color: depositBlocked ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
-              opacity: depositBlocked ? 0.55 : 1,
-              cursor: depositBlocked ? 'not-allowed' : 'pointer',
+              fontSize: '12.5px',
+              color: 'hsl(var(--muted-foreground))',
+              marginTop: '3px',
+              lineHeight: 1.5,
             }}
           >
-            <Fi icon="arrow-down" style={{ fontSize: 10 }} /> Add funds
-          </button>
-          {chainKind !== 'evm' && asset.onChainRegistered && asset.isStablecoin && (
-            <button onClick={() => onAction('feeAsset', asset)} disabled={tx.status === 'signing'} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-              style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>
-              <Fi icon="receipt" style={{ fontSize: 10 }} /> Set as fee asset
-            </button>
-          )}
-          <button
-            onClick={() => onAction('configure', asset)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
+            Available:{' '}
+            <span className="nave-mono" style={{ color: 'hsl(var(--foreground))' }}>
+              {asset.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            </span>
+            {' · '}
+            In use:{' '}
+            <span className="nave-mono" style={{ color: 'hsl(var(--foreground))' }}>
+              {inUseUi.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            </span>
+          </div>
+        </div>
+
+        <div className="text-right flex-shrink-0">
+          <div
+            className="nave-mono"
             style={{
-              borderColor: 'hsl(var(--border))',
+              fontSize: '14px',
+              fontWeight: 600,
               color: 'hsl(var(--foreground))',
             }}
           >
-            <Fi icon="sliders" style={{ fontSize: 10 }} /> Yield setup
-          </button>
-          <button
-            onClick={() => onAction(hidden ? 'unhide' : 'hide', asset)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-            style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-            title={hidden ? 'Show this asset in the default view' : 'Hide this asset (e.g. airdrop spam) from the default view'}
+            {USD(asset.valueUsd)}
+          </div>
+          <div
+            className="nave-mono"
+            style={{
+              fontSize: '12px',
+              color: 'hsl(var(--muted-foreground))',
+              marginTop: '2px',
+            }}
           >
-            <Fi icon={hidden ? 'eye' : 'eye-slash'} style={{ fontSize: 10 }} /> {hidden ? 'Unhide' : 'Hide'}
-          </button>
+            {asset.allocationPct.toFixed(1)}% of NAV
+          </div>
+        </div>
+      </div>
+
+      {/* Quiet hairline actions + details toggle */}
+      <div className="flex items-center gap-3 flex-wrap mt-2.5">
+        {canManage && (
+          <>
+            <button
+              type="button"
+              onClick={() => onAction('deposit', asset)}
+              disabled={depositBlocked}
+              title={depositBlocked ? 'Use WETH to add ETH to the treasury.' : undefined}
+              className="hover:underline underline-offset-4 bg-transparent border-0"
+              style={{
+                fontSize: '12.5px',
+                fontWeight: 600,
+                color: depositBlocked ? 'hsl(var(--faint))' : 'hsl(var(--foreground))',
+                cursor: depositBlocked ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Add funds
+            </button>
+            <span style={{ color: 'hsl(var(--border))' }}>·</span>
+            <button
+              type="button"
+              onClick={() => onAction('configure', asset)}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                fontSize: '12.5px',
+                color: 'hsl(var(--muted-foreground))',
+              }}
+            >
+              Yield setup
+            </button>
+            {chainKind !== 'evm' && asset.onChainRegistered && asset.isStablecoin && (
+              <>
+                <span style={{ color: 'hsl(var(--border))' }}>·</span>
+                <button
+                  type="button"
+                  onClick={() => onAction('feeAsset', asset)}
+                  disabled={tx.status === 'signing'}
+                  className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+                  style={{
+                    fontSize: '12.5px',
+                    color: 'hsl(var(--muted-foreground))',
+                  }}
+                >
+                  Set as fee asset
+                </button>
+              </>
+            )}
+            {chainKind === 'solana' && !asset.onChainRegistered && asset.mint !== 'SOL' && (
+              <>
+                <span style={{ color: 'hsl(var(--border))' }}>·</span>
+                <button
+                  type="button"
+                  onClick={() => onAction('registerSolana', asset)}
+                  className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+                  style={{
+                    fontSize: '12.5px',
+                    color: 'hsl(var(--brass))',
+                    fontWeight: 500,
+                  }}
+                >
+                  Enable
+                </button>
+              </>
+            )}
+            <span style={{ color: 'hsl(var(--border))' }}>·</span>
+            <button
+              type="button"
+              onClick={() => onAction(hidden ? 'unhide' : 'hide', asset)}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                fontSize: '12.5px',
+                color: 'hsl(var(--muted-foreground))',
+              }}
+              title={
+                hidden
+                  ? 'Show this asset in the default view'
+                  : 'Hide this asset (e.g. airdrop spam) from the default view'
+              }
+            >
+              {hidden ? 'Unhide' : 'Hide'}
+            </button>
+            <span style={{ color: 'hsl(var(--border))' }}>·</span>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((v) => !v)}
+          className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+          style={{
+            fontSize: '12.5px',
+            color: 'hsl(var(--faint))',
+          }}
+        >
+          {detailsOpen ? 'Hide details' : 'Details'}
+        </button>
+      </div>
+
+      {detailsOpen && (
+        <div
+          className="mt-3 flex items-center justify-between gap-3 flex-wrap rounded-[10px] border px-3 py-2"
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: 'hsl(var(--surface-2))',
+          }}
+        >
+          <code
+            style={{
+              fontSize: '11.5px',
+              color: 'hsl(var(--foreground))',
+              fontFamily: 'var(--font-mono)',
+              wordBreak: 'break-all',
+            }}
+          >
+            {asset.mint}
+          </code>
+          <div className="flex items-center gap-3 ml-auto flex-shrink-0">
+            <button
+              type="button"
+              onClick={copyMint}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                fontSize: '12px',
+                color: copiedMint ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))',
+              }}
+              title="Copy"
+            >
+              {copiedMint ? 'Copied ✓' : 'Copy'}
+            </button>
+            {dexHref && (
+              <a
+                href={dexHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 hover:underline underline-offset-4"
+                style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+              >
+                Market <Fi icon="arrow-up-right-from-square" style={{ fontSize: 10 }} />
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function NftCard({ nft, canManage, onAction }: {
+/* ── NFT row (calm hairline item replacing heavy card) ───── */
+function NftCard({
+  nft,
+  canManage,
+  onAction,
+}: {
   nft: TreasuryNft;
   canManage: boolean;
   onAction: (action: string, nft: TreasuryNft) => void;
 }) {
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-0))' }}>
-      <div className="aspect-square relative" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-        {nft.image ? (
-          <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" loading="lazy" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ color: 'hsl(var(--muted-foreground))' }}>
-            <Fi icon="image" style={{ fontSize: 28 }} />
-          </div>
-        )}
-        {nft.compressed && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-medium"
-            style={{ backgroundColor: 'hsl(var(--surface-0))', color: 'hsl(var(--muted-foreground))', border: '1px solid hsl(var(--border))' }}>
-            Compressed
-          </span>
-        )}
-      </div>
-      <div className="p-3.5 space-y-2">
-        <div className="font-medium truncate" style={{ fontSize: 14, color: 'hsl(var(--foreground))' }}>{nft.name}</div>
-        <div className="nave-mono truncate" style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>{nft.mint}</div>
-        {nft.collection && (
-          <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>
-            Collection: {nft.collection.slice(0, 4)}…{nft.collection.slice(-4)}
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2 pt-1">
-          {canManage && !nft.compressed && (
-            <button
-              onClick={() => onAction('sendNft', nft)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
-              style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-            >
-              <Fi icon="paper-plane" style={{ fontSize: 10 }} /> Send via governance
-            </button>
-          )}
-          {nft.compressed && (
-            <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', lineHeight: 1.4 }}>
-              cNFT transfers require a dedicated Bubblegum path (coming soon).
-            </span>
+    <div
+      className="flex items-center justify-between gap-4 flex-wrap"
+      style={{
+        padding: '14px 0',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+      }}
+    >
+      <div className="flex items-center gap-3.5 min-w-0 flex-1">
+        <div
+          className="w-11 h-11 rounded-[10px] overflow-hidden flex items-center justify-center flex-shrink-0 border"
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: 'hsl(var(--border))',
+            color: 'hsl(var(--muted-foreground))',
+          }}
+        >
+          {nft.image ? (
+            <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" loading="lazy" />
+          ) : (
+            <Fi icon="image" style={{ fontSize: 16 }} />
           )}
         </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="truncate"
+              style={{
+                fontSize: '14px',
+                fontWeight: 500,
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              {nft.name}
+            </span>
+            {nft.compressed && (
+              <span
+                className="nave-mono"
+                style={{
+                  fontSize: '10px',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'hsl(var(--faint))',
+                }}
+              >
+                Compressed
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span
+              className="nave-mono truncate"
+              style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}
+            >
+              {nft.mint.slice(0, 6)}…{nft.mint.slice(-4)}
+            </span>
+            {nft.collection && (
+              <span style={{ fontSize: '11.5px', color: 'hsl(var(--faint))' }}>
+                · Collection {nft.collection.slice(0, 4)}…{nft.collection.slice(-4)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {canManage && !nft.compressed && (
+          <button
+            type="button"
+            onClick={() => onAction('sendNft', nft)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] border font-semibold transition-colors"
+            style={{
+              fontSize: '12.5px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Send via governance →
+          </button>
+        )}
+        {nft.compressed && (
+          <span style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}>
+            cNFT transfers coming soon
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-/* ── Assets page ────────────────────────────────────────────── */
+/* ── Assets (Money) page ────────────────────────────────────── */
 export default function Assets() {
   const navigate = useNavigate();
   const { daoAddress, isMockMode } = useDaoContext();
@@ -729,8 +1226,25 @@ export default function Assets() {
   const { signMessageAsync } = useSignMessage();
   const { chainKind } = useChain();
   const tx = useSendTransaction();
-  const { assets, visibleAssets, hiddenAssets, onchainNavUsd, deployedUsd, loading, error, refetch, hideAsset, unhideAsset } = useTreasuryAssets(daoAddress);
-  const { nfts, loading: nftsLoading, error: nftsError, unsupported: nftsUnsupported, refetch: refetchNfts } = useTreasuryNfts(daoAddress);
+  const {
+    assets,
+    visibleAssets,
+    hiddenAssets,
+    onchainNavUsd,
+    deployedUsd,
+    loading,
+    error,
+    refetch,
+    hideAsset,
+    unhideAsset,
+  } = useTreasuryAssets(daoAddress);
+  const {
+    nfts,
+    loading: nftsLoading,
+    error: nftsError,
+    unsupported: nftsUnsupported,
+    refetch: refetchNfts,
+  } = useTreasuryNfts(daoAddress);
   const [depositAsset, setDepositAsset] = useState<TreasuryAssetRow | null>(null);
   const [showDeposit, setShowDeposit] = useState(false);
   const [configureAsset, setConfigureAsset] = useState<TreasuryAssetRow | null>(null);
@@ -738,7 +1252,7 @@ export default function Assets() {
   const [registerSolanaAsset, setRegisterSolanaAsset] = useState<TreasuryAssetRow | null>(null);
   const [tab, setTab] = useState<'tokens' | 'hidden' | 'nfts'>('tokens');
 
-  const canManage = !!daoAddress && !isMockMode && (chainKind === 'evm' ? !!evmAddress : !!publicKey);
+  const canManage = !!daoAddress && (isMockMode || (chainKind === 'evm' ? !!evmAddress : !!publicKey));
 
   async function handleAction(action: string, asset: TreasuryAssetRow) {
     if (!canManage) return;
@@ -751,7 +1265,11 @@ export default function Assets() {
           ? solanaAccessSigner(signMessage)
           : null;
       if (!signChallenge) {
-        toast({ variant: 'destructive', title: 'Wallet cannot sign', description: 'Connect a wallet that can sign messages.' });
+        toast({
+          variant: 'destructive',
+          title: 'Wallet cannot sign',
+          description: 'Connect a wallet that can sign messages.',
+        });
         return;
       }
       const write = action === 'hide' ? hideAsset : unhideAsset;
@@ -786,7 +1304,11 @@ export default function Assets() {
     }
     if (action === 'configure') {
       if (chainKind === 'evm') {
-        toast({ variant: 'destructive', title: 'Configured in Constitution', description: 'EVM strategy adapters are approved and capped from the Constitution page.' });
+        toast({
+          variant: 'destructive',
+          title: 'Configured in Constitution',
+          description: 'EVM strategy adapters are approved and capped from the Constitution page.',
+        });
         return;
       }
       setConfigureAsset(asset);
@@ -813,34 +1335,57 @@ export default function Assets() {
         const out = await tx.send(r, { successLabel: 'NFT registered for governance' });
         if (out.status === 'success') refetchNfts();
       } catch (err) {
-        toast({ variant: 'destructive', title: 'Registration failed', description: err instanceof Error ? err.message : 'Could not register NFT.' });
+        toast({
+          variant: 'destructive',
+          title: 'Registration failed',
+          description: err instanceof Error ? err.message : 'Could not register NFT.',
+        });
       }
       return;
     }
     if (action === 'sendNft') {
-      navigate('/dashboard', { state: { openCreateTx: true, nftTransfer: { mint: nft.mint, name: nft.name } } });
+      navigate('/overview', { state: { openCreateTx: true, nftTransfer: { mint: nft.mint, name: nft.name } } });
     }
   }
 
   const showAssetTabs = !loading && !error && (assets.length > 0 || tab === 'nfts');
 
+  const tabItems = [
+    { id: 'tokens' as const, label: `Tokens (${visibleAssets.length})` },
+    { id: 'hidden' as const, label: `Hidden${hiddenAssets.length ? ` (${hiddenAssets.length})` : ''}` },
+    { id: 'nfts' as const, label: `NFTs${nfts.length ? ` (${nfts.length})` : ''}` },
+  ];
+
   return (
-    <div className="px-4 sm:px-6 py-5 sm:py-6 space-y-5 pb-8" data-onboarding-id="assets-root">
+    <div className="animate-fade-in pb-8" data-onboarding-id="assets-root">
       {(showDeposit || depositAsset) && canManage && daoAddress && (
         <DepositFlowModal
           daoAddress={daoAddress}
           registeredAssets={assets}
           preselectedAsset={depositAsset ?? undefined}
           initialTab="wallet"
-          onClose={() => { setShowDeposit(false); setDepositAsset(null); }}
+          onClose={() => {
+            setShowDeposit(false);
+            setDepositAsset(null);
+          }}
           onDeposited={refetch}
         />
       )}
-      {configureAsset && canManage && publicKey && (
-        <ConfigureTargetsModal daoAddress={daoAddress!} founder={publicKey!} asset={configureAsset} onClose={() => setConfigureAsset(null)} onDone={refetch} />
+      {configureAsset && canManage && (publicKey || isMockMode) && (
+        <ConfigureTargetsModal
+          daoAddress={daoAddress!}
+          founder={publicKey}
+          asset={configureAsset}
+          onClose={() => setConfigureAsset(null)}
+          onDone={refetch}
+        />
       )}
       {registerEvmAsset && canManage && chainKind === 'evm' && (
-        <RegisterEvmAssetModal daoAddress={daoAddress!} onClose={() => setRegisterEvmAsset(false)} onDone={refetch} />
+        <RegisterEvmAssetModal
+          daoAddress={daoAddress!}
+          onClose={() => setRegisterEvmAsset(false)}
+          onDone={refetch}
+        />
       )}
       {registerSolanaAsset && canManage && chainKind === 'solana' && publicKey && (
         <RegisterSolanaHeldAssetModal
@@ -852,149 +1397,231 @@ export default function Assets() {
         />
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — matches #view-money in demo.html */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-display font-semibold" style={{ fontSize: '20px', color: 'hsl(var(--foreground))' }}>Assets</h1>
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.55 }}>
-            Deposit and withdraw from your treasury. Agents use these balances automatically.
+          <div className="nave-label" style={{ marginBottom: '10px' }}>Money</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Where it is,{' '}
+            <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
+              what it&apos;s doing.
+            </em>
+          </h1>
+          <p
+            style={{
+              fontSize: '14.5px',
+              color: 'hsl(var(--muted-foreground))',
+              margin: 0,
+              maxWidth: '520px',
+              lineHeight: 1.55,
+            }}
+          >
+            {onchainNavUsd != null
+              ? `${USD(onchainNavUsd)} total. Nothing sits anywhere your rules haven't approved.`
+              : 'Deposit and withdraw from your treasury. Agents use these balances automatically.'}
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          {canManage && daoAddress && (
-            <button onClick={() => { setDepositAsset(null); setShowDeposit(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium"
-              style={{ fontSize: 12.5, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>
-              <Fi icon="arrow-down" style={{ fontSize: 11 }} /> Deposit
-            </button>
-          )}
-          <button onClick={() => { refetch(); refetchNfts(); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border font-medium"
-            style={{ fontSize: 12.5, borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}>
-            <Fi icon="arrow-rotate-right" style={{ fontSize: 11 }} /> Refresh
+        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              refetch();
+              refetchNfts();
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-colors"
+            style={{
+              fontSize: '13px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Refresh
           </button>
-        </div>
-      </div>
-
-      {/* NAV summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <MetricCard label="Total value" value={onchainNavUsd != null ? USD(onchainNavUsd) : '—'} />
-        <MetricCard label="In use by agents" value={deployedUsd != null ? USD(deployedUsd) : '—'} />
-        <MetricCard label="Tokens" value={visibleAssets.length.toString()} />
-      </div>
-
-      {/* Tabs: Tokens / Hidden / NFTs */}
-      {showAssetTabs && (
-        <div className="flex gap-0.5 p-0.5 rounded-lg w-fit flex-wrap" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-          {([
-            ['tokens', `Tokens (${visibleAssets.length})`],
-            ['hidden', `Hidden${hiddenAssets.length ? ` (${hiddenAssets.length})` : ''}`],
-            ['nfts', `NFTs${nfts.length ? ` (${nfts.length})` : ''}`],
-          ] as const).map(([key, label]) => (
+          {canManage && daoAddress && (
             <button
-              key={key}
-              onClick={() => setTab(key)}
-              className="px-3.5 py-1.5 rounded-md transition-all"
+              type="button"
+              onClick={() => {
+                setDepositAsset(null);
+                setShowDeposit(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
               style={{
-                fontSize: 12.5,
-                fontWeight: tab === key ? 500 : 400,
-                backgroundColor: tab === key ? 'hsl(var(--surface-0))' : 'transparent',
-                color: tab === key ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                boxShadow: tab === key ? 'var(--shadow-xs)' : 'none',
+                fontSize: '13px',
+                backgroundColor: 'hsl(var(--foreground))',
+                color: '#ffffff',
+                border: '1px solid hsl(var(--foreground))',
               }}
             >
-              {label}
+              Deposit
             </button>
-          ))}
+          )}
         </div>
-      )}
+      </div>
 
-      {/* List */}
-      {loading && (
-        <div className="space-y-3"><CardSkeleton lines={4} /><CardSkeleton lines={3} /></div>
-      )}
-      {!loading && error && (
-        <div className="p-4 rounded-xl border" style={{ borderColor: 'hsl(var(--destructive))', backgroundColor: 'hsl(var(--destructive-muted))', color: 'hsl(var(--destructive))', fontSize: 13 }}>
-          {error}
+      {/* NAV 3-stat hairline strip */}
+      <Section>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <MetricCard
+            label="Total value"
+            value={onchainNavUsd != null ? USD(onchainNavUsd) : '—'}
+            sub="Withdrawable or placed by rules"
+          />
+          <MetricCard
+            label="In use by agents"
+            value={deployedUsd != null ? USD(deployedUsd) : '—'}
+            sub="Across approved yield places"
+          />
+          <MetricCard
+            label="Tokens"
+            value={visibleAssets.length.toString()}
+            sub={hiddenAssets.length > 0 ? `${hiddenAssets.length} hidden` : 'Tracked in treasury'}
+          />
         </div>
-      )}
-      {!loading && !error && assets.length === 0 && (
-        <NaveEmptyState
-          icon="coins"
-          title="No deposited assets yet"
-          description="Deposit from your wallet to get started. Supported tokens are added automatically."
-        />
-      )}
-      {!loading && !error && assets.length > 0 && tab === 'tokens' && (
-        <div className="space-y-4">
-          {visibleAssets.map((a) => (
-            <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} />
-          ))}
-          {visibleAssets.length === 0 && (
-            <NaveEmptyState icon="eye-slash" title="All assets are hidden" description="Every detected asset is in the Hidden tab. Unhide one to show it here." />
-          )}
-        </div>
-      )}
-      {!loading && !error && assets.length > 0 && tab === 'hidden' && (
-        <div className="space-y-4">
-          {hiddenAssets.map((a) => (
-            <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} hidden />
-          ))}
-          {hiddenAssets.length === 0 && (
-            <NaveEmptyState icon="eye" title="No hidden assets" description="Hide airdrop spam or dust from the Tokens tab to declutter the default view." />
-          )}
-        </div>
-      )}
+      </Section>
 
-      {tab === 'nfts' && (
-        <>
-          {nftsLoading && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              <CardSkeleton lines={2} /><CardSkeleton lines={2} /><CardSkeleton lines={2} />
-            </div>
-          )}
-          {!nftsLoading && nftsError && (
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'hsl(var(--destructive))', backgroundColor: 'hsl(var(--destructive-muted))', color: 'hsl(var(--destructive))', fontSize: 13 }}>
-              {nftsError}
-            </div>
-          )}
-          {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'evm' && (
-            <NaveEmptyState icon="image" title="EVM NFT custody only" description="The treasury can receive and governance-transfer ERC-721/1155, but there is no on-chain NFT registry (EIP-170). Gallery listing is intentionally unsupported until an off-chain indexer is productized." />
-          )}
-          {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'solana' && (
-            <NaveEmptyState icon="image" title="NFT indexing unavailable" description="Your RPC does not support DAS (getAssetsByOwner). Use a Helius or Triton endpoint to enumerate treasury NFTs." />
-          )}
-          {!nftsLoading && !nftsError && !nftsUnsupported && nfts.length === 0 && (
-            <NaveEmptyState icon="image" title="No NFTs in treasury" description={chainKind === 'evm' ? 'Transfer an ERC-721 to the treasury contract to hold it under governance.' : 'Transfer a Metaplex NFT to the vault authority address. It can be sent from here as soon as it arrives.'} />
-          )}
-          {!nftsLoading && !nftsError && nfts.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {nfts.map((n) => (
-                <NftCard key={n.id} nft={n} canManage={canManage} onAction={handleNftAction} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      {/* Holdings section with UnderlineTabs: Tokens / Hidden / NFTs */}
+      <Section>
+        {showAssetTabs && (
+          <UnderlineTabs
+            tabs={tabItems}
+            activeTab={tab}
+            onChange={setTab}
+          />
+        )}
 
-      {onchainNavUsd == null && !loading && assets.length > 0 && tab !== 'nfts' && (
-        <div className="flex items-start gap-3 p-4 rounded-xl border" style={{ backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))' }}>
-          <Fi icon="info-circle" style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }} />
-          <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Dollar values appear after the treasury is priced. Balances are already live.
+        {loading && (
+          <div className="space-y-3 pt-2">
+            <CardSkeleton lines={4} />
+            <CardSkeleton lines={3} />
           </div>
-        </div>
-      )}
+        )}
 
-      {canManage && chainKind === 'evm' && (
-        <button
-          type="button"
-          onClick={() => setRegisterEvmAsset(true)}
-          className="flex items-center gap-1.5"
-          style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}
-        >
-          <Fi icon="plus" style={{ fontSize: 10 }} />
-          Advanced — add a token manually
-        </button>
-      )}
+        {!loading && error && (
+          <Notice tone="red">
+            <strong style={{ fontWeight: 600 }}>Could not load assets</strong>{' '}
+            <span style={{ color: 'hsl(var(--muted-foreground))' }}>— {error}</span>
+          </Notice>
+        )}
+
+        {!loading && !error && assets.length === 0 && tab !== 'nfts' && (
+          <NaveEmptyState
+            icon="coins"
+            title="No deposited assets yet"
+            description="Deposit from your wallet to get started. Supported tokens are added automatically."
+          />
+        )}
+
+        {!loading && !error && assets.length > 0 && tab === 'tokens' && (
+          <div>
+            {visibleAssets.map((a) => (
+              <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} />
+            ))}
+            {visibleAssets.length === 0 && (
+              <NaveEmptyState
+                icon="eye-slash"
+                title="All assets are hidden"
+                description="Every detected asset is in the Hidden tab. Unhide one to show it here."
+              />
+            )}
+          </div>
+        )}
+
+        {!loading && !error && assets.length > 0 && tab === 'hidden' && (
+          <div>
+            {hiddenAssets.map((a) => (
+              <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} hidden />
+            ))}
+            {hiddenAssets.length === 0 && (
+              <NaveEmptyState
+                icon="eye"
+                title="No hidden assets"
+                description="Hide airdrop spam or dust from the Tokens tab to declutter the default view."
+              />
+            )}
+          </div>
+        )}
+
+        {tab === 'nfts' && (
+          <>
+            {nftsLoading && (
+              <div className="space-y-2 pt-2">
+                <CardSkeleton lines={2} />
+                <CardSkeleton lines={2} />
+              </div>
+            )}
+            {!nftsLoading && nftsError && (
+              <Notice tone="red">
+                <strong style={{ fontWeight: 600 }}>Could not load NFTs</strong>{' '}
+                <span style={{ color: 'hsl(var(--muted-foreground))' }}>— {nftsError}</span>
+              </Notice>
+            )}
+            {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'evm' && (
+              <NaveEmptyState
+                icon="image"
+                title="EVM NFT custody only"
+                description="The treasury can receive and governance-transfer ERC-721/1155, but there is no on-chain NFT registry (EIP-170). Gallery listing is intentionally unsupported until an off-chain indexer is productized."
+              />
+            )}
+            {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'solana' && (
+              <NaveEmptyState
+                icon="image"
+                title="NFT indexing unavailable"
+                description="Your RPC does not support DAS (getAssetsByOwner). Use a Helius or Triton endpoint to enumerate treasury NFTs."
+              />
+            )}
+            {!nftsLoading && !nftsError && !nftsUnsupported && nfts.length === 0 && (
+              <NaveEmptyState
+                icon="image"
+                title="No NFTs in treasury"
+                description={
+                  chainKind === 'evm'
+                    ? 'Transfer an ERC-721 to the treasury contract to hold it under governance.'
+                    : 'Transfer a Metaplex NFT to the vault authority address. It can be sent from here as soon as it arrives.'
+                }
+              />
+            )}
+            {!nftsLoading && !nftsError && nfts.length > 0 && (
+              <div>
+                {nfts.map((n) => (
+                  <NftCard key={n.id} nft={n} canManage={canManage} onAction={handleNftAction} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {onchainNavUsd == null && !loading && assets.length > 0 && tab !== 'nfts' && (
+          <div style={{ marginTop: '16px' }}>
+            <Notice tone="brass">
+              Dollar values appear after the treasury is priced. Balances are already live.
+            </Notice>
+          </div>
+        )}
+
+        {canManage && chainKind === 'evm' && (
+          <div style={{ marginTop: '20px' }}>
+            <button
+              type="button"
+              onClick={() => setRegisterEvmAsset(true)}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{ fontSize: '12.5px', color: 'hsl(var(--faint))' }}
+            >
+              + Advanced — add a token manually
+            </button>
+          </div>
+        )}
+      </Section>
     </div>
   );
 }

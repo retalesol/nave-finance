@@ -6,11 +6,10 @@
 // the mainnet-cutover preflight gate.
 
 import { useMemo } from 'react';
-import { motion } from 'framer-motion';
 import Fi from './Fi';
 import CollapsibleSection from './CollapsibleSection';
 import PolicySlider from './PolicySlider';
-import { staggerContainer, staggerChild } from './PageTransition';
+import { SummaryLine } from './calm';
 import {
   getSolanaStrategyStatuses,
   getEvmAdapterStatuses,
@@ -86,7 +85,7 @@ export const RISK_PRESETS: { id: RiskPreset; label: string; desc: string }[] = [
   { id: 'balanced',     label: 'Balanced',     desc: 'Tier 1, plus up to 30% in Tier 2 vaults.' },
   { id: 'yield6',       label: 'Yield 6% target', desc: 'Adds Tier 3 credit and fixed-term venues (at most 15%). Not guaranteed.' },
   { id: 'aggressive',   label: 'Aggressive',   desc: 'Maximise yield. Higher risk tolerance.' },
-  { id: 'custom',       label: 'Custom',        desc: 'Define your own parameters.' },
+  { id: 'custom',       label: 'Custom',       desc: 'Define your own parameters.' },
 ];
 
 export const PRESET_DEFAULTS: Record<RiskPreset, Partial<PolicyState>> = {
@@ -287,34 +286,38 @@ export function SimResult({ policy }: { policy: PolicyState }) {
 
   return (
     <div
-      className="p-4 rounded-xl border"
       style={{
-        backgroundColor: issues.length ? 'hsl(var(--warning-muted))' : 'hsl(var(--accent-muted))',
-        borderColor: issues.length ? 'hsl(38 92% 75%)' : 'hsl(var(--border-strong))',
+        padding: '12px 0',
+        borderTop: '1px solid hsl(var(--surface-2))',
+        borderBottom: '1px solid hsl(var(--surface-2))',
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        {issues.length ? (
-          <Fi icon="triangle-exclamation" style={{ fontSize: '13px', color: 'hsl(var(--warning))' }} />
-        ) : (
-          <Fi icon="circle-check" style={{ fontSize: '13px', color: 'hsl(var(--accent))' }} />
-        )}
-        <span style={{ fontSize: '13px', fontWeight: '500', color: issues.length ? 'hsl(38 60% 30%)' : 'hsl(var(--accent-muted-foreground))' }}>
+      <div className="flex items-center gap-2">
+        <span
+          style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '50%',
+            backgroundColor: issues.length ? '#9A7414' : '#2F7D4F',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: '13px', fontWeight: 600, color: issues.length ? '#9A7414' : 'hsl(var(--foreground))' }}>
           {issues.length
             ? `${issues.length} policy conflict${issues.length > 1 ? 's' : ''} detected`
             : 'Policy simulation passed'}
         </span>
       </div>
       {issues.length > 0 ? (
-        <ul className="space-y-1">
+        <ul className="mt-1.5 space-y-1">
           {issues.map((iss) => (
-            <li key={iss} style={{ fontSize: '12.5px', color: 'hsl(38 50% 35%)', paddingLeft: '16px', listStyle: 'disc' }}>
+            <li key={iss} style={{ fontSize: '12.5px', color: '#9A7414', paddingLeft: '16px', listStyle: 'disc' }}>
               {iss}
             </li>
           ))}
         </ul>
       ) : (
-        <p style={{ fontSize: '12.5px', color: 'hsl(var(--accent-muted-foreground))' }}>
+        <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', margin: '4px 0 0 15px' }}>
           Agent can operate with {activeProtocols.length} approved protocol{activeProtocols.length !== 1 ? 's' : ''}.
           Rebalancing: {policy.rebalanceFreq}.
         </p>
@@ -355,37 +358,27 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
   const presetLabel = RISK_PRESETS.find((r) => r.id === policy.riskPreset)?.label ?? policy.riskPreset;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span
-          className="px-2.5 py-1 rounded-lg text-xs font-medium"
-          style={{ backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+    <div className="space-y-2">
+      {[
+        { label: 'Posture', value: presetLabel },
+        { label: 'Min Reserve', value: `${policy.minStablecoin}%` },
+        { label: 'Max Deploy', value: `${policy.maxDeployment}%` },
+        { label: 'Rebalancing', value: policy.rebalanceFreq },
+        { label: 'Approved venues', value: approvedProtocolLabels.length > 0 ? approvedProtocolLabels.join(', ') : 'None' },
+      ].map(({ label, value }) => (
+        <div
+          key={label}
+          className="flex items-center justify-between gap-4"
+          style={{
+            padding: '10px 0',
+            borderBottom: '1px solid hsl(var(--surface-2))',
+            fontSize: '13.5px',
+          }}
         >
-          {presetLabel}
-        </span>
-        {approvedProtocolLabels.map((label) => (
-          <span
-            key={label}
-            className="px-2.5 py-1 rounded-lg text-xs"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', color: 'hsl(var(--accent-muted-foreground))', border: '1px solid hsl(var(--border-strong))' }}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {[
-          { label: 'Min Reserve', value: `${policy.minStablecoin}%` },
-          { label: 'Max Deploy', value: `${policy.maxDeployment}%` },
-          { label: 'Rebalancing', value: policy.rebalanceFreq },
-        ].map(({ label, value }) => (
-          <div key={label} className="flex items-center justify-between px-3 py-2 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}>
-            <span style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>{label}</span>
-            <span className="nave-mono" style={{ fontSize: '11.5px', color: 'hsl(var(--foreground))', fontWeight: 500 }}>{value}</span>
-          </div>
-        ))}
-      </div>
+          <span style={{ color: 'hsl(var(--muted-foreground))' }}>{label}</span>
+          <b style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{value}</b>
+        </div>
+      ))}
     </div>
   );
 }
@@ -393,9 +386,9 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
 // ── Strategy menu ──────────────────────────────────────────────────────────────
 
 const TIER_STYLE: Record<RiskTier, { bg: string; fg: string }> = {
-  1: { bg: 'hsl(var(--accent-muted))', fg: 'hsl(var(--accent-muted-foreground))' },
-  2: { bg: 'hsl(var(--warning-muted))', fg: 'hsl(38 60% 30%)' },
-  3: { bg: 'hsl(0 85% 95%)', fg: 'hsl(0 60% 38%)' },
+  1: { bg: 'hsl(var(--surface-1))', fg: 'hsl(var(--foreground))' },
+  2: { bg: 'hsl(var(--warning-muted))', fg: '#9A7414' },
+  3: { bg: 'hsl(var(--destructive-muted))', fg: 'hsl(var(--destructive))' },
 };
 
 function TierBadge({ tier }: { tier: RiskTier }) {
@@ -427,37 +420,41 @@ function StrategyMenu({ strategyChain, preset, rates, asOf }: {
 
   return (
     <CollapsibleSection title="Strategy Menu" subtitle={asOfLabel}>
-      <div className="space-y-4" data-testid="strategy-menu">
+      <div className="space-y-3" data-testid="strategy-menu">
         {estimate && (
           <div
-            className="p-3.5 rounded-xl border"
-            style={{ borderColor: 'hsl(var(--border-strong))', backgroundColor: 'hsl(var(--surface-1))' }}
+            style={{
+              padding: '12px 14px',
+              borderRadius: '12px',
+              backgroundColor: 'hsl(var(--background))',
+              border: '1px solid hsl(var(--surface-2))',
+            }}
           >
             {estimate.weights.size > 0 ? (
               <>
                 <div className="flex items-baseline gap-2">
-                  <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                    Estimated blend at today's mainnet rates
+                  <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
+                    Estimated blend at today&apos;s mainnet rates
                   </span>
-                  <span className="nave-mono" style={{ fontSize: '15px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+                  <span className="nave-mono" style={{ fontSize: '15px', fontWeight: 600, color: '#2F7D4F' }}>
                     {formatApy(estimate.apy)}
                   </span>
                 </div>
                 {target != null && estimate.meetsTarget === false && (
-                  <p style={{ fontSize: '12px', color: 'hsl(38 60% 30%)', marginTop: 6, lineHeight: 1.5 }}>
-                    Today's rates put this mix at {formatApy(estimate.apy)}, short of the {target}% target. Nave will not
+                  <p style={{ fontSize: '12px', color: '#9A7414', marginTop: 6, lineHeight: 1.5 }}>
+                    Today&apos;s rates put this mix at {formatApy(estimate.apy)}, short of the {target}% target. Nave will not
                     go past the tier caps (Tier 2 at most 30%, Tier 3 at most 15%) to close the gap; the blend rises only
                     if venue rates rise.
                   </p>
                 )}
                 {target != null && estimate.meetsTarget === true && (
                   <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
-                    At today's rates this mix reaches the {target}% target. Rates change daily, so this is an estimate, not a promise.
+                    At today&apos;s rates this mix reaches the {target}% target. Rates change daily, so this is an estimate, not a promise.
                   </p>
                 )}
                 <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
                   Base yield only; reward tokens are left out because a treasury contract cannot claim them. Venues marked
-                  "Mainnet only" cannot be approved on this testnet.
+                  &quot;Mainnet only&quot; cannot be approved on this testnet.
                 </p>
               </>
             ) : (
@@ -477,7 +474,7 @@ function StrategyMenu({ strategyChain, preset, rates, asOf }: {
           </div>
         )}
 
-        <div className="space-y-2">
+        <div>
           {venues.map((venue) => {
             const rate = rates.get(venue.id);
             const apy = venue.rate ? effectiveApy(rate, venue.fallbackApy) : null;
@@ -485,26 +482,30 @@ function StrategyMenu({ strategyChain, preset, rates, asOf }: {
               <div
                 key={venue.id}
                 data-testid={`strategy-venue-${venue.id}`}
-                className="p-3 rounded-xl border"
                 style={{
-                  borderColor: 'hsl(var(--border))',
-                  backgroundColor: 'hsl(var(--surface-0))',
+                  padding: '12px 0',
+                  borderBottom: '1px solid hsl(var(--surface-2))',
                   opacity: venue.availability === 'later' ? 0.62 : 1,
                 }}
               >
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium" style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>{venue.label}</span>
+                  <span className="font-medium" style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>
+                    {venue.label}
+                  </span>
                   <TierBadge tier={venue.tier} />
                   {!venue.stable && (
-                    <span className="px-1.5 py-0.5 rounded" style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: 'hsl(38 60% 30%)' }}>
+                    <span
+                      className="px-1.5 py-0.5 rounded"
+                      style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: '#9A7414' }}
+                    >
                       {venue.asset}, not stable
                     </span>
                   )}
-                  <span className="nave-mono ml-auto" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>
+                  <span className="nave-mono ml-auto" style={{ fontSize: '12.5px', color: '#2F7D4F', fontWeight: 500 }}>
                     {apy != null ? `${formatApy(apy)}${rate ? '' : ' est.'}` : '—'}
                   </span>
                 </div>
-                <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 3, lineHeight: 1.5 }}>
+                <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: 3, lineHeight: 1.5 }}>
                   {availabilityLabel(venue)} · Exit: {venue.exitNote}
                   {rate && isTemporaryRate(rate) ? ' · Rate spike; using the 30-day average' : ''}
                 </div>
@@ -577,82 +578,126 @@ export default function ConstitutionStep({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Risk preset */}
-      <CollapsibleSection title="Risk Profile">
-        <motion.div
-          className="grid grid-cols-2 sm:grid-cols-4 gap-2"
-          variants={staggerContainer}
-          initial="initial"
-          animate="animate"
-        >
-          {RISK_PRESETS.filter((preset) => !offeredPresets || offeredPresets.includes(preset.id)).map((preset) => (
-            <motion.button
-              key={preset.id}
-              onClick={() => applyPreset(preset.id)}
-              className="p-3.5 rounded-xl border text-left transition-all"
-              style={{
-                backgroundColor: policy.riskPreset === preset.id ? 'hsl(var(--primary))' : 'hsl(var(--surface-0))',
-                borderColor: policy.riskPreset === preset.id ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                color: policy.riskPreset === preset.id ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
-              }}
-              variants={staggerChild}
-              whileHover={{ y: -2, transition: { duration: 0.15 } }}
-              whileTap={{ scale: 0.97 }}
-            >
-              <div className="font-semibold text-display" style={{ fontSize: '12.5px', marginBottom: '3px' }}>
-                {preset.label}
-              </div>
-              <div style={{
-                fontSize: '11px',
-                opacity: policy.riskPreset === preset.id ? 0.75 : 1,
-                color: policy.riskPreset === preset.id ? 'inherit' : 'hsl(var(--muted-foreground))',
-                lineHeight: 1.4,
-              }}>
-                {preset.desc}
-              </div>
-            </motion.button>
-          ))}
-        </motion.div>
+    <div>
+      {/* Risk preset — demo .opts radio rows */}
+      <CollapsibleSection title="How careful should your agents be?">
+        <div className="flex flex-col">
+          {RISK_PRESETS.filter((preset) => !offeredPresets || offeredPresets.includes(preset.id)).map((preset) => {
+            const selected = policy.riskPreset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset.id)}
+                className="flex items-start gap-3 w-full text-left transition-colors"
+                style={{
+                  padding: '13px 2px',
+                  borderBottom: '1px solid hsl(var(--surface-2))',
+                }}
+              >
+                <span
+                  style={{
+                    width: '17px',
+                    height: '17px',
+                    borderRadius: '50%',
+                    border: `1.5px solid ${selected ? '#111827' : '#CFC8B8'}`,
+                    marginTop: '2px',
+                    flexShrink: 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  {selected && (
+                    <span
+                      style={{
+                        width: '9px',
+                        height: '9px',
+                        borderRadius: '50%',
+                        backgroundColor: '#111827',
+                      }}
+                    />
+                  )}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <b
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      display: 'block',
+                      color: 'hsl(var(--foreground))',
+                    }}
+                  >
+                    {preset.label}
+                  </b>
+                  <p
+                    style={{
+                      fontSize: '12.5px',
+                      color: 'hsl(var(--muted-foreground))',
+                      margin: '2px 0 0',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {preset.desc}
+                  </p>
+                </span>
+                {preset.id === 'balanced' && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: '11px',
+                      color: 'hsl(var(--brass))',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Recommended
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </CollapsibleSection>
 
-      {/* Capital constraints */}
-      <CollapsibleSection title="Capital Constraints">
-        <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: 14 }}>
-          These limits are enforced on-chain. Agents cannot deploy or lend beyond what you set here.
-        </p>
-        <div className="space-y-6">
+      {/* Plain-English SummaryLine */}
+      <SummaryLine className="my-2">
+        “Keep at least <em>{policy.minStablecoin}%</em> safe, put at most <em>{policy.maxDeployment}%</em> to work, never more than <em>{policy.maxLending}%</em> in one place — only in places we&apos;ve approved.”
+      </SummaryLine>
+
+      {/* Capital constraints — hairline sliders */}
+      <CollapsibleSection title="Capital Constraints" subtitle="Enforced on-chain by the Guardrail agent">
+        <div>
           <PolicySlider
             label="Minimum Stablecoin Reserve"
-            hint="Minimum % of treasury that must stay in stablecoins"
+            hint="Never invested, so bills and surprises are always covered."
             value={policy.minStablecoin}
             onChange={(v) => setPolicy({ minStablecoin: v, riskPreset: 'custom' })}
             accent
           />
           <PolicySlider
             label="Maximum Treasury Deployment"
-            hint="Max % of treasury that can be deployed to DeFi protocols"
+            hint="The ceiling for earning placements across approved DeFi protocols."
             value={policy.maxDeployment}
             onChange={(v) => setPolicy({ maxDeployment: v, riskPreset: 'custom' })}
           />
           <PolicySlider
             label="Maximum Lending Exposure"
-            hint="Max % of deployed capital in lending protocols"
+            hint="Most in any single place — spreads venue risk."
             value={policy.maxLending}
             onChange={(v) => setPolicy({ maxLending: v, riskPreset: 'custom' })}
           />
           <PolicySlider
             label="Liquidity Reserve"
-            hint="Minimum instantly-liquid capital"
+            hint="Minimum instantly-liquid capital."
             value={policy.liquidityReserve}
             onChange={(v) => setPolicy({ liquidityReserve: v, riskPreset: 'custom' })}
           />
         </div>
       </CollapsibleSection>
 
-      {/* Approved protocols */}
+      {/* Approved protocols — hairline toggles */}
       <CollapsibleSection title="Approved Protocols">
-        <div className="space-y-3">
+        <div>
           {protocolOptions.length === 0 && chain === 'evm' && (
             <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
               No strategy adapters are configured on this chain.
@@ -672,21 +717,25 @@ export default function ConstitutionStep({
             return (
               <div
                 key={p.key}
-                className="flex items-center justify-between p-3.5 rounded-xl border transition-all"
+                className="flex items-center justify-between gap-3"
                 style={{
-                  borderColor: enabled ? 'hsl(var(--foreground))' : 'hsl(var(--border))',
-                  backgroundColor: enabled ? 'hsl(var(--accent-muted))' : 'hsl(var(--surface-0))',
+                  padding: '13px 0',
+                  borderBottom: '1px solid hsl(var(--surface-2))',
                   opacity: disabled ? 0.62 : 1,
                 }}
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-display" style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
                       {p.label}
                     </span>
                     <span
                       className="nave-mono px-1.5 py-0.5 rounded"
-                      style={{ fontSize: '10px', backgroundColor: 'hsl(var(--surface-1))', color: 'hsl(var(--muted-foreground))', border: '1px solid hsl(var(--border))' }}
+                      style={{
+                        fontSize: '10.5px',
+                        backgroundColor: 'hsl(var(--surface-1))',
+                        color: 'hsl(var(--muted-foreground))',
+                      }}
                       title={rate ? `Live mainnet rate (${rate.source.split(':')[0]})` : 'Reference rate from Oct 10, 2026; live rate not loaded'}
                     >
                       {apyLabel}
@@ -695,7 +744,7 @@ export default function ConstitutionStep({
                     {venue && !venue.stable && (
                       <span
                         className="px-1.5 py-0.5 rounded"
-                        style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: 'hsl(38 60% 30%)' }}
+                        style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: '#9A7414' }}
                       >
                         {venue.asset}, not stable
                       </span>
@@ -703,43 +752,46 @@ export default function ConstitutionStep({
                     {p.badge === 'beta' && (
                       <span
                         className="px-1.5 py-0.5 rounded uppercase"
-                        style={{ fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.03em', backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }}
+                        style={{ fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.03em', backgroundColor: 'hsl(var(--surface-2))', color: 'hsl(var(--foreground))' }}
                         title={p.badgeReason ?? 'Beta: newer, less battle-tested integration.'}
                       >
                         Beta
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '1px' }}>
+                  <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
                     {disabled && evmStatus ? evmStatus.reason : (p.badge === 'beta' && p.badgeReason ? p.badgeReason : p.desc)}
                   </div>
                   {venue && (
-                    <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                    <div style={{ fontSize: '11.5px', color: 'hsl(var(--faint))', marginTop: '2px' }}>
                       Exit: {venue.exitNote}
                     </div>
                   )}
                 </div>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enabled}
                   onClick={() => toggleProtocol(p.key)}
                   disabled={disabled}
                   className="flex-shrink-0 relative rounded-full ml-3"
                   style={{
-                    width: '40px',
+                    width: '38px',
                     height: '22px',
-                    backgroundColor: enabled ? 'hsl(var(--accent))' : 'hsl(var(--border))',
-                    transition: 'background-color 0.2s',
+                    backgroundColor: enabled ? '#111827' : '#E5E0D2',
+                    transition: 'background-color 0.18s',
                     cursor: disabled ? 'not-allowed' : 'pointer',
                   }}
                   title={disabled && evmStatus ? evmStatus.reason : `Toggle ${p.label}`}
                 >
                   <span
-                    className="absolute top-1 rounded-full"
+                    className="absolute top-[2px] rounded-full bg-white"
                     style={{
-                      width: '14px',
-                      height: '14px',
-                      backgroundColor: 'white',
-                      left: enabled ? '22px' : '4px',
-                      transition: 'left 0.2s',
+                      width: '18px',
+                      height: '18px',
+                      left: enabled ? '18px' : '2px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+                      transition: 'left 0.18s',
                     }}
                   />
                 </button>
@@ -758,31 +810,45 @@ export default function ConstitutionStep({
         />
       )}
 
-      {/* Automation */}
+      {/* Automation — rebalance pills */}
       <CollapsibleSection title="Automation & Operations">
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <label className="nave-label">Rebalancing Frequency</label>
+        <div className="space-y-4">
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '8px',
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Rebalancing Frequency
+            </label>
             <div className="flex flex-wrap gap-2">
-              {REBALANCE_OPTIONS.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => setPolicy({ rebalanceFreq: opt })}
-                  className="px-3.5 py-1.5 rounded-lg border text-sm transition-all"
-                  style={{
-                    fontSize: '12px',
-                    fontFamily: 'var(--font-mono)',
-                    backgroundColor: policy.rebalanceFreq === opt ? 'hsl(var(--primary))' : 'hsl(var(--surface-0))',
-                    borderColor: policy.rebalanceFreq === opt ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                    color: policy.rebalanceFreq === opt ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  {opt}
-                </button>
-              ))}
+              {REBALANCE_OPTIONS.map((opt) => {
+                const selected = policy.rebalanceFreq === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setPolicy({ rebalanceFreq: opt })}
+                    className="rounded-full border transition-all"
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: selected ? 600 : 400,
+                      backgroundColor: selected ? '#111827' : '#ffffff',
+                      borderColor: selected ? '#111827' : 'hsl(var(--border))',
+                      color: selected ? '#ffffff' : 'hsl(var(--foreground))',
+                    }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
             </div>
           </div>
-
         </div>
       </CollapsibleSection>
 

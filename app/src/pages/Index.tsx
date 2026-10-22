@@ -207,7 +207,7 @@ function Hero() {
             onClick={() => {
               if (connected) {
                 if (DEMO_TREASURY_NAV_ENABLED) {
-                  navigate('/dashboard', { state: { treasuryAddress: MOCK_DAO_ADDRESS } });
+                  navigate('/overview', { state: { treasuryAddress: MOCK_DAO_ADDRESS } });
                 } else {
                   navigate('/treasuries');
                 }

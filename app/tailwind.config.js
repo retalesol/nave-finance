@@ -25,6 +25,10 @@ export default {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        brass: "hsl(var(--brass))",
+        paper: "hsl(var(--background))",
+        line: "hsl(var(--border))",
+        faint: "hsl(var(--faint))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",

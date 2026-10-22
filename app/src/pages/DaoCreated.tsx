@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import Fi from '../components/Fi';
+import { Notice } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { formatDaoSlugLabel, getDaoPublicPath } from '../lib/daoSlug';
 import { getAgentSetPDA } from '../lib/pdaDerivation';
@@ -95,13 +96,13 @@ export default function DaoCreated() {
 
   if (!state?.daoAddress) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'hsl(var(--background))' }}>
+      <div className="min-h-screen flex items-center justify-center px-6" style={{ backgroundColor: 'hsl(var(--background))' }}>
         <div className="text-center space-y-4">
           <p style={{ fontSize: 14, color: 'hsl(var(--muted-foreground))' }}>No treasury to display.</p>
           <button
             onClick={() => navigate('/treasuries')}
-            className="px-5 py-2.5 rounded-lg font-medium"
-            style={{ fontSize: 14, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+            className="px-4 py-2 rounded-[9px] font-semibold"
+            style={{ fontSize: 13.5, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
           >
             Go to Treasuries
           </button>
@@ -118,7 +119,7 @@ export default function DaoCreated() {
 
   function openDashboard() {
     setDaoAddress(state!.daoAddress);
-    navigate('/dashboard', { state: { treasuryAddress: state!.daoAddress, startOnboarding: true } });
+    navigate('/overview', { state: { treasuryAddress: state!.daoAddress, startOnboarding: true } });
   }
 
   const govLabel = state.governanceType === 'token' ? 'Token-Based' : 'Authorized Wallets';
@@ -126,9 +127,23 @@ export default function DaoCreated() {
   const network = networkLabel(state.chainId);
   const isMultiGuardian = state.guardianCount > 1;
 
+  const displayAgentStatus = isEvm
+    ? (state.agentError ? 'error' : 'running')
+    : agentStatus;
+  const displayAgentColor = displayAgentStatus === 'running'
+    ? 'hsl(var(--success))'
+    : displayAgentStatus === 'error'
+      ? 'hsl(var(--destructive))'
+      : 'hsl(var(--muted-foreground))';
+  const displayAgentLabel = displayAgentStatus === 'running'
+    ? 'Agents running ✓'
+    : displayAgentStatus === 'error'
+      ? 'Agent start failed — enable from Settings'
+      : 'Starting agents…';
+
   const rows: { label: string; value: string; mono?: boolean; copyable?: string; href?: string }[] = [
     ...(state.slug
-      ? [{ label: 'DAO name', value: formatDaoSlugLabel(state.slug), mono: true, copyable: getDaoPublicPath(state.slug) }]
+      ? [{ label: 'Home', value: formatDaoSlugLabel(state.slug), mono: true, copyable: getDaoPublicPath(state.slug) }]
       : []),
     {
       label: 'Treasury address',
@@ -147,204 +162,157 @@ export default function DaoCreated() {
       : []),
   ];
 
-  // Agent status display
-  const agentStatusColor =
-    agentStatus === 'running'
-      ? 'hsl(var(--success, 142 70% 40%))'
-      : agentStatus === 'error'
-      ? 'hsl(var(--destructive))'
-      : 'hsl(var(--primary))';
-  const agentStatusIcon =
-    agentStatus === 'running' ? 'circle-check'
-    : agentStatus === 'error' ? 'circle-xmark'
-    : 'arrows-rotate';
-  const agentStatusLabel =
-    agentStatus === 'running' ? 'Agents running'
-    : agentStatus === 'error' ? 'Agent start failed'
-    : 'Starting agents…';
-
-  // For EVM: use optimistic "running" (we just called enable; can't poll on-chain easily without a provider here)
-  const displayAgentStatus = isEvm
-    ? (state.agentError ? 'error' : 'running')
-    : agentStatus;
-  const displayAgentIcon = displayAgentStatus === 'running' ? 'circle-check'
-    : displayAgentStatus === 'error' ? 'circle-xmark'
-    : 'arrows-rotate';
-  const displayAgentColor = displayAgentStatus === 'running'
-    ? 'hsl(var(--success, 142 70% 40%))'
-    : displayAgentStatus === 'error'
-    ? 'hsl(var(--destructive))'
-    : 'hsl(var(--primary))';
-  const displayAgentLabel = displayAgentStatus === 'running' ? 'Agents running'
-    : displayAgentStatus === 'error' ? 'Agent start failed — enable from Settings'
-    : 'Starting agents…';
-
-  void agentStatusColor; void agentStatusIcon; void agentStatusLabel; // used via display variants above
+  const firstWord = (state.name || 'Treasury').trim().split(/\s+/)[0];
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ backgroundColor: 'hsl(var(--background))' }}>
-      <div className="w-full" style={{ maxWidth: 520 }}>
-        {/* Success header */}
-        <div className="text-center mb-8">
-          <div
-            className="mx-auto mb-5 flex items-center justify-center rounded-full"
-            style={{ width: 64, height: 64, backgroundColor: 'hsl(var(--success-muted, 142 70% 95%))' }}
-          >
-            <Fi icon="check" style={{ fontSize: 26, color: 'hsl(var(--success, 142 70% 40%))' }} />
-          </div>
-          <h1 className="text-display" style={{ fontSize: 28, letterSpacing: '-0.01em', marginBottom: 6 }}>
-            {state.name || 'Untitled Treasury'}
-          </h1>
-          <p style={{ fontSize: 14.5, color: 'hsl(var(--muted-foreground))' }}>
-            Your treasury is live on {network} and ready to use.
-          </p>
-        </div>
-
-        {/* Identity card */}
-        <div className="nave-card overflow-hidden mb-5">
-          <div className="flex items-center gap-3.5 px-5 py-4 border-b" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}>
-            <div
-              className="flex items-center justify-center rounded-xl overflow-hidden"
-              style={{ width: 48, height: 48, backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))', flexShrink: 0 }}
-            >
-              {state.logoUrl ? (
-                <img src={state.logoUrl} alt={state.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <Fi icon="building-columns" style={{ fontSize: 18, color: 'hsl(var(--muted-foreground))' }} />
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="text-display font-semibold truncate" style={{ fontSize: 16 }}>{state.name || 'Untitled Treasury'}</div>
-              {state.slug && (
-                <div className="nave-mono truncate" style={{ fontSize: 12, color: 'hsl(var(--primary))' }}>
-                  {formatDaoSlugLabel(state.slug)}
-                </div>
-              )}
-              {state.description && (
-                <div className="truncate" style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))' }}>{state.description}</div>
-              )}
-            </div>
-          </div>
-          <div className="divide-y" style={{ borderColor: 'hsl(var(--border))' }}>
-            {rows.map((r) => (
-              <div key={r.label} className="flex items-center justify-between px-5 py-3">
-                <span style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
-                <span className="flex items-center gap-2">
-                  {r.href ? (
-                    <a
-                      href={r.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={r.mono ? 'nave-mono' : ''}
-                      style={{ fontSize: 13, color: 'hsl(var(--primary))', fontWeight: 500, textDecoration: 'underline' }}
-                    >
-                      {r.value}
-                      <Fi icon="arrow-up-right-from-square" style={{ fontSize: 10, marginLeft: 4 }} />
-                    </a>
-                  ) : (
-                    <span className={r.mono ? 'nave-mono' : ''} style={{ fontSize: 13, color: 'hsl(var(--foreground))', fontWeight: 500 }}>
-                      {r.value}
-                    </span>
-                  )}
-                  {r.copyable && (
-                    <button onClick={() => copy(r.copyable!)} title="Copy" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                      <Fi icon={copied === r.copyable ? 'check' : 'copy'} style={{ fontSize: 12 }} />
-                    </button>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Agent status */}
+    <div className="min-h-screen px-4 sm:px-6 py-12" style={{ backgroundColor: 'hsl(var(--background))' }}>
+      <div className="max-w-[540px] mx-auto pt-6">
+        {/* Tick badge matching #successBlock */}
         <div
-          className="nave-card px-5 py-4 mb-4 flex items-center gap-3"
-          style={{ borderColor: 'hsl(var(--border))' }}
+          className="grid place-items-center rounded-full mb-4"
+          style={{
+            width: 44,
+            height: 44,
+            border: '1px solid #BFE0CC',
+            color: 'hsl(var(--success))',
+            fontSize: 19,
+          }}
         >
-          <Fi
-            icon={displayAgentIcon}
-            className={displayAgentStatus === 'starting' ? 'animate-spin' : undefined}
-            style={{ fontSize: 16, color: displayAgentColor, flexShrink: 0 }}
-          />
-          <div className="flex-1 min-w-0">
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-              Agent Status
-            </div>
-            <div style={{ fontSize: 12.5, color: displayAgentColor }}>
-              {displayAgentLabel}
-            </div>
-            {displayAgentStatus === 'error' && state.agentError && (
-              <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 4, lineHeight: 1.45 }}>
-                {state.agentError.length > 280 ? `${state.agentError.slice(0, 280)}…` : state.agentError}
-              </div>
-            )}
-          </div>
+          ✓
         </div>
 
-        {/* Constitution summary */}
-        {(state.riskPreset || (state.approvedProtocols && state.approvedProtocols.length > 0)) && (
-          <div className="nave-card px-5 py-4 mb-4 space-y-2">
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))', marginBottom: 6 }}>
-              <Fi icon="shield" style={{ fontSize: 12, marginRight: 6 }} />
-              Constitution
+        <h1
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: 32,
+            letterSpacing: '-0.02em',
+            margin: '0 0 8px',
+            color: 'hsl(var(--foreground))',
+          }}
+        >
+          Welcome aboard, <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>{firstWord}.</em>
+        </h1>
+        <p style={{ fontSize: 14, color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, margin: '0 0 24px', maxWidth: 440 }}>
+          {state.name || 'Your treasury'} is live on {network} and ready to use.
+          {state.description ? ` ${state.description}` : ''}
+        </p>
+
+        {/* Single hairline KV summary list */}
+        <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+          {rows.map((r) => (
+            <div
+              key={r.label}
+              className="flex items-center justify-between gap-4 py-3"
+              style={{ borderBottom: '1px solid hsl(var(--surface-2))', fontSize: 13.5 }}
+            >
+              <span style={{ color: 'hsl(var(--muted-foreground))' }}>{r.label}</span>
+              <span className="flex items-center gap-2">
+                {r.href ? (
+                  <a
+                    href={r.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={r.mono ? 'nave-mono' : ''}
+                    style={{ fontSize: r.mono ? 12.5 : 13.5, color: 'hsl(var(--foreground))', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '3px' }}
+                  >
+                    {r.value}
+                    <Fi icon="arrow-up-right-from-square" style={{ fontSize: 9, marginLeft: 4 }} />
+                  </a>
+                ) : (
+                  <strong className={r.mono ? 'nave-mono' : ''} style={{ fontSize: r.mono ? 12.5 : 13.5, color: 'hsl(var(--foreground))', fontWeight: 500 }}>
+                    {r.value}
+                  </strong>
+                )}
+                {r.copyable && (
+                  <button
+                    type="button"
+                    onClick={() => copy(r.copyable!)}
+                    title="Copy"
+                    className="hover:underline underline-offset-4"
+                    style={{ fontSize: 12, color: copied === r.copyable ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }}
+                  >
+                    {copied === r.copyable ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+              </span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {state.riskPreset && (
-                <span
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium"
-                  style={{ backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
-                >
-                  {state.riskPreset}
-                </span>
-              )}
-              {state.approvedProtocols?.map((id) => (
-                <span
-                  key={id}
-                  className="px-2.5 py-1 rounded-lg text-xs capitalize"
-                  style={{ backgroundColor: 'hsl(var(--accent-muted))', color: 'hsl(var(--accent-muted-foreground))', border: '1px solid hsl(var(--border-strong))' }}
-                >
-                  {id}
-                </span>
-              ))}
-            </div>
+          ))}
+
+          {/* Agent status row */}
+          <div
+            className="flex items-center justify-between gap-4 py-3"
+            style={{ borderBottom: '1px solid hsl(var(--surface-2))', fontSize: 13.5 }}
+          >
+            <span style={{ color: 'hsl(var(--muted-foreground))' }}>Agents</span>
+            <span style={{ fontWeight: 600, fontSize: 13, color: displayAgentColor }}>
+              {displayAgentLabel}
+            </span>
           </div>
+
+          {/* Constitution row */}
+          {(state.riskPreset || (state.approvedProtocols && state.approvedProtocols.length > 0)) && (
+            <div
+              className="flex items-center justify-between gap-4 py-3 flex-wrap"
+              style={{ borderBottom: '1px solid hsl(var(--surface-2))', fontSize: 13.5 }}
+            >
+              <span style={{ color: 'hsl(var(--muted-foreground))' }}>Constitution</span>
+              <span className="flex items-center gap-1.5 flex-wrap justify-end">
+                {state.riskPreset && (
+                  <span
+                    className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
+                  >
+                    {state.riskPreset}
+                  </span>
+                )}
+                {state.approvedProtocols?.map((id) => (
+                  <span
+                    key={id}
+                    className="px-2.5 py-0.5 rounded-full text-xs capitalize border"
+                    style={{ backgroundColor: '#ffffff', color: 'hsl(var(--foreground))', borderColor: 'hsl(var(--border))' }}
+                  >
+                    {id}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {displayAgentStatus === 'error' && state.agentError && (
+          <p style={{ fontSize: 12.5, color: 'hsl(var(--destructive))', marginTop: 10, lineHeight: 1.5 }}>
+            {state.agentError.length > 280 ? `${state.agentError.slice(0, 280)}…` : state.agentError}
+          </p>
         )}
 
-        {/* Multi-guardian note */}
         {isMultiGuardian && (
-          <div
-            className="flex items-start gap-2.5 p-4 rounded-xl border mb-4"
-            style={{ backgroundColor: 'hsl(var(--accent-muted))', borderColor: 'hsl(var(--border-strong))' }}
-          >
-            <Fi icon="users" style={{ fontSize: 14, color: 'hsl(var(--accent))', flexShrink: 0, marginTop: 2 }} />
-            <p style={{ fontSize: 12.5, color: 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6 }}>
-              <strong>Multi-guardian treasury:</strong> Agents are enabled and will propose strategies.
-              Your guardian set must vote to approve the first deployment ({state.guardianThreshold}-of-{state.guardianCount} required).
-            </p>
-          </div>
+          <Notice tone="brass" className="mt-4">
+            <span style={{ fontSize: 13 }}>
+              <strong>Multi-guardian treasury:</strong> Your guardian set must vote to approve the first deployment ({state.guardianThreshold}-of-{state.guardianCount} required).
+            </span>
+          </Notice>
         )}
 
         {/* CTAs */}
-        <button
-          onClick={openDashboard}
-          className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-semibold transition-all mb-3"
-          style={{ fontSize: 15, backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))', boxShadow: 'var(--shadow-md)' }}
-        >
-          <Fi icon="gauge" style={{ fontSize: 14 }} />
-          Go to Dashboard
-        </button>
-        <p className="text-center mb-3" style={{ fontSize: 12.5, color: 'hsl(var(--muted-foreground))' }}>
-          Your dashboard includes an activation checklist to guide funding, rules, and agents.
-        </p>
-        <button
-          onClick={() => copy(state.daoAddress)}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border"
-          style={{ fontSize: 13.5, borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-        >
-          <Fi icon={copied === state.daoAddress ? 'check' : 'copy'} style={{ fontSize: 12 }} />
-          {copied === state.daoAddress ? 'Copied treasury address' : 'Copy treasury address'}
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap mt-7">
+          <button
+            type="button"
+            onClick={openDashboard}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[9px] font-semibold transition-all"
+            style={{ fontSize: 13.5, backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
+          >
+            Go to Dashboard →
+          </button>
+          <button
+            type="button"
+            onClick={() => copy(state.daoAddress)}
+            className="px-3.5 py-2.5 rounded-[9px] border font-semibold"
+            style={{ fontSize: 13, backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+          >
+            {copied === state.daoAddress ? 'Copied address' : 'Copy treasury address'}
+          </button>
+        </div>
       </div>
     </div>
   );

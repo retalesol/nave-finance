@@ -22,6 +22,55 @@ import { treasuryAssetLabel, WSOL_MINT } from '../lib/treasuryAssetLabels';
 
 const ASSET_KIND_LABEL: Record<number, string> = { 0: 'Stablecoin', 1: 'SOL-like', 2: 'Other' };
 
+const MOCK_TREASURY_ASSETS: TreasuryAssetRow[] = [
+  {
+    mint: WSOL_MINT,
+    decimals: 9,
+    pythFeedHex: '0'.repeat(64),
+    isStablecoin: false,
+    assetKind: 1,
+    enabled: true,
+    deposited: Math.round(336.4 * 1e9),
+    deployedCapital: Math.round(160 * 1e9),
+    lastValuedUsd: 58_870_000_000,
+    lastValuedAt: Math.floor(Date.now() / 1000),
+    vaultBalanceBaseUnits: Math.round(176.4 * 1e9),
+    assetVault: 'MockSolVault11111111111111111111111111111111',
+    symbol: 'SOL',
+    name: 'Solana',
+    assetKindLabel: 'SOL-like',
+    priceUsd: 175,
+    priceSource: 'On-chain valuation',
+    uiBalance: 176.4,
+    valueUsd: 58_870,
+    allocationPct: 52.7,
+    onChainRegistered: true,
+  },
+  {
+    mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    decimals: 6,
+    pythFeedHex: '0'.repeat(64),
+    isStablecoin: true,
+    assetKind: 0,
+    enabled: true,
+    deposited: 52_800_000_000,
+    deployedCapital: 30_000_000_000,
+    lastValuedUsd: 52_800_000_000,
+    lastValuedAt: Math.floor(Date.now() / 1000),
+    vaultBalanceBaseUnits: 22_800_000_000,
+    assetVault: 'MockUsdcVault1111111111111111111111111111111',
+    symbol: 'USDC',
+    name: 'USD Coin',
+    assetKindLabel: 'Stablecoin',
+    priceUsd: 1,
+    priceSource: 'Stablecoin parity',
+    uiBalance: 22_800,
+    valueUsd: 52_800,
+    allocationPct: 47.3,
+    onChainRegistered: true,
+  },
+];
+
 export interface TreasuryAssetRow extends RegisteredAssetView {
   symbol: string;
   name: string;
@@ -721,13 +770,28 @@ export function useTreasuryAssets(daoAddress: string | null): UseTreasuryAssetsR
     return { visibleAssets: visible, hiddenAssets: hidden };
   }, [assets, hiddenSet]);
 
-  if (!daoAddress || isMock) {
+  if (!daoAddress) {
     return {
       assets: [],
       visibleAssets: [],
       hiddenAssets: [],
       onchainNavUsd: null,
       deployedUsd: null,
+      loading: false,
+      error: null,
+      refetch,
+      hideAsset,
+      unhideAsset,
+    };
+  }
+
+  if (isMock) {
+    return {
+      assets: MOCK_TREASURY_ASSETS,
+      visibleAssets: MOCK_TREASURY_ASSETS,
+      hiddenAssets: [],
+      onchainNavUsd: 111_670,
+      deployedUsd: 58_000,
       loading: false,
       error: null,
       refetch,

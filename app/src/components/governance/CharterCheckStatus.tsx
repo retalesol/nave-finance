@@ -19,8 +19,8 @@ export interface CharterCheckStatusProps {
 }
 
 const STATUS_COLOR: Record<CustomerStatus, string> = {
-  checked: 'hsl(var(--success))',
-  needs_closer_look: 'hsl(var(--warning))',
+  checked: '#2F7D4F',
+  needs_closer_look: '#9A7414',
   still_checking: 'hsl(var(--muted-foreground))',
 };
 

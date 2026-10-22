@@ -110,7 +110,7 @@ function useDepositAddresses(daoAddress: string, vaultMint?: string | null) {
   );
 }
 
-/** Inline QR + copy panel — QR-first receive flow. */
+/** Inline QR + copy panel — calm hairline receive flow. */
 export function DepositAddressPanel({
   daoAddress,
   daoName,
@@ -136,55 +136,88 @@ export function DepositAddressPanel({
 
   return (
     <div
-      className={`flex flex-col ${compact ? 'items-center text-center' : 'sm:flex-row sm:items-start'} gap-4 p-5 rounded-xl border`}
-      style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
+      className={`flex flex-col ${compact ? 'items-center text-center' : 'sm:flex-row sm:items-start'} gap-5`}
+      style={{
+        padding: '24px 0',
+        borderTop: '1px solid hsl(var(--surface-2))',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+      }}
     >
-      <div className="p-3 rounded-2xl flex-shrink-0" style={{ backgroundColor: 'white', border: '1px solid hsl(var(--border))' }}>
-        <QRCodeSVG value={receiveAddress} size={compact ? 140 : 160} level="M" />
+      <div
+        className="p-3 rounded-[12px] flex-shrink-0"
+        style={{ backgroundColor: '#ffffff', border: '1px solid hsl(var(--border))' }}
+      >
+        <QRCodeSVG value={receiveAddress} size={compact ? 132 : 148} level="M" />
       </div>
       <div className="flex-1 min-w-0 space-y-3">
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+          <div
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '15px',
+              fontWeight: 600,
+              color: 'hsl(var(--foreground))',
+            }}
+          >
             Fund {daoName ?? 'your treasury'}
           </div>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.55 }}>
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'hsl(var(--muted-foreground))',
+              marginTop: '4px',
+              lineHeight: 1.55,
+            }}
+          >
             {!isSolana
-              ? 'Send tokens to this address. They show up in Assets after the transfer lands.'
+              ? 'Send tokens to this address. They show up in Money after the transfer lands.'
               : splAddress
                 ? 'Send the treasury token to this address.'
                 : 'Send SOL to this treasury address.'}
           </p>
           {isSolana && splAddress && (
-            <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
+            <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
               Native SOL: <span className="nave-mono">{shortenAddress(solAddress)}</span>
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={copyAddress}
-          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg border transition-colors"
-          style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
+        <div
+          className="flex items-center gap-2 rounded-[10px] border"
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: 'hsl(var(--border))',
+            padding: '10px 12px',
+          }}
         >
-          <span className="nave-mono truncate" style={{ fontSize: '11.5px', color: 'hsl(var(--foreground))' }}>
+          <code
+            className="nave-mono truncate flex-1"
+            style={{ fontSize: '11.5px', color: 'hsl(var(--foreground))' }}
+          >
             {receiveAddress}
-          </span>
-          <Fi
-            icon={copied ? 'circle-check' : 'copy'}
-            style={{ fontSize: '12px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))', flexShrink: 0 }}
-          />
-        </button>
-        <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
-          {copied ? 'Address copied' : 'Scan the QR or tap to copy'}
+          </code>
+          <button
+            type="button"
+            onClick={copyAddress}
+            className="px-3 py-1 rounded-[8px] border font-semibold transition-colors flex-shrink-0"
+            style={{
+              fontSize: '12px',
+              backgroundColor: 'hsl(var(--background))',
+              borderColor: 'hsl(var(--border))',
+              color: copied ? 'hsl(var(--success))' : 'hsl(var(--foreground))',
+            }}
+          >
+            {copied ? 'Copied ✓' : 'Copy'}
+          </button>
+        </div>
+        <p style={{ fontSize: '11.5px', color: 'hsl(var(--faint))' }}>
+          {copied ? 'Address copied to clipboard' : 'Scan the QR or copy the treasury deposit address'}
         </p>
       </div>
     </div>
   );
 }
 
-/** Prominent deposit address banner with optional QR modal trigger. */
+/** Deposit address hairline strip with optional QR modal trigger. */
 export function TreasuryDepositBanner({
   daoAddress,
   vaultMint,
@@ -208,42 +241,36 @@ export function TreasuryDepositBanner({
 
   return (
     <div
-      className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3.5 rounded-xl border"
-      style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
+      className="flex flex-col sm:flex-row sm:items-center gap-3"
+      style={{
+        padding: '16px 0',
+        borderTop: '1px solid hsl(var(--surface-2))',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+      }}
     >
-      <div className="flex items-start gap-2.5 flex-1 min-w-0">
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: 'hsl(var(--primary))' }}
-        >
-          <Fi icon="arrow-down-to-bracket" style={{ fontSize: '13px', color: 'white' }} />
+      <div className="flex-1 min-w-0">
+        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+          {splAddress ? 'Token deposit address' : 'Treasury deposit address'}
         </div>
-        <div className="min-w-0">
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            {splAddress ? 'Token deposit address' : 'Treasury deposit address'}
-          </div>
-          <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.5 }}>
-            {!isSolana
-              ? 'Send any token to this address. It shows up in Assets as soon as the transfer lands.'
-              : splAddress
-                ? 'Send the treasury token here to fund this treasury. Only use Solana devnet.'
-                : 'Send SOL here to fund this treasury. Only use Solana devnet.'}
+        <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: 1.5 }}>
+          {!isSolana
+            ? 'Send any token to this address. It shows up in Money as soon as the transfer lands.'
+            : splAddress
+              ? 'Send the treasury token here to fund this treasury. Only use Solana devnet.'
+              : 'Send SOL here to fund this treasury. Only use Solana devnet.'}
+        </p>
+        {isSolana && splAddress && (
+          <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.5 }}>
+            For native SOL, use <span className="nave-mono">{shortenAddress(solAddress)}</span>.
           </p>
-          {isSolana && splAddress && (
-            <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.5 }}>
-              For native SOL, use <span className="nave-mono">{shortenAddress(solAddress)}</span>.
-            </p>
-          )}
-        </div>
+        )}
       </div>
       <div className="flex items-center gap-2 w-full sm:w-auto sm:max-w-md">
         <button
           type="button"
           onClick={copy}
-          className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-colors"
-          style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
+          className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-[10px] border transition-colors"
+          style={{ borderColor: 'hsl(var(--border))', backgroundColor: '#ffffff' }}
         >
           <span className="nave-mono truncate" style={{ fontSize: '11.5px', color: 'hsl(var(--foreground))' }}>
             {depositAddress}
@@ -257,10 +284,8 @@ export function TreasuryDepositBanner({
           <button
             type="button"
             onClick={onShowQr}
-            className="flex items-center justify-center px-3 py-2.5 rounded-lg border transition-colors"
-            style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            className="flex items-center justify-center px-3 py-2 rounded-[10px] border transition-colors"
+            style={{ borderColor: 'hsl(var(--border))', backgroundColor: '#ffffff', color: 'hsl(var(--foreground))' }}
             title="Show QR code"
           >
             <Fi icon="qrcode" style={{ fontSize: '14px' }} />
@@ -557,12 +582,12 @@ export function DepositFlowModal({
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    fontSize: '13px',
+    fontSize: '14px',
     fontFamily: 'var(--font-mono)',
-    padding: '10px 12px',
+    padding: '11px 13px',
     borderRadius: '10px',
     border: '1px solid hsl(var(--border))',
-    backgroundColor: 'hsl(var(--surface-0))',
+    backgroundColor: '#ffffff',
     color: 'hsl(var(--foreground))',
     outline: 'none',
   };
@@ -577,65 +602,132 @@ export function DepositFlowModal({
       : 'Pick a token from your wallet, or use Receive to send funds to this treasury.';
 
   return (
-    <NaveModal open title={modalTitle} icon="arrow-down-to-bracket" onClose={onClose} maxWidth={460}>
+    <NaveModal
+      open
+      title={modalTitle}
+      subtitle="Deposit from your connected wallet, or send tokens to the treasury address."
+      icon="arrow-down-to-bracket"
+      onClose={onClose}
+      maxWidth={480}
+    >
+      <div style={{ padding: '18px 22px 22px' }}>
+        {/* Modal pill tabs (.mtabs) */}
         <div
-          className="flex border-b"
-          style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}
+          className="flex gap-1"
+          style={{
+            backgroundColor: 'hsl(var(--background))',
+            border: '1px solid hsl(var(--surface-2))',
+            borderRadius: '10px',
+            padding: '3px',
+            marginBottom: '18px',
+          }}
         >
           {([
-            { id: 'address' as const, label: 'Receive', icon: 'qrcode' },
-            { id: 'wallet' as const, label: 'From Wallet', icon: 'wallet' },
-          ]).map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="flex items-center gap-1.5 px-5 py-3 flex-1 justify-center transition-colors"
-              style={{
-                fontSize: '13px',
-                fontWeight: tab === t.id ? 600 : 400,
-                color: tab === t.id ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                borderBottom: tab === t.id ? '2px solid hsl(var(--foreground))' : '2px solid transparent',
-                backgroundColor: 'transparent',
-              }}
-            >
-              <Fi icon={t.icon} style={{ fontSize: '12px' }} />
-              {t.label}
-            </button>
-          ))}
+            { id: 'address' as const, label: 'Receive' },
+            { id: 'wallet' as const, label: 'From Wallet' },
+          ]).map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                type="button"
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="flex-1 transition-all"
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  fontWeight: active ? 600 : 500,
+                  backgroundColor: active ? '#ffffff' : 'transparent',
+                  color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                  boxShadow: active ? '0 1px 3px rgba(17, 24, 39, 0.08)' : 'none',
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         {tab === 'address' && (
-          <div className="p-5 flex flex-col items-center text-center space-y-4">
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-              {!isSolana
-                ? <>Send tokens to {daoName ? <strong>{daoName}</strong> : 'this treasury'}.</>
-                : splAddress
-                  ? <>Send the treasury token to {daoName ? <strong>{daoName}</strong> : 'this treasury'}.</>
-                  : <>Send SOL to {daoName ? <strong>{daoName}</strong> : 'this treasury'}.</>}
-            </p>
-            <div className="p-4 rounded-2xl" style={{ backgroundColor: 'white', border: '1px solid hsl(var(--border))' }}>
-              <QRCodeSVG value={receiveAddress} size={176} level="M" />
-            </div>
-            <button
-              onClick={copyAddress}
-              className="w-full flex items-center justify-between gap-2 px-3.5 py-3 rounded-xl border transition-colors"
-              style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
+          <div className="space-y-4">
+            <p
+              style={{
+                fontSize: '13px',
+                color: 'hsl(var(--muted-foreground))',
+                lineHeight: 1.55,
+                textAlign: 'center',
+                margin: 0,
+              }}
             >
-              <span className="nave-mono truncate" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>
+              {!isSolana ? (
+                <>Send tokens to {daoName ? <strong style={{ color: 'hsl(var(--foreground))' }}>{daoName}</strong> : 'this treasury'}.</>
+              ) : splAddress ? (
+                <>Send the treasury token to {daoName ? <strong style={{ color: 'hsl(var(--foreground))' }}>{daoName}</strong> : 'this treasury'}.</>
+              ) : (
+                <>Send SOL to {daoName ? <strong style={{ color: 'hsl(var(--foreground))' }}>{daoName}</strong> : 'this treasury'}.</>
+              )}
+            </p>
+            <div
+              className="mx-auto grid place-items-center p-3.5"
+              style={{
+                width: 'fit-content',
+                backgroundColor: '#ffffff',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: '12px',
+              }}
+            >
+              <QRCodeSVG value={receiveAddress} size={156} level="M" />
+            </div>
+            <div
+              className="flex items-center gap-2"
+              style={{
+                backgroundColor: 'hsl(var(--background))',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: '10px',
+                padding: '11px 12px',
+              }}
+            >
+              <code
+                className="nave-mono truncate flex-1"
+                style={{ fontSize: '11.5px', color: 'hsl(var(--foreground))' }}
+              >
                 {receiveAddress}
-              </span>
-              <Fi
-                icon={copied ? 'circle-check' : 'copy'}
-                style={{ fontSize: '13px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))', flexShrink: 0 }}
-              />
-            </button>
-            <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
-              {copied ? 'Address copied to clipboard' : 'Tap to copy the deposit address'}
+              </code>
+              <button
+                type="button"
+                onClick={copyAddress}
+                className="px-3 py-1.5 rounded-[8px] border font-semibold transition-colors flex-shrink-0"
+                style={{
+                  fontSize: '12px',
+                  backgroundColor: '#ffffff',
+                  borderColor: 'hsl(var(--border))',
+                  color: copied ? 'hsl(var(--success))' : 'hsl(var(--foreground))',
+                }}
+              >
+                {copied ? 'Copied ✓' : 'Copy'}
+              </button>
+            </div>
+            <p
+              style={{
+                fontSize: '11.5px',
+                color: 'hsl(var(--faint))',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
+              {copied ? 'Address copied to clipboard' : 'Deposits appear automatically once confirmed on-chain'}
             </p>
             {isSolana && splAddress && (
-              <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+              <p
+                style={{
+                  fontSize: '11.5px',
+                  color: 'hsl(var(--muted-foreground))',
+                  lineHeight: 1.5,
+                  textAlign: 'center',
+                  margin: 0,
+                }}
+              >
                 For native SOL, send to <span className="nave-mono">{shortenAddress(solAddress)}</span>.
               </p>
             )}
@@ -643,72 +735,133 @@ export function DepositFlowModal({
         )}
 
         {tab === 'wallet' && (
-          <div className="p-5 space-y-4">
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
+          <div className="space-y-4">
+            <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
               {chainKind === 'evm'
                 ? 'Move tokens from your wallet into this treasury. First-time tokens are set up automatically.'
                 : 'Move tokens from your wallet into this treasury.'}
             </p>
             {chainKind === 'evm' && (
               <div
-                className="px-3 py-2.5 rounded-lg border"
-                style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-1))', fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}
+                style={{
+                  backgroundColor: 'hsl(var(--background))',
+                  border: '1px solid hsl(var(--surface-2))',
+                  borderRadius: '12px',
+                  padding: '11px 13px',
+                  fontSize: '12.5px',
+                  color: 'hsl(var(--muted-foreground))',
+                  lineHeight: 1.55,
+                }}
               >
                 Native {nativeEvmBalance?.symbol ?? 'ETH'} balance:{' '}
-                <span className="nave-mono" style={{ color: 'hsl(var(--foreground))' }}>
-                  {nativeEvmBalance ? Number(nativeEvmBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'} {nativeEvmBalance?.symbol ?? 'ETH'}
-                </span>
+                <strong className="nave-mono" style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>
+                  {nativeEvmBalance ? Number(nativeEvmBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}{' '}
+                  {nativeEvmBalance?.symbol ?? 'ETH'}
+                </strong>
                 {isSelectedWeth ? '. Extra ETH is wrapped to WETH if needed.' : '.'}
               </div>
             )}
 
             {!hasAssets ? (
               <div
-                className="px-3 py-3 rounded-lg"
-                style={{ backgroundColor: 'hsl(var(--warning-muted))', fontSize: '12.5px', color: 'hsl(38 50% 28%)', lineHeight: 1.5 }}
+                style={{
+                  backgroundColor: 'hsl(var(--background))',
+                  border: '1px solid hsl(var(--surface-2))',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  fontSize: '13px',
+                  color: 'hsl(var(--muted-foreground))',
+                  lineHeight: 1.55,
+                }}
               >
-                <Fi icon="triangle-exclamation" style={{ fontSize: '12px', marginRight: '6px' }} />
                 {registerPrerequisiteMessage}
               </div>
             ) : (
               <>
                 {!preselectedAsset && (
                   <div>
-                    <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>Token</label>
+                    <label
+                      style={{
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: 'hsl(var(--foreground))',
+                        marginBottom: '7px',
+                        display: 'block',
+                      }}
+                    >
+                      Token
+                    </label>
                     <select
                       value={selectedMint}
-                      onChange={e => { setSelectedMint(e.target.value); setAmount(''); setDepositError(null); }}
-                      style={inputStyle}
+                      onChange={(e) => {
+                        setSelectedMint(e.target.value);
+                        setAmount('');
+                        setDepositError(null);
+                      }}
+                      style={{ ...inputStyle, fontFamily: 'var(--font-body)' }}
                     >
-                      {selectableAssets.map(a => (
-                        <option key={a.mint} value={a.mint}>{a.symbol} — {a.name}</option>
+                      {selectableAssets.map((a) => (
+                        <option key={a.mint} value={a.mint}>
+                          {a.symbol} — {a.name}
+                        </option>
                       ))}
                     </select>
                   </div>
                 )}
-                {selectedAsset && (
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}>
-                      {walletBalance === null
-                        ? 'Checking balance…'
-                        : `Your wallet: ${walletBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${selectedAsset.symbol}`}
-                    </span>
-                    {walletBalance !== null && walletBalance > 0 && (
-                      <button type="button" onClick={() => setAmount(String(walletBalance))}
-                        style={{ fontSize: '11px', color: 'hsl(var(--primary))', fontFamily: 'var(--font-mono)' }}>
-                        MAX
-                      </button>
+                <div>
+                  <div className="flex items-center justify-between" style={{ marginBottom: '7px' }}>
+                    <label
+                      style={{
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: 'hsl(var(--foreground))',
+                      }}
+                    >
+                      Amount
+                    </label>
+                    {selectedAsset && (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="nave-mono"
+                          style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}
+                        >
+                          {walletBalance === null
+                            ? 'Checking balance…'
+                            : `Balance: ${walletBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${selectedAsset.symbol}`}
+                        </span>
+                        {walletBalance !== null && walletBalance > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setAmount(String(walletBalance))}
+                            className="hover:underline underline-offset-2"
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: 'hsl(var(--brass))',
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                          >
+                            MAX
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-                <div>
-                  <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>Amount</label>
-                  <input type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" style={inputStyle} />
+                  <input
+                    type="number"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    style={inputStyle}
+                  />
                   {amountValid && !withinBalance && (
-                    <p style={{ fontSize: '11.5px', color: 'hsl(var(--destructive))', marginTop: '4px' }}>Amount exceeds your wallet balance.</p>
+                    <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', marginTop: '6px' }}>
+                      Amount exceeds your wallet balance.
+                    </p>
                   )}
                   {isSelectedWeth && wethDeficit > 0n && nativeCanCoverWethDeficit && (
-                    <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
+                    <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
                       This will wrap {formatUnits(wethDeficit, selectedAsset?.decimals ?? 18)} ETH to WETH before depositing.
                     </p>
                   )}
@@ -717,27 +870,46 @@ export function DepositFlowModal({
             )}
 
             {depositError && (
-              <div className="px-3 py-2.5 rounded-lg" style={{ backgroundColor: 'hsl(var(--destructive-muted))', fontSize: '12px', color: 'hsl(0 60% 40%)', lineHeight: 1.4 }}>
+              <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', lineHeight: 1.5, margin: 0 }}>
                 {depositError}
-              </div>
+              </p>
             )}
 
-            <button
-              onClick={handleDeposit}
-              disabled={!canDeposit}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all"
+            <div
+              className="flex items-center justify-end gap-2"
               style={{
-                fontSize: '14px',
-                backgroundColor: canDeposit ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
-                color: canDeposit ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-                cursor: canDeposit ? 'pointer' : 'not-allowed',
+                marginTop: '20px',
+                paddingTop: '16px',
+                borderTop: '1px solid hsl(var(--surface-2))',
               }}
             >
-              <Fi icon="arrow-down-to-bracket" style={{ fontSize: '13px' }} />
-              {submitting ? 'Adding funds…' : `Add funds${selectedAsset ? ` — ${selectedAsset.symbol}` : ''}`}
-            </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-[9px] font-semibold"
+                style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeposit}
+                disabled={!canDeposit}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                style={{
+                  fontSize: '13px',
+                  backgroundColor: 'hsl(var(--foreground))',
+                  color: '#ffffff',
+                  opacity: canDeposit ? 1 : 0.4,
+                  cursor: canDeposit ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {submitting ? 'Adding funds…' : `Add funds${selectedAsset ? ` — ${selectedAsset.symbol}` : ''}`}
+              </button>
+            </div>
           </div>
         )}
+      </div>
     </NaveModal>
   );
 }

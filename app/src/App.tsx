@@ -1,5 +1,5 @@
 import { useMemo, lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
@@ -76,22 +76,34 @@ function PageLoader() {
 
 /*
  * Routes that use the app shell (sidebar + top bar).
- * IA aliases (/votes, /rules, /automation, /team) preserve bookmarks while canonical
- * paths (/governance, /policy, /agent, /settings) remain primary — full rename deferred.
+ * Canonical paths (/overview, /money, /agents, /decisions, /rules, /settings, /tokens)
+ * alongside legacy paths (/dashboard, /assets, /agent, /automation, /governance, /votes, /policy, /team)
+ * which redirect to their canonical counterparts while preserving location.state and query strings.
  */
 const APP_ROUTES = [
+  '/overview',
   '/dashboard',
+  '/money',
   '/assets',
+  '/agents',
   '/agent',
   '/automation',
-  '/policy',
-  '/rules',
+  '/decisions',
   '/governance',
   '/votes',
+  '/rules',
+  '/policy',
   '/settings',
   '/team',
   '/tokens',
 ];
+
+function LegacyRedirect({ to }: { to: string }) {
+  const location = useLocation();
+  const { proposalId } = useParams<{ proposalId?: string }>();
+  const targetPath = proposalId ? `${to}/${proposalId}` : to;
+  return <Navigate to={targetPath + location.search} state={location.state} replace />;
+}
 
 function AppRoutes() {
   const location = useLocation();
@@ -104,18 +116,23 @@ function AppRoutes() {
             <Suspense fallback={<PageLoader />}>
               <PageTransition layoutChild>
                 <Routes location={location}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/assets" element={<Assets />} />
-                  <Route path="/agent" element={<Agent />} />
-                  <Route path="/automation" element={<Agent />} />
-                  <Route path="/policy" element={<PolicyEngine />} />
+                  <Route path="/overview" element={<Dashboard />} />
+                  <Route path="/dashboard" element={<LegacyRedirect to="/overview" />} />
+                  <Route path="/money" element={<Assets />} />
+                  <Route path="/assets" element={<LegacyRedirect to="/money" />} />
+                  <Route path="/agents" element={<Agent />} />
+                  <Route path="/agent" element={<LegacyRedirect to="/agents" />} />
+                  <Route path="/automation" element={<LegacyRedirect to="/agents" />} />
+                  <Route path="/decisions" element={<Governance />} />
+                  <Route path="/decisions/:proposalId" element={<Governance />} />
+                  <Route path="/governance" element={<LegacyRedirect to="/decisions" />} />
+                  <Route path="/governance/:proposalId" element={<LegacyRedirect to="/decisions" />} />
+                  <Route path="/votes" element={<LegacyRedirect to="/decisions" />} />
+                  <Route path="/votes/:proposalId" element={<LegacyRedirect to="/decisions" />} />
                   <Route path="/rules" element={<PolicyEngine />} />
-                  <Route path="/governance" element={<Governance />} />
-                  <Route path="/governance/:proposalId" element={<Governance />} />
-                  <Route path="/votes" element={<Governance />} />
-                  <Route path="/votes/:proposalId" element={<Governance />} />
+                  <Route path="/policy" element={<LegacyRedirect to="/rules" />} />
                   <Route path="/settings" element={<Settings />} />
-                  <Route path="/team" element={<Settings />} />
+                  <Route path="/team" element={<LegacyRedirect to="/settings" />} />
                   <Route path="/tokens" element={<Tokens />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>

@@ -128,7 +128,7 @@ export default function DaoSlugPage() {
       // longer auto-watch on page load (that would spam wallet prompts). Users
       // add the DAO to their watchlist explicitly from the Treasuries lobby.
       setDaoAddress(dao.dao_onchain_address);
-      navigate('/dashboard', { replace: true, state: { treasuryAddress: dao.dao_onchain_address } });
+      navigate('/overview', { replace: true, state: { treasuryAddress: dao.dao_onchain_address } });
     }
     enter().catch((err) => {
       console.warn('[DaoSlugPage] failed to enter DAO:', err);
@@ -217,14 +217,13 @@ export default function DaoSlugPage() {
 
 /* ── Reusable gate page layout ──────────────────────────── */
 function GatePage({
-  icon,
   title,
   badge,
   body,
   action,
   secondary,
 }: {
-  icon: string;
+  icon?: string;
   title: string;
   badge?: { label: string; color: string };
   body: string;
@@ -236,59 +235,49 @@ function GatePage({
       className="min-h-screen flex items-center justify-center px-6"
       style={{ backgroundColor: 'hsl(var(--background))' }}
     >
-      <div className="text-center max-w-sm w-full space-y-5">
-        {/* Icon */}
-        <div
-          className="mx-auto w-14 h-14 rounded-2xl flex items-center justify-center"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}
+      <div className="text-center max-w-md w-full space-y-4">
+        {badge && (
+          <div className="nave-label">
+            <Fi icon="lock" style={{ fontSize: '9px', marginRight: '5px' }} />
+            {badge.label}
+          </div>
+        )}
+
+        <h1
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: '32px',
+            letterSpacing: '-0.02em',
+            lineHeight: 1.15,
+            color: 'hsl(var(--foreground))',
+            margin: 0,
+          }}
         >
-          <Fi icon={icon} style={{ fontSize: '22px', color: 'hsl(var(--foreground))' }} />
-        </div>
+          {title}
+        </h1>
 
-        {/* Title + optional badge */}
-        <div>
-          <h1 className="text-display font-semibold" style={{ fontSize: '22px', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))' }}>
-            {title}
-          </h1>
-          {badge && (
-            <span
-              className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full"
-              style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))', color: badge.color }}
-            >
-              <Fi icon="lock" style={{ fontSize: '9px' }} />
-              {badge.label}
-            </span>
-          )}
-        </div>
-
-        {/* Body */}
-        <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))' }}>
+        <p style={{ fontSize: '14.5px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))', margin: 0 }}>
           {body}
         </p>
 
-        {/* Actions */}
-        <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
           <button
             onClick={action.onClick}
-            className="w-full py-2.5 rounded-xl font-medium transition-all"
+            className="px-4 py-2.5 rounded-[9px] font-semibold transition-all"
             style={{
-              fontSize: '14px',
-              backgroundColor: action.primary ? 'hsl(var(--primary))' : 'hsl(var(--surface-1))',
-              color: action.primary ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
-              border: action.primary ? 'none' : '1px solid hsl(var(--border))',
+              fontSize: '13.5px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
             }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >
             {action.label}
           </button>
           {secondary && (
             <button
               onClick={secondary.onClick}
-              className="w-full py-2 rounded-xl transition-all"
-              style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
+              className="px-3.5 py-2.5 rounded-[9px] transition-all"
+              style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}
             >
               {secondary.label}
             </button>

@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import Fi from '@/components/Fi';
 import { PageSkeleton } from '@/components/NaveSkeletons';
 import NaveEmptyState from '@/components/NaveEmptyState';
 import { staggerContainer, staggerChild } from '@/components/PageTransition';
+import { UnderlineTabs } from '@/components/calm';
 import CreateProposalModal from '@/components/governance/CreateProposalModal';
 import ProposalCard from '@/components/governance/ProposalCard';
 import { mapLiveProposalsToUi } from '@/components/governance/mapProposals';
@@ -21,6 +21,13 @@ import {
 } from '@/lib/programConfig';
 
 type FilterTab = 'all' | 'active' | 'passed' | 'rejected';
+
+const FILTER_TABS: readonly { id: FilterTab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'passed', label: 'Passed' },
+  { id: 'rejected', label: 'Rejected' },
+];
 
 export default function Governance() {
   const { daoAddress } = useDaoContext();
@@ -58,9 +65,6 @@ export default function Governance() {
     useState<{ title: string; description: string; payload: number[]; type?: ProposalType } | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
 
-  // Chain-aware: useDaoMembership resolves the active chain's wallet (wagmi
-  // address for EVM DAOs, Solana publicKey otherwise) and compares EVM
-  // addresses case-insensitively.
   const { isMember, isFounder } = useDaoMembership();
 
   useEffect(() => {
@@ -88,11 +92,18 @@ export default function Governance() {
     }
   }, [location.state, location.pathname, navigate]);
 
-  const filtered = allProposals.filter(p => filter === 'all' || p.status === filter);
+  const filtered = allProposals.filter((p) => filter === 'all' || p.status === filter);
 
-  const active = allProposals.filter(p => p.status === 'active').length;
-  const passed = allProposals.filter(p => p.status === 'passed').length;
-  const rejected = allProposals.filter(p => p.status === 'rejected').length;
+  const active = allProposals.filter((p) => p.status === 'active').length;
+  const passed = allProposals.filter((p) => p.status === 'passed').length;
+  const rejected = allProposals.filter((p) => p.status === 'rejected').length;
+
+  const votingSystemLabel = isTokenGov ? 'Token-weighted' : 'Authorized wallets';
+  const quorumLabel = isTokenGov
+    ? 'Token majority'
+    : guardian.threshold > 0
+      ? `${guardian.threshold}-of-${guardian.walletCount}`
+      : 'Guardian majority';
 
   if (liveProposals.loading && liveProposals.proposals.length === 0) {
     return <PageSkeleton variant="governance" />;
@@ -112,113 +123,97 @@ export default function Governance() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto"
+      className="px-4 sm:px-8 py-7 sm:py-10 animate-fade-in"
       data-onboarding-id="governance-root"
-      style={{ backgroundColor: 'hsl(var(--background))' }}
     >
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-          <div>
-            <h1
-              className="text-display font-semibold"
-              style={{ fontSize: '22px', letterSpacing: '-0.02em', color: 'hsl(var(--foreground))' }}
-            >
-              Governance
-            </h1>
-            <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px' }}>
-              Vote on treasury proposals. Create rules changes from the Rules page, token mints from Tokens, and agent resumes from Automation.
-            </p>
-          </div>
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="nave-label" style={{ marginBottom: '10px' }}>Decisions</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Decide together, <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>then watch it happen.</em>
+          </h1>
+          <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: '14.5px', margin: 0, maxWidth: '520px' }}>
+            A simple majority decides, your agents carry it out, and the result is reported in the same place.
+          </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          {[
-            { label: 'Active',   value: active,   color: 'hsl(var(--accent))' },
-            { label: 'Passed',   value: passed,   color: 'hsl(var(--foreground))' },
-            { label: 'Rejected', value: rejected, color: 'hsl(var(--muted-foreground))' },
-          ].map(s => (
-            <div key={s.label} className="nave-card p-4 text-center">
-              <div className="text-display font-semibold" style={{ fontSize: '24px', color: s.color }}>
-                {s.value}
-              </div>
-              <div className="nave-label" style={{ fontSize: '10px', marginTop: '3px' }}>
-                {s.label}
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center gap-3 pt-1">
+          <span
+            className="nave-mono"
+            style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
+          >
+            <b style={{ color: '#9A7414', fontWeight: 600 }}>{active}</b> active ·{' '}
+            <b style={{ color: '#2F7D4F', fontWeight: 600 }}>{passed}</b> passed ·{' '}
+            <b style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>{rejected}</b> rejected
+          </span>
         </div>
+      </div>
 
-        <div
-          className="nave-card p-5"
-          style={{ backgroundColor: 'hsl(var(--surface-1))' }}
+      {/* 1-line Governance rules summary */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3"
+        style={{
+          marginTop: '24px',
+          padding: '11px 0',
+          borderTop: '1px solid hsl(var(--surface-2))',
+          borderBottom: '1px solid hsl(var(--surface-2))',
+          fontSize: '13px',
+          color: 'hsl(var(--muted-foreground))',
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>
+            Voting system: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{votingSystemLabel}</b>
+          </span>
+          <span>·</span>
+          <span>
+            Quorum: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{quorumLabel}</b>
+          </span>
+          <span>·</span>
+          <span>
+            Token mint: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{TOKEN_MINT_QUORUM_PCT}%</b>
+          </span>
+          <span>·</span>
+          <span>
+            Switch voting: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{SWITCH_VOTING_QUORUM_PCT}%</b>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/rules')}
+          className="hover:underline underline-offset-4 flex-shrink-0"
+          style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--foreground))' }}
         >
-          <div className="flex items-center gap-2 mb-3">
-            <Fi icon="users" style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }} />
-            <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>Governance Rules</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              {
-                label: 'Voting System',
-                value: isTokenGov ? 'Token-weighted' : 'Authorized wallets',
-              },
-              {
-                label: 'Standard Quorum',
-                value: isTokenGov
-                  ? 'Token majority'
-                  : guardian.threshold > 0
-                    ? `${guardian.threshold}-of-${guardian.walletCount}`
-                    : 'Guardian majority',
-              },
-              { label: 'Token Mint Quorum',   value: `${TOKEN_MINT_QUORUM_PCT}%` },
-              { label: 'Switch Voting Quorum', value: `${SWITCH_VOTING_QUORUM_PCT}%` },
-            ].map(r => (
-              <div key={r.label}>
-                <div className="nave-label" style={{ fontSize: '10px' }}>{r.label}</div>
-                <div className="nave-mono mt-1" style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
-                  {r.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          View rules →
+        </button>
+      </div>
 
-        <div
-          className="flex items-center gap-1 p-1 rounded-xl border overflow-x-auto"
-          style={{
-            backgroundColor: 'hsl(var(--surface-1))',
-            borderColor: 'hsl(var(--border))',
-            width: 'fit-content',
-            maxWidth: '100%',
-          }}
-        >
-          {(['all', 'active', 'passed', 'rejected'] as FilterTab[]).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className="px-3 py-1.5 rounded-lg capitalize transition-all"
-              style={{
-                fontSize: '12.5px',
-                fontWeight: filter === tab ? '500' : '400',
-                backgroundColor: filter === tab ? 'hsl(var(--surface-0))' : 'transparent',
-                color: filter === tab ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                boxShadow: filter === tab ? 'var(--shadow-xs)' : 'none',
-                border: filter === tab ? '1px solid hsl(var(--border))' : '1px solid transparent',
-              }}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+      {/* Filter tabs + Proposal list */}
+      <div style={{ marginTop: '30px' }}>
+        <UnderlineTabs
+          tabs={FILTER_TABS}
+          activeTab={filter}
+          onChange={setFilter}
+        />
 
         <motion.div
-          className="space-y-3"
           variants={staggerContainer}
           initial="initial"
           animate="animate"
           key={filter}
         >
-          {filtered.map(proposal => (
+          {filtered.map((proposal) => (
             <motion.div key={proposal.id} variants={staggerChild}>
               <ProposalCard
                 proposal={proposal}
@@ -242,8 +237,11 @@ export default function Governance() {
           {filtered.length === 0 && (
             <motion.div
               variants={staggerChild}
-              className="nave-card p-10 text-center"
-              style={{ color: 'hsl(var(--muted-foreground))', fontSize: '13.5px' }}
+              style={{
+                padding: '36px 0',
+                color: 'hsl(var(--muted-foreground))',
+                fontSize: '13.5px',
+              }}
             >
               No {filter === 'all' ? '' : filter} proposals yet.
             </motion.div>

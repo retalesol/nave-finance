@@ -21,51 +21,54 @@ export default function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="nave-card overflow-hidden">
+    <section
+      style={{
+        padding: '26px 0',
+        borderTop: '1px solid hsl(var(--surface-2))',
+      }}
+    >
       <button
-        className="w-full flex items-center justify-between px-5 py-4 border-b text-left"
-        style={{ borderColor: 'hsl(var(--border))' }}
-        onClick={() => collapsible && setOpen(o => !o)}
+        type="button"
+        className={`w-full flex items-center justify-between gap-3 text-left ${collapsible ? 'cursor-pointer' : 'cursor-default'}`}
+        style={{ marginBottom: open ? '16px' : 0 }}
+        onClick={() => collapsible && setOpen((o) => !o)}
         aria-expanded={open}
         aria-label={collapsible ? `Toggle ${title}` : undefined}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-baseline gap-2.5 flex-wrap">
           {icon && (
-            <div
-              className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'hsl(var(--surface-2))' }}
-            >
-              <Fi icon={icon} style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }} />
-            </div>
+            <Fi icon={icon} style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }} />
           )}
-          <div>
           <span
-            className="text-display font-semibold"
-            style={{ fontSize: '14px' }}
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'hsl(var(--foreground))',
+            }}
           >
             {title}
           </span>
           {subtitle && (
-            <div
+            <span
               style={{
-                fontSize: '12px',
-                color: 'hsl(var(--muted-foreground))',
-                marginTop: '2px',
+                fontSize: '12.5px',
+                fontWeight: 400,
+                color: 'hsl(var(--faint))',
               }}
             >
               {subtitle}
-            </div>
+            </span>
           )}
-          </div>
         </div>
         {collapsible && (
           <Fi
             icon={open ? 'chevron-up' : 'chevron-down'}
-            style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }}
+            style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}
           />
         )}
       </button>
-      {open && <div className="p-5">{children}</div>}
-    </div>
+      {open && <div>{children}</div>}
+    </section>
   );
 }

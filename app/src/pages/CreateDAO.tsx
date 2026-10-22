@@ -15,20 +15,30 @@ import {
 import { useAccount, useSignMessage } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { getTransactionReceipt, readContract } from '@wagmi/core';
-import { decodeEventLog, isAddress, parseEther, parseUnits, formatUnits, type Address } from 'viem';
+import { decodeEventLog, parseEther, parseUnits, type Address } from 'viem';
 import { wagmiConfig } from '../lib/evm/wagmi';
 import Fi from '../components/Fi';
-import LogoUpload from '../components/LogoUpload';
-import ChainSelector from '../components/ChainSelector';
 import TreasuryDeployModal, { type DeployStep, type DeployStepStatus } from '../components/TreasuryDeployModal';
 import ConstitutionStep, {
   type PolicyState,
   policyForChain,
-  PROTOCOLS_SOLANA,
-  PROTOCOLS_EVM,
   RISK_PRESETS,
   rebalanceFreqToSecs,
 } from '../components/ConstitutionStep';
+import {
+  type DAOConfig,
+  type SetupMode,
+  DEFAULT_CONFIG,
+  ADVANCED_STEPS,
+  QUICK_STEPS,
+  EVM_SUB_STEP_LABELS,
+  SOLANA_SUB_STEP_LABELS,
+  ZERO_EVM_ADDRESS,
+  displayStepIndex,
+  StepIndicator,
+} from '../components/create-dao/CreateDaoHelpers';
+import Step1 from '../components/create-dao/Step1';
+import SeedReviewStep from '../components/create-dao/SeedReviewStep';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useChain } from '../hooks/useChain';
 import { useSendTransaction } from '../hooks/useSendTransaction';
@@ -37,7 +47,7 @@ import { NaveDAOFactoryAbi, NaveTreasuryAbi, Erc20Abi } from '../lib/evm/contrac
 import { fetchFormationFeeEvm, fetchFactoryAddressEvm } from '../lib/evm/readers';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { toAddress } from '../lib/evm/addresses';
-import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, activeEvmChainId, chainDisplayLabel, SYSTEM_CONFIDENCE_THRESHOLD, EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
+import { EVM_PROTOCOL_REVENUE_WALLET, SOLANA_NETWORK, activeEvmChainId, chainDisplayLabel, SYSTEM_CONFIDENCE_THRESHOLD } from '../lib/programConfig';
 import { type ChainFamily, type DaoEvmChainFamily, type EvmChainId, evmActivationChainFamily, USER_CHAINS } from '../lib/chain/types';
 import {
   buildInitializeDao,
@@ -61,7 +71,6 @@ import {
   MANAGEMENT_FEE_BPS_FROZEN,
   PERFORMANCE_FEE_BPS,
   FROZEN_PERFORMANCE_FEE_BPS,
-  TOKEN_MINT_FEE_SOL,
   TOKEN_MINT_FEE_ETH,
   AGENT_WALLET_SEED_SOL,
   AGENT_WALLET_TOTAL_SEED_SOL,
@@ -71,1191 +80,11 @@ import {
   defaultGuardianThreshold,
 } from '../lib/programConfig';
 import {
-  checkDaoSlugAvailability,
-  formatDaoSlugLabel,
-  getDaoPublicUrl,
-  normalizeDaoSlug,
-  validateDaoSlug,
-} from '../lib/daoSlug';
-import {
   savePendingDaoCreation,
   clearPendingDaoCreation,
   findPendingDaoCreationForWallet,
   type PendingDaoCreation,
 } from '../lib/daoCreationRecovery';
-
-/* ── Types ──────────────────────────────────────────────── */
-type GovernanceType = 'token' | 'wallets' | null;
-type TokenMode = 'existing' | 'new' | null;
-
-interface DAOConfig {
-  /** Target chain for this treasury (Solana, Ethereum, or Base). */
-  chain: ChainFamily;
-  name: string;
-  slug: string;
-  description: string;
-  logoBlob: Blob | null;
-  logoPreview: string | null;
-  governanceType: GovernanceType;
-  authorizedWallets: string[];
-  website: string;
-  twitter: string;
-  discord: string;
-  tokenMode: TokenMode;
-  existingTokenCA: string;
-  newTokenName: string;
-  newTokenSupply: string;
-}
-
-const DEFAULT_CONFIG: DAOConfig = {
-  chain: 'solana',
-  name: '',
-  slug: '',
-  description: '',
-  logoBlob: null,
-  logoPreview: null,
-  governanceType: null,
-  authorizedWallets: [],
-  website: '',
-  twitter: '',
-  discord: '',
-  tokenMode: null,
-  existingTokenCA: '',
-  newTokenName: '',
-  newTokenSupply: '1000000',
-};
-
-const ADVANCED_STEPS = [
-  { label: 'Identity',       icon: 'building'  },
-  { label: 'Constitution',   icon: 'shield'     },
-  { label: 'Seed & Review',  icon: 'list-check' },
-  { label: 'Deploying',      icon: 'rocket'     },
-];
-
-const QUICK_STEPS = [
-  { label: 'Setup',          icon: 'building'  },
-  { label: 'Review',         icon: 'list-check' },
-  { label: 'Deploying',      icon: 'rocket'     },
-];
-
-/** Human-readable labels for the finer-grained post-creation sub-steps tracked
- *  for "Resume setup" checkpoints (distinct from the visible DeployStep rows). */
-const EVM_SUB_STEP_LABELS: Record<string, string> = {
-  create: 'Creating treasury',
-  'bind-keys': 'Binding agent keys',
-  'token-registration': 'Registering governance token',
-  'register-metadata': 'Saving DAO metadata',
-  activate: 'Activating constitution & policy',
-};
-
-const SOLANA_SUB_STEP_LABELS: Record<string, string> = {
-  foundation: 'Creating DAO foundation',
-  governance: 'Setting up DAO governance & extensions',
-  activate: 'Activating constitution & policy',
-  'register-metadata': 'Saving DAO metadata',
-};
-
-const ZERO_EVM_ADDRESS = '0x0000000000000000000000000000000000000000';
-
-type SetupMode = 'quick' | 'advanced';
-
-function treasuryNativeLabel(chain: ChainFamily): string {
-  if (chain === 'solana') return 'SOL';
-  if (chain === 'arc') return 'USDC';
-  return 'ETH';
-}
-
-function displayStepIndex(step: number, setupMode: SetupMode): number {
-  if (setupMode === 'quick') {
-    if (step === 0) return 0;
-    if (step === 2) return 1;
-    if (step >= 3) return 2;
-  }
-  return step;
-}
-/* ── Setup mode chooser ──────────────────────────────────── */
-function SetupModeChooser({ onSelect }: { onSelect: (mode: SetupMode) => void }) {
-  return (
-    <div className="space-y-7">
-      <div>
-        <h2 className="text-display mb-1.5" style={{ fontSize: '24px', letterSpacing: '-0.01em' }}>
-          Create a treasury
-        </h2>
-        <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }}>
-          Choose how much configuration you want upfront. You can customize everything later.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {([
-          {
-            mode: 'quick' as SetupMode,
-            icon: 'bolt',
-            label: 'Quick setup',
-            desc: 'Name, network, and sensible defaults. Logo, social links, and constitution sliders can wait until after creation.',
-            badge: 'Recommended',
-          },
-          {
-            mode: 'advanced' as SetupMode,
-            icon: 'sliders',
-            label: 'Advanced setup',
-            desc: 'Full wizard with governance options, constitution presets, and optional branding before deploy.',
-          },
-        ]).map((opt) => (
-          <button
-            key={opt.mode}
-            onClick={() => onSelect(opt.mode)}
-            className="p-5 rounded-xl border text-left transition-all"
-            style={{
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--foreground))',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'hsl(var(--primary))';
-              e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'hsl(var(--border))';
-              e.currentTarget.style.backgroundColor = 'hsl(var(--surface-0))';
-            }}
-          >
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <Fi icon={opt.icon} style={{ fontSize: '18px', color: 'hsl(var(--primary))' }} />
-              {'badge' in opt && opt.badge && (
-                <span
-                  className="px-2 py-0.5 rounded-full"
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    backgroundColor: 'hsl(var(--primary))',
-                    color: 'hsl(var(--primary-foreground))',
-                  }}
-                >
-                  {opt.badge}
-                </span>
-              )}
-            </div>
-            <div className="font-semibold text-display" style={{ fontSize: '15px', marginBottom: '6px' }}>
-              {opt.label}
-            </div>
-            <p style={{ fontSize: '12.5px', lineHeight: 1.55, color: 'hsl(var(--muted-foreground))' }}>
-              {opt.desc}
-            </p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Helpers ─────────────────────────────────────────────── */
-function StepIndicator({ steps, current }: { steps: typeof ADVANCED_STEPS; current: number }) {
-  return (
-    <div className="flex items-center gap-1">
-      {steps.map((step, idx) => {
-        const done = idx < current;
-        const active = idx === current;
-        return (
-          <div key={step.label} className="flex items-center">
-            <div className="flex items-center gap-1.5">
-              <div
-                className="flex items-center justify-center rounded-full transition-all"
-                style={{
-                  width: active ? '26px' : '20px',
-                  height: active ? '26px' : '20px',
-                  backgroundColor:
-                    done ? 'hsl(var(--primary))' :
-                    active ? 'hsl(var(--primary))' :
-                    'hsl(var(--surface-1))',
-                  border: active
-                    ? '2px solid hsl(var(--primary))'
-                    : done ? 'none'
-                    : '1px solid hsl(var(--border))',
-                  flexShrink: 0,
-                }}
-              >
-                {done ? (
-                  <Fi icon="check" style={{ fontSize: '9px', color: 'white' }} />
-                ) : (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: '600',
-                      color: active ? 'white' : 'hsl(var(--muted-foreground))',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    {idx + 1}
-                  </span>
-                )}
-              </div>
-              <span
-                style={{
-                  fontSize: '12px',
-                  fontWeight: active ? '500' : '400',
-                  color: active ? 'hsl(var(--foreground))' : done ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
-                }}
-              >
-                {step.label}
-              </span>
-            </div>
-            {idx < steps.length - 1 && (
-              <div
-                className="mx-2 transition-colors"
-                style={{
-                  width: '24px',
-                  height: '1px',
-                  backgroundColor: done ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label
-        className="nave-label"
-        style={{ fontSize: '12px', fontWeight: '500' }}
-      >
-        {label}
-      </label>
-      {hint && (
-        <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}>
-          {hint}
-        </p>
-      )}
-      {children}
-    </div>
-  );
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  mono = false,
-  type = 'text',
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  mono?: boolean;
-  type?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full px-3 py-2.5 rounded-lg border outline-none transition-colors"
-      style={{
-        fontSize: '13px',
-        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-body)',
-        backgroundColor: 'hsl(var(--surface-0))',
-        borderColor: 'hsl(var(--border))',
-        color: 'hsl(var(--foreground))',
-      }}
-      onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-      onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-    />
-  );
-}
-
-/**
- * Guardian set size the deploy flow will submit for the current config:
- * authorized wallets (founder auto-included) — or just the founder for token
- * governance — plus, on EVM, the Nave-custodied guardian generated alongside
- * the agent keys. Mirrors the `guardianWallets` assembly in the deploy handlers.
- */
-function previewGuardianCount(config: DAOConfig): number {
-  const base =
-    config.governanceType === 'wallets' && config.authorizedWallets.length > 0
-      ? config.authorizedWallets.length
-      : 1;
-  return config.chain === 'solana' ? base : base + 1;
-}
-
-/* ── Step 1: Identity ─────────────────────────────────────── */
-function Step1({
-  config,
-  setConfig,
-  connectedWallet,
-  onSlugReadyChange,
-  quickMode = false,
-}: {
-  config: DAOConfig;
-  setConfig: (c: Partial<DAOConfig>) => void;
-  connectedWallet: string | null;
-  onSlugReadyChange: (ready: boolean, message: string | null) => void;
-  quickMode?: boolean;
-}) {
-  const [walletInput, setWalletInput] = useState('');
-  const [slugManual, setSlugManual] = useState(false);
-  const [slugChecking, setSlugChecking] = useState(false);
-
-  useEffect(() => {
-    const slug = config.slug;
-    if (!slug.trim()) {
-      onSlugReadyChange(false, null);
-      return;
-    }
-    const validation = validateDaoSlug(slug);
-    if (!validation.valid) {
-      onSlugReadyChange(false, validation.error ?? 'Invalid DAO name');
-      return;
-    }
-
-    let cancelled = false;
-    setSlugChecking(true);
-    onSlugReadyChange(false, null);
-
-    const timer = window.setTimeout(async () => {
-      const result = await checkDaoSlugAvailability(slug);
-      if (cancelled) return;
-      setSlugChecking(false);
-      if (result.available) {
-        onSlugReadyChange(true, null);
-      } else {
-        onSlugReadyChange(false, result.error ?? `${formatDaoSlugLabel(slug)} is already taken`);
-      }
-    }, 450);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [config.slug, onSlugReadyChange]);
-
-  function selectGovernance(id: GovernanceType) {
-    // When choosing authorized-wallet governance, auto-include the connected
-    // wallet as the first authorized signer (the founder is always a guardian).
-    if (id === 'wallets' && connectedWallet && config.authorizedWallets.length === 0) {
-      setConfig({ governanceType: id, tokenMode: null, authorizedWallets: [connectedWallet] });
-    } else {
-      setConfig({ governanceType: id, tokenMode: null });
-    }
-  }
-
-  function addWallet() {
-    const v = walletInput.trim();
-    if (!v) return;
-    const isEvmChain = config.chain !== 'solana';
-    const duplicate = config.authorizedWallets.some((w) =>
-      isEvmChain ? w.toLowerCase() === v.toLowerCase() : w === v,
-    );
-    if (duplicate) return;
-    // Chain-aware validation: 0x EVM addresses for Ethereum/Base/Robinhood,
-    // base58 ed25519 pubkeys for Solana.
-    if (isEvmChain) {
-      if (!isAddress(v)) return;
-    } else {
-      try {
-        new PublicKey(v);
-      } catch {
-        return;
-      }
-    }
-    setConfig({ authorizedWallets: [...config.authorizedWallets, v] });
-    setWalletInput('');
-  }
-
-  function removeWallet(w: string) {
-    setConfig({ authorizedWallets: config.authorizedWallets.filter(x => x !== w) });
-  }
-
-  return (
-    <div className="space-y-7">
-      <div>
-        <h2 className="text-display mb-1.5" style={{ fontSize: '24px', letterSpacing: '-0.01em' }}>
-          {quickMode ? 'Quick setup' : 'Treasury identity'}
-        </h2>
-        <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }}>
-          {quickMode
-            ? 'Name your treasury. Wallet governance and the Conservative constitution apply by default.'
-            : 'Name your treasury and choose how governance works.'}
-        </p>
-      </div>
-
-      {quickMode && (
-        <div
-          className="flex items-start gap-2.5 p-4 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-        >
-          <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Uses authorized-wallet governance with your connected wallet as guardian and the Conservative constitution: 60% stays in stablecoins, at most 40% can be deployed, 20% per venue, and 25% stays liquid.
-            Add a logo, social links, and amend the rules after creation.
-          </p>
-        </div>
-      )}
-
-      <Field
-        label="Treasury network"
-        hint={
-          EVM_DEPLOYMENT_MODE === 'testnet'
-            ? 'Testnet treasuries can launch on Solana, Ethereum, Base, Robinhood, or Arc.'
-            : 'Mainnet treasuries stay on Base.'
-        }
-      >
-        <ChainSelector
-          value={config.chain}
-          onChange={(chain) => setConfig({ chain })}
-          chains={USER_CHAINS}
-          label=""
-        />
-      </Field>
-
-      {/* Treasury name (+ optional logo in advanced mode) */}
-      <div className={`flex items-start gap-4${quickMode ? '' : ''}`}>
-        {!quickMode && (
-          <div className="flex-shrink-0">
-            <label className="nave-label" style={{ fontSize: '12px', fontWeight: '500', display: 'block', marginBottom: '6px' }}>
-              Logo
-            </label>
-            <LogoUpload
-              previewUrl={config.logoPreview}
-              onCropped={(blob, dataUrl) => setConfig({ logoBlob: blob, logoPreview: dataUrl })}
-              onClear={() => setConfig({ logoBlob: null, logoPreview: null })}
-            />
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <label className="nave-label" style={{ fontSize: '12px', fontWeight: '500', display: 'block', marginBottom: '6px' }}>
-            Treasury Name
-          </label>
-          <input
-            type="text"
-            value={config.name}
-            onChange={e => {
-              const v = e.target.value;
-              const patch: Partial<DAOConfig> = { name: v };
-              if (!slugManual) patch.slug = normalizeDaoSlug(v);
-              setConfig(patch);
-            }}
-            placeholder={
-              config.chain === 'base'
-                ? 'e.g. Base Builders Collective'
-                : config.chain === 'robinhood'
-                  ? 'e.g. Robinhood Builders Collective'
-                  : config.chain === 'ethereum'
-                    ? 'e.g. Ethereum Builders Collective'
-                    : config.chain === 'arc'
-                      ? 'e.g. Arc Builders Collective'
-                      : 'e.g. Solana Builders Collective'
-            }
-            className="w-full px-4 rounded-lg border outline-none transition-colors"
-            style={{
-              height: quickMode ? '48px' : '64px',
-              fontSize: quickMode ? '16px' : '20px',
-              fontFamily: 'var(--font-display)',
-              backgroundColor: 'hsl(var(--surface-0))',
-              borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--foreground))',
-            }}
-            onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-            onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-          />
-        </div>
-      </div>
-
-      {/* Treasury Slug — nave.dao */}
-      <Field
-        label="Treasury Slug"
-        hint="Your public name on Nave. Used to join (e.g. nave) and for short links like nave.finance/dao/nave."
-      >
-        <div
-          className="flex items-center rounded-lg border overflow-hidden"
-          style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-0))' }}
-        >
-          <input
-            type="text"
-            value={config.slug}
-            onChange={e => {
-              setSlugManual(true);
-              setConfig({ slug: normalizeDaoSlug(e.target.value) });
-            }}
-            placeholder="nave"
-            className="flex-1 min-w-0 px-3 py-2.5 outline-none"
-            style={{
-              fontSize: '13px',
-              fontFamily: 'var(--font-mono)',
-              backgroundColor: 'transparent',
-              color: 'hsl(var(--foreground))',
-            }}
-          />
-          <span
-            className="px-3 py-2.5 border-l nave-mono flex-shrink-0"
-            style={{
-              fontSize: '13px',
-              borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--muted-foreground))',
-              backgroundColor: 'hsl(var(--surface-1))',
-            }}
-          >
-            .dao
-          </span>
-        </div>
-        {config.slug && validateDaoSlug(config.slug).valid && (
-          <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
-            {slugChecking ? 'Checking availability…' : getDaoPublicUrl(config.slug)}
-          </p>
-        )}
-      </Field>
-
-      {!quickMode && (
-      <>
-      {/* Description */}
-      <Field label="Description" hint="A short summary of what this treasury is for. Stored with your DAO profile.">
-        <textarea
-          value={config.description}
-          onChange={e => setConfig({ description: e.target.value })}
-          placeholder="What is this treasury for?"
-          rows={3}
-          maxLength={280}
-          className="w-full px-3 py-2.5 rounded-lg border outline-none transition-colors resize-none"
-          style={{
-            fontSize: '13px',
-            fontFamily: 'var(--font-body)',
-            backgroundColor: 'hsl(var(--surface-0))',
-            borderColor: 'hsl(var(--border))',
-            color: 'hsl(var(--foreground))',
-          }}
-          onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-          onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-        />
-        <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', textAlign: 'right' }}>
-          {config.description.length}/280
-        </div>
-      </Field>
-
-      {/* Governance type */}
-      <Field label="Governance Type" hint="How will decisions be made for this treasury?">
-        <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 mt-1">
-          {([
-            {
-              id: 'wallets' as GovernanceType,
-              icon: 'users',
-              label: 'Authorized Wallets',
-              desc: 'Specific wallets control voting and proposals.',
-            },
-            {
-              id: 'token' as GovernanceType,
-              icon: 'coins',
-              label: 'Token-Based',
-              desc: 'Token holders participate in governance.',
-            },
-          ]).map(g => {
-            const sel = config.governanceType === g.id;
-            return (
-              <button
-                key={g.id}
-                onClick={() => selectGovernance(g.id)}
-                className="p-4 rounded-xl border text-left transition-all"
-                style={{
-                  backgroundColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--surface-0))',
-                  borderColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                  color: sel ? 'white' : 'hsl(var(--foreground))',
-                }}
-              >
-                <Fi
-                  icon={g.icon}
-                  style={{
-                    fontSize: '16px',
-                    marginBottom: '8px',
-                    display: 'block',
-                    color: sel ? 'white' : 'hsl(var(--muted-foreground))',
-                  }}
-                />
-                <div className="font-semibold text-display" style={{ fontSize: '13.5px', marginBottom: '3px' }}>
-                  {g.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: '11.5px',
-                    lineHeight: 1.4,
-                    opacity: sel ? 0.8 : 1,
-                    color: sel ? 'inherit' : 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  {g.desc}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Field>
-
-      {/* — Wallet branch — */}
-      {config.governanceType === 'wallets' && (
-        <div
-          className="space-y-5 p-5 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-        >
-          <Field label="Authorized Wallets" hint="Wallets that can vote on proposals. Your connected wallet is added automatically; you can add or remove others. Manage these anytime in Settings.">
-            <p className="mb-3" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-              These wallets vote on proposals and approve emergency actions. A proposal closes immediately once the yes votes cannot lose; otherwise it stays open until the voting window ends. Emergency actions need{' '}
-              <strong>{defaultGuardianThreshold(previewGuardianCount(config), config.chain === 'solana' ? 0 : 1)} of {previewGuardianCount(config)}</strong> guardian approvals
-              {config.chain !== 'solana' && ' (one is Nave-custodied; with two or more guardians of your own, they can reach this without it)'}.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={walletInput}
-                onChange={e => setWalletInput(e.target.value)}
-                placeholder="Paste wallet address…"
-                className="flex-1 px-3 py-2.5 rounded-lg border outline-none transition-colors"
-                style={{
-                  fontSize: '12.5px',
-                  fontFamily: 'var(--font-mono)',
-                  backgroundColor: 'hsl(var(--surface-0))',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-                onKeyDown={e => e.key === 'Enter' && addWallet()}
-              />
-              <button
-                onClick={addWallet}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium transition-all flex-shrink-0"
-                style={{
-                  fontSize: '12.5px',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                }}
-              >
-                <Fi icon="plus" style={{ fontSize: '11px' }} />
-                Add
-              </button>
-            </div>
-            {config.authorizedWallets.length > 0 && (
-              <div className="space-y-1.5 mt-3">
-                {config.authorizedWallets.map(w => (
-                  <div
-                    key={w}
-                    className="flex items-center justify-between px-3 py-2 rounded-lg"
-                    style={{ backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))' }}
-                  >
-                    <span className="nave-mono truncate" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>
-                      {w}
-                    </span>
-                    <button
-                      onClick={() => removeWallet(w)}
-                      className="p-1 rounded transition-colors flex-shrink-0"
-                      style={{ color: 'hsl(var(--muted-foreground))' }}
-                    >
-                      <Fi icon="xmark" style={{ fontSize: '13px' }} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Field>
-
-          {/* Optional links */}
-          <div className="space-y-3 pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-            <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', paddingTop: '8px' }}>
-              Social links <span style={{ opacity: 0.6 }}>(optional)</span>
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { key: 'website', icon: 'globe', placeholder: 'https://yoursite.com' },
-                { key: 'twitter', icon: 'xmark', placeholder: '@handle' },
-                { key: 'discord', icon: 'comment', placeholder: 'discord.gg/…' },
-              ].map(f => (
-                <div key={f.key} className="relative">
-                  <div
-                    className="absolute left-3 top-1/2 -translate-y-1/2"
-                    style={{ color: 'hsl(var(--muted-foreground))' }}
-                  >
-                    <Fi icon={f.icon} style={{ fontSize: '12px' }} />
-                  </div>
-                  <input
-                    type="text"
-                    value={(config as unknown as Record<string, string>)[f.key]}
-                    onChange={e => setConfig({ [f.key]: e.target.value } as Partial<DAOConfig>)}
-                    placeholder={f.placeholder}
-                    className="w-full pl-8 pr-3 py-2 rounded-lg border outline-none transition-colors"
-                    style={{
-                      fontSize: '12.5px',
-                      backgroundColor: 'hsl(var(--surface-0))',
-                      borderColor: 'hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                    onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-                    onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* — Token branch — */}
-      {config.governanceType === 'token' && (
-        <div
-          className="space-y-5 p-5 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-        >
-          <Field
-            label="Governance Token"
-            hint={
-              config.chain === 'solana'
-                ? 'Use an existing SPL token or mint a new one for this treasury.'
-                : 'Use an existing ERC-20 token contract or deploy a new DAO token for this treasury.'
-            }
-          >
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              {(['existing', 'new'] as TokenMode[]).map(mode => {
-                const sel = config.tokenMode === mode;
-                return (
-                  <button
-                    key={mode}
-                    onClick={() => setConfig({ tokenMode: mode })}
-                    className="px-4 py-2.5 rounded-lg border text-center transition-all"
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: sel ? '600' : '400',
-                      backgroundColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--surface-0))',
-                      borderColor: sel ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                      color: sel ? 'white' : 'hsl(var(--foreground))',
-                    }}
-                  >
-                    {mode === 'existing' ? 'Existing Token' : 'New Token'}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          {config.tokenMode === 'existing' && (
-            <Field label="Token Contract Address">
-              <TextInput
-                value={config.existingTokenCA}
-                onChange={v => setConfig({ existingTokenCA: v })}
-                placeholder={config.chain === 'solana' ? 'Paste SPL token mint address…' : 'Paste ERC-20 token address…'}
-                mono
-              />
-            </Field>
-          )}
-
-          {config.tokenMode === 'new' && (
-            <div className="space-y-4">
-              <Field label="Token Name">
-                <TextInput
-                  value={config.newTokenName}
-                  onChange={v => setConfig({ newTokenName: v })}
-                  placeholder="e.g. SBUILD"
-                  mono
-                />
-              </Field>
-              <Field
-                label="Token Supply"
-                hint="Total tokens to mint. They will be deposited directly into the treasury wallet — not your personal wallet."
-              >
-                <TextInput
-                  value={config.newTokenSupply}
-                  onChange={v => setConfig({ newTokenSupply: v })}
-                  placeholder="1000000"
-                  mono
-                  type="number"
-                />
-              </Field>
-              <div
-                className="flex items-start gap-2 p-3 rounded-lg"
-                style={{ backgroundColor: 'hsl(var(--accent-muted))', border: '1px solid hsl(var(--border-strong))' }}
-              >
-                <Fi
-                  icon="circle-info"
-                  style={{ fontSize: '13px', color: 'hsl(var(--accent))', flexShrink: 0, marginTop: '2px' }}
-                />
-                <p style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6 }}>
-                  Tokens will be minted directly into the treasury's on-chain wallet. All distributions require an authorized signer — no tokens will reach your personal wallet at creation.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Optional social links for token governance too */}
-          <div className="space-y-3 pt-2 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-            <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', paddingTop: '8px' }}>
-              Social links <span style={{ opacity: 0.6 }}>(optional)</span>
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { key: 'website', icon: 'globe', placeholder: 'https://yoursite.com' },
-                { key: 'twitter', icon: 'xmark', placeholder: '@handle' },
-                { key: 'discord', icon: 'comment', placeholder: 'discord.gg/…' },
-              ].map(f => (
-                <div key={f.key} className="relative">
-                  <div
-                    className="absolute left-3 top-1/2 -translate-y-1/2"
-                    style={{ color: 'hsl(var(--muted-foreground))' }}
-                  >
-                    <Fi icon={f.icon} style={{ fontSize: '12px' }} />
-                  </div>
-                  <input
-                    type="text"
-                    value={(config as unknown as Record<string, string>)[f.key]}
-                    onChange={e => setConfig({ [f.key]: e.target.value } as Partial<DAOConfig>)}
-                    placeholder={f.placeholder}
-                    className="w-full pl-8 pr-3 py-2 rounded-lg border outline-none transition-colors"
-                    style={{
-                      fontSize: '12.5px',
-                      backgroundColor: 'hsl(var(--surface-0))',
-                      borderColor: 'hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                    onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--ring))')}
-                    onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      </>
-      )}
-
-    </div>
-  );
-}
-
-/* ── Step 3: Seed & Review ───────────────────────────────── */
-function SeedReviewStep({
-  config,
-  policy,
-  seedAmount,
-  setSeedAmount,
-  onDeploy,
-  deploying,
-  evmFormationFeeWei,
-  evmFormationFeeLoading,
-}: {
-  config: DAOConfig;
-  policy: PolicyState;
-  seedAmount: string;
-  setSeedAmount: (v: string) => void;
-  onDeploy: () => void;
-  deploying: boolean;
-  evmFormationFeeWei?: bigint | null;
-  evmFormationFeeLoading?: boolean;
-}) {
-  const isSolana = config.chain === 'solana';
-  const chainLabel = chainDisplayLabel(config.chain);
-  const isTokenGov = config.governanceType === 'token';
-  const isNewToken = config.tokenMode === 'new';
-  const nativeUnit = treasuryNativeLabel(config.chain);
-  const seedDepositCopy = config.chain === 'arc'
-    ? 'Arc treasuries hold 6-decimal ERC-20 USDC (deposited from Assets after creation); native gas USDC is not attached to createDao, and the seed amount sets your initial agent threshold.'
-    : `Deposited into your ${chainLabel} vault as native ${nativeUnit} — not a protocol fee.`;
-
-  const seedNum = parseFloat(seedAmount);
-  const validSeed = !isNaN(seedNum) && seedNum >= 0;
-  const deployBlocked = deploying || !validSeed;
-
-  const presetLabel = RISK_PRESETS.find((r) => r.id === policy.riskPreset)?.label ?? policy.riskPreset;
-  const approvedProtocols = (isSolana ? PROTOCOLS_SOLANA : PROTOCOLS_EVM)
-    .filter((p) => policy.approvedProtocols[p.key])
-    .map((p) => p.label);
-
-  // Per-network native cost rows (Solana). Formation has no protocol fee.
-  const isMainnet = SOLANA_NETWORK === 'mainnet';
-  const agentSeedSol = AGENT_WALLET_TOTAL_SEED_SOL;
-  const rentSol = 0.015;
-  const gasSol = 0.001;
-  const totalFeesSol = agentSeedSol + rentSol + gasSol + (isNewToken ? TOKEN_MINT_FEE_SOL : 0);
-  const totalCostSol = totalFeesSol + (validSeed ? seedNum : 0);
-
-  const identityRows: { label: string; value: string }[] = [
-    { label: 'Chain', value: chainLabel },
-    { label: 'Treasury Name', value: config.name || '—' },
-    ...(config.slug ? [{ label: 'Slug', value: formatDaoSlugLabel(config.slug) }] : []),
-    {
-      label: 'Governance',
-      value: isTokenGov ? 'Token-Based' : 'Authorized Wallets',
-    },
-    ...(config.governanceType === 'wallets'
-      ? [{ label: 'Guardians', value: `${config.authorizedWallets.length} wallet${config.authorizedWallets.length !== 1 ? 's' : ''}` }]
-      : []),
-    {
-      label: 'Guardian approvals',
-      value: `${defaultGuardianThreshold(previewGuardianCount(config), isSolana ? 0 : 1)} of ${previewGuardianCount(config)}${isSolana ? '' : ' (incl. one Nave-custodied guardian)'}`,
-    },
-  ];
-
-  return (
-    <div className="space-y-7">
-      <div>
-        <h2 className="text-display mb-1.5" style={{ fontSize: '24px', letterSpacing: '-0.01em' }}>
-          Seed & Review
-        </h2>
-        <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }}>
-          Set your initial treasury deposit, review all details, then deploy.
-        </p>
-      </div>
-
-      {/* Treasury seed input */}
-      <div className="space-y-1.5">
-        <label className="nave-label" style={{ fontSize: '12px', fontWeight: '500' }}>
-          Treasury seed (optional)
-        </label>
-        <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}>
-          {isSolana
-            ? 'Deposited into your vault as wSOL — not a protocol fee. Agents use this as initial deployable capital.'
-            : seedDepositCopy}
-          {' '}Enter 0 to start with an empty treasury.
-        </p>
-        <div className="flex items-center rounded-lg border overflow-hidden"
-          style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--surface-0))' }}>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={seedAmount}
-            onChange={(e) => setSeedAmount(e.target.value)}
-            placeholder="0.0"
-            className="flex-1 min-w-0 px-3 py-2.5 outline-none"
-            style={{ fontSize: '14px', fontFamily: 'var(--font-mono)', backgroundColor: 'transparent', color: 'hsl(var(--foreground))' }}
-          />
-          <span className="px-3 py-2.5 border-l nave-mono flex-shrink-0"
-            style={{ fontSize: '13px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))', backgroundColor: 'hsl(var(--surface-1))' }}>
-            {nativeUnit}
-          </span>
-        </div>
-      </div>
-
-      {/* Identity summary */}
-      <div className="nave-card overflow-hidden">
-        <div className="px-5 py-3 border-b"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: '13px' }}>Treasury Identity</span>
-        </div>
-        <div className="divide-y" style={{ borderColor: 'hsl(var(--border))' }}>
-          {identityRows.map(({ label, value }) => (
-            <div key={label} className="flex items-center justify-between px-5 py-2.5"
-              style={{ borderColor: 'hsl(var(--border))' }}>
-              <span style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>{label}</span>
-              <span className="nave-mono" style={{ fontSize: '13px', color: 'hsl(var(--foreground))', fontWeight: '500' }}>{value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Constitution summary */}
-      <div className="nave-card overflow-hidden">
-        <div className="px-5 py-3 border-b"
-          style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: '13px' }}>Treasury Constitution</span>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-1 rounded-lg text-xs font-medium"
-              style={{ backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}>
-              {presetLabel}
-            </span>
-            {approvedProtocols.map((label) => (
-              <span key={label} className="px-2.5 py-1 rounded-lg text-xs"
-                style={{ backgroundColor: 'hsl(var(--accent-muted))', color: 'hsl(var(--accent-muted-foreground))', border: '1px solid hsl(var(--border-strong))' }}>
-                {label}
-              </span>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { label: 'Min Reserve', value: `${policy.minStablecoin}%` },
-              { label: 'Max Deploy', value: `${policy.maxDeployment}%` },
-              { label: 'Rebalancing', value: policy.rebalanceFreq },
-            ].map(({ label, value }) => (
-              <div key={label} className="px-3 py-2 rounded-lg text-center"
-                style={{ backgroundColor: 'hsl(var(--surface-1))', border: '1px solid hsl(var(--border))' }}>
-                <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))' }}>{label}</div>
-                <div className="nave-mono" style={{ fontSize: '12px', color: 'hsl(var(--foreground))', fontWeight: 500 }}>{value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Cost breakdown */}
-      {isSolana && (
-        <div className="nave-card p-5 space-y-3" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-            Deployment Costs
-          </span>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Forming a treasury has no protocol fee and does not lock NAVE. You pay network gas and account rent.
-            Any SOL you deposit is your treasury seed, not a fee.
-          </p>
-
-          <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.04em', paddingTop: '2px' }}>
-            Network
-          </div>
-
-          {[
-            { label: `Agent wallet seeding (4×)`, value: `${agentSeedSol.toFixed(isMainnet ? 1 : 2)} SOL` },
-            { label: 'Rent (accounts)', value: '~0.015 SOL' },
-            ...(isNewToken ? [{ label: `Token mint fee`, value: `${TOKEN_MINT_FEE_SOL.toFixed(2)} SOL` }] : []),
-            { label: 'Network gas', value: '~0.001 SOL' },
-          ].map((f) => (
-            <div key={f.label} className="flex items-center justify-between">
-              <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>{f.label}</span>
-              <span className="nave-mono" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>{f.value}</span>
-            </div>
-          ))}
-
-          {/* Your treasury deposit — highlighted */}
-          <div className="flex items-center justify-between py-2 px-3 rounded-lg"
-            style={{ backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))' }}>
-            <div>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
-                Initial treasury deposit
-              </span>
-              <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', display: 'block', opacity: 0.85 }}>
-                deposited into your vault as deployable capital, not a fee
-              </span>
-            </div>
-            <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
-              {validSeed ? `${seedNum.toFixed(4)} SOL` : '—'}
-            </span>
-          </div>
-
-          <div className="pt-1 space-y-1">
-            <div className="flex items-center justify-between">
-              <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Network SOL (gas, rent, agent funding)</span>
-              <span className="nave-mono" style={{ fontSize: '12px' }}>~{totalFeesSol.toFixed(3)} SOL</span>
-            </div>
-            <div className="flex items-center justify-between border-t pt-2" style={{ borderColor: 'hsl(var(--border))' }}>
-              <span style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>Total SOL from your wallet</span>
-              <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '700', color: 'hsl(var(--foreground))' }}>
-                ~{validSeed ? totalCostSol.toFixed(3) : totalFeesSol.toFixed(3)} SOL
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!isSolana && (
-        <div className="nave-card p-5 space-y-3" style={{ backgroundColor: 'hsl(var(--surface-1))' }}>
-          <span className="text-display font-semibold" style={{ fontSize: '13.5px' }}>Deployment Costs</span>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            Forming a treasury has no protocol fee and does not lock NAVE. You pay network gas.
-            Any {nativeUnit} you send with creation is your treasury seed, not a fee.
-          </p>
-
-          <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.04em', paddingTop: '2px' }}>
-            Network gas
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>Network gas</span>
-                <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', display: 'block', opacity: 0.85 }}>
-                  no protocol formation fee
-                </span>
-              </div>
-              <span className="nave-mono" style={{ fontSize: '12px' }}>
-                {evmFormationFeeLoading
-                  ? 'Loading…'
-                  : evmFormationFeeWei != null && evmFormationFeeWei > 0n
-                    ? `~${parseFloat(formatUnits(evmFormationFeeWei, 18)).toFixed(4)} ${nativeUnit} + gas`
-                    : `~0.003 ${nativeUnit} (variable)`}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 px-3 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--surface-0))', border: '1px solid hsl(var(--border))' }}>
-              <div>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
-                  Initial treasury deposit
-                </span>
-                <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', display: 'block', opacity: 0.85 }}>
-                  deposited into your vault, not a fee
-                </span>
-              </div>
-              <span className="nave-mono" style={{ fontSize: '13px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
-                {validSeed ? `${seedNum.toFixed(4)} ${nativeUnit}` : '—'}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* New token note */}
-      {isNewToken && (
-        <div className="flex items-start gap-2.5 p-4 rounded-xl border"
-          style={{ backgroundColor: 'hsl(var(--accent-muted))', borderColor: 'hsl(var(--border-strong))' }}>
-          <Fi icon="circle-info" style={{ fontSize: '14px', color: 'hsl(var(--accent))', flexShrink: 0, marginTop: '2px' }} />
-          <div>
-            <p className="font-semibold" style={{ fontSize: '13px', color: 'hsl(var(--accent-muted-foreground))', marginBottom: '3px' }}>
-              Token created under treasury control
-            </p>
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--accent-muted-foreground))', lineHeight: 1.6 }}>
-              {config.newTokenName || 'Your token'} mint will be created with the treasury as its mint authority. Manage it from the Tokens page after deployment.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Wallet prompt count notice */}
-      <div className="flex items-start gap-2.5 p-4 rounded-xl border"
-        style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}>
-        <Fi icon="signature" style={{ fontSize: '14px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
-        <div>
-          <p className="font-semibold" style={{ fontSize: '13px', color: 'hsl(var(--foreground))', marginBottom: '3px' }}>
-            {isSolana
-              ? 'Your wallet will prompt you up to 3 times'
-              : 'Your wallet will prompt you several times'}
-          </p>
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-            {isSolana
-              ? 'A guided popup walks you through each signature — Foundation, Governance, then Activate & Ratify. You can retry if interrupted.'
-              : 'You will sign an agent-key message, create the treasury, sign the key-binding and treasury-details messages, then activate the rules. A token treasury adds one more transaction. You can retry if interrupted.'}
-          </p>
-        </div>
-      </div>
-
-      {/* Deploy button */}
-      <button
-        onClick={onDeploy}
-        disabled={deployBlocked}
-        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-semibold transition-all"
-        style={{
-          fontSize: '15px',
-          backgroundColor: deployBlocked ? 'hsl(var(--muted))' : 'hsl(var(--primary))',
-          color: deployBlocked ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary-foreground))',
-          cursor: deployBlocked ? 'not-allowed' : 'pointer',
-          boxShadow: deployBlocked ? 'none' : 'var(--shadow-md)',
-        }}
-      >
-        <Fi icon="rocket" style={{ fontSize: '14px' }} />
-        Deploy Treasury
-      </button>
-      {!validSeed && (
-        <p className="text-center" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-          Enter a seed amount (0 is valid) to continue
-        </p>
-      )}
-    </div>
-  );
-}
 
 /* ── Main page ───────────────────────────────────────────── */
 export default function CreateDAO() {
@@ -2825,71 +1654,133 @@ export default function CreateDAO() {
     >
       {/* Top bar */}
       <header
-        className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b"
+        className="sticky top-0 z-50 flex items-center justify-between px-6 py-3.5 border-b"
         style={{
-          backgroundColor: 'hsl(var(--surface-0))',
-          borderColor: 'hsl(var(--border))',
-          backdropFilter: 'blur(10px)',
+          backgroundColor: 'rgba(250, 248, 243, 0.9)',
+          borderColor: 'hsl(var(--surface-2))',
+          backdropFilter: 'blur(12px)',
         }}
       >
         <button
           onClick={() => navigate('/')}
-          className="text-display no-underline"
-          style={{ fontSize: '19px', color: 'hsl(var(--foreground))' }}
+          className="flex items-center gap-2 no-underline"
+          style={{ color: 'hsl(var(--foreground))' }}
         >
-          Nave
+          <span
+            className="grid place-items-center rounded-[6px]"
+            style={{
+              width: '20px',
+              height: '20px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
+              fontFamily: 'var(--font-display)',
+              fontSize: '13px',
+            }}
+          >
+            N
+          </span>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px' }}>Nave</span>
         </button>
-        <StepIndicator
-          steps={wizardSteps}
-          current={setupMode ? displayStepIndex(step, setupMode) : 0}
-        />
         <div className="flex items-center gap-3">
           {(config.chain === 'solana' ? !connected : !evmConnected) && (
             <button
               type="button"
               onClick={openCreateWallet}
-              className="px-3 py-1.5 rounded-lg font-medium"
-              style={{ fontSize: '13px', backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
+              className="px-3.5 py-1.5 rounded-[9px] font-semibold"
+              style={{ fontSize: '13px', backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
             >
               Connect
             </button>
           )}
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-1.5 hover:underline underline-offset-4"
             style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
           >
-            <Fi icon="xmark" style={{ fontSize: '14px' }} />
+            <Fi icon="xmark" style={{ fontSize: '13px' }} />
             Exit
           </button>
         </div>
       </header>
 
       {/* Content */}
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+      <div className="max-w-[620px] mx-auto px-4 sm:px-6 pt-10 pb-20">
+        {/* Page Heading */}
+        <div className="mb-6">
+          <div className="nave-label" style={{ marginBottom: '10px' }}>New treasury</div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: '34px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.02em',
+              margin: '0 0 8px',
+              color: 'hsl(var(--foreground))',
+            }}
+          >
+            Create a treasury
+          </h1>
+          <p style={{ fontSize: '14.5px', color: 'hsl(var(--muted-foreground))', margin: 0, maxWidth: '520px' }}>
+            About two minutes. No token required, no protocol fee — just network gas. Every choice can be changed later, by vote.
+          </p>
+        </div>
+
+        {/* Mode toggle pills + Step Indicator */}
+        <div className="flex items-center justify-between gap-4 flex-wrap my-7">
+          <StepIndicator
+            steps={wizardSteps}
+            current={setupMode ? displayStepIndex(step, setupMode) : 0}
+          />
+          {step === 0 && (
+            <div className="flex items-center gap-1.5">
+              {(['quick', 'advanced'] as const).map((m) => {
+                const active = setupMode === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => selectSetupMode(m)}
+                    className="px-3 py-1 rounded-full border transition-all"
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: active ? 600 : 400,
+                      backgroundColor: active ? 'hsl(var(--foreground))' : '#ffffff',
+                      borderColor: active ? 'hsl(var(--foreground))' : 'hsl(var(--border))',
+                      color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
+                    }}
+                  >
+                    {m === 'quick' ? 'Quick setup' : 'Advanced'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {pendingResume && !deploying && (
           <div
-            className="flex flex-col gap-2.5 px-4 py-3.5 rounded-xl border mb-6 animate-fade-in"
-            style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(38 92% 75%)' }}
+            className="flex flex-col gap-2.5 px-4 py-3.5 rounded-[12px] border mb-6 animate-fade-in"
+            style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(var(--border))' }}
           >
             <div className="flex items-start gap-2.5">
               <Fi icon="arrows-rotate" style={{ fontSize: '13px', color: 'hsl(var(--warning))', flexShrink: 0, marginTop: '2px' }} />
-              <div style={{ fontSize: '13px', color: 'hsl(38 55% 30%)' }}>
+              <div style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
                 <strong>Resume setup</strong> — "{pendingResume.name || pendingResume.daoAddress}" was created
                 on-chain ({chainDisplayLabel(pendingResume.chain)}), but setup didn't finish:{' '}
                 {pendingResume.failedStep} failed ({pendingResume.failedError}). Your treasury is safe — finish
                 setup instead of creating a new one.
               </div>
             </div>
-            <div className="flex items-center gap-2" style={{ marginLeft: '22px' }}>
+            <div className="flex items-center gap-3" style={{ marginLeft: '22px' }}>
               <button
                 onClick={handleResumeSetup}
                 disabled={resuming}
-                className="px-3 py-1.5 rounded-lg text-display"
+                className="px-3.5 py-1.5 rounded-[9px] font-semibold"
                 style={{
                   fontSize: '12.5px',
-                  backgroundColor: 'hsl(var(--warning))',
-                  color: 'hsl(var(--warning-foreground, 0 0% 100%))',
+                  backgroundColor: 'hsl(var(--foreground))',
+                  color: '#ffffff',
                   opacity: resuming ? 0.6 : 1,
                 }}
               >
@@ -2898,7 +1789,7 @@ export default function CreateDAO() {
               <button
                 onClick={dismissPendingResume}
                 disabled={resuming}
-                style={{ fontSize: '12.5px', color: 'hsl(38 55% 40%)' }}
+                style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
               >
                 Dismiss
               </button>
@@ -2907,16 +1798,16 @@ export default function CreateDAO() {
         )}
         {walletError && (
           <div
-            className="flex items-center gap-2.5 px-4 py-3 rounded-xl border mb-6 animate-fade-in"
-            style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(38 92% 75%)' }}
+            className="flex items-center gap-2.5 py-3 mb-6 animate-fade-in"
+            style={{ borderTop: '1px solid hsl(var(--surface-2))', borderBottom: '1px solid hsl(var(--surface-2))' }}
           >
-            <Fi icon="triangle-exclamation" style={{ fontSize: '13px', color: 'hsl(var(--warning))', flexShrink: 0 }} />
-            <span style={{ fontSize: '13px', color: 'hsl(38 55% 30%)' }}>
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'hsl(var(--brass))' }} />
+            <span style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>
               Please connect your wallet to deploy a treasury.
             </span>
             <button
               onClick={() => setWalletError(false)}
-              style={{ marginLeft: 'auto', color: 'hsl(38 55% 40%)' }}
+              style={{ marginLeft: 'auto', color: 'hsl(var(--muted-foreground))' }}
             >
               <Fi icon="xmark" style={{ fontSize: '13px' }} />
             </button>
@@ -2924,16 +1815,16 @@ export default function CreateDAO() {
         )}
         {txError && !deploySteps.length && (
           <div
-            className="flex items-center gap-2.5 px-4 py-3 rounded-xl border mb-6 animate-fade-in"
-            style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
+            className="flex items-center gap-2.5 px-4 py-3 rounded-[12px] border mb-6 animate-fade-in"
+            style={{ backgroundColor: '#FFF9F8', borderColor: '#F2C7C2' }}
           >
-            <Fi icon="circle-xmark" style={{ fontSize: '13px', color: 'hsl(var(--destructive))', flexShrink: 0 }} />
-            <span style={{ fontSize: '13px', color: 'hsl(var(--destructive))' }}>
+            <Fi icon="circle-xmark" style={{ fontSize: '13px', color: '#B42318', flexShrink: 0 }} />
+            <span style={{ fontSize: '13px', color: '#B42318' }}>
               {txError}
             </span>
             <button
               onClick={() => setTxError(null)}
-              style={{ marginLeft: 'auto', color: 'hsl(var(--destructive))' }}
+              style={{ marginLeft: 'auto', color: '#B42318' }}
             >
               <Fi icon="xmark" style={{ fontSize: '13px' }} />
             </button>
@@ -2977,29 +1868,30 @@ export default function CreateDAO() {
         {/* Nav buttons */}
         {step === 0 && (
           <>
-            <div className="flex items-center justify-between mt-10 pt-6 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+            <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
               <button
+                type="button"
                 onClick={() => selectSetupMode(setupMode === 'quick' ? 'advanced' : 'quick')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border transition-colors"
-                style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+                className="px-3.5 py-2 rounded-[9px]"
+                style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
               >
                 {setupMode === 'quick' ? 'Advanced setup' : 'Quick setup'}
               </button>
               <button
+                type="button"
                 onClick={() => setStep(setupMode === 'quick' ? 2 : 1)}
                 disabled={!canAdvance()}
-                className="flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-all"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-[9px] font-semibold transition-all"
                 style={{
-                  fontSize: '13.5px',
-                  backgroundColor: canAdvance() ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
-                  color: canAdvance() ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
+                  fontSize: '13px',
+                  backgroundColor: 'hsl(var(--foreground))',
+                  color: '#ffffff',
+                  opacity: canAdvance() ? 1 : 0.4,
                   cursor: canAdvance() ? 'pointer' : 'not-allowed',
                 }}
               >
                 {setupMode === 'quick' ? 'Review' : 'Constitution'}
-                <Fi icon="arrow-right" style={{ fontSize: '12px' }} />
+                <Fi icon="arrow-right" style={{ fontSize: '11px' }} />
               </button>
             </div>
             {slugMessage && config.slug.trim() && (
@@ -3011,45 +1903,42 @@ export default function CreateDAO() {
         )}
 
         {setupMode === 'advanced' && step === 1 && (
-          <div className="flex items-center justify-between mt-10 pt-6 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+          <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             <button
+              type="button"
               onClick={() => setStep(0)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border transition-colors"
-              style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+              className="px-3.5 py-2 rounded-[9px]"
+              style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
             >
-              <Fi icon="arrow-left" style={{ fontSize: '12px' }} />
-              Back to Identity
+              ← Back to Identity
             </button>
             <button
+              type="button"
               onClick={() => setStep(2)}
               disabled={!canAdvance()}
-              className="flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-all"
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-[9px] font-semibold transition-all"
               style={{
-                fontSize: '13.5px',
-                backgroundColor: canAdvance() ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
-                color: canAdvance() ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
+                fontSize: '13px',
+                backgroundColor: 'hsl(var(--foreground))',
+                color: '#ffffff',
+                opacity: canAdvance() ? 1 : 0.4,
                 cursor: canAdvance() ? 'pointer' : 'not-allowed',
               }}
             >
-              Seed & Review
-              <Fi icon="arrow-right" style={{ fontSize: '12px' }} />
+              Seed & Review →
             </button>
           </div>
         )}
 
         {step === 2 && !deploying && (
-          <div className="flex items-center mt-10 pt-6 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+          <div className="flex items-center mt-6 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             <button
+              type="button"
               onClick={() => setStep(setupMode === 'quick' ? 0 : 1)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border transition-colors"
-              style={{ fontSize: '13.5px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-1))')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+              className="px-3.5 py-2 rounded-[9px]"
+              style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
             >
-              <Fi icon="arrow-left" style={{ fontSize: '12px' }} />
-              {setupMode === 'quick' ? 'Back to Setup' : 'Back to Constitution'}
+              ← {setupMode === 'quick' ? 'Back to Setup' : 'Back to Constitution'}
             </button>
           </div>
         )}

@@ -9,27 +9,26 @@ const EASE_IN: [number, number, number, number] = [0.4, 0, 1, 1];
 /**
  * Wraps page content with a Framer Motion enter/exit transition.
  *
- * - Fade + subtle vertical shift on enter (12px upward)
+ * - Calm rise on enter (6px upward over 0.35s, matching demo.html `@keyframes rise`)
  * - Clean fade-out on exit
  * - Keyed by pathname so transitions fire on every route change
- * - Duration is fast (200ms) to feel snappy, not sluggish
  */
 const PAGE_VARIANTS: Variants = {
   initial: {
     opacity: 0,
-    y: 12,
+    y: 6,
   },
   animate: {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.22,
+      duration: 0.35,
       ease: EASE_STANDARD,
     },
   },
   exit: {
     opacity: 0,
-    y: -6,
+    y: -3,
     transition: {
       duration: 0.14,
       ease: EASE_IN,
@@ -68,33 +67,29 @@ export function PageTransition({ children, layoutChild }: PageTransitionProps) {
 
 /**
  * Micro-interaction helpers — reusable motion props for common patterns.
+ * `hoverLift` is intentionally a no-op under the calm paper design system.
  */
-
-/** Hover lift for cards and buttons */
-export const hoverLift = {
-  whileHover: { y: -2, transition: { duration: 0.15 } },
-  whileTap: { scale: 0.98, transition: { duration: 0.1 } },
-};
+export const hoverLift: Record<string, never> = {};
 
 /** Stagger container — wrap children with staggered entrance */
 export const staggerContainer: Variants = {
   initial: {},
   animate: {
     transition: {
-      staggerChildren: 0.05,
-      delayChildren: 0.06,
+      staggerChildren: 0.04,
+      delayChildren: 0.04,
     },
   },
 };
 
 /** Stagger child — used on each child inside a stagger container */
 export const staggerChild: Variants = {
-  initial: { opacity: 0, y: 10 },
+  initial: { opacity: 0, y: 6 },
   animate: {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.25,
+      duration: 0.3,
       ease: EASE_STANDARD,
     },
   },
@@ -102,15 +97,16 @@ export const staggerChild: Variants = {
 
 /** Scale-in for modals and drawers */
 export const scaleIn: Variants = {
-  initial: { opacity: 0, scale: 0.96 },
+  initial: { opacity: 0, y: 14, scale: 0.98 },
   animate: {
     opacity: 1,
+    y: 0,
     scale: 1,
-    transition: { duration: 0.2, ease: EASE_STANDARD },
+    transition: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
   },
   exit: {
     opacity: 0,
-    scale: 0.96,
+    scale: 0.98,
     transition: { duration: 0.15 },
   },
 };

@@ -74,7 +74,6 @@ import {
   getAdapterProgramId,
   getEvmAdapterAddress,
   isConfiguredEvmAdapterAddress,
-  MARGINFI_STRATEGY_ENABLED,
   type EvmAdapterProtocolId,
 } from '@/lib/programConfig';
 import {
@@ -95,9 +94,7 @@ import {
   SOLANA_NATIVE_TRANSFER_MINT_PLACEHOLDER,
   canFinalize,
   getPipelineStage,
-  isUndefeatable,
   requiredParticipationVotes,
-  votingWindowClosed,
   fmtVotes,
   getProposalDescription,
   type Proposal,
@@ -108,7 +105,6 @@ import {
   clearPersistedVote,
   resolveEvmProposalPayload,
   loadSolanaStrategyPayload,
-  hasStoredStrategyPayload,
 } from './proposalStorage';
 import {
   isAlreadyVotedError,
@@ -117,6 +113,8 @@ import {
   classifyFinalizeSimulationError,
   formatFinalizeSubmissionError,
 } from './voteActionHelpers';
+import { ProposalVoteFinalizePanel, ProposalEscrowPanel } from './ProposalVoteFinalizePanel';
+import { ProposalExecutePanels } from './ProposalExecutePanels';
 
 export default function ProposalCard({
   proposal,
@@ -747,7 +745,6 @@ export default function ProposalCard({
   const va = Number.isFinite(proposal.votesAgainst) ? proposal.votesAgainst : 0;
   const totalCast = vf + va;
   const pctFor = totalCast > 0 ? Math.round((vf / totalCast) * 100) : 0;
-  const pctAgainst = totalCast > 0 ? Math.round((va / totalCast) * 100) : 0;
   const gc = guardianCount ?? 0;
   // EVM finalizeProposal settles a missed quorum as `Failed` instead of reverting.
   const quorumRounding = chainKind === 'evm' ? 'ceil' as const : 'floor' as const;
@@ -1536,92 +1533,130 @@ export default function ProposalCard({
   return (
     <div
       ref={cardRef}
-      className="nave-card overflow-hidden"
       style={{
-        borderColor: highlight || expanded ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
-        boxShadow: highlight ? '0 0 0 2px hsl(var(--ring))' : undefined,
+        padding: '18px 0',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+        boxShadow: highlight ? 'inset 2px 0 0 0 hsl(var(--brass))' : undefined,
+        paddingLeft: highlight ? '12px' : undefined,
       }}
     >
       {/* Clickable summary row */}
-      <button
-        className="w-full text-left p-5"
-        onClick={() => setExpanded(e => !e)}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded((e) => !e)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((prev) => !prev);
+          }
+        }}
+        className="w-full text-left cursor-pointer group"
       >
-        {/* Top: number + title */}
-        <div className="mb-3">
-          <div className="flex items-center gap-2 mb-1">
-            <div
-              className="text-display font-bold nave-mono"
-              style={{ fontSize: '18px', color: 'hsl(var(--foreground))', letterSpacing: '-0.01em', lineHeight: 1 }}
-            >
-              #{proposal.number}
-            </div>
-            <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
-              · {typeMeta.label}
-            </span>
-          </div>
-          <h3
-            className="text-display font-semibold"
-            style={{ fontSize: '15px', color: 'hsl(var(--foreground))', lineHeight: 1.35 }}
-          >
-            {proposal.title}
-          </h3>
-          {!expanded && (
-            <ProposalPayloadSummary
-              proposal={proposal}
-              daoAddress={daoAddress}
-              chainKind={chainKind}
-              evmChainId={evmChainId}
-              expanded={false}
-              compact
-            />
-          )}
-        </div>
-
-        {/* Pipeline stepper */}
-        {pipelineStage !== 'complete' && (
-          <div className="mb-3">
-            <ProposalStatusStepper stage={pipelineStage} />
-          </div>
-        )}
-
-        {/* Vote bar */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span style={{ fontSize: '11.5px', color: 'hsl(var(--accent-muted-foreground))' }}>For {pctFor}%</span>
-              <span style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>Against {pctAgainst}%</span>
-            </div>
-            <span className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
-              Quorum {reqParticipation > 0 && Number.isFinite(quorumPct) ? `${quorumPct}%` : '—'}
-            </span>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'hsl(var(--border))' }}>
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${pctFor}%`,
-                backgroundColor: proposal.status === 'rejected' ? 'hsl(var(--destructive))' : 'hsl(var(--accent))',
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Bottom: meta on left, status badge + chevron on right */}
-        <div className="flex items-center justify-between mt-3">
-          <div
-            className="flex flex-wrap items-center gap-x-3 gap-y-1"
-            style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono)' }}
-          >
-            <span>{fmtVotes(proposal.totalVotes)} votes</span>
-            <span>By {proposal.author}</span>
-            <span>{proposal.deadline}</span>
-            {myVote && (
+        {/* Top: title + status pill */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3
+                className="group-hover:text-brass transition-colors"
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  margin: 0,
+                  lineHeight: 1.4,
+                  color: 'hsl(var(--foreground))',
+                }}
+              >
+                {proposal.title}
+              </h3>
               <span
                 style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: statusMeta.color,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {proposal.status === 'active' ? proposal.deadline : statusMeta.label}
+              </span>
+            </div>
+
+            {!expanded && (
+              <ProposalPayloadSummary
+                proposal={proposal}
+                daoAddress={daoAddress}
+                chainKind={chainKind}
+                evmChainId={evmChainId}
+                expanded={false}
+                compact
+              />
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
+            <span
+              className="nave-mono"
+              style={{ fontSize: '11.5px', color: 'hsl(var(--faint))' }}
+            >
+              #{proposal.number} · {typeMeta.label}
+            </span>
+            <Fi
+              icon={expanded ? 'chevron-up' : 'chevron-down'}
+              style={{ fontSize: '11px', color: 'hsl(var(--faint))' }}
+            />
+          </div>
+        </div>
+
+        {/* Thin ink progress meter */}
+        <div
+          style={{
+            height: '5px',
+            backgroundColor: 'hsl(var(--surface-2))',
+            borderRadius: '99px',
+            overflow: 'hidden',
+            marginTop: '10px',
+            maxWidth: '420px',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${pctFor}%`,
+              backgroundColor:
+                proposal.status === 'rejected'
+                  ? 'hsl(var(--destructive))'
+                  : '#111827',
+              borderRadius: '99px',
+            }}
+          />
+        </div>
+
+        {/* Vote meta line */}
+        <div
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-2"
+          style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
+        >
+          <span>{pctFor}% in favour</span>
+          <span>·</span>
+          <span>{fmtVotes(proposal.totalVotes)} votes</span>
+          {reqParticipation > 0 && Number.isFinite(quorumPct) && (
+            <>
+              <span>·</span>
+              <span>Quorum {quorumPct}%</span>
+            </>
+          )}
+          <span>·</span>
+          <span>By {proposal.author}</span>
+          {myVote && (
+            <>
+              <span>·</span>
+              <span
+                style={{
+                  fontWeight: 600,
                   color:
                     myVote === 'for'
-                      ? 'hsl(var(--accent-muted-foreground))'
+                      ? '#2F7D4F'
                       : myVote === 'abstain'
                         ? 'hsl(var(--muted-foreground))'
                         : 'hsl(var(--destructive))',
@@ -1629,721 +1664,141 @@ export default function ProposalCard({
               >
                 You voted {myVote}
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span
-              className="inline-flex items-center gap-1.5"
-              style={{
-                fontSize: '11.5px',
-                fontFamily: 'var(--font-mono)',
-                color: statusMeta.color,
-              }}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: statusMeta.color }}
-              />
-              {statusMeta.label}
-            </span>
-            <Fi
-              icon={expanded ? 'chevron-up' : 'chevron-down'}
-              style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
-            />
-          </div>
+            </>
+          )}
         </div>
-      </button>
+      </div>
 
       {charter.status && (
-      <div className="px-5 pb-3">
-        <CharterCheckStatus
-          status={charter.status}
-          summary={charter.summary}
-          txId={charter.txId}
-          asking={charter.asking}
-          askError={charter.askError}
-          onAskAnother={charter.canAsk ? (evidence) => { void charter.askAnother(evidence); } : undefined}
-        />
-      </div>
+        <div className="mt-3">
+          <CharterCheckStatus
+            status={charter.status}
+            summary={charter.summary}
+            txId={charter.txId}
+            asking={charter.asking}
+            askError={charter.askError}
+            onAskAnother={charter.canAsk ? (evidence) => { void charter.askAnother(evidence); } : undefined}
+          />
+        </div>
       )}
 
-      {primaryAction && (
-        <div className="px-5 pb-4">
+      {!expanded && primaryAction && (
+        <div className="flex flex-wrap items-center gap-2 mt-3.5">
           <button
             type="button"
             onClick={primaryAction.onClick}
             disabled={primaryAction.disabled}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
+            className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-[9px] font-semibold transition-all"
             style={{
               fontSize: '13px',
-              backgroundColor: 'hsl(var(--primary))',
-              color: 'hsl(var(--primary-foreground))',
+              backgroundColor: '#111827',
+              color: '#ffffff',
               opacity: primaryAction.disabled ? 0.6 : 1,
             }}
           >
             <Fi
               icon={primaryAction.loading ? 'arrows-rotate' : primaryAction.icon}
-              style={{ fontSize: '12px' }}
+              style={{ fontSize: '11px' }}
               className={primaryAction.loading ? 'animate-spin' : ''}
             />
             {primaryAction.label}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}
+            className="px-3 py-2 rounded-[9px] transition-colors"
+            style={{ fontSize: '13px', fontWeight: 500, color: 'hsl(var(--muted-foreground))' }}
+          >
+            Details
           </button>
         </div>
       )}
 
       {/* Inline expanded details */}
       {expanded && (
-        <div
-          className="border-t px-5 pb-5 pt-4 space-y-5"
-          style={{ borderColor: 'hsl(var(--border))' }}
-        >
+        <div className="mt-4 pt-3 space-y-4">
+          {pipelineStage !== 'complete' && (
+            <div>
+              <ProposalStatusStepper stage={pipelineStage} />
+            </div>
+          )}
+
           {/* Cast vote (active only) */}
           {proposal.status === 'active' && (
-            <div
-              className="p-4 rounded-xl border"
-              style={{
-                backgroundColor: voted ? 'hsl(var(--accent-muted))' : 'hsl(var(--surface-1))',
-                borderColor: voted ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
-              }}
-            >
-              {voted ? (
-                <div className="flex items-center gap-2">
-                  <Fi icon="circle-check" style={{ fontSize: '14px', color: 'hsl(var(--accent))' }} />
-                  <span style={{ fontSize: '13px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                    You voted <strong>{myVote}</strong> on this proposal.
-                  </span>
-                </div>
-              ) : (
-                <div>
-                  <div className="text-display font-semibold mb-3" style={{ fontSize: '13.5px' }}>Cast your vote</div>
-                  {isTokenGov && (
-                    <div className="mb-3">
-                      <label className="nave-label" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', display: 'block', marginBottom: '4px' }}>
-                        Tokens to lock for this vote
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={lockAmount}
-                        onChange={e => setLockAmount(e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                        placeholder="e.g. 1000"
-                        className="w-full px-3 py-2 rounded-lg border outline-none"
-                        style={{
-                          fontSize: '13px',
-                          fontFamily: 'var(--font-mono)',
-                          backgroundColor: 'hsl(var(--surface-0))',
-                          borderColor: 'hsl(var(--border))',
-                          color: 'hsl(var(--foreground))',
-                        }}
-                      />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={e => { e.stopPropagation(); handleVote('for'); }}
-                      disabled={voting || !isMember}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border font-medium transition-all"
-                      style={{
-                        fontSize: '13.5px',
-                        backgroundColor: myVote === 'for' ? 'hsl(var(--accent))' : 'hsl(var(--surface-0))',
-                        borderColor: myVote === 'for' ? 'hsl(var(--accent))' : 'hsl(var(--border))',
-                        color: myVote === 'for' ? 'white' : 'hsl(var(--foreground))',
-                        opacity: !isMember ? 0.5 : 1,
-                        cursor: !isMember ? 'not-allowed' : 'pointer',
-                      }}
-                      title={!isMember ? 'Connect a wallet that is a member of this DAO to vote' : undefined}
-                    >
-                      <Fi icon="check" style={{ fontSize: '13px' }} />
-                      For
-                    </button>
-                    <button
-                      onClick={e => { e.stopPropagation(); handleVote('against'); }}
-                      disabled={voting || !isMember}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border font-medium transition-all"
-                      style={{
-                        fontSize: '13.5px',
-                        backgroundColor: myVote === 'against' ? 'hsl(var(--destructive))' : 'hsl(var(--surface-0))',
-                        borderColor: myVote === 'against' ? 'hsl(var(--destructive))' : 'hsl(var(--border))',
-                        color: myVote === 'against' ? 'white' : 'hsl(var(--foreground))',
-                        opacity: !isMember ? 0.5 : 1,
-                        cursor: !isMember ? 'not-allowed' : 'pointer',
-                      }}
-                      title={!isMember ? 'Connect a wallet that is a member of this DAO to vote' : undefined}
-                    >
-                      <Fi icon="xmark" style={{ fontSize: '13px' }} />
-                      Against
-                    </button>
-                  </div>
-                  {!isMember && (
-                    <div className="flex items-center gap-2 mt-3" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                      <Fi icon="lock" style={{ fontSize: '11px' }} />
-                      Only treasury members can vote. Connect a member wallet or acquire the DAO token to participate.
-                    </div>
-                  )}
-                  {voting && (
-                    <div className="flex items-center gap-2 mt-3" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                      <Fi icon="arrows-rotate" style={{ fontSize: '12px' }} className="animate-spin" />
-                      Submitting vote on-chain…
-                    </div>
-                  )}
-                  {voteError && (
-                    <div className="flex items-center gap-2 mt-3" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                      <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                      {voteError}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Finalize — tallies votes once the window has closed (or outcome is certain). */}
-              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
-                {isUndefeatable(proposal, guardianCount, quorumRounding) && !votingWindowClosed(proposal) && (
-                  <div
-                    className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-lg"
-                    style={{ backgroundColor: 'hsl(var(--success-muted))', fontSize: '11.5px', color: 'hsl(152 50% 28%)' }}
-                  >
-                    <Fi icon="circle-check" style={{ fontSize: '10px' }} />
-                    Outcome is mathematically certain — early finalization is available.
-                  </div>
-                )}
-                <button
-                  onClick={e => { e.stopPropagation(); handleFinalize(); }}
-                  disabled={finalizing || !isMember || !finalizable}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border font-medium transition-all"
-                  style={{
-                    fontSize: '12.5px',
-                    backgroundColor: finalizable ? 'hsl(var(--surface-1))' : 'hsl(var(--surface-0))',
-                    borderColor: finalizable ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
-                    color: finalizable ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                    opacity: finalizing || !isMember ? 0.6 : finalizable ? 1 : 0.5,
-                    cursor: !isMember || !finalizable ? 'not-allowed' : 'pointer',
-                  }}
-                  title={
-                    !isMember
-                      ? 'Connect a wallet that is a member of this DAO to finalize'
-                      : finalizable
-                        ? undefined
-                        : 'Voting window is still open — waiting for more votes or window close'
-                  }
-                >
-                  <Fi icon="gavel" style={{ fontSize: '12px' }} />
-                  {finalizing
-                    ? 'Finalizing…'
-                    : votingWindowClosed(proposal)
-                      ? 'Finalize voting'
-                      : `Finalize (${proposal.deadline})`}
-                </button>
-                {finalizing && (
-                  <div className="flex items-center gap-2 mt-2" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                    <Fi icon="arrows-rotate" style={{ fontSize: '11px' }} className="animate-spin" />
-                    Checking on-chain state…
-                  </div>
-                )}
-                {voteError && !voting && (
-                  <div className="flex items-center gap-2 mt-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                    <Fi icon="circle-xmark" style={{ fontSize: '11px' }} />
-                    {voteError}
-                  </div>
-                )}
-              </div>
-            </div>
+            <ProposalVoteFinalizePanel
+              proposal={proposal}
+              voted={voted}
+              myVote={myVote}
+              isTokenGov={isTokenGov}
+              lockAmount={lockAmount}
+              setLockAmount={setLockAmount}
+              voting={voting}
+              isMember={isMember}
+              voteError={voteError}
+              guardianCount={guardianCount}
+              quorumRounding={quorumRounding}
+              finalizing={finalizing}
+              finalizable={finalizable}
+              onVote={(vote) => void handleVote(vote)}
+              onFinalize={() => void handleFinalize()}
+            />
           )}
 
           {/* Reclaim locked voting tokens — token governance, after voting ends */}
           {isTokenGov && proposal.status !== 'active' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                {proposal.status === 'rejected' ? 'Failed — release your escrow' : 'Reclaim Locked Tokens'}
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                {proposal.status === 'rejected'
-                  ? 'This proposal did not pass (voted down or quorum was not met when it was finalized). If you locked governance tokens to vote, release them back to your wallet.'
-                  : 'If you locked governance tokens to vote on this proposal, voting has now ended — you can withdraw them back to your wallet.'}
-              </p>
-              <button
-                onClick={e => { e.stopPropagation(); handleReleaseEscrow(); }}
-                disabled={releasing || !isMember || !walletStr}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border font-medium transition-all"
-                style={{
-                  fontSize: '12.5px',
-                  borderColor: 'hsl(var(--border-strong))',
-                  backgroundColor: 'hsl(var(--surface-0))',
-                  color: 'hsl(var(--foreground))',
-                  opacity: releasing || !isMember || !walletStr ? 0.6 : 1,
-                  cursor: releasing || !isMember || !walletStr ? 'not-allowed' : 'pointer',
-                }}
-                title={!walletStr ? 'Connect the wallet you voted with to reclaim locked tokens' : undefined}
-              >
-                <Fi icon={releasing ? 'arrows-rotate' : 'lock-open'} style={{ fontSize: '11px' }} className={releasing ? 'animate-spin' : ''} />
-                {releasing ? 'Reclaiming…' : 'Reclaim locked tokens'}
-              </button>
-              {releaseMsg && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
-                  {releaseMsg}
-                </div>
-              )}
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
+            <ProposalEscrowPanel
+              proposalStatus={proposal.status}
+              releasing={releasing}
+              isMember={isMember}
+              walletStr={walletStr}
+              releaseMsg={releaseMsg}
+              voteError={voteError}
+              onReleaseEscrow={() => void handleReleaseEscrow()}
+            />
           )}
 
-          {/* Ratify a passed constitution (policy) proposal — founder applies it on-chain */}
-          {proposal.status === 'passed' && proposal.type === 'policy' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Ratify Constitution
-              </div>
-              {alreadyRatified ? (
-                <div
-                  className="rounded-lg overflow-hidden border"
-                  style={{ borderColor: 'hsl(152 40% 70%)' }}
-                >
-                  <div
-                    className="flex items-start gap-2 px-3 py-2.5"
-                    style={{ fontSize: '12.5px', color: 'hsl(152 50% 28%)', backgroundColor: 'hsl(var(--success-muted))', lineHeight: 1.4 }}
-                  >
-                    <Fi icon="circle-check" style={{ fontSize: '12px', flexShrink: 0, marginTop: '1px' }} />
-                    <span>
-                      <strong>Constitution applied on-chain.</strong> Your agents are ready — go to the Agent page and click <strong>Propose to Enable Agents</strong> to put resuming them to a DAO vote.
-                    </span>
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); navigate('/agent'); }}
-                    className="w-full flex items-center justify-center gap-2 py-2 font-medium transition-all"
-                    style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--primary))', color: 'white' }}
-                  >
-                    <Fi icon="scale-balanced" style={{ fontSize: '10px' }} />
-                    Propose to Enable Agents →
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                    Apply this approved policy to the treasury constitution on-chain. Once ratified, go to the <strong>Agent page</strong> and click <strong>Propose to Enable Agents</strong> to put resuming them to a DAO vote, after which the agents operate under these constraints.
-                  </p>
-                  {isFounder ? (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleRatifyConstitution(); }}
-                      disabled={ratifying || !isMember}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                      style={{
-                        fontSize: '13px',
-                        backgroundColor: 'hsl(var(--primary))',
-                        color: 'hsl(var(--primary-foreground))',
-                        opacity: ratifying || !isMember ? 0.6 : 1,
-                      }}
-                    >
-                      <Fi icon={ratifying ? 'arrows-rotate' : 'scroll'} style={{ fontSize: '12px' }} className={ratifying ? 'animate-spin' : ''} />
-                      {ratifying ? 'Ratifying…' : 'Ratify & apply constitution'}
-                    </button>
-                  ) : (
-                    <div
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                      style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', backgroundColor: 'hsl(var(--surface-0))' }}
-                    >
-                      <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-                      Awaiting founder ratification to apply this constitution on-chain.
-                    </div>
-                  )}
-                </>
-              )}
-              {ratifyMsg && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
-                  {ratifyMsg}
-                </div>
-              )}
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Execute a passed agent-enable proposal — founder resumes the agents on-chain */}
-          {proposal.status === 'passed' && proposal.type === 'agent-enable' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(152 40% 70%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Execute: Enable Agents
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                This proposal passed. Executing reconnects this DAO to the four autonomous agents (Executive, Financial, Operational, Oversight), which will resume checking the treasury for necessary actions under the current constitution.
-              </p>
-              {isFounder ? (
-                <button
-                  onClick={e => { e.stopPropagation(); handleExecuteEnableAgents(); }}
-                  disabled={enabling || !isMember}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                  style={{
-                    fontSize: '13px',
-                    backgroundColor: 'hsl(var(--primary))',
-                    color: 'hsl(var(--primary-foreground))',
-                    opacity: enabling || !isMember ? 0.6 : 1,
-                  }}
-                >
-                  <Fi icon={enabling ? 'arrows-rotate' : 'play'} style={{ fontSize: '12px' }} className={enabling ? 'animate-spin' : ''} />
-                  {enabling ? 'Enabling…' : 'Execute: Enable Agents'}
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', backgroundColor: 'hsl(var(--surface-0))' }}>
-                  <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-                  Awaiting founder to execute and resume the agents on-chain.
-                </div>
-              )}
-              {enableMsg && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
-                  {enableMsg}
-                </div>
-              )}
-              {enableError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {enableError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Ratify a passed token-mint proposal — founder executes the on-chain mint */}
-          {proposal.status === 'passed' && proposal.type === 'token-mint' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(38 92% 75%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Execute Token Mint
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                This proposal passed. Executing will mint the approved token amount into the treasury vault on-chain.
-              </p>
-              {isFounder ? (
-                <button
-                  onClick={e => { e.stopPropagation(); handleRatifyTokenMint(); }}
-                  disabled={ratifying || !isMember}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                  style={{
-                    fontSize: '13px',
-                    backgroundColor: 'hsl(var(--primary))',
-                    color: 'hsl(var(--primary-foreground))',
-                    opacity: ratifying || !isMember ? 0.6 : 1,
-                  }}
-                >
-                  <Fi icon={ratifying ? 'arrows-rotate' : 'coins'} style={{ fontSize: '12px' }} className={ratifying ? 'animate-spin' : ''} />
-                  {ratifying ? 'Minting…' : 'Execute Mint'}
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', backgroundColor: 'hsl(var(--surface-0))' }}>
-                  <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-                  Awaiting founder to execute this mint on-chain.
-                </div>
-              )}
-              {ratifyMsg && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
-                  {ratifyMsg}
-                </div>
-              )}
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Passed treasury transfer — direct execution (no agent execution pipeline) */}
-          {proposal.status === 'passed' && proposal.type === 'transfer' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(214 80% 80%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Execute treasury transfer
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                {chainKind === 'evm'
-                  ? 'This proposal passed. The governor only stores a hash on-chain — execution needs the raw recipient/asset/amount from when the proposal was created (saved in this browser).'
-                  : 'This proposal passed. Execution moves native SOL from the vault authority PDA, or SPL from the DAO asset vault to the recipient ATA in the exact amounts fixed when the proposal was created.'}
-              </p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleExecuteTreasuryTransfer();
-                }}
-                disabled={executingTransfer || !isMember}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                style={{
-                  fontSize: '13px',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                  opacity: executingTransfer || !isMember ? 0.6 : 1,
-                }}
-              >
-                <Fi icon={executingTransfer ? 'arrows-rotate' : 'paper-plane'} style={{ fontSize: '12px' }} className={executingTransfer ? 'animate-spin' : ''} />
-                {executingTransfer ? 'Executing…' : 'Execute transfer'}
-              </button>
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Passed Permission — apply guardian set via governor */}
-          {proposal.status === 'passed' && proposal.type === 'permission' && chainKind === 'evm' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(271 80% 80%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Apply guardian config
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                Calls <code>executePermissionProposal</code>, which applies wallets + threshold through
-                the treasury governor path (<code>applyGuardianConfigFromGovernor</code>).
-              </p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleExecutePermission();
-                }}
-                disabled={executingPermission || !isMember}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                style={{
-                  fontSize: '13px',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                  opacity: executingPermission || !isMember ? 0.6 : 1,
-                }}
-              >
-                <Fi icon={executingPermission ? 'arrows-rotate' : 'shield'} style={{ fontSize: '12px' }} className={executingPermission ? 'animate-spin' : ''} />
-                {executingPermission ? 'Applying…' : 'Execute permission proposal'}
-              </button>
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Ratify a passed switch-voting proposal — execute the governance change on-chain */}
-          {proposal.status === 'passed' && proposal.type === 'switch-voting' && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(271 80% 80%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                Apply Voting System Change
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                This proposal passed. Execute the voting system switch on-chain to transition this DAO's governance model.
-              </p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleExecuteSwitchVotingSystem();
-                }}
-                disabled={executingSwitchVoting || !isMember}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                style={{
-                  fontSize: '13px',
-                  backgroundColor: 'hsl(var(--primary))',
-                  color: 'hsl(var(--primary-foreground))',
-                  opacity: executingSwitchVoting || !isMember ? 0.6 : 1,
-                }}
-              >
-                <Fi icon={executingSwitchVoting ? 'arrows-rotate' : 'scale-balanced'} style={{ fontSize: '12px' }} className={executingSwitchVoting ? 'animate-spin' : ''} />
-                {executingSwitchVoting ? 'Switching…' : 'Execute voting system switch'}
-              </button>
-              {voteError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {voteError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Halted strategy execution request recovery */}
-          {haltedEr && (
-            <div
-              className="p-4 rounded-xl border space-y-3"
-              style={{ backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(0 72% 80%)' }}
-            >
-              <div className="text-display font-semibold" style={{ fontSize: '13.5px', color: 'hsl(0 60% 35%)' }}>
-                Execution Request Halted
-              </div>
-              <p style={{ fontSize: '12.5px', color: 'hsl(0 50% 35%)', lineHeight: 1.5 }}>
-                {haltedEr.reason || 'This execution request is currently halted by the Oversight agent.'}
-              </p>
-              {isFounder && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleClearProposalHalt();
-                  }}
-                  disabled={clearingHalt}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all"
-                  style={{
-                    fontSize: '13px',
-                    backgroundColor: 'hsl(var(--primary))',
-                    color: 'hsl(var(--primary-foreground))',
-                    opacity: clearingHalt ? 0.6 : 1,
-                  }}
-                >
-                  <Fi icon={clearingHalt ? 'arrows-rotate' : 'shield-check'} style={{ fontSize: '12px' }} className={clearingHalt ? 'animate-spin' : ''} />
-                  {clearingHalt ? 'Clearing…' : 'Clear Halt'}
-                </button>
-              )}
-              {clearHaltMsg && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--accent-muted-foreground))' }}>
-                  <Fi icon="circle-check" style={{ fontSize: '12px', color: 'hsl(var(--accent))' }} />
-                  {clearHaltMsg}
-                </div>
-              )}
-              {clearHaltError && (
-                <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                  <Fi icon="circle-xmark" style={{ fontSize: '12px' }} />
-                  {clearHaltError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Strategy execution — auto-chained or manual fallback */}
-          {proposal.status === 'passed' && proposal.type === 'strategy' && (
-            hasStoredStrategyPayload(daoAddress, proposal.number) ? (
-              <div
-                className="flex items-start gap-2.5 p-4 rounded-xl border"
-                style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-              >
-                <Fi icon="clock" style={{ fontSize: '13px', color: 'hsl(var(--primary))', flexShrink: 0, marginTop: '2px' }} />
-                <div>
-                  <div className="text-display font-semibold mb-1" style={{ fontSize: '13.5px' }}>
-                    Queued for Agent Review
-                  </div>
-                  <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                    This strategy is queued for agent review. The approval pipeline will execute it once the review window elapses.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="p-4 rounded-xl border space-y-3"
-                style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
-              >
-                <div className="text-display font-semibold" style={{ fontSize: '13.5px' }}>
-                  Move Passed Strategy to Execution
-                </div>
-                <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                  Create an execution request so the agent approval pipeline can review, sign, and execute this proposal.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={createReqAmount}
-                    onChange={(e) => setCreateReqAmount(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-3 py-2 rounded-lg border"
-                    style={{
-                      fontSize: '12.5px',
-                      fontFamily: 'var(--font-mono)',
-                      backgroundColor: 'hsl(var(--surface-0))',
-                      borderColor: 'hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                  />
-                  <select
-                    value={createReqProtocol}
-                    onChange={(e) => setCreateReqProtocol(e.target.value as 'kamino' | 'jito' | 'marginfi' | 'jupiter')}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-3 py-2 rounded-lg border"
-                    style={{
-                      fontSize: '12.5px',
-                      backgroundColor: 'hsl(var(--surface-0))',
-                      borderColor: 'hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                  >
-                    <option value="kamino">Kamino</option>
-                    <option value="jito">Jito</option>
-                    <option value="jupiter">Jupiter</option>
-                    {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">Marginfi</option>}
-                  </select>
-                  <select
-                    value={createReqAssetMint}
-                    onChange={(e) => setCreateReqAssetMint(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-3 py-2 rounded-lg border"
-                    style={{
-                      fontSize: '12.5px',
-                      backgroundColor: 'hsl(var(--surface-0))',
-                      borderColor: 'hsl(var(--border))',
-                      color: 'hsl(var(--foreground))',
-                    }}
-                  >
-                    {registeredTreasuryAssets.length > 0 ? (
-                      registeredTreasuryAssets.map((a) => (
-                        <option key={a.mint} value={a.mint}>
-                          {a.symbol}
-                        </option>
-                      ))
-                    ) : (
-                      <option value={votingMint ?? NATIVE_MINT.toBase58()}>
-                        {votingMint ? `${votingMint.slice(0, 6)}…` : 'wSOL'}
-                      </option>
-                    )}
-                  </select>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCreateExecutionRequest();
-                    }}
-                    disabled={creatingReq || !isMember}
-                    className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-medium"
-                    style={{
-                      fontSize: '12.5px',
-                      backgroundColor: 'hsl(var(--primary))',
-                      color: 'hsl(var(--primary-foreground))',
-                      opacity: creatingReq || !isMember ? 0.6 : 1,
-                    }}
-                  >
-                    <Fi icon={creatingReq ? 'arrows-rotate' : 'bolt'} style={{ fontSize: '11px' }} className={creatingReq ? 'animate-spin' : ''} />
-                    {creatingReq ? 'Creating…' : 'Create request'}
-                  </button>
-                </div>
-              </div>
-            )
-          )}
+          <ProposalExecutePanels
+            proposal={proposal}
+            daoAddress={daoAddress}
+            chainKind={chainKind}
+            isFounder={isFounder}
+            isMember={isMember}
+            alreadyRatified={alreadyRatified}
+            ratifying={ratifying}
+            ratifyMsg={ratifyMsg}
+            enabling={enabling}
+            enableMsg={enableMsg}
+            enableError={enableError}
+            executingTransfer={executingTransfer}
+            executingPermission={executingPermission}
+            executingSwitchVoting={executingSwitchVoting}
+            haltedEr={haltedEr}
+            clearingHalt={clearingHalt}
+            clearHaltMsg={clearHaltMsg}
+            clearHaltError={clearHaltError}
+            createReqAmount={createReqAmount}
+            setCreateReqAmount={setCreateReqAmount}
+            createReqProtocol={createReqProtocol}
+            setCreateReqProtocol={setCreateReqProtocol}
+            createReqAssetMint={createReqAssetMint}
+            setCreateReqAssetMint={setCreateReqAssetMint}
+            registeredTreasuryAssets={registeredTreasuryAssets}
+            votingMint={votingMint}
+            creatingReq={creatingReq}
+            voteError={voteError}
+            navigate={navigate}
+            onRatifyConstitution={() => void handleRatifyConstitution()}
+            onExecuteEnableAgents={() => void handleExecuteEnableAgents()}
+            onRatifyTokenMint={() => void handleRatifyTokenMint()}
+            onExecuteTreasuryTransfer={() => void handleExecuteTreasuryTransfer()}
+            onExecutePermission={() => void handleExecutePermission()}
+            onExecuteSwitchVotingSystem={() => void handleExecuteSwitchVotingSystem()}
+            onClearProposalHalt={() => void handleClearProposalHalt()}
+            onCreateExecutionRequest={() => void handleCreateExecutionRequest()}
+          />
 
           <ProposalPayloadSummary
             proposal={proposal}
@@ -2355,25 +1810,25 @@ export default function ProposalCard({
 
           {/* About (predefined per type) */}
           <div>
-            <div className="text-display font-semibold mb-2" style={{ fontSize: '13.5px' }}>About</div>
-            <p style={{ fontSize: '13.5px', lineHeight: 1.7, color: 'hsl(var(--muted-foreground))' }}>
+            <div className="nave-label" style={{ marginBottom: '4px' }}>About</div>
+            <p style={{ fontSize: '13px', lineHeight: 1.65, color: 'hsl(var(--muted-foreground))', margin: 0 }}>
               {description}
             </p>
           </div>
 
           {/* Author / timeline meta */}
           <div
-            className="flex flex-wrap gap-4 p-4 rounded-xl border"
-            style={{ backgroundColor: 'hsl(var(--surface-1))', borderColor: 'hsl(var(--border))' }}
+            className="flex flex-wrap gap-6 pt-3 border-t"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
           >
             {[
               { label: 'Author', value: proposal.author },
               { label: 'Created', value: proposal.created },
               { label: 'Deadline', value: proposal.deadline },
-            ].map(m => (
+            ].map((m) => (
               <div key={m.label}>
-                <div className="nave-label" style={{ fontSize: '10px' }}>{m.label}</div>
-                <div className="nave-mono mt-1" style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))' }}>{m.value}</div>
+                <div className="nave-label" style={{ fontSize: '9.5px' }}>{m.label}</div>
+                <div className="nave-mono mt-0.5" style={{ fontSize: '12px', color: 'hsl(var(--foreground))' }}>{m.value}</div>
               </div>
             ))}
           </div>

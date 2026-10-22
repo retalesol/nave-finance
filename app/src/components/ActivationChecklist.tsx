@@ -81,7 +81,7 @@ export default function ActivationChecklist({ onOpenDeposit }: ActivationCheckli
           : 'Define rules and pass a governance vote',
         done: ratified,
         actionLabel: ratified ? undefined : 'Open rules',
-        onAction: ratified ? undefined : () => navigate('/policy'),
+        onAction: ratified ? undefined : () => navigate('/rules'),
       },
       {
         id: 'agents',
@@ -91,7 +91,7 @@ export default function ActivationChecklist({ onOpenDeposit }: ActivationCheckli
           : 'Complete setup so agents can operate under your rules',
         done: agentsOn,
         actionLabel: agentsOn ? undefined : 'View agents',
-        onAction: agentsOn ? undefined : () => navigate('/agent'),
+        onAction: agentsOn ? undefined : () => navigate('/agents'),
       },
     ];
   }, [
