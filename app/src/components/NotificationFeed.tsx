@@ -100,16 +100,20 @@ export default function NotificationFeed() {
       <button
         type="button"
         onClick={handleOpen}
-        className="relative flex items-center justify-center rounded-full border transition-colors"
+        className="relative flex-shrink-0 transition-colors"
         style={{
           width: '36px',
           height: '36px',
-          borderColor: open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))',
+          borderRadius: '50%',
+          border: `1px solid ${open ? '#CFC8B8' : '#E7E2D6'}`,
           backgroundColor: '#ffffff',
-          color: 'hsl(var(--foreground))',
+          color: '#111827',
+          display: 'grid',
+          placeItems: 'center',
+          fontSize: '15px',
         }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = 'hsl(var(--border-strong))')}
-        onMouseLeave={e => (e.currentTarget.style.borderColor = open ? 'hsl(var(--border-strong))' : 'hsl(var(--border))')}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = '#CFC8B8')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = open ? '#CFC8B8' : '#E7E2D6')}
         title="Notifications"
         aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
         aria-expanded={open}
@@ -117,13 +121,20 @@ export default function NotificationFeed() {
         <Fi icon="bell" style={{ fontSize: '14px' }} />
         {unreadCount > 0 && (
           <span
-            className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center"
             style={{
+              position: 'absolute',
+              top: '-4px',
+              right: '-4px',
+              backgroundColor: '#B42318',
+              color: '#ffffff',
               fontSize: '9px',
               fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
-              backgroundColor: 'hsl(var(--brass))',
-              color: '#ffffff',
+              minWidth: '16px',
+              height: '16px',
+              borderRadius: '99px',
+              display: 'grid',
+              placeItems: 'center',
+              padding: '0 3px',
             }}
           >
             {unreadCount > 9 ? '9+' : unreadCount}
