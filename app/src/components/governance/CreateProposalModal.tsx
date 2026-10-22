@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { motion } from 'framer-motion';
 import { getAccount } from '@solana/spl-token';
-import { hexToBytes, parseUnits, type Address } from 'viem';
+import { bytesToHex, parseUnits, type Address } from 'viem';
 import Fi from '@/components/Fi';
 import { scaleIn, fadeOverlay } from '@/components/PageTransition';
 import { useSendTransaction } from '@/hooks/useSendTransaction';
@@ -13,21 +14,18 @@ import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
 import { isSelectableTreasuryMint } from '@/lib/treasuryAssetEligibility';
 import { fetchDaoContracts } from '@/lib/evm/readers';
 import { storeEvmProposalPayloadRemote } from '@/lib/evmProposalPayloadStore';
-import { buildCreateProposalEvm, encodeEvmPermissionPayload, encodeEvmStrategyProposalPayload } from '@/lib/evm/writers';
-import { buildCreateProposal } from '@/lib/transactionBuilders';
+import { buildCreateProposalEvm } from '@/lib/evm/writers';
+import { buildCreateProposal, encodeSolanaTransferProposalPayload } from '@/lib/transactionBuilders';
 import { getNavePrograms } from '@/lib/naveProgram';
 import { getTokenRegistryPDA } from '@/lib/pdaDerivation';
 import { fetchTreasuryVault } from '@/lib/onChainFetcher';
-import { decodeConstitutionPayload } from '@/lib/constitutionPayload';
+import { decodeConstitutionPayload, encodeEvmTransferRequestPayload } from '@/lib/constitutionPayload';
 import { isMockDaoAddress } from '@/lib/mockData';
 import { isEvmAddress } from '@/lib/chain/types';
 import {
   AGENT_ENABLE_PROPOSAL_TITLE,
   EVM_DEPLOYMENT_MODE,
-  MARGINFI_STRATEGY_ENABLED,
   SOLANA_NETWORK,
-  getAdapterProgramId,
-  getConfiguredEvmAdapters,
 } from '@/lib/programConfig';
 import {
   actionDelayContextFrom,
@@ -39,16 +37,16 @@ import {
 import { ProposalType as OnChainProposalType } from '@/lib/onChainTypes';
 import {
   TYPE_META,
-  PROPOSAL_TEMPLATES,
-  getProposalDescription,
   type ProposalType,
-  type NewProposal,
 } from './types';
 import {
   persistEvmProposalPayload,
-  persistSolanaStrategyPayload,
-  decodeSolanaStrategyPayload,
 } from './proposalStorage';
+
+type DecisionTemplateKind = 'payment' | 'rule' | 'general';
+
+const NATIVE_SOL_OPTION = 'SOL_NATIVE';
+const NATIVE_EVM_OPTION = '0x0000000000000000000000000000000000000000';
 
 /** Decodes a constitution payload and renders the policy settings. */
 function PolicySummaryFromPayload({ payloadBytes }: { payloadBytes: number[] }) {
@@ -87,6 +85,7 @@ function PolicySummaryFromPayload({ payloadBytes }: { payloadBytes: number[] }) 
     </div>
   );
 }
+
 export default function CreateProposalModal({
   onClose,
   daoAddress,
@@ -104,6 +103,7 @@ export default function CreateProposalModal({
    *  When provided the modal shows a read-only review; the user can only confirm. */
   initial?: { title: string; description: string; payload: number[]; type?: ProposalType } | null;
 }) {
+  const navigate = useNavigate();
   const { publicKey } = useWallet();
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
@@ -131,60 +131,34 @@ export default function CreateProposalModal({
     if (!periodTouched.current) setReviewPeriodSecs(defaultPeriodSecs);
   }, [defaultPeriodSecs]);
 
-  // Manual-mode state (only used when initial is not provided).
-  const [form, setForm] = useState<NewProposal>({
-    title: '',
-    description: '',
-    type: 'policy',
-    votingPeriod: '7',
-  });
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  // Manual-mode state (used when !isReview — matching demo's Start a decision modal).
+  const [decisionKind, setDecisionKind] = useState<DecisionTemplateKind>('payment');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [recipient, setRecipient] = useState('');
+  const [amount, setAmount] = useState('3000');
+  const [votingDaysStr, setVotingDaysStr] = useState<'3' | '5' | '7'>('5');
+
   const [payloadBytes] = useState<number[]>(initial?.payload ?? []);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Permission proposal: guardian wallets (EVM addresses, one per line) + threshold. */
-  const [permissionWalletsText, setPermissionWalletsText] = useState('');
-  const [permissionThreshold, setPermissionThreshold] = useState(1);
 
   const { assets: treasuryAssets } = useTreasuryAssets(daoAddress);
   const registeredTreasuryAssets = useMemo(
     () => treasuryAssets.filter((a) => isSelectableTreasuryMint(a)),
     [treasuryAssets],
   );
-  const configuredEvmAdapters = useMemo(
-    () => (chainKind === 'evm' && evmChainId ? getConfiguredEvmAdapters(evmChainId) : []),
-    [chainKind, evmChainId],
-  );
-  const [strategyProtocol, setStrategyProtocol] = useState<string>('kamino');
-  const [strategyAdapterAddress, setStrategyAdapterAddress] = useState<string>('');
-  const [strategyAssetMint, setStrategyAssetMint] = useState<string>('');
-  const [strategyAmount, setStrategyAmount] = useState<string>('');
+  const [selectedAssetMint, setSelectedAssetMint] = useState<string>('');
 
   useEffect(() => {
-    if (chainKind === 'evm') {
-      if (!strategyAdapterAddress && configuredEvmAdapters[0]?.address) {
-        setStrategyAdapterAddress(configuredEvmAdapters[0].address);
+    if (!selectedAssetMint) {
+      if (registeredTreasuryAssets[0]?.mint) {
+        setSelectedAssetMint(registeredTreasuryAssets[0].mint);
+      } else {
+        setSelectedAssetMint(chainKind === 'evm' ? NATIVE_EVM_OPTION : NATIVE_SOL_OPTION);
       }
     }
-  }, [chainKind, configuredEvmAdapters, strategyAdapterAddress]);
-
-  useEffect(() => {
-    if (!strategyAssetMint && registeredTreasuryAssets[0]?.mint) {
-      setStrategyAssetMint(registeredTreasuryAssets[0].mint);
-    }
-  }, [registeredTreasuryAssets, strategyAssetMint]);
-
-  function applyTemplate(templateId: string) {
-    const template = PROPOSAL_TEMPLATES.find((t) => t.id === templateId);
-    if (!template) return;
-    setSelectedTemplate(templateId);
-    setForm({
-      title: template.title,
-      description: getProposalDescription(template.type),
-      type: template.type,
-      votingPeriod: template.votingPeriod,
-    });
-  }
+  }, [registeredTreasuryAssets, selectedAssetMint, chainKind]);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -196,19 +170,31 @@ export default function CreateProposalModal({
 
   async function handleSubmit() {
     setError(null);
-    const title = isReview ? resolvedTitle : form.title;
-    const description = isReview ? resolvedDescription : form.description;
-    const type = isReview ? resolvedType : form.type;
-    // For review mode, use the selected period in seconds directly.
-    // For manual mode, convert days to seconds (backward compat).
-    const votingDays = isReview
-      ? reviewPeriodSecs / 86400
-      : (parseInt(form.votingPeriod, 10) || 7);
 
-    if (!title.trim() || !description.trim()) {
-      setError('A title and description are required.');
+    if (!isReview && decisionKind === 'rule') {
+      onClose();
+      navigate('/rules', { state: { startAmend: true } });
       return;
     }
+
+    const finalTitle = isReview ? resolvedTitle : title.trim();
+    const finalDescription = isReview ? resolvedDescription : description.trim();
+    const hasRecipient = !isReview && decisionKind === 'payment' && recipient.trim().length > 0;
+    const type: ProposalType = isReview
+      ? resolvedType
+      : decisionKind === 'payment' && hasRecipient
+        ? 'transfer'
+        : 'general';
+
+    const votingDays = isReview
+      ? reviewPeriodSecs / 86400
+      : (parseInt(votingDaysStr, 10) || 5);
+
+    if (!finalTitle || !finalDescription) {
+      setError('A title and reason are required.');
+      return;
+    }
+
     if (isMockDaoAddress(daoAddress)) {
       setSubmitted(true);
       setTimeout(onClose, 1600);
@@ -221,8 +207,6 @@ export default function CreateProposalModal({
       if (!evmChainId) { setError('Select an Ethereum, Base, or Robinhood network.'); return; }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
       if (!trio) { setError('EVM contracts are not configured for this network yet.'); return; }
-      // Same ordinal mapping the Solana path uses — the governor expects the
-      // matching NaveEnums.ProposalType integer.
       const evmTypeNum: Record<ProposalType, number> = {
         'policy': OnChainProposalType.Policy,
         'strategy': OnChainProposalType.Strategy,
@@ -234,78 +218,49 @@ export default function CreateProposalModal({
         'token-revoke': OnChainProposalType.TokenRevoke,
         'switch-voting': OnChainProposalType.SwitchVotingSystem,
         'agent-enable': OnChainProposalType.General,
-        // Moonlight proposals are created from the Moonlight wizard, not this
-        // modal; mapped here only to keep the record exhaustive.
         'moonlight-request': OnChainProposalType.MoonlightRequest,
         'moonlight-distribution': OnChainProposalType.MoonlightDistribution,
       };
-      const evmProposalType = evmTypeNum[type] ?? OnChainProposalType.Policy;
+      const evmProposalType = evmTypeNum[type] ?? OnChainProposalType.General;
 
       let evmPayloadBytes = payloadBytes;
       let payloadHex: `0x${string}` = (payloadBytes.length
         ? '0x' + payloadBytes.map((b) => (b & 0xff).toString(16).padStart(2, '0')).join('')
         : '0x') as `0x${string}`;
 
-      if (type === 'permission' && !isReview) {
-        const wallets = permissionWalletsText
-          .split(/[\n,]+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (wallets.length === 0) {
-          setError('Add at least one guardian wallet for a Permission proposal.');
+      if (!isReview && type === 'transfer') {
+        const recTrimmed = recipient.trim();
+        if (!isEvmAddress(recTrimmed)) {
+          setError('Enter a valid recipient address (0x…).');
           return;
         }
-        const bad = wallets.filter((w) => !isEvmAddress(w));
-        if (bad.length) {
-          setError(`Invalid guardian address: ${bad[0]}`);
-          return;
-        }
-        if (permissionThreshold < 1 || permissionThreshold > wallets.length) {
-          setError(`Threshold must be between 1 and ${wallets.length}.`);
-          return;
-        }
-        try {
-          payloadHex = encodeEvmPermissionPayload(wallets, permissionThreshold);
-          evmPayloadBytes = Array.from(hexToBytes(payloadHex));
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to encode permission payload.');
-          return;
-        }
-      } else if (type === 'strategy' && !isReview) {
-        const adapterRaw = strategyAdapterAddress.trim();
-        const assetRaw = strategyAssetMint.trim();
-        if (!isEvmAddress(adapterRaw)) {
-          setError('Select or enter a valid EVM strategy adapter address.');
-          return;
-        }
-        if (!isEvmAddress(assetRaw)) {
-          setError('Select or enter a valid ERC-20 treasury asset address.');
-          return;
-        }
+        const assetAddr = (selectedAssetMint && isEvmAddress(selectedAssetMint)
+          ? selectedAssetMint
+          : NATIVE_EVM_OPTION) as Address;
         const matchedAsset = registeredTreasuryAssets.find(
-          (a) => a.mint.toLowerCase() === assetRaw.toLowerCase(),
+          (a) => a.mint.toLowerCase() === assetAddr.toLowerCase(),
         );
-        const decimals = matchedAsset?.decimals ?? 6;
+        const decimals = matchedAsset?.decimals ?? (assetAddr === NATIVE_EVM_OPTION ? 18 : 6);
         let amountBaseUnits: bigint;
         try {
-          amountBaseUnits = parseUnits(strategyAmount.trim() || '0', decimals);
+          amountBaseUnits = parseUnits(amount.trim() || '0', decimals);
         } catch {
-          setError('Enter a valid strategy deployment amount.');
+          setError('Enter a valid payment amount.');
           return;
         }
         if (amountBaseUnits <= 0n) {
-          setError('Enter a positive strategy deployment amount.');
+          setError('Enter a positive payment amount.');
           return;
         }
         try {
-          payloadHex = encodeEvmStrategyProposalPayload(
-            adapterRaw as Address,
-            amountBaseUnits,
-            assetRaw as Address,
-          );
-          evmPayloadBytes = Array.from(hexToBytes(payloadHex));
+          evmPayloadBytes = encodeEvmTransferRequestPayload({
+            asset: assetAddr,
+            recipient: recTrimmed as Address,
+            amount: amountBaseUnits,
+          });
+          payloadHex = bytesToHex(new Uint8Array(evmPayloadBytes));
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to encode EVM strategy payload.');
+          setError(err instanceof Error ? err.message : 'Failed to encode payment payload.');
           return;
         }
       }
@@ -318,14 +273,14 @@ export default function CreateProposalModal({
       });
       const outcome = await tx.sendEvm(
         buildCreateProposalEvm(evmChainId, trio.governor, {
-          title,
-          description,
+          title: finalTitle,
+          description: finalDescription,
           payload: payloadHex,
           proposalType: evmProposalType,
           votingPeriodSeconds,
           votingMint: (isTokenGov && votingMint ? votingMint : '0x0000000000000000000000000000000000000000') as `0x${string}`,
         }),
-        { successLabel: 'Proposal submitted', quietMock: true },
+        { successLabel: 'Decision published', quietMock: true },
       );
       if (outcome.status === 'success' || outcome.status === 'mock') {
         if (evmPayloadBytes.length > 0) {
@@ -337,12 +292,12 @@ export default function CreateProposalModal({
         setSubmitted(true);
         setTimeout(onClose, 1600);
       } else if (outcome.status === 'error') {
-        setError(outcome.error || 'Failed to submit the proposal.');
+        setError(outcome.error || 'Failed to publish the decision.');
       }
       return;
     }
 
-    if (!publicKey) { setError('Connect your wallet to submit a proposal.'); return; }
+    if (!publicKey) { setError('Connect your wallet to publish a decision.'); return; }
 
     const daoPubkey = new PublicKey(daoAddress);
     let daoTokenMint: PublicKey;
@@ -367,7 +322,6 @@ export default function CreateProposalModal({
       return;
     }
 
-    // Map UI type → on-chain ProposalType discriminant.
     const proposalTypeNum: Record<ProposalType, number> = {
       'policy': OnChainProposalType.Policy,
       'strategy': OnChainProposalType.Strategy,
@@ -378,58 +332,55 @@ export default function CreateProposalModal({
       'token-mint': OnChainProposalType.TokenMint,
       'token-revoke': OnChainProposalType.TokenRevoke,
       'switch-voting': OnChainProposalType.SwitchVotingSystem,
-      // Agent-enable proposals are plain General proposals on-chain; the canonical
-      // title is what surfaces the founder "Execute: Enable Agents" action.
       'agent-enable': OnChainProposalType.General,
-      // Moonlight proposals are created from the Moonlight wizard, not this
-      // modal; mapped here only to keep the record exhaustive.
       'moonlight-request': OnChainProposalType.MoonlightRequest,
       'moonlight-distribution': OnChainProposalType.MoonlightDistribution,
     };
-    const proposalType = proposalTypeNum[type] ?? OnChainProposalType.Policy;
+    const proposalType = proposalTypeNum[type] ?? OnChainProposalType.General;
     let solanaPayloadBytes = payloadBytes;
-    if (type === 'strategy' && !isReview) {
-      const adapterPk = getAdapterProgramId(strategyProtocol);
-      if (!adapterPk) {
-        setError(`Adapter program is not configured for ${strategyProtocol}.`);
-        return;
-      }
-      const mintRaw = strategyAssetMint.trim() || votingMint || 'So11111111111111111111111111111111111111112';
-      let mintPk: PublicKey;
+
+    if (!isReview && type === 'transfer') {
+      let recipientPk: PublicKey;
       try {
-        mintPk = new PublicKey(mintRaw);
+        recipientPk = new PublicKey(recipient.trim());
       } catch {
-        setError('Select or enter a valid Solana asset mint address.');
+        setError('Enter a valid Solana recipient address.');
         return;
       }
-      const matchedAsset = registeredTreasuryAssets.find((a) => a.mint === mintRaw);
-      const decimals = matchedAsset?.decimals ?? (mintRaw === 'So11111111111111111111111111111111111111112' ? 9 : 6);
+      const isNativeSol = !selectedAssetMint || selectedAssetMint === NATIVE_SOL_OPTION;
+      let mintOrZero: PublicKey | null = null;
+      let decimals = 9;
+      if (!isNativeSol) {
+        try {
+          mintOrZero = new PublicKey(selectedAssetMint);
+        } catch {
+          setError('Select a valid asset.');
+          return;
+        }
+        const matchedAsset = registeredTreasuryAssets.find((a) => a.mint === selectedAssetMint);
+        decimals = matchedAsset?.decimals ?? 6;
+      }
       let amountBaseUnits: bigint;
       try {
-        amountBaseUnits = parseUnits(strategyAmount.trim() || '0', decimals);
+        amountBaseUnits = parseUnits(amount.trim() || '0', decimals);
       } catch {
-        setError('Enter a valid strategy deployment amount.');
+        setError('Enter a valid payment amount.');
         return;
       }
       if (amountBaseUnits <= 0n) {
-        setError('Enter a positive strategy deployment amount.');
+        setError('Enter a positive payment amount.');
         return;
       }
-      // Canonical 72-byte NE-7 strategy payload: [adapter (32)] || [amount u64 LE (8)] || [mint (32)]
-      const buf = new Uint8Array(72);
-      buf.set(adapterPk.toBytes(), 0);
-      const view = new DataView(buf.buffer);
-      view.setBigUint64(32, amountBaseUnits, true);
-      buf.set(mintPk.toBytes(), 40);
-      solanaPayloadBytes = Array.from(buf);
+      solanaPayloadBytes = encodeSolanaTransferProposalPayload(recipientPk, mintOrZero, amountBaseUnits);
     }
+
     const result = await buildCreateProposal(
       daoPubkey,
       proposalCount,
       publicKey,
       {
-        title,
-        description,
+        title: finalTitle,
+        description: finalDescription,
         payload: solanaPayloadBytes,
         proposalType,
         votingPeriodSeconds: resolveSubmittedVotingPeriod({
@@ -441,24 +392,16 @@ export default function CreateProposalModal({
       },
       daoTokenMint,
     );
-    const outcome = await tx.send(result, { successLabel: 'Proposal submitted', quietMock: true });
+    const outcome = await tx.send(result, { successLabel: 'Decision published', quietMock: true });
     if (outcome.status === 'mock' || outcome.status === 'success') {
-      // Store the strategy raw payload so handleFinalize can auto-bundle
-      // create_execution_request in the same tx when this proposal passes.
-      if (type === 'strategy' && daoAddress && solanaPayloadBytes.length >= 72) {
-        const decoded = decodeSolanaStrategyPayload(solanaPayloadBytes);
-        if (decoded) {
-          persistSolanaStrategyPayload(daoAddress, proposalCount, decoded.amount, decoded.adapter, decoded.mint);
-        }
-      }
       setSubmitted(true);
       setTimeout(onClose, 1600);
     } else if (outcome.status === 'error') {
-      setError(outcome.error || 'Failed to submit the proposal.');
+      setError(outcome.error || 'Failed to publish the decision.');
     }
   }
 
-  const typeMeta = TYPE_META[isReview ? resolvedType : form.type];
+  const typeMeta = TYPE_META[isReview ? resolvedType : 'general'];
 
   return createPortal(
     <motion.div
@@ -495,12 +438,12 @@ export default function CreateProposalModal({
                 color: 'hsl(var(--foreground))',
               }}
             >
-              {isReview ? 'Review & Submit Proposal' : 'Create Proposal'}
+              {isReview ? 'Review & Submit Proposal' : 'Start a decision'}
             </div>
             <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.5 }}>
               {isReview
                 ? 'Review the auto-generated proposal details, then confirm to put it to a vote'
-                : 'Submit a governance proposal for community vote'}
+                : 'Plain templates. Members see what it costs and what happens if it passes.'}
             </div>
           </div>
           <button
@@ -549,10 +492,10 @@ export default function CreateProposalModal({
                 color: 'hsl(var(--foreground))',
               }}
             >
-              Proposal submitted
+              Decision published
             </div>
             <div style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
-              Your proposal has been created and is now open for community vote.
+              Members can now vote. You’ll find it at the top of Decisions.
             </div>
           </div>
         ) : isReview ? (
@@ -642,7 +585,7 @@ export default function CreateProposalModal({
               }}
             >
               <Fi icon="circle-info" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', flexShrink: 0, marginTop: '3px' }} />
-              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6, margin: 0 }}>
                 Submitting this transaction opens a guardian vote. It can be finalized immediately once the yes votes cannot be overturned. Otherwise anyone can finalize it after the voting window closes.
               </p>
             </div>
@@ -674,246 +617,239 @@ export default function CreateProposalModal({
             </div>
           </div>
         ) : (
-          /* ── Manual mode — minimal form for ad-hoc proposals ──────── */
-          <div className="space-y-5" style={{ padding: '18px 22px 22px' }}>
-            {/* Template picker */}
-            <div>
-              <label className="nave-label mb-2 block">Start from a template</label>
-              <div className="flex flex-wrap gap-1.5">
-                {PROPOSAL_TEMPLATES.map((t) => {
-                  const active = selectedTemplate === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => applyTemplate(t.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: active ? 600 : 400,
-                        backgroundColor: active ? '#111827' : '#ffffff',
-                        borderColor: active ? '#111827' : 'hsl(var(--border))',
-                        color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
-                      }}
-                    >
-                      <Fi icon={t.icon} style={{ fontSize: '11px' }} />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
+          /* ── Manual mode — Demo's 3 human templates ────────────────── */
+          <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
             {/* Type selector */}
             <div>
-              <label className="nave-label mb-2 block">Proposal Type</label>
-              <div className="flex flex-wrap gap-1.5">
-                {((['policy', 'strategy', 'permission', 'transfer', 'token-mint', 'general'] as ProposalType[])).map(t => {
-                  const m = TYPE_META[t];
-                  const active = form.type === t;
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => setForm(f => ({ ...f, type: t }))}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-left transition-all"
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: active ? 600 : 400,
-                        backgroundColor: active ? '#111827' : '#ffffff',
-                        borderColor: active ? '#111827' : 'hsl(var(--border))',
-                        color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
-                      }}
-                    >
-                      <Fi icon={m.icon} style={{ fontSize: '11px', flexShrink: 0 }} />
-                      <span style={{ lineHeight: 1.2 }}>{m.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Title */}
-            <div>
-              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>Title</label>
-              <input
-                type="text"
-                value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                placeholder="Concise proposal title…"
+              <label
+                htmlFor="decision-type-select"
+                style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}
+              >
+                Type
+              </label>
+              <select
+                id="decision-type-select"
+                value={decisionKind}
+                onChange={(e) => {
+                  setDecisionKind(e.target.value as DecisionTemplateKind);
+                  setError(null);
+                }}
                 className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
-                style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-              />
+                style={{
+                  fontSize: '14px',
+                  backgroundColor: '#ffffff',
+                  borderColor: 'hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
+                }}
+              >
+                <option value="payment">Payment — send money</option>
+                <option value="rule">Rule change</option>
+                <option value="general">General — anything else</option>
+              </select>
             </div>
 
-            {/* Description */}
-            <div>
-              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>Description</label>
-              <textarea
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                placeholder="Describe the rationale, impact, and implementation details…"
-                rows={4}
-                className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors resize-vertical"
-                style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', lineHeight: 1.55 }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
-              />
-            </div>
+            {decisionKind === 'rule' ? (
+              <div className="space-y-4 pt-1">
+                <div
+                  className="rounded-[12px] p-4"
+                  style={{
+                    backgroundColor: 'hsl(var(--background))',
+                    border: '1px solid hsl(var(--surface-2))',
+                    fontSize: '13.5px',
+                    color: 'hsl(var(--muted-foreground))',
+                    lineHeight: 1.65,
+                  }}
+                >
+                  Rule changes preview as a plain-English sentence in the Rules editor before publishing. The Guardrail enforces the new rule only after the vote passes and a founder activates it.
+                </div>
 
-            {/* Strategy payload — Solana 72-byte NE-7 or EVM abi.encode(adapter, amount, asset) */}
-            {form.type === 'strategy' && (
-              <div className="space-y-3">
+                <div className="flex items-center justify-end gap-2 pt-3 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-[9px] transition-colors"
+                    style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      navigate('/rules', { state: { startAmend: true } });
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                    style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff' }}
+                  >
+                    Open Rules editor →
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Title */}
                 <div>
-                  <label className="nave-label mb-2 block">
-                    {chainKind === 'evm' ? 'Strategy adapter' : 'Protocol'}
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                    Title
                   </label>
-                  {chainKind === 'evm' ? (
-                    <div className="space-y-2">
-                      {configuredEvmAdapters.length > 0 && (
-                        <select
-                          value={strategyAdapterAddress}
-                          onChange={(e) => setStrategyAdapterAddress(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-lg border outline-none"
-                          style={{ fontSize: '13px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                        >
-                          {configuredEvmAdapters.map((a) => (
-                            <option key={a.address} value={a.address}>
-                              {a.protocolId.toUpperCase()} ({a.address.slice(0, 6)}…{a.address.slice(-4)})
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Fund the winter meetup series"
+                    className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                    style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
+                  />
+                </div>
+
+                {decisionKind === 'payment' && (
+                  <>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                        Who gets paid?
+                      </label>
                       <input
                         type="text"
-                        value={strategyAdapterAddress}
-                        onChange={(e) => setStrategyAdapterAddress(e.target.value)}
-                        placeholder="0x… adapter contract address"
-                        className="w-full px-3 py-2 rounded-lg border outline-none nave-mono"
-                        style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                        value={recipient}
+                        onChange={(e) => setRecipient(e.target.value)}
+                        placeholder={chainKind === 'evm' ? '0x… wallet address' : 'Recipient wallet address'}
+                        className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                        style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                        onFocus={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
+                        onBlur={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
                       />
                     </div>
-                  ) : (
-                    <select
-                      value={strategyProtocol}
-                      onChange={(e) => setStrategyProtocol(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-lg border outline-none"
-                      style={{ fontSize: '13px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                    >
-                      <option value="kamino">Kamino</option>
-                      <option value="jito">Jito</option>
-                      <option value="jupiter">Jupiter</option>
-                      {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">MarginFi</option>}
-                    </select>
-                  )}
-                </div>
-                <div>
-                  <label className="nave-label mb-2 block">Treasury asset</label>
-                  {registeredTreasuryAssets.length > 0 ? (
-                    <select
-                      value={strategyAssetMint}
-                      onChange={(e) => setStrategyAssetMint(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-lg border outline-none"
-                      style={{ fontSize: '13px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                    >
-                      {registeredTreasuryAssets.map((a) => (
-                        <option key={a.mint} value={a.mint}>
-                          {a.symbol} — {a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} available
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={strategyAssetMint}
-                      onChange={(e) => setStrategyAssetMint(e.target.value)}
-                      placeholder={chainKind === 'evm' ? '0x… ERC-20 asset address' : 'SPL token mint address'}
-                      className="w-full px-3 py-2 rounded-lg border outline-none nave-mono"
-                      style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="nave-label mb-2 block">Deployment amount</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={strategyAmount}
-                    onChange={(e) => setStrategyAmount(e.target.value)}
-                    placeholder="e.g. 10"
-                    className="w-full px-3 py-2 rounded-lg border outline-none nave-mono"
-                    style={{ fontSize: '13px', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                  />
-                </div>
-              </div>
-            )}
 
-            {/* Permission payload — EVM abi.encode(wallets, threshold) */}
-            {form.type === 'permission' && chainKind === 'evm' && (
-              <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                          Amount (USDC / native)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                          placeholder="3000"
+                          className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                          style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                          onFocus={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
+                          onBlur={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                          Asset
+                        </label>
+                        <select
+                          value={selectedAssetMint}
+                          onChange={(e) => setSelectedAssetMint(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                          style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                        >
+                          {registeredTreasuryAssets.map((a) => (
+                            <option key={a.mint} value={a.mint}>
+                              {a.symbol} ({a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })})
+                            </option>
+                          ))}
+                          {chainKind === 'evm' ? (
+                            <option value={NATIVE_EVM_OPTION}>ETH (Native)</option>
+                          ) : (
+                            <option value={NATIVE_SOL_OPTION}>SOL (Native)</option>
+                          )}
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Why? (shown to every voter) */}
                 <div>
-                  <label className="nave-label mb-2 block">Guardian wallets</label>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                    Why? (shown to every voter)
+                  </label>
                   <textarea
-                    value={permissionWalletsText}
-                    onChange={(e) => setPermissionWalletsText(e.target.value)}
-                    placeholder="0x… addresses, one per line"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What it funds, what happens if it passes, what happens if it doesn't."
                     rows={3}
-                    className="w-full px-3 py-2.5 rounded-lg border outline-none transition-colors resize-none"
-                    style={{ fontSize: '12.5px', fontFamily: 'var(--font-mono)', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                    className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors resize-vertical"
+                    style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', lineHeight: 1.55 }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
                   />
                 </div>
+
+                {/* Voting closes in */}
                 <div>
-                  <label className="nave-label mb-2 block">Threshold</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={permissionThreshold}
-                    onChange={(e) => setPermissionThreshold(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-24 px-3 py-2 rounded-lg border outline-none"
-                    style={{ fontSize: '13.5px', fontFamily: 'var(--font-mono)', backgroundColor: 'hsl(var(--surface-0))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
-                  />
-                  <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px', lineHeight: 1.45 }}>
-                    Encoded as <code>abi.encode(wallets, threshold)</code> and applied via{' '}
-                    <code>executePermissionProposal</code> after the vote passes.
-                  </p>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '7px', color: 'hsl(var(--foreground))' }}>
+                    Voting closes in
+                  </label>
+                  <select
+                    value={votingDaysStr}
+                    onChange={(e) => setVotingDaysStr(e.target.value as '3' | '5' | '7')}
+                    className="w-full px-3 py-2.5 rounded-[10px] border outline-none transition-colors"
+                    style={{ fontSize: '14px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+                  >
+                    <option value="3">3 days</option>
+                    <option value="5">5 days</option>
+                    <option value="7">7 days</option>
+                  </select>
+                  {shortActionDelay && (
+                    <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', lineHeight: 1.4 }}>
+                      Fast-forwarded to 1 minute on this test network.
+                    </p>
+                  )}
                 </div>
-              </div>
-            )}
 
-            {shortActionDelay && (
-              <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-                Voting stays open for 1 minute on this network.
-              </p>
-            )}
+                {/* Notebox */}
+                <div
+                  className="rounded-[12px]"
+                  style={{
+                    padding: '13px 14px',
+                    backgroundColor: 'hsl(var(--background))',
+                    border: '1px solid hsl(var(--surface-2))',
+                    fontSize: '13px',
+                    color: 'hsl(var(--muted-foreground))',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  A simple majority of votes cast decides. If it passes, your agents carry it out and report back here.
+                </div>
 
-            {error && (
-              <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(4 60% 80%)', color: 'hsl(var(--destructive))' }}>
-                {error}
-              </div>
-            )}
+                {error && (
+                  <div className="px-3 py-2.5 rounded-lg border" style={{ fontSize: '12.5px', backgroundColor: 'hsl(var(--destructive-muted))', borderColor: 'hsl(4 60% 80%)', color: 'hsl(var(--destructive))' }}>
+                    {error}
+                  </div>
+                )}
 
-            <div className="flex items-center justify-end gap-2 pt-4 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-[9px] transition-colors"
-                style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!form.title.trim() || !form.description.trim()}
-                className="flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
-                style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff', opacity: !form.title.trim() || !form.description.trim() ? 0.4 : 1 }}
-              >
-                <Fi icon="paper-plane" style={{ fontSize: '12px' }} />
-                Submit Proposal
-              </button>
-            </div>
+                <div className="flex items-center justify-end gap-2 pt-4 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-[9px] transition-colors"
+                    style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'hsl(var(--foreground))')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'hsl(var(--muted-foreground))')}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmit()}
+                    disabled={!title.trim() || !description.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+                    style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff', opacity: !title.trim() || !description.trim() ? 0.4 : 1 }}
+                  >
+                    Publish decision
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </motion.div>

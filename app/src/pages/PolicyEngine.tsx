@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
 import Fi from '../components/Fi';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
+import NaveModal from '../components/NaveModal';
 import { Notice } from '../components/calm';
 import ConstitutionStep, {
   type PolicyState,
@@ -13,6 +14,7 @@ import ConstitutionStep, {
   PROTOCOLS_SOLANA,
   RISK_PRESETS,
   formatConstitutionBps,
+  isBridgeAdapterKey,
   secsToRebalanceFreq,
   tierBoundedCaps,
 } from '../components/ConstitutionStep';
@@ -39,6 +41,7 @@ import {
 /* ── Page ───────────────────────────────────────────────── */
 export default function PolicyEngine() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { daoAddress } = useDaoContext();
   const { publicKey } = useWallet();
   const { address: evmAddress } = useAccount();
@@ -60,7 +63,15 @@ export default function PolicyEngine() {
   const isMember = isMock || isFounder || isGuardian || isTokenGov;
   const [policy, setPolicyState] = useState<PolicyState>(DEFAULT_POLICY);
   const [txError, setTxError] = useState<string | null>(null);
-  const [amending, setAmending] = useState(false);
+  const [amending, setAmending] = useState(() =>
+    Boolean((location.state as { startAmend?: boolean } | null)?.startAmend),
+  );
+
+  useEffect(() => {
+    if ((location.state as { startAmend?: boolean } | null)?.startAmend) {
+      setAmending(true);
+    }
+  }, [location.state]);
 
   // Seed local policy state from on-chain constitution when it loads
   useEffect(() => {
@@ -310,47 +321,8 @@ export default function PolicyEngine() {
             setPolicy={setPolicy}
             chain={chainKind === 'evm' ? 'evm' : 'solana'}
             evmChainId={evmChainId ?? undefined}
+            showAgentThreshold
           />
-
-          {/* Agent deployment threshold field */}
-          <div
-            style={{
-              padding: '24px 0',
-              borderTop: '1px solid hsl(var(--surface-2))',
-            }}
-          >
-            <label
-              style={{
-                display: 'block',
-                fontSize: '13px',
-                fontWeight: 600,
-                marginBottom: '8px',
-                color: 'hsl(var(--foreground))',
-              }}
-            >
-              Agent Deployment Threshold (USD)
-            </label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={policy.agentThresholdUsd ?? 100}
-              onChange={(e) => {
-                const val = Math.max(1, Number(e.target.value) || 1);
-                setPolicy({ agentThresholdUsd: val });
-              }}
-              className="w-full max-w-xs px-3.5 py-2.5 rounded-[10px] border outline-none nave-mono"
-              style={{
-                fontSize: '14px',
-                backgroundColor: '#ffffff',
-                borderColor: 'hsl(var(--border))',
-                color: 'hsl(var(--foreground))',
-              }}
-            />
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', marginTop: '7px' }}>
-              Minimum treasury NAV required before autonomous agents deploy capital.
-            </p>
-          </div>
 
           {/* Empty-treasury guard */}
           {!isMock && treasuryBalance.resolved && !treasuryBalance.hasBalance && (
@@ -420,12 +392,15 @@ function ConstitutionReadout({
   chainKind: 'solana' | 'evm';
   onAmend: () => void;
 }) {
-  const venues = (constitution?.approvedProtocols ?? []).filter((protocol) => protocol.approved);
+  const [selectedRuleNo, setSelectedRuleNo] = useState<string | null>(null);
+  const venues = (constitution?.approvedProtocols ?? []).filter(
+    (protocol) => protocol.approved && !isBridgeAdapterKey(protocol.protocolId),
+  );
   const reserveBps = constitution?.minLiquidityBps ?? constitution?.minReservesBps ?? 0;
   const thresholdUsd =
     constitution?.agentThresholdUsdMicro != null && constitution.agentThresholdUsdMicro > 0
       ? Math.round(constitution.agentThresholdUsdMicro / 1_000_000)
-      : 100;
+      : 1000;
   const rebalanceLabel = constitution
     ? secsToRebalanceFreq(constitution.rebalanceFrequencySeconds)
     : 'Weekly';
@@ -441,18 +416,21 @@ function ConstitutionReadout({
           no: '01',
           title: `Keep at least ${formatConstitutionBps(reserveBps)} in safe, stable funds`,
           sub: 'So bills and surprises are always covered.',
+          detail: 'So bills and surprises are always covered, even if markets fall. Agents pause new investments automatically if this is threatened.',
           status: 'Followed ✓',
         },
         {
           no: '02',
           title: `Put at most ${formatConstitutionBps(constitution.maxTotalDeployedBps)} to work earning`,
           sub: 'The rest always stays within reach.',
+          detail: 'The rest always stays within reach, so the treasury never has to sell at a bad moment to pay for something.',
           status: 'Followed ✓',
         },
         {
           no: '03',
           title: `Never more than ${formatConstitutionBps(constitution.maxSingleAllocationBps)} in any single place`,
           sub: 'So no single venue can hurt you too much.',
+          detail: 'Spreads risk so no single venue, hack, or freeze can hurt the treasury too much.',
           status: 'Followed ✓',
         },
         {
@@ -462,22 +440,27 @@ function ConstitutionReadout({
               ? `Approved places only: ${venues.map((v) => venueName(v.protocolId, chainKind)).join(', ')}`
               : 'No external earning places approved yet',
           sub: 'Adding a new one always takes a vote.',
+          detail: 'Agents physically cannot send money anywhere else. Adding a place requires a vote and a founder activation.',
           status: venues.length > 0 ? 'Followed ✓' : 'Idle only',
         },
         {
           no: '05',
           title: `Rebalance ${rebalanceLabel.toLowerCase()}, only above $${thresholdUsd.toLocaleString()}`,
           sub: 'Avoids fiddling with small balances.',
+          detail: 'Prevents fiddling with tiny balances and burning fees on noise.',
           status: 'Followed ✓',
         },
         {
           no: '06',
           title: 'Any founder or guardian can freeze everything, instantly',
           sub: 'Restarting requires a vote. No exceptions.',
+          detail: 'Any founder or guardian can halt everything in one action. Restarting needs the community — no back doors.',
           status: 'Ready ✓',
         },
       ]
     : null;
+
+  const selectedRule = rules?.find((r) => r.no === selectedRuleNo) ?? null;
 
   return (
     <div className="max-w-[620px]" style={{ marginTop: '34px' }}>
@@ -488,9 +471,11 @@ function ConstitutionReadout({
           }}
         >
           {rules.map((r) => (
-            <div
+            <button
               key={r.no}
-              className="flex items-start gap-3.5"
+              type="button"
+              onClick={() => setSelectedRuleNo(r.no)}
+              className="flex items-start gap-3.5 w-full text-left cursor-pointer group transition-colors"
               style={{
                 padding: '15px 0',
                 borderBottom: '1px solid hsl(var(--surface-2))',
@@ -504,6 +489,7 @@ function ConstitutionReadout({
               </span>
               <div className="flex-1 min-w-0">
                 <h3
+                  className="group-hover:text-brass transition-colors"
                   style={{
                     fontFamily: 'var(--font-body)',
                     fontSize: '14px',
@@ -530,7 +516,7 @@ function ConstitutionReadout({
               >
                 {r.status}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ) : (
@@ -547,54 +533,52 @@ function ConstitutionReadout({
         </div>
       )}
 
-      {/* Approved venues chips */}
-      <div style={{ marginTop: '22px' }}>
-        <div className="nave-label" style={{ marginBottom: '8px' }}>Approved venues</div>
-        {venues.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {venues.map((venue) => (
-              <span
-                key={venue.protocolId}
-                className="inline-flex items-center gap-1.5 rounded-full border bg-white"
-                style={{
-                  fontSize: '12.5px',
-                  padding: '5px 12px',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              >
-                <span>{venueName(venue.protocolId, chainKind)}</span>
-                {venue.maxAllocationBps > 0 && (
-                  <span className="nave-mono" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
-                    {formatConstitutionBps(venue.maxAllocationBps)}
-                  </span>
-                )}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
-            No venues are approved.
-          </p>
-        )}
-      </div>
-
-      <div style={{ marginTop: '24px' }}>
-        <button
-          type="button"
-          onClick={onAmend}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] border font-semibold transition-colors"
-          style={{
-            fontSize: '13px',
-            borderColor: 'hsl(var(--border))',
-            color: 'hsl(var(--foreground))',
-            backgroundColor: '#ffffff',
-          }}
+      {selectedRule && (
+        <NaveModal
+          open={true}
+          onClose={() => setSelectedRuleNo(null)}
+          title={`Rule ${selectedRule.no} — ${selectedRule.title}`}
+          subtitle={selectedRule.status}
+          maxWidth={480}
         >
-          <Fi icon="sliders" style={{ fontSize: '11px' }} />
-          Amend constitution
-        </button>
-      </div>
+          <div style={{ padding: '18px 22px 22px' }}>
+            <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.7, margin: '0 0 14px' }}>
+              {selectedRule.detail}
+            </p>
+            <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+              <div className="flex justify-between py-2.5" style={{ borderBottom: '1px solid hsl(var(--surface-2))', fontSize: '13px' }}>
+                <span style={{ color: 'hsl(var(--muted-foreground))' }}>Posture</span>
+                <b style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{presetLabel}</b>
+              </div>
+              <div className="flex justify-between py-2.5" style={{ borderBottom: '1px solid hsl(var(--surface-2))', fontSize: '13px' }}>
+                <span style={{ color: 'hsl(var(--muted-foreground))' }}>Enforced by</span>
+                <b style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>The Guardrail, on every move</b>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-4 mt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRuleNo(null)}
+                className="px-3.5 py-2 rounded-[9px] border font-semibold"
+                style={{ fontSize: '13px', backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))' }}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRuleNo(null);
+                  onAmend();
+                }}
+                className="px-4 py-2 rounded-[9px] font-semibold"
+                style={{ fontSize: '13px', backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
+              >
+                Suggest a change
+              </button>
+            </div>
+          </div>
+        </NaveModal>
+      )}
 
       <p
         style={{

@@ -1,14 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
-import { Notice } from '../components/calm';
+import Toggle from '../components/Toggle';
+import { Notice, Section } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useGuardianConfig, type GuardianInfo } from '../hooks/useGuardianConfig';
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
 import { useTokenRegistry } from '../hooks/useTokenRegistry';
+import { toast } from '../hooks/use-toast';
 import { chainKindFromAddress } from '../lib/chain/types';
 import { isMockDaoAddress } from '../lib/mockData';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { normalizeDaoSlug } from '../lib/daoSlug';
 import MultisigSection, { type Signer, INITIAL_SIGNERS } from '../components/settings/MultisigSection';
 import GuardianRecoverySection from '../components/settings/GuardianRecoverySection';
 import LinkedTreasurySection, { ConstitutionRulesLink } from '../components/settings/LinkedTreasurySection';
@@ -37,6 +39,221 @@ export {
   EvmMoonlightSection,
   EvmStrategyWithdrawSection,
 };
+
+function ProfileSection({
+  daoAddress,
+  initialName,
+  initialSlug,
+  initialDescription,
+}: {
+  daoAddress: string;
+  initialName: string;
+  initialSlug: string;
+  initialDescription: string;
+}) {
+  const storageKey = `nave_profile_override::${daoAddress.toLowerCase()}`;
+  const [name, setName] = useState(initialName);
+  const [slug, setSlug] = useState(initialSlug);
+  const [description, setDescription] = useState(initialDescription);
+  const [saved, setSaved] = useState(false);
+  const [copiedHome, setCopiedHome] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { name?: string; slug?: string; description?: string };
+        setName(parsed.name ?? initialName);
+        setSlug(parsed.slug ?? initialSlug);
+        setDescription(parsed.description ?? initialDescription);
+        return;
+      }
+    } catch {
+      /* ignore storage errors */
+    }
+    setName(initialName);
+    setSlug(initialSlug);
+    setDescription(initialDescription);
+  }, [storageKey, initialName, initialSlug, initialDescription]);
+
+  const publicHome = `nave.finance/${slug || normalizeDaoSlug(name) || 'treasury'}`;
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ name: name.trim(), slug: normalizeDaoSlug(slug || name), description: description.trim() }),
+      );
+    } catch {
+      /* ignore storage errors */
+    }
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2500);
+    toast({ title: 'Profile saved' });
+  }
+
+  function handleCopyHome() {
+    navigator.clipboard.writeText(`https://${publicHome}`);
+    setCopiedHome(true);
+    window.setTimeout(() => setCopiedHome(false), 1600);
+  }
+
+  return (
+    <Section first title="Profile">
+      <form onSubmit={handleSave} className="space-y-4">
+        <div>
+          <label className="block mb-1.5" style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+            Treasury name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Atlas Community Treasury"
+            className="w-full px-3 py-2.5 rounded-[10px] border outline-none"
+            style={{
+              fontSize: '14px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1.5" style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+            Public home
+          </label>
+          <div
+            className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-[10px] border"
+            style={{ backgroundColor: '#ffffff', borderColor: 'hsl(var(--border))' }}
+          >
+            <input
+              type="text"
+              value={publicHome}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/^https?:\/\//i, '').replace(/^nave\.finance\//i, '');
+                setSlug(normalizeDaoSlug(raw));
+              }}
+              className="flex-1 min-w-0 outline-none nave-mono bg-transparent"
+              style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}
+            />
+            <button
+              type="button"
+              onClick={handleCopyHome}
+              className="hover:underline underline-offset-4 flex-shrink-0"
+              style={{ fontSize: '12.5px', color: copiedHome ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }}
+            >
+              {copiedHome ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block mb-1.5" style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="What is this treasury for?"
+            className="w-full px-3 py-2.5 rounded-[10px] border outline-none resize-none"
+            style={{
+              fontSize: '14px',
+              backgroundColor: '#ffffff',
+              borderColor: 'hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+            }}
+          />
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            type="submit"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
+            style={{
+              fontSize: '13px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
+            }}
+          >
+            Save profile
+          </button>
+          {saved && (
+            <span style={{ fontSize: '13px', color: 'hsl(var(--success))', fontWeight: 500 }}>
+              Saved ✓
+            </span>
+          )}
+        </div>
+      </form>
+    </Section>
+  );
+}
+
+function NotificationPreferencesRows({ daoAddress }: { daoAddress: string }) {
+  const storageKey = `nave_notif_prefs::${daoAddress.toLowerCase()}`;
+  const [prefs, setPrefs] = useState<{ vote: boolean; blocked: boolean; report: boolean }>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return { vote: true, blocked: true, report: false };
+  });
+
+  function togglePref(key: 'vote' | 'blocked' | 'report') {
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  const rows: { key: 'vote' | 'blocked' | 'report'; title: string; sub: string }[] = [
+    {
+      key: 'vote',
+      title: 'Decision needs my vote',
+      sub: 'Email and in-app, when voting opens or is about to close.',
+    },
+    {
+      key: 'blocked',
+      title: 'Agent blocked a move',
+      sub: 'Tell me whenever the Guardrail refuses to sign.',
+    },
+    {
+      key: 'report',
+      title: 'Monthly report ready',
+      sub: 'One email when the statement is generated.',
+    },
+  ];
+
+  return (
+    <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+      {rows.map((r) => (
+        <div
+          key={r.key}
+          className="flex items-start justify-between gap-4 py-3.5"
+          style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}
+        >
+          <div className="min-w-0 flex-1">
+            <div style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>{r.title}</div>
+            <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>{r.sub}</div>
+          </div>
+          <div className="pt-0.5 flex-shrink-0">
+            <Toggle value={prefs[r.key]} onChange={() => togglePref(r.key)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function Settings() {
@@ -138,29 +355,60 @@ export default function Settings() {
           </span>
         </Notice>
 
-        <Tabs defaultValue="team" className="mt-7">
-          <TabsList>
-            <TabsTrigger value="team">Team</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="dao">DAO</TabsTrigger>
-          </TabsList>
+        <div className="max-w-[620px] mt-8">
+          {/* 1. Profile */}
+          <ProfileSection
+            daoAddress={daoAddress}
+            initialName={dao?.name || 'Atlas Community Treasury'}
+            initialSlug={dao?.slug || normalizeDaoSlug(dao?.name || 'atlas')}
+            initialDescription={dao?.description || 'A community treasury funding open-source grants and local projects.'}
+          />
 
-          <TabsContent value="team" className="mt-6">
-            <div className="max-w-[620px]">
-              <MultisigSection
-                initialSigners={liveSigners}
-                initialThreshold={liveThreshold}
-                daoAddress={daoAddress}
-                guardiansBootstrapped={guardianConfig.bootstrapped}
-                first
-              />
-              {chainKindFromAddress(daoAddress) === 'evm' && (
-                <>
-                  <GuardianRecoverySection daoAddress={daoAddress} frozen={dao?.frozen ?? false} />
-                  <LinkedTreasurySection daoAddress={daoAddress} />
-                </>
-              )}
+          {/* 2. Members & guardians */}
+          <MultisigSection
+            initialSigners={liveSigners}
+            initialThreshold={liveThreshold}
+            daoAddress={daoAddress}
+            guardiansBootstrapped={guardianConfig.bootstrapped}
+          />
+
+          {/* 3. Preferences & privacy */}
+          <Section title="Notifications">
+            <NotificationPreferencesRows daoAddress={daoAddress} />
+          </Section>
+
+          <PrivacyAccessSection
+            daoAddress={daoAddress}
+            governanceType={governanceType}
+            privacyEnabled={dao?.privacyEnabled ?? false}
+            onRefetch={refetchDao}
+          />
+
+          <ReviewWindowSection daoAddress={daoAddress} />
+
+          {/* 4. Safety */}
+          <EmergencyControls daoAddress={daoAddress} initialFrozen={dao?.frozen ?? false} />
+
+          {/* Quiet Advanced disclosure at the very bottom */}
+          <details
+            style={{
+              marginTop: '30px',
+              borderTop: '1px solid hsl(var(--border))',
+              paddingTop: '18px',
+            }}
+          >
+            <summary
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'hsl(var(--muted-foreground))',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              Advanced (voting system, recovery &amp; wind-down)
+            </summary>
+            <div className="pt-4">
               <VotingSystemSection
                 daoAddress={daoAddress}
                 governanceType={governanceType}
@@ -168,42 +416,16 @@ export default function Settings() {
                 threshold={liveThreshold}
                 votingMint={votingMint}
               />
-              <AgentAdminSection daoAddress={daoAddress} frozen={dao?.frozen ?? false} />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="security" className="mt-6">
-            <div className="max-w-[620px]">
-              <ConstitutionRulesLink first />
-              <EmergencyControls daoAddress={daoAddress} initialFrozen={dao?.frozen ?? false} />
-              <ReviewWindowSection daoAddress={daoAddress} />
-              <PrivacyAccessSection
-                daoAddress={daoAddress}
-                governanceType={governanceType}
-                privacyEnabled={dao?.privacyEnabled ?? false}
-                onRefetch={refetchDao}
-              />
-              {daoAddress && chainKindFromAddress(daoAddress) === 'evm' && (
-                <EvmStrategyWithdrawSection
-                  daoAddress={daoAddress}
-                  proposalCount={(dao?.proposalCount ?? 0) + (dao?.archivedProposalCount ?? 0)}
-                />
+              {chainKindFromAddress(daoAddress) === 'evm' && (
+                <>
+                  <GuardianRecoverySection daoAddress={daoAddress} frozen={dao?.frozen ?? false} />
+                  <LinkedTreasurySection daoAddress={daoAddress} />
+                </>
               )}
+              <MoonlightSection daoAddress={daoAddress} />
             </div>
-          </TabsContent>
-
-          <TabsContent value="activity" className="mt-6">
-            <div className="max-w-[620px]">
-              <AuditLog daoAddress={daoAddress} first />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="dao" className="mt-6">
-            <div className="max-w-[620px]">
-              <MoonlightSection daoAddress={daoAddress} first />
-            </div>
-          </TabsContent>
-        </Tabs>
+          </details>
+        </div>
       </div>
     </div>
   );

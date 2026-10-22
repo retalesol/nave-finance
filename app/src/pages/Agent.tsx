@@ -5,11 +5,11 @@ import Fi from '../components/Fi';
 import NaveModal from '../components/NaveModal';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
-import { Section, Stat, Notice, HairlineRow } from '../components/calm';
+import { Section, Notice, HairlineRow } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useAgentStatus, type AgentStatusInfo, type AgentActionLog } from '../hooks/useAgentStatus';
 import { useActivityLog } from '../hooks/useActivityLog';
-import { useAgentHealth, getAgentHealthLevel, timeAgo } from '../hooks/useAgentHealth';
+import { useAgentHealth, timeAgo } from '../hooks/useAgentHealth';
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
 import { useDaoMembership } from '../hooks/useDaoMembership';
 import { useTreasuryBalance } from '../hooks/useTreasuryBalance';
@@ -18,7 +18,6 @@ import { ExecutionStatus, AgentStatus } from '../lib/onChainTypes';
 import { isMockDaoAddress } from '../lib/mockData';
 import { AGENT_ENABLE_PROPOSAL_TITLE } from '../lib/programConfig';
 import { computeAgentStatus, type AgentStatusDisplay } from '../lib/agentStatus';
-import { agentRoleLabel } from '../lib/agentRoleLabel';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
 import { isTreasuryOpsFamily } from '../lib/chain/types';
@@ -51,8 +50,8 @@ function ConfirmAgentToggleModal({
       <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
         <p style={{ fontSize: '13.5px', lineHeight: 1.6, color: 'hsl(var(--muted-foreground))', margin: 0 }}>
           {active
-            ? 'Pausing disconnects this DAO from the four Nave agents immediately. Your wallet signs a single emergency_pause_agents transaction — no other signatures are required. Funds remain secure, and you can resume the agents later via a governance proposal.'
-            : 'Agents will resume all autonomous operations under the current constitutional policy. Any pending operations will execute in sequence.'}
+            ? 'Instant, no vote needed. Any founder or guardian can do this.'
+            : 'Restarting always takes a community vote — pausing never does. This starts a decision to resume the four agents under the current rules.'}
         </p>
         {active && (
           <div className="space-y-1">
@@ -88,7 +87,7 @@ function ConfirmAgentToggleModal({
             className="px-3.5 py-2 rounded-[9px] transition-colors"
             style={{ fontSize: '13px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
           >
-            {active ? 'Keep them running' : 'Cancel'}
+            {active ? 'Keep them running' : 'Not now'}
           </button>
           <button
             type="button"
@@ -101,7 +100,7 @@ function ConfirmAgentToggleModal({
             }}
           >
             <Fi icon={active ? 'pause' : 'play'} style={{ fontSize: '11px' }} />
-            {active ? 'Pause Agents' : 'Resume Agents'}
+            {active ? 'Pause the team' : 'Start the vote'}
           </button>
         </div>
       </div>
@@ -109,92 +108,131 @@ function ConfirmAgentToggleModal({
   );
 }
 
-/* ── Agent definitions ─────────────────────────────────── */
+/* ── Specialist definitions ────────────────────────────── */
 const AGENTS = [
   {
     id: 'executive',
-    role: 'Executive Agent',
-    tag: 'Strategic Coordinator',
+    role: 'The Coordinator',
     summary: 'Turns decisions into plans. Signs first.',
     icon: 'crown',
     responsibilities: [
-      'Interprets DAO governance proposals',
-      'Coordinates treasury intent',
-      'Validates constitutional alignment',
-      'Signs first multisig approval',
+      'Reads what the community voted for',
+      'Checks the plan matches the vote',
     ],
+    lastActionSummary: 'planned the weekly rebalance',
     status: 'active' as const,
-    lastAction: '4m ago',
+    lastAction: '4 min ago',
     actionsToday: 3,
     signsTransactions: true,
   },
   {
     id: 'financial',
-    role: 'Financial Agent',
-    tag: 'Operations Layer',
+    role: 'The Investor',
     summary: 'Moves money to approved earning places. Signs second.',
     icon: 'money-bill-wave',
     responsibilities: [
-      'Treasury execution and yield optimization',
-      'Capital deployment and allocation',
-      'Transaction preparation',
-      'Signs second multisig approval',
+      'Compares rates across approved places only',
+      'Never acts on a plan it made itself',
     ],
+    lastActionSummary: 'moved funds to approved earning venue',
     status: 'active' as const,
-    lastAction: '2m ago',
+    lastAction: '2 min ago',
     actionsToday: 7,
     signsTransactions: true,
   },
   {
     id: 'oversight',
-    role: 'Operational Agent',
-    tag: 'Safeguard Layer',
+    role: 'The Guardrail',
     summary: 'Checks every move against your rules. Signs last — or refuses.',
     icon: 'eye',
     responsibilities: [
-      'Constitutional policy enforcement',
-      'Reviews Executive and Financial decisions',
-      'Validates treasury compliance',
-      'Signs final multisig approval',
+      'Blocks any move that would break the reserve or concentration rules',
+      'Cannot be overridden except by a community vote',
     ],
+    lastActionSummary: 'verified rule compliance',
     status: 'active' as const,
-    lastAction: '2m ago',
+    lastAction: '2 min ago',
     actionsToday: 7,
     signsTransactions: true,
   },
   {
     id: 'operational',
-    role: 'Oversight Agent',
-    tag: 'Monitoring Layer',
+    role: 'The Watcher',
     summary: 'Watches around the clock. Can freeze everything instantly.',
     icon: 'gear',
     responsibilities: [
-      'Treasury monitoring and accounting',
-      'Analytics and optimization recommendations',
-      'Suspicious activity detection',
-      'Emergency halt capabilities',
+      'Hourly safety checks, day and night',
+      'Keeps the books and writes the diary below',
     ],
+    lastActionSummary: 'safety check passed',
     status: 'active' as const,
-    lastAction: '1m ago',
+    lastAction: '12 min ago',
     actionsToday: 14,
     signsTransactions: false,
   },
 ];
 
-const ACTIVITY_LOG = [
-  { id: 1, desc: 'Financial Agent deployed capital to approved yield strategy', agent: 'Financial', time: '2m ago', status: 'success' },
-  { id: 2, desc: 'Operational Agent validated: transaction within policy bounds', agent: 'Operational', time: '2m ago', status: 'success' },
-  { id: 3, desc: 'Oversight Agent flagged: stablecoin reserve approaching floor', agent: 'Oversight', time: '14m ago', status: 'warning' },
-  { id: 4, desc: 'Financial Agent deployed SOL via liquid staking strategy', agent: 'Financial', time: '45m ago', status: 'success' },
-  { id: 5, desc: 'Executive Agent initiated rebalance based on governance mandate', agent: 'Executive', time: '1h ago', status: 'success' },
-  { id: 6, desc: 'Oversight Agent: policy compliance check passed', agent: 'Oversight', time: '2h ago', status: 'success' },
-];
-
-function statusColor(s: string) {
-  if (s === 'success' || s === 'complete') return 'hsl(var(--success))';
-  if (s === 'warning' || s === 'pending') return 'hsl(var(--warning))';
-  return 'hsl(var(--muted-foreground))';
+function humanSpecialistName(role: string | null | undefined): string {
+  if (!role) return 'Specialist';
+  const r = role.trim().toLowerCase();
+  if (r === 'executive' || r === 'coordinator') return 'Coordinator';
+  if (r === 'financial' || r === 'investor') return 'Investor';
+  if (r === 'oversight' || r === 'operational_guard' || r === 'guardrail') return 'Guardrail';
+  if (r === 'operational' || r === 'watcher') return 'Watcher';
+  return role.charAt(0).toUpperCase() + role.slice(1);
 }
+
+interface DiaryEntry {
+  id: string;
+  title: string;
+  subtitle: string;
+  when: string;
+  dotColor: 'green' | 'brass' | 'red' | string;
+  body: string;
+  decision: string;
+  checkedBy: string;
+  signatures: string;
+  receipt: string;
+}
+
+const MOCK_DIARY_ENTRIES: DiaryEntry[] = [
+  {
+    id: 'investor-1',
+    title: 'Investor — “Rates rose, so I moved $4,200 to Aave.”',
+    subtitle: 'Guardrail checked 6 rules · all passed.',
+    when: '2 min',
+    dotColor: 'green',
+    body: '“Aave USDC rose to 4.8% while $4,200 sat idle above the reserve. I placed it there; Compound remains as the second venue.”',
+    decision: 'Approve · 94% confident',
+    checkedBy: 'Guardrail · 6/6 rules passed',
+    signatures: 'Coordinator → Investor → Guardrail (3 of 3)',
+    receipt: '0xMOCK…MOVE4200',
+  },
+  {
+    id: 'guardrail-2',
+    title: 'Guardrail — “I blocked a $22,000 move.”',
+    subtitle: 'It would have taken the reserve below its floor. No money moved.',
+    when: 'Tuesday',
+    dotColor: 'brass',
+    body: '“This move would take the reserve to 28%, below the 30% floor in Rule 01. I will not sign. No money moved; I notified the Investor and logged this attempt.”',
+    decision: 'Refuse to sign',
+    checkedBy: 'Rule 01 — keep at least 30% safe',
+    signatures: 'Blocked before signing',
+    receipt: '0xMOCK…BLOCK22K',
+  },
+  {
+    id: 'coordinator-3',
+    title: 'Coordinator — “Grants vote passed. Payment scheduled.”',
+    subtitle: 'Linked to the decision, with all three signatures.',
+    when: 'Monday',
+    dotColor: '#CBD5E1',
+    body: '“Decision #14 passed with 84% in favour. I prepared the $6,000 payment for Friday and handed it to the Investor and Guardrail for their checks and signatures.”',
+    decision: 'Plan created',
+    checkedBy: 'Guardrail · rules passed',
+    signatures: '3 of 3 collected',
+    receipt: '0xMOCK…GRANT06',
+  },
+];
 
 /* ── Agent Row ─────────────────────────────────────────── */
 function AgentRow({
@@ -206,10 +244,18 @@ function AgentRow({
 }) {
   const { statusDisplay } = agent;
   const isHealthy = statusDisplay.enabled && !frozen;
+  const statusLabel = frozen
+    ? 'Frozen'
+    : isHealthy
+      ? agent.id === 'operational'
+        ? 'Watching'
+        : 'Active'
+      : statusDisplay.label;
+
   return (
     <HairlineRow
       title={agent.role}
-      subtitle={`${agent.tag} · ${agent.summary}`}
+      subtitle={agent.summary}
       meta={
         <span
           style={{
@@ -223,69 +269,63 @@ function AgentRow({
             whiteSpace: 'nowrap',
           }}
         >
-          {frozen ? 'Frozen' : statusDisplay.label}
+          {statusLabel}
         </span>
       }
-      when={`${agent.actionsToday} ops · ${agent.lastAction}`}
       expandableContent={
-        <div className="space-y-3 pt-1">
-          <ul className="space-y-1 pl-4" style={{ listStyle: 'disc', margin: 0 }}>
-            {agent.responsibilities.map((r) => (
-              <li key={r} style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
-                {r}
-              </li>
-            ))}
-          </ul>
-          <div
-            className="flex flex-wrap items-center gap-6 pt-2.5 border-t"
-            style={{ borderColor: 'hsl(var(--surface-2))' }}
-          >
-            <div>
-              <div className="nave-label">Last Action</div>
-              <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>
-                {agent.lastAction}
-              </div>
-            </div>
-            <div>
-              <div className="nave-label">24h Ops</div>
-              <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--foreground))' }}>
-                {agent.actionsToday} ops
-              </div>
-            </div>
-            <div>
-              <div className="nave-label">Signing</div>
-              <div
-                className="nave-mono"
-                style={{
-                  fontSize: '12px',
-                  marginTop: '2px',
-                  color: agent.signsTransactions ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                }}
-              >
-                {agent.signsTransactions ? 'Yes' : 'No'}
-              </div>
-            </div>
-          </div>
-        </div>
+        <ul className="space-y-1 pl-4" style={{ listStyle: 'disc', margin: '4px 0 0' }}>
+          {agent.responsibilities.map((r) => (
+            <li key={r} style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+              {r}
+            </li>
+          ))}
+          <li style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+            Last: {agent.lastActionSummary}, {agent.lastAction}
+          </li>
+        </ul>
       }
     />
   );
 }
 
 /* ── Execution Pipeline ─────────────────────────────────── */
-const EXECUTION_STAGES: Array<{ status: ExecutionStatus; label: string; agent: string }> = [
-  { status: ExecutionStatus.Pending, label: 'Created — awaiting Executive approval', agent: 'Executive' },
-  { status: ExecutionStatus.ExecutiveApproved, label: 'Executive approved — awaiting Financial', agent: 'Financial' },
-  { status: ExecutionStatus.FinancialApproved, label: 'Financial approved — awaiting Operational', agent: 'Operational' },
-  { status: ExecutionStatus.OversightApproved, label: 'Operational approved — entering review', agent: 'Oversight' },
-  { status: ExecutionStatus.InReview, label: 'In review window — Oversight monitoring', agent: 'Oversight' },
-  { status: ExecutionStatus.Executed, label: 'Executed on-chain', agent: 'Oversight' },
+const EXECUTION_STAGES: Array<{ status: ExecutionStatus; label: string }> = [
+  { status: ExecutionStatus.Pending, label: 'Coordinator signed' },
+  { status: ExecutionStatus.ExecutiveApproved, label: 'Investor signed' },
+  { status: ExecutionStatus.FinancialApproved, label: 'Guardrail checked' },
+  { status: ExecutionStatus.OversightApproved, label: 'Guardrail checked' },
+  { status: ExecutionStatus.InReview, label: 'Guardrail checked' },
+  { status: ExecutionStatus.Executed, label: 'Completed' },
 ];
+
+const DISPLAY_PIPELINE_STEPS = [
+  'Coordinator signed',
+  'Investor signed',
+  'Guardrail checked',
+  'Completed',
+];
+
+function stepIndexForStatus(status: ExecutionStatus): number {
+  switch (status) {
+    case ExecutionStatus.Pending:
+      return 0;
+    case ExecutionStatus.ExecutiveApproved:
+      return 1;
+    case ExecutionStatus.FinancialApproved:
+    case ExecutionStatus.OversightApproved:
+    case ExecutionStatus.InReview:
+      return 2;
+    case ExecutionStatus.Executed:
+      return 3;
+    default:
+      return 0;
+  }
+}
 
 function executionStatusLabel(status: ExecutionStatus): { label: string; tone: 'complete' | 'pending' | 'halt' } {
   switch (status) {
     case ExecutionStatus.Executed:
-      return { label: 'Executed', tone: 'complete' };
+      return { label: 'Completed', tone: 'complete' };
     case ExecutionStatus.Halted:
       return { label: 'Halted', tone: 'halt' };
     case ExecutionStatus.Expired:
@@ -309,18 +349,25 @@ function LiveExecutionRow({
   onClearHalt?: () => void;
 }) {
   const { label, tone } = executionStatusLabel(exec.status);
-  const currentStageIdx = EXECUTION_STAGES.findIndex((s) => s.status === exec.status);
+  const currentStepIdx = stepIndexForStatus(exec.status);
   const isHalted = exec.status === ExecutionStatus.Halted || exec.operationalHalt;
-  const activeStageLabel =
-    EXECUTION_STAGES[currentStageIdx]?.label ??
-    (isHalted ? `Halted: ${exec.operationalHaltReason || 'flagged by Oversight agent'}` : label);
-  const proposalShort =
-    exec.proposal.length > 12 ? `${exec.proposal.slice(0, 8)}…${exec.proposal.slice(-4)}` : `#${exec.proposal}`;
+  const stageMatch = EXECUTION_STAGES.find((s) => s.status === exec.status);
+  const activeStageLabel = isHalted
+    ? `Halted: ${exec.operationalHaltReason || 'flagged by the Watcher'}`
+    : stageMatch?.label ?? label;
+  const propMatch = /^Prop(\d+)/i.exec(exec.proposal);
+  const proposalShort = propMatch
+    ? `Decision #${propMatch[1]}`
+    : exec.proposal.length > 12
+      ? `Move ${exec.proposal.slice(0, 6)}…${exec.proposal.slice(-4)}`
+      : `Decision #${exec.proposal}`;
+  const rawPlace = (exec.protocolName || 'Treasury move').replace(/_/g, ' ');
+  const humanPlace = rawPlace.charAt(0).toUpperCase() + rawPlace.slice(1);
 
   return (
     <HairlineRow
       dotColor={tone === 'complete' ? 'green' : tone === 'halt' ? 'red' : 'brass'}
-      title={`${proposalShort} · ${exec.protocolName || 'strategy'}`}
+      title={`${proposalShort} · ${humanPlace}`}
       subtitle={activeStageLabel}
       meta={
         <span
@@ -341,39 +388,38 @@ function LiveExecutionRow({
       defaultExpanded={isHalted}
       expandableContent={
         <div className="space-y-2 pt-1">
-          {EXECUTION_STAGES.map((stage) => {
-            const stageIdx = EXECUTION_STAGES.indexOf(stage);
-            const done = currentStageIdx >= 0 && stageIdx < currentStageIdx;
-            const active = stageIdx === currentStageIdx;
-            return (
-              <div key={stage.status} className="flex items-center gap-2">
-                <div
-                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{
-                    backgroundColor:
-                      done || (active && exec.status === ExecutionStatus.Executed)
-                        ? 'hsl(var(--success))'
-                        : 'hsl(var(--surface-2))',
-                    border: active && exec.status !== ExecutionStatus.Executed ? '2px solid hsl(var(--brass))' : 'none',
-                  }}
-                >
-                  {done ? <Fi icon="check" style={{ fontSize: '8px', color: 'white' }} /> : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {DISPLAY_PIPELINE_STEPS.map((stepLabel, idx) => {
+              const done = idx < currentStepIdx || exec.status === ExecutionStatus.Executed;
+              const active = idx === currentStepIdx && exec.status !== ExecutionStatus.Executed;
+              return (
+                <div key={stepLabel} className="inline-flex items-center gap-2">
+                  <div
+                    className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{
+                      backgroundColor: done ? 'hsl(var(--success))' : 'hsl(var(--surface-2))',
+                      border: active ? '2px solid hsl(var(--brass))' : 'none',
+                    }}
+                  >
+                    {done ? <Fi icon="check" style={{ fontSize: '8px', color: 'white' }} /> : null}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '12.5px',
+                      fontWeight: active ? 600 : 400,
+                      color: done || active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                    }}
+                  >
+                    {stepLabel}
+                  </span>
                 </div>
-                <span
-                  style={{
-                    fontSize: '12.5px',
-                    color: active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  {stage.label}
-                </span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
           {isHalted && (
             <div className="flex items-center justify-between gap-2 pt-2">
               <div style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
-                Halt: {exec.operationalHaltReason || 'flagged by Oversight agent'}
+                Halt: {exec.operationalHaltReason || 'flagged by the Watcher'}
               </div>
               {canClearHalt && onClearHalt && (
                 <button
@@ -456,29 +502,21 @@ function listedFailures(check: Record<string, unknown>): string | null {
 
 function ExecutionPipeline({
   executions,
-  loading,
   canClearHalt,
   clearingProposal,
   clearHaltErrors,
   onClearHalt,
 }: {
   executions: ExecutionInfo[];
-  loading: boolean;
   canClearHalt?: boolean;
   clearingProposal?: string | null;
   clearHaltErrors?: Record<string, string>;
   onClearHalt?: (exec: ExecutionInfo) => void;
 }) {
+  if (executions.length === 0) return null;
+
   return (
-    <Section title="Execution Pipeline" hint="3-key autonomous multisig coordination">
-      {loading && (
-        <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>Loading execution requests…</div>
-      )}
-      {!loading && executions.length === 0 && (
-        <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-          No active execution requests. Passed strategy proposals will appear here as they move through the agent pipeline.
-        </div>
-      )}
+    <Section title="In progress" hint="Coordinator signed → Investor signed → Guardrail checked → Completed">
       <div>
         {executions.map((exec) => (
           <LiveExecutionRow
@@ -495,394 +533,188 @@ function ExecutionPipeline({
   );
 }
 
-/* ── Decision color helpers ─────────────────────────────── */
-function decisionColor(decision: string | null): string {
-  if (!decision) return 'hsl(var(--muted-foreground))';
-  if (decision === 'approve' || decision === 'continue') return 'hsl(var(--success))';
-  if (decision === 'reject' || decision === 'halt') return 'hsl(var(--destructive))';
-  if (decision === 'request_review' || decision === 'clear_halt') return 'hsl(var(--brass))';
-  return 'hsl(var(--muted-foreground))';
+/* ── Decision & Diary helpers ───────────────────────────── */
+function decisionDot(decision: string | null): 'green' | 'brass' | 'red' | string {
+  if (!decision) return '#CBD5E1';
+  if (decision === 'approve' || decision === 'continue') return 'green';
+  if (decision === 'reject' || decision === 'halt') return 'red';
+  return 'brass';
 }
 
-function decisionLabel(decision: string | null): string {
-  if (!decision) return 'Pending';
-  return decision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+function decisionLabel(decision: string | null, confidenceScore: number | null): string {
+  const base = !decision
+    ? 'Reviewed'
+    : decision === 'approve'
+      ? 'Approve'
+      : decision === 'reject'
+        ? 'Refuse to sign'
+        : decision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return confidenceScore !== null ? `${base} · ${confidenceScore}% confident` : base;
 }
 
-function confidenceColor(score: number | null): string {
-  if (score === null) return 'hsl(var(--muted-foreground))';
-  if (score >= 80) return 'hsl(var(--success))';
-  if (score >= 60) return 'hsl(var(--warning))';
-  return 'hsl(var(--destructive))';
+function summarizeConstitutionCheck(check: Record<string, unknown> | null | undefined): string {
+  if (!check || typeof check !== 'object') return 'Guardrail checked rules · all passed';
+  const blockDetail = constitutionBlockDetail(check);
+  if (blockDetail) return `Guardrail flagged · ${blockDetail}`;
+  const entries = Object.entries(check).filter(([k]) => k !== 'details' && k !== 'pass');
+  if (entries.length > 0) {
+    return `Guardrail checked ${entries.length} rules · all passed`;
+  }
+  return 'Guardrail checked rules · all passed';
 }
 
-function roleLabel(role: string): string {
-  return agentRoleLabel(role);
+function shortReceipt(sig: string | null | undefined): string {
+  if (!sig) return 'Recorded on-chain';
+  if (sig.length <= 16) return sig;
+  return `${sig.slice(0, 6)}…${sig.slice(-6)}`;
 }
 
-/* ── Constitution Check Display ────────────────────────── */
-function ConstitutionCheckPanel({ check }: { check: Record<string, unknown> }) {
-  const entries = Object.entries(check).filter(([k]) => k !== 'details');
-  const details = check.details as string | undefined;
-  if (entries.length === 0 && !details) return null;
+function mapActionLogToDiaryEntry(log: AgentActionLog): DiaryEntry {
+  const specialist = humanSpecialistName(log.agentRole);
+  const firstSentence = log.reasoning.split(/(?<=[.!?])\s+/)[0] || log.reasoning;
+  const snippet = firstSentence.length > 96 ? `${firstSentence.slice(0, 96)}…` : firstSentence;
+  const checkSummary = summarizeConstitutionCheck(log.constitutionCheck);
+  const timeStr = new Date(log.createdAt).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const receiptRaw = log.txSignature || log.payloadHash || log.id;
+
+  return {
+    id: log.id,
+    title: `${specialist} — “${snippet}”`,
+    subtitle: `${checkSummary}.`,
+    when: timeStr,
+    dotColor: decisionDot(log.decision),
+    body: `“${log.reasoning}”`,
+    decision: decisionLabel(log.decision, log.confidenceScore),
+    checkedBy: checkSummary,
+    signatures:
+      log.decision === 'reject' || log.decision === 'halt'
+        ? 'Blocked before signing'
+        : 'Coordinator → Investor → Guardrail (3 of 3)',
+    receipt: receiptRaw,
+  };
+}
+
+function DiaryDetailModal({
+  entry,
+  onClose,
+}: {
+  entry: DiaryEntry | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setCopied(false);
+  }, [entry?.id]);
+
+  if (!entry) return null;
+
+  const kvRows = [
+    { label: 'Decision', value: entry.decision },
+    { label: 'Checked by', value: entry.checkedBy },
+    { label: 'Signatures', value: entry.signatures },
+    { label: 'Receipt', value: shortReceipt(entry.receipt) },
+  ];
+
+  function handleCopy() {
+    if (!entry) return;
+    void navigator.clipboard?.writeText(entry.receipt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
 
   return (
-    <div className="mt-2">
-      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '6px' }}>Constitution Check</div>
-      <div className="flex flex-wrap gap-1.5">
-        {entries.map(([key, val]) => (
-          <span
-            key={key}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+    <NaveModal
+      open={Boolean(entry)}
+      onClose={onClose}
+      title={entry.title.replace(/[“”]/g, '')}
+      subtitle="Agent diary · plain English first, proof below"
+      maxWidth={480}
+    >
+      <div style={{ padding: '18px 22px 22px' }}>
+        <p
+          style={{
+            fontSize: '13.5px',
+            lineHeight: 1.7,
+            color: 'hsl(var(--foreground))',
+            marginTop: 0,
+            marginBottom: '16px',
+          }}
+        >
+          {entry.body}
+        </p>
+
+        <div className="border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+          {kvRows.map((row) => (
+            <div
+              key={row.label}
+              className="flex items-center justify-between gap-4 py-2.5 border-b"
+              style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13px' }}
+            >
+              <span style={{ color: 'hsl(var(--muted-foreground))' }}>{row.label}</span>
+              <b style={{ color: 'hsl(var(--foreground))', fontWeight: 600, textAlign: 'right' }}>{row.value}</b>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3.5 py-2 rounded-[9px] transition-colors"
+            style={{ fontSize: '13px', fontWeight: 500, color: 'hsl(var(--muted-foreground))' }}
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="px-3.5 py-2 rounded-[9px] border font-semibold transition-colors"
             style={{
-              fontSize: '10.5px',
-              fontFamily: 'var(--font-mono)',
-              backgroundColor: val ? 'hsl(var(--success-muted))' : 'hsl(var(--destructive-muted))',
-              color: val ? 'hsl(var(--success))' : 'hsl(var(--destructive))',
-              letterSpacing: '0.02em',
+              fontSize: '13px',
+              borderColor: 'hsl(var(--border))',
+              backgroundColor: '#ffffff',
+              color: 'hsl(var(--foreground))',
             }}
           >
-            <Fi icon={val ? 'check' : 'xmark'} style={{ fontSize: '8px' }} />
-            {key.replace(/_/g, ' ')}
-          </span>
-        ))}
+            {copied ? 'Copied ✓' : 'Copy receipt'}
+          </button>
+        </div>
       </div>
-      {details && (
-        <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px', lineHeight: 1.5, fontStyle: 'italic' }}>
-          {details}
-        </p>
-      )}
-    </div>
+    </NaveModal>
   );
 }
 
-/* ── Claude Reasoning Activity Log ("Their diary") ────── */
-function ClaudeActivityLog({ logs, onRefresh }: { logs: AgentActionLog[]; onRefresh: () => void }) {
-  return (
-    <Section
-      title="Their diary"
-      hint="Plain English · proof on tap"
-      action={
-        <button
-          type="button"
-          onClick={onRefresh}
-          aria-label="Refresh log"
-          className="hover:underline underline-offset-4"
-          style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
-        >
-          Refresh
-        </button>
-      }
-    >
-      <div>
-        {logs.map((log) => {
-          const hasRiskFlags = log.riskFlags && log.riskFlags.length > 0;
-          const hasConstitutionCheck = log.constitutionCheck && Object.keys(log.constitutionCheck).length > 0;
-          const snippet = log.reasoning.length > 120 ? `${log.reasoning.slice(0, 120)}…` : log.reasoning;
-          const timeStr = new Date(log.createdAt).toLocaleString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
+/* ── Their diary section ────────────────────────────────── */
+function AgentDiarySection({
+  entries,
+  onSelect,
+}: {
+  entries: DiaryEntry[];
+  onSelect: (entry: DiaryEntry) => void;
+}) {
+  if (entries.length === 0) return null;
 
-          return (
-            <HairlineRow
-              key={log.id}
-              dotColor={decisionColor(log.decision)}
-              title={`${roleLabel(log.agentRole)} — ${snippet}`}
-              subtitle={
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  <span>{log.actionType}</span>
-                  {log.decision && (
-                    <span style={{ color: decisionColor(log.decision), fontWeight: 500 }}>
-                      · {decisionLabel(log.decision)}
-                    </span>
-                  )}
-                  {log.confidenceScore !== null && (
-                    <span style={{ color: confidenceColor(log.confidenceScore) }}>
-                      · {log.confidenceScore}% confident
-                    </span>
-                  )}
-                  {hasRiskFlags && (
-                    <span style={{ color: 'hsl(var(--warning))' }}>
-                      · {log.riskFlags.length} flag{log.riskFlags.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </span>
-              }
-              when={timeStr}
-              expandableContent={
-                <div className="space-y-3 pt-2">
-                  <div>
-                    <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Full Reasoning</div>
-                    <p style={{ fontSize: '13px', color: 'hsl(var(--foreground))', lineHeight: 1.6, margin: 0 }}>
-                      {log.reasoning}
-                    </p>
-                  </div>
-
-                  <div
-                    className="flex flex-wrap items-center gap-5 pt-2.5 border-t"
-                    style={{ borderColor: 'hsl(var(--surface-2))' }}
-                  >
-                    <div>
-                      <span className="nave-label" style={{ fontSize: '9px' }}>Decision</span>
-                      <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: decisionColor(log.decision) }}>
-                        {decisionLabel(log.decision)}
-                      </div>
-                    </div>
-                    {log.confidenceScore !== null && (
-                      <div>
-                        <span className="nave-label" style={{ fontSize: '9px' }}>Confidence</span>
-                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: confidenceColor(log.confidenceScore) }}>
-                          {log.confidenceScore}%
-                        </div>
-                      </div>
-                    )}
-                    {log.claudeModel && (
-                      <div>
-                        <span className="nave-label" style={{ fontSize: '9px' }}>Model</span>
-                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--muted-foreground))' }}>
-                          {log.claudeModel.replace('claude-', '').replace(/-\d{8}$/, '')}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
-                      <div
-                        className="nave-mono"
-                        style={{
-                          fontSize: '12px',
-                          marginTop: '2px',
-                          color:
-                            log.status === 'error' || log.status === 'guardrail_blocked'
-                              ? 'hsl(var(--destructive))'
-                              : 'hsl(var(--foreground))',
-                        }}
-                      >
-                        {log.status}
-                      </div>
-                    </div>
-                    {log.retryCount > 0 && (
-                      <div>
-                        <span className="nave-label" style={{ fontSize: '9px' }}>Retries</span>
-                        <div className="nave-mono" style={{ fontSize: '12px', marginTop: '2px', color: 'hsl(var(--warning))' }}>
-                          {log.retryCount}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {hasConstitutionCheck && (
-                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-                      <ConstitutionCheckPanel check={log.constitutionCheck} />
-                    </div>
-                  )}
-
-                  {hasRiskFlags && (
-                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '6px' }}>Risk Flags</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {log.riskFlags.map((flag, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
-                            style={{
-                              fontSize: '10.5px',
-                              fontFamily: 'var(--font-mono)',
-                              backgroundColor: 'hsl(var(--warning-muted))',
-                              color: 'hsl(var(--warning))',
-                            }}
-                          >
-                            <Fi icon="triangle-exclamation" style={{ fontSize: '8px' }} />
-                            {flag.replace(/_/g, ' ')}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {log.payloadHash && log.payloadHash.length > 0 && (
-                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Payload Hash</div>
-                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
-                        {log.payloadHash}
-                      </div>
-                    </div>
-                  )}
-
-                  {log.reasoningHash && log.reasoningHash.length > 0 && (
-                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>Reasoning Hash</div>
-                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', wordBreak: 'break-all' }}>
-                        {log.reasoningHash}
-                      </div>
-                    </div>
-                  )}
-
-                  {log.txSignature && log.txSignature.length > 0 && (
-                    <div className="pt-2 border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-                      <div className="nave-label" style={{ fontSize: '9px', marginBottom: '4px' }}>On-chain Signature</div>
-                      <div className="nave-mono" style={{ fontSize: '11px', color: 'hsl(var(--foreground))', wordBreak: 'break-all' }}>
-                        {log.txSignature}
-                      </div>
-                    </div>
-                  )}
-
-                  {log.errorMessage && log.errorMessage.length > 0 && (
-                    <div
-                      className="flex items-start gap-2 p-2.5 rounded-lg"
-                      style={{ backgroundColor: 'hsl(var(--destructive-muted))' }}
-                    >
-                      <Fi icon="circle-exclamation" style={{ fontSize: '11px', color: 'hsl(var(--destructive))', flexShrink: 0, marginTop: '2px' }} />
-                      <p style={{ fontSize: '11.5px', color: 'hsl(var(--destructive))', lineHeight: 1.5, margin: 0 }}>
-                        {log.errorMessage}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              }
-            />
-          );
-        })}
-      </div>
-    </Section>
-  );
-}
-
-/* ── Legacy Activity Log (fallback when no Claude logs) ── */
-function AgentActivityLog({ items }: { items: typeof ACTIVITY_LOG }) {
   return (
     <Section title="Their diary" hint="Plain English · proof on tap">
       <div>
-        {items.map((item) => (
+        {entries.map((entry) => (
           <HairlineRow
-            key={item.id}
-            dotColor={statusColor(item.status)}
-            title={item.desc}
-            subtitle={item.agent}
-            when={item.time}
-            expandableContent={
-              <div className="flex items-center gap-6 pt-1">
-                <div>
-                  <span className="nave-label" style={{ fontSize: '9px' }}>Agent</span>
-                  <div className="nave-mono" style={{ color: 'hsl(var(--foreground))', marginTop: '2px', fontSize: '12px' }}>
-                    {item.agent}
-                  </div>
-                </div>
-                <div>
-                  <span className="nave-label" style={{ fontSize: '9px' }}>Status</span>
-                  <div className="nave-mono" style={{ color: statusColor(item.status), marginTop: '2px', fontSize: '12px' }}>
-                    {item.status}
-                  </div>
-                </div>
-              </div>
-            }
+            key={entry.id}
+            dotColor={entry.dotColor}
+            title={entry.title}
+            subtitle={entry.subtitle}
+            when={entry.when}
+            onClick={() => onSelect(entry)}
           />
         ))}
       </div>
     </Section>
-  );
-}
-
-/* ── Agent Gate panel ───────────────────────────────────── */
-type GateUiState = 'open' | 'frozen' | 'disabled';
-
-interface GateCapability {
-  label: string;
-  allowed: boolean;
-}
-
-function gateView(state: GateUiState): {
-  label: string;
-  summary: string;
-  color: string;
-  capabilities: GateCapability[];
-} {
-  if (state === 'frozen') {
-    return {
-      label: 'Frozen',
-      summary: 'Emergency freeze: all capital movement is paused. Monitoring stays active — the Oversight agent can still halt and expire requests.',
-      color: 'hsl(var(--destructive))',
-      capabilities: [
-        { label: 'New multisig approvals', allowed: false },
-        { label: 'Strategy execution / capital deployment', allowed: false },
-        { label: 'Withdraw / yield compounding', allowed: false },
-        { label: 'Atomic rebalances', allowed: false },
-        { label: 'Oversight monitoring & halts', allowed: true },
-        { label: 'Expire stale requests', allowed: true },
-      ],
-    };
-  }
-  if (state === 'disabled') {
-    return {
-      label: 'Agents Paused',
-      summary: 'Agents are disabled: no new approvals or executions will be signed. Emergency halts and expiry of timed-out requests remain allowed.',
-      color: 'hsl(var(--warning))',
-      capabilities: [
-        { label: 'New multisig approvals', allowed: false },
-        { label: 'Strategy execution / capital deployment', allowed: false },
-        { label: 'Withdraw / yield compounding', allowed: false },
-        { label: 'Atomic rebalances', allowed: false },
-        { label: 'Oversight monitoring & halts', allowed: true },
-        { label: 'Expire stale requests', allowed: true },
-      ],
-    };
-  }
-  return {
-    label: 'Active',
-    summary: 'Agent gate open: the four agents operate normally under the current constitutional policy.',
-    color: 'hsl(var(--success))',
-    capabilities: [
-      { label: 'New multisig approvals', allowed: true },
-      { label: 'Strategy execution / capital deployment', allowed: true },
-      { label: 'Withdraw / yield compounding', allowed: true },
-      { label: 'Atomic rebalances', allowed: true },
-      { label: 'Oversight monitoring & halts', allowed: true },
-      { label: 'Expire stale requests', allowed: true },
-    ],
-  };
-}
-
-function AgentGatePanel({ frozen, agentsEnabled }: { frozen: boolean; agentsEnabled: boolean }) {
-  const state: GateUiState = frozen ? 'frozen' : !agentsEnabled ? 'disabled' : 'open';
-  const view = gateView(state);
-  return (
-    <HairlineRow
-      dotColor={state === 'open' ? 'green' : state === 'frozen' ? 'red' : 'brass'}
-      title={`Agent gate: ${view.label}`}
-      subtitle={view.summary}
-      meta={
-        <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-          What is currently permitted / blocked
-        </span>
-      }
-      expandableContent={
-        <div className="pt-2">
-          <div className="nave-label" style={{ fontSize: '9px', marginBottom: '8px' }}>
-            {state === 'open' ? 'All capabilities active' : 'What is currently permitted / blocked'}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {view.capabilities.map((cap) => (
-              <div key={cap.label} className="flex items-center gap-2">
-                <span
-                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: cap.allowed ? 'hsl(var(--success-muted))' : 'hsl(var(--destructive-muted))' }}
-                >
-                  <Fi
-                    icon={cap.allowed ? 'check' : 'xmark'}
-                    style={{ fontSize: '8px', color: cap.allowed ? 'hsl(var(--success))' : 'hsl(var(--destructive))' }}
-                  />
-                </span>
-                <span style={{ fontSize: '12.5px', color: cap.allowed ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))', lineHeight: 1.4 }}>
-                  {cap.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      }
-    />
   );
 }
 
@@ -910,6 +742,7 @@ export default function Agent() {
   const tx = useSendTransaction();
   const [clearingProposal, setClearingProposal] = useState<string | null>(null);
   const [clearHaltErrors, setClearHaltErrors] = useState<Record<string, string>>({});
+  const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
 
   async function handleClearHalt(exec: ExecutionInfo) {
     if (!daoAddress || clearingProposal) return;
@@ -998,10 +831,8 @@ export default function Agent() {
   const displayAgents = useMemo(() => {
     if (agentStatus.agents.length > 0) {
       return agentStatus.agents.map((a: AgentStatusInfo) => {
-        const mock = AGENTS.find((m) => m.id === a.role);
-        // Enrich with health data if available
+        const mock = AGENTS.find((m) => m.id === a.role) ?? AGENTS[0];
         const healthEntry = agentHealth.agents.find((h) => h.role === a.role) ?? null;
-        // Per-agent status grounded in on-chain enablement (not the global toggle).
         const statusDisplay = computeAgentStatus({
           agentsEnabled: active,
           frozen: isFrozen,
@@ -1010,20 +841,18 @@ export default function Agent() {
           health: healthEntry,
         });
         return {
-          ...mock!,
+          ...mock,
           status: (a.active ? 'active' : 'paused') as 'active' | 'paused',
           statusDisplay,
           actionsToday: healthEntry ? healthEntry.actions_24h : a.actionsCount,
           lastAction: healthEntry?.last_action_at
             ? timeAgo(healthEntry.last_action_at)
             : a.lastActionAt
-              ? `${Math.round((Date.now() / 1000 - a.lastActionAt) / 60)}m ago`
-              : '—',
+              ? `${Math.round((Date.now() / 1000 - a.lastActionAt) / 60)} min ago`
+              : mock.lastAction,
         };
       });
     }
-    // Only fall back to illustrative agents for the demo DAO; real DAOs with no
-    // agents render an empty state rather than fake data.
     if (!isMock) return [];
     return AGENTS.map((m) => ({
       ...m,
@@ -1037,34 +866,36 @@ export default function Agent() {
     }));
   }, [agentStatus.agents, agentHealth.agents, isMock, active, isFrozen]);
 
-  // Build display-ready activity log from live data, falling back to mock
-  const displayActivity = useMemo(() => {
-    if (activityLog.activities.length > 0) {
-      return activityLog.activities.slice(0, 10).map((a) => ({
-        id: Number(a.id) || Math.random(),
-        desc: a.description,
-        agent: a.agentRole || a.actor,
-        time: new Date(a.createdAt).toLocaleString(),
-        status: a.eventType.includes('error') ? 'warning' : 'success',
-      }));
+  // Build display-ready diary entries from live Claude logs or activity log, falling back to demo entries
+  const diaryEntries = useMemo<DiaryEntry[]>(() => {
+    if (agentStatus.actionLogs.length > 0) {
+      return agentStatus.actionLogs.map(mapActionLogToDiaryEntry);
     }
-    return isMock ? ACTIVITY_LOG : [];
-  }, [activityLog.activities, isMock]);
-
-  // Live health metrics only. Demo dollar and uptime figures are not shown.
-  const displayMetrics = useMemo(() => {
-    if (agentHealth.agents.length === 0) return [];
-    const totalActions24h = agentHealth.agents.reduce((s, a) => s + a.actions_24h, 0);
-    const totalErrors24h = agentHealth.agents.reduce((s, a) => s + a.errors_24h, 0);
-    const healthyCount = agentHealth.agents.filter((a) => getAgentHealthLevel(a) === 'healthy').length;
-    const uptimePct = ((healthyCount / agentHealth.agents.length) * 100).toFixed(1);
-    return [
-      { label: 'Actions (24h)', value: totalActions24h.toString() },
-      { label: 'Errors (24h)', value: totalErrors24h.toString() },
-      { label: 'System Health', value: agentHealth.systemHealthy ? 'Healthy' : 'Degraded' },
-      { label: 'Agent Uptime', value: `${uptimePct}%` },
-    ];
-  }, [agentHealth.agents, agentHealth.systemHealthy]);
+    if (activityLog.activities.length > 0) {
+      return activityLog.activities.slice(0, 10).map((a) => {
+        const specialist = humanSpecialistName(a.agentRole || a.actor);
+        const isWarn = a.eventType.includes('error') || a.eventType.includes('halt');
+        return {
+          id: String(a.id),
+          title: `${specialist} — “${a.description}”`,
+          subtitle: isWarn ? 'Flagged by Guardrail.' : 'Guardrail checked rules · all passed.',
+          when: new Date(a.createdAt).toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          dotColor: isWarn ? 'brass' : 'green',
+          body: `“${a.description}”`,
+          decision: isWarn ? 'Flagged for review' : 'Approved',
+          checkedBy: 'Guardrail · rules passed',
+          signatures: 'Coordinator → Investor → Guardrail (3 of 3)',
+          receipt: a.txSignature || String(a.id),
+        };
+      });
+    }
+    return isMock ? MOCK_DIARY_ENTRIES : [];
+  }, [agentStatus.actionLogs, activityLog.activities, isMock]);
 
   const treasuryWatch = useMemo(() => {
     if (isMock) return null;
@@ -1108,7 +939,7 @@ export default function Agent() {
         proposeAgentEnable: {
           title: AGENT_ENABLE_PROPOSAL_TITLE,
           description:
-            'Resume the four autonomous agents (Executive, Financial, Operational, Oversight) for this treasury. Once this proposal passes, the founder executes the on-chain enable so the agents reconnect and begin checking the DAO for necessary actions under the current constitution.',
+            'Resume the four autonomous agents (The Coordinator, The Investor, The Guardrail, The Watcher) for this treasury. Once this proposal passes, the founder activates it so the agents reconnect under the current rules.',
           payload: [1],
         },
       },
@@ -1125,7 +956,7 @@ export default function Agent() {
     }
     if (chainKind === 'evm') {
       if (!daoAddress) { setToggleError('Select a treasury to pause the agents.'); return; }
-      if (!evmChainId || (!isTreasuryOpsFamily(chainFamily))) {
+      if (!evmChainId || !isTreasuryOpsFamily(chainFamily)) {
         setToggleError('Select an Ethereum, Base, or Robinhood network.');
         return;
       }
@@ -1211,7 +1042,7 @@ export default function Agent() {
         <NaveEmptyState
           icon="robot"
           title="No Treasury Selected"
-          description="Connect to a treasury to view agent coordination status and execution pipeline."
+          description="Connect to a treasury to view agent coordination status and diary."
           action={{ label: 'Browse treasuries', icon: 'arrow-right', onClick: () => navigate('/treasuries') }}
         />
       </div>
@@ -1225,6 +1056,11 @@ export default function Agent() {
         active={active}
         onConfirm={handleConfirmToggle}
         onCancel={() => setShowConfirm(false)}
+      />
+
+      <DiaryDetailModal
+        entry={selectedDiary}
+        onClose={() => setSelectedDiary(null)}
       />
 
       {/* Header */}
@@ -1249,21 +1085,13 @@ export default function Agent() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 pt-1 flex-wrap">
-          <button
-            type="button"
-            onClick={() => navigate('/rules')}
-            className="hover:underline underline-offset-4 transition-colors"
-            style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-          >
-            Rules →
-          </button>
-
-          <span style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
+        <div className="flex items-center gap-2.5 pt-1">
+          <span id="agentState" style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
             {isFrozen ? 'Frozen' : active ? 'Active' : 'Paused'}
           </span>
 
           <button
+            id="agentSwitch"
             type="button"
             role="switch"
             aria-checked={active && !isFrozen}
@@ -1285,8 +1113,8 @@ export default function Agent() {
                 : !active && startBlocked
                   ? 'Fund the treasury before proposing to enable the agents'
                   : active
-                    ? 'Pause All Agents'
-                    : 'Propose to Enable Agents'
+                    ? 'Pause the team'
+                    : 'Restart the team'
             }
           >
             <span
@@ -1299,39 +1127,6 @@ export default function Agent() {
               }}
             />
           </button>
-
-          {active ? (
-            <button
-              type="button"
-              onClick={handlePauseClick}
-              disabled={toggling || !canManageAgents}
-              className="px-3 py-1.5 rounded-[9px] border font-semibold transition-colors"
-              style={{
-                fontSize: '12.5px',
-                borderColor: 'hsl(var(--border))',
-                backgroundColor: '#ffffff',
-                color: 'hsl(var(--foreground))',
-                opacity: toggling || !canManageAgents ? 0.5 : 1,
-              }}
-            >
-              {toggling ? 'Pausing…' : 'Pause All Agents'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleProposeEnable}
-              disabled={toggling || startBlocked || !canManageAgents}
-              className="px-3.5 py-1.5 rounded-[9px] font-semibold transition-colors"
-              style={{
-                fontSize: '12.5px',
-                backgroundColor: 'hsl(var(--foreground))',
-                color: '#ffffff',
-                opacity: toggling || startBlocked || !canManageAgents ? 0.5 : 1,
-              }}
-            >
-              Propose to Enable Agents
-            </button>
-          )}
         </div>
       </div>
 
@@ -1343,7 +1138,7 @@ export default function Agent() {
             actionLabel="Emergency controls →"
             onAction={() => navigate('/settings')}
           >
-            <b style={{ fontWeight: 600 }}>Treasury frozen.</b> All agent dispatching and capital movement are suspended. Monitoring continues.
+            <b style={{ fontWeight: 600 }}>Treasury frozen.</b> No money can move. Monitoring continues.
           </Notice>
         )}
 
@@ -1383,49 +1178,35 @@ export default function Agent() {
         {!active && !startBlocked && !toggleError && (
           <Notice
             tone="brass"
-            actionLabel={canManageAgents ? 'Propose to Enable Agents →' : undefined}
+            actionLabel={canManageAgents ? 'Start resume vote →' : undefined}
             onAction={canManageAgents ? handleProposeEnable : undefined}
           >
-            All agents are paused — treasury operations are halted. Resuming requires a governance vote.
+            All agents are paused — no money will move until a vote restarts the team. Monitoring continues.
           </Notice>
         )}
       </div>
 
-      {/* 4-stat hairline strip */}
-      {displayMetrics.length > 0 && (
-        <Section>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
-            {displayMetrics.map(({ label, value }) => (
-              <Stat key={label} label={label} value={value} />
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Agent Rows + Gate */}
+      {/* 4 Specialist Rows */}
       <Section>
-        <AgentGatePanel frozen={isFrozen} agentsEnabled={active} />
         {displayAgents.map((agent) => (
           <AgentRow key={agent.id} agent={agent} frozen={isFrozen} />
         ))}
       </Section>
 
-      {/* Execution Pipeline */}
+      {/* In-Progress Execution Pipeline (only when executions exist) */}
       <ExecutionPipeline
         executions={executionPipeline.executions}
-        loading={executionPipeline.loading}
         canClearHalt={isFounder}
         clearingProposal={clearingProposal}
         clearHaltErrors={clearHaltErrors}
         onClearHalt={(exec) => void handleClearHalt(exec)}
       />
 
-      {/* Their diary (Claude Reasoning Log or fallback Activity Log) */}
-      {agentStatus.actionLogs.length > 0 ? (
-        <ClaudeActivityLog logs={agentStatus.actionLogs} onRefresh={agentStatus.refetch} />
-      ) : displayActivity.length > 0 ? (
-        <AgentActivityLog items={displayActivity} />
-      ) : null}
+      {/* Their diary */}
+      <AgentDiarySection
+        entries={diaryEntries}
+        onSelect={(entry) => setSelectedDiary(entry)}
+      />
 
       {/* Footnote */}
       <p

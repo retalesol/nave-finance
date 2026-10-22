@@ -6,8 +6,6 @@
 // the mainnet-cutover preflight gate.
 
 import { useMemo } from 'react';
-import Fi from './Fi';
-import CollapsibleSection from './CollapsibleSection';
 import PolicySlider from './PolicySlider';
 import { SummaryLine } from './calm';
 import {
@@ -20,19 +18,12 @@ import { SYSTEM_CONFIDENCE_THRESHOLD, activeEvmChainId } from '../lib/programCon
 import { useStrategyRates } from '../hooks/useStrategyRates';
 import {
   TIER_PRESETS,
-  blendedEstimate,
   constitutionCapsBps,
   effectiveApy,
   findVenue,
-  isTemporaryRate,
-  presetRisks,
   strategyChainForEvmId,
-  venuesForChain,
   type RiskTier,
   type StrategyChain,
-  type StrategyRate,
-  type StrategyVenue,
-  type TierPresetId,
 } from '../../supabase/functions/_shared/strategyCatalog.ts';
 
 const SOLANA_STRATEGY_STATUS_BY_ID = new Map(
@@ -72,21 +63,40 @@ export interface ConstitutionStepProps {
   /** When true, renders a compact read-only summary card instead of the editor. */
   readOnly?: boolean;
   /**
-   * Preset cards to offer. Create offers Conservative, Balanced and Yield 6%;
-   * Aggressive and Custom stay on the amend flow.
+   * Preset cards to offer. Defaults to the 3 demo postures (Careful, Balanced, Bold).
    */
   offeredPresets?: readonly RiskPreset[];
+  /** When true, includes the minimum balance to rebalance (USD) input inside Customise the numbers. */
+  showAgentThreshold?: boolean;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const RISK_PRESETS: { id: RiskPreset; label: string; desc: string }[] = [
-  { id: 'conservative', label: 'Conservative', desc: 'Tier 1 lending and savings only.' },
-  { id: 'balanced',     label: 'Balanced',     desc: 'Tier 1, plus up to 30% in Tier 2 vaults.' },
+  { id: 'conservative', label: 'Careful',         desc: 'Half stays safe. Modest, steady earnings.' },
+  { id: 'balanced',     label: 'Balanced',        desc: 'A strong cushion, most of the rest earning.' },
   { id: 'yield6',       label: 'Yield 6% target', desc: 'Adds Tier 3 credit and fixed-term venues (at most 15%). Not guaranteed.' },
-  { id: 'aggressive',   label: 'Aggressive',   desc: 'Maximise yield. Higher risk tolerance.' },
-  { id: 'custom',       label: 'Custom',       desc: 'Define your own parameters.' },
+  { id: 'aggressive',   label: 'Bold',            desc: 'Thin cushion, maximum working capital.' },
+  { id: 'custom',       label: 'Custom',          desc: 'Define your own parameters.' },
 ];
+
+export const POSTURE_OPTIONS: { id: RiskPreset; label: string; desc: string; recommended?: boolean }[] = [
+  { id: 'conservative', label: 'Careful',  desc: 'Half stays safe. Modest, steady earnings.' },
+  { id: 'balanced',     label: 'Balanced', desc: 'A strong cushion, most of the rest earning.', recommended: true },
+  { id: 'aggressive',   label: 'Bold',     desc: 'Thin cushion, maximum working capital.' },
+];
+
+const BRIDGE_ADAPTER_KEYS = new Set([
+  'arbitrum-bridge',
+  'arbitrum_bridge',
+  'cctp',
+  'op-standard-bridge',
+  'optimism_bridge',
+]);
+
+export function isBridgeAdapterKey(key: string): boolean {
+  return BRIDGE_ADAPTER_KEYS.has(key);
+}
 
 export const PRESET_DEFAULTS: Record<RiskPreset, Partial<PolicyState>> = {
   conservative: { minStablecoin: 60, maxDeployment: 40, maxLending: 20, liquidityReserve: 25 },
@@ -182,12 +192,6 @@ export function tierBoundedCaps(
 
 function formatApy(apy: number): string {
   return `${apy.toFixed(apy >= 10 ? 1 : 2)}%`;
-}
-
-function availabilityLabel(venue: StrategyVenue): string {
-  if (venue.availability === 'testnet') return 'On testnet';
-  if (venue.availability === 'fork-only') return 'Mainnet only · tested on a fork';
-  return 'Later';
 }
 
 export const REBALANCE_OPTIONS = ['Hourly', 'Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Manual'];
@@ -342,6 +346,7 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
     [evmAdapterStatuses],
   );
   const protocolOptions = (chain === 'evm' ? PROTOCOLS_EVM : PROTOCOLS_SOLANA).filter((p) => {
+    if (isBridgeAdapterKey(p.key)) return false;
     if (chain !== 'evm') return true;
     const status = evmStatusByProtocol.get(p.key as EvmAdapterProtocolId);
     return !!(status?.configured && status.address && !/^0x0{40}$/i.test(status.address));
@@ -383,149 +388,6 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
   );
 }
 
-// ── Strategy menu ──────────────────────────────────────────────────────────────
-
-const TIER_STYLE: Record<RiskTier, { bg: string; fg: string }> = {
-  1: { bg: 'hsl(var(--surface-1))', fg: 'hsl(var(--foreground))' },
-  2: { bg: 'hsl(var(--warning-muted))', fg: '#9A7414' },
-  3: { bg: 'hsl(var(--destructive-muted))', fg: 'hsl(var(--destructive))' },
-};
-
-function TierBadge({ tier }: { tier: RiskTier }) {
-  return (
-    <span
-      className="px-1.5 py-0.5 rounded"
-      style={{ fontSize: '10px', fontWeight: 600, backgroundColor: TIER_STYLE[tier].bg, color: TIER_STYLE[tier].fg }}
-    >
-      Tier {tier}
-    </span>
-  );
-}
-
-function StrategyMenu({ strategyChain, preset, rates, asOf }: {
-  strategyChain: StrategyChain;
-  preset: RiskPreset;
-  rates: Map<string, StrategyRate>;
-  asOf: string | null;
-}) {
-  const venues = venuesForChain(strategyChain);
-  const tierPreset: TierPresetId | null =
-    preset === 'conservative' || preset === 'balanced' || preset === 'yield6' ? preset : null;
-  const estimate = tierPreset ? blendedEstimate(strategyChain, tierPreset, rates) : null;
-  const risks = tierPreset ? presetRisks(strategyChain, tierPreset) : [];
-  const target = tierPreset ? TIER_PRESETS[tierPreset].targetApy : null;
-  const asOfLabel = asOf
-    ? `Live rates as of ${new Date(asOf).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
-    : 'Reference rates from Oct 10, 2026 (live feed not loaded)';
-
-  return (
-    <CollapsibleSection title="Strategy Menu" subtitle={asOfLabel}>
-      <div className="space-y-3" data-testid="strategy-menu">
-        {estimate && (
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: '12px',
-              backgroundColor: 'hsl(var(--background))',
-              border: '1px solid hsl(var(--surface-2))',
-            }}
-          >
-            {estimate.weights.size > 0 ? (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
-                    Estimated blend at today&apos;s mainnet rates
-                  </span>
-                  <span className="nave-mono" style={{ fontSize: '15px', fontWeight: 600, color: '#2F7D4F' }}>
-                    {formatApy(estimate.apy)}
-                  </span>
-                </div>
-                {target != null && estimate.meetsTarget === false && (
-                  <p style={{ fontSize: '12px', color: '#9A7414', marginTop: 6, lineHeight: 1.5 }}>
-                    Today&apos;s rates put this mix at {formatApy(estimate.apy)}, short of the {target}% target. Nave will not
-                    go past the tier caps (Tier 2 at most 30%, Tier 3 at most 15%) to close the gap; the blend rises only
-                    if venue rates rise.
-                  </p>
-                )}
-                {target != null && estimate.meetsTarget === true && (
-                  <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
-                    At today&apos;s rates this mix reaches the {target}% target. Rates change daily, so this is an estimate, not a promise.
-                  </p>
-                )}
-                <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
-                  Base yield only; reward tokens are left out because a treasury contract cannot claim them. Venues marked
-                  &quot;Mainnet only&quot; cannot be approved on this testnet.
-                </p>
-              </>
-            ) : (
-              <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
-                No dollar venues on this chain match this preset yet.
-              </p>
-            )}
-            {risks.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {risks.map((r) => (
-                  <li key={r} style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', paddingLeft: 14, listStyle: 'disc' }}>
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        <div>
-          {venues.map((venue) => {
-            const rate = rates.get(venue.id);
-            const apy = venue.rate ? effectiveApy(rate, venue.fallbackApy) : null;
-            return (
-              <div
-                key={venue.id}
-                data-testid={`strategy-venue-${venue.id}`}
-                style={{
-                  padding: '12px 0',
-                  borderBottom: '1px solid hsl(var(--surface-2))',
-                  opacity: venue.availability === 'later' ? 0.62 : 1,
-                }}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium" style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}>
-                    {venue.label}
-                  </span>
-                  <TierBadge tier={venue.tier} />
-                  {!venue.stable && (
-                    <span
-                      className="px-1.5 py-0.5 rounded"
-                      style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: '#9A7414' }}
-                    >
-                      {venue.asset}, not stable
-                    </span>
-                  )}
-                  <span className="nave-mono ml-auto" style={{ fontSize: '12.5px', color: '#2F7D4F', fontWeight: 500 }}>
-                    {apy != null ? `${formatApy(apy)}${rate ? '' : ' est.'}` : '—'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: 3, lineHeight: 1.5 }}>
-                  {availabilityLabel(venue)} · Exit: {venue.exitNote}
-                  {rate && isTemporaryRate(rate) ? ' · Rate spike; using the 30-day average' : ''}
-                </div>
-                {venue.availability === 'later' && venue.laterReason && (
-                  <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>{venue.laterReason}</div>
-                )}
-                {venue.tier > 1 && (
-                  <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
-                    {venue.risks.join(' ')}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </CollapsibleSection>
-  );
-}
-
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ConstitutionStep({
@@ -534,7 +396,7 @@ export default function ConstitutionStep({
   chain,
   evmChainId,
   readOnly = false,
-  offeredPresets,
+  showAgentThreshold = false,
 }: ConstitutionStepProps) {
   const evmAdapterStatuses = useMemo(
     () => (chain === 'evm' && evmChainId ? getEvmAdapterStatuses(evmChainId) : []),
@@ -546,13 +408,14 @@ export default function ConstitutionStep({
   );
 
   const protocolOptions = (chain === 'evm' ? PROTOCOLS_EVM : PROTOCOLS_SOLANA).filter((p) => {
+    if (isBridgeAdapterKey(p.key)) return false;
     if (chain !== 'evm') return true;
     const status = evmStatusByProtocol.get(p.key as EvmAdapterProtocolId);
     return !!(status?.configured && status.address && !/^0x0{40}$/i.test(status.address));
   });
 
   const strategyChain = strategyChainFor(chain, evmChainId);
-  const { rates, asOf } = useStrategyRates(readOnly ? null : strategyChain);
+  const { rates } = useStrategyRates(readOnly ? null : strategyChain);
 
   if (readOnly) {
     return <ConstitutionSummary policy={policy} chain={chain} evmChainId={evmChainId} />;
@@ -579,11 +442,27 @@ export default function ConstitutionStep({
 
   return (
     <div>
-      {/* Risk preset — demo .opts radio rows */}
-      <CollapsibleSection title="How careful should your agents be?">
-        <div className="flex flex-col">
-          {RISK_PRESETS.filter((preset) => !offeredPresets || offeredPresets.includes(preset.id)).map((preset) => {
-            const selected = policy.riskPreset === preset.id;
+      {/* Risk preset — demo #wiz2 radio options */}
+      <div style={{ marginBottom: '18px' }}>
+        <label
+          style={{
+            display: 'block',
+            fontSize: '13px',
+            fontWeight: 600,
+            marginBottom: '8px',
+            color: 'hsl(var(--foreground))',
+          }}
+        >
+          How careful should your agents be?
+        </label>
+        <div
+          className="flex flex-col"
+          style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+        >
+          {POSTURE_OPTIONS.map((preset) => {
+            const selected =
+              policy.riskPreset === preset.id ||
+              (preset.id === 'aggressive' && policy.riskPreset === 'yield6');
             return (
               <button
                 key={preset.id}
@@ -640,7 +519,7 @@ export default function ConstitutionStep({
                     {preset.desc}
                   </p>
                 </span>
-                {preset.id === 'balanced' && (
+                {preset.recommended && (
                   <span
                     style={{
                       marginLeft: 'auto',
@@ -657,162 +536,163 @@ export default function ConstitutionStep({
             );
           })}
         </div>
-      </CollapsibleSection>
+      </div>
 
       {/* Plain-English SummaryLine */}
       <SummaryLine className="my-2">
         “Keep at least <em>{policy.minStablecoin}%</em> safe, put at most <em>{policy.maxDeployment}%</em> to work, never more than <em>{policy.maxLending}%</em> in one place — only in places we&apos;ve approved.”
       </SummaryLine>
 
-      {/* Capital constraints — hairline sliders */}
-      <CollapsibleSection title="Capital Constraints" subtitle="Enforced on-chain by the Guardrail agent">
-        <div>
-          <PolicySlider
-            label="Minimum Stablecoin Reserve"
-            hint="Never invested, so bills and surprises are always covered."
-            value={policy.minStablecoin}
-            onChange={(v) => setPolicy({ minStablecoin: v, riskPreset: 'custom' })}
-            accent
-          />
-          <PolicySlider
-            label="Maximum Treasury Deployment"
-            hint="The ceiling for earning placements across approved DeFi protocols."
-            value={policy.maxDeployment}
-            onChange={(v) => setPolicy({ maxDeployment: v, riskPreset: 'custom' })}
-          />
-          <PolicySlider
-            label="Maximum Lending Exposure"
-            hint="Most in any single place — spreads venue risk."
-            value={policy.maxLending}
-            onChange={(v) => setPolicy({ maxLending: v, riskPreset: 'custom' })}
-          />
-          <PolicySlider
-            label="Liquidity Reserve"
-            hint="Minimum instantly-liquid capital."
-            value={policy.liquidityReserve}
-            onChange={(v) => setPolicy({ liquidityReserve: v, riskPreset: 'custom' })}
-          />
-        </div>
-      </CollapsibleSection>
+      {/* Expandable Customise the numbers disclosure matching demo #wiz2 */}
+      <details
+        className="custom"
+        style={{
+          marginTop: '14px',
+          borderBottom: '1px solid hsl(var(--surface-2))',
+          paddingBottom: '12px',
+        }}
+      >
+        <summary
+          style={{
+            fontSize: '13px',
+            fontWeight: 500,
+            color: 'hsl(var(--muted-foreground))',
+            cursor: 'pointer',
+            padding: '8px 0',
+            userSelect: 'none',
+          }}
+        >
+          Customise the numbers
+        </summary>
 
-      {/* Approved protocols — hairline toggles */}
-      <CollapsibleSection title="Approved Protocols">
-        <div>
-          {protocolOptions.length === 0 && chain === 'evm' && (
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
-              No strategy adapters are configured on this chain.
-            </p>
-          )}
-          {protocolOptions.map((p) => {
-            const evmStatus = chain === 'evm'
-              ? evmStatusByProtocol.get(p.key as EvmAdapterProtocolId)
-              : undefined;
-            const disabled = chain === 'evm' && !evmStatus?.configured;
-            const enabled = !disabled && !!policy.approvedProtocols[p.key];
-            const venue = strategyChain ? findVenue(strategyChain, p.key) : undefined;
-            const rate = venue ? rates.get(venue.id) : undefined;
-            const apyLabel = venue && venue.rate
-              ? `${formatApy(effectiveApy(rate, venue.fallbackApy))}${rate ? '' : ' est.'}`
-              : '—';
-            return (
-              <div
-                key={p.key}
-                className="flex items-center justify-between gap-3"
-                style={{
-                  padding: '13px 0',
-                  borderBottom: '1px solid hsl(var(--surface-2))',
-                  opacity: disabled ? 0.62 : 1,
-                }}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
-                      {p.label}
-                    </span>
-                    <span
-                      className="nave-mono px-1.5 py-0.5 rounded"
-                      style={{
-                        fontSize: '10.5px',
-                        backgroundColor: 'hsl(var(--surface-1))',
-                        color: 'hsl(var(--muted-foreground))',
-                      }}
-                      title={rate ? `Live mainnet rate (${rate.source.split(':')[0]})` : 'Reference rate from Oct 10, 2026; live rate not loaded'}
-                    >
-                      {apyLabel}
-                    </span>
-                    {venue && <TierBadge tier={venue.tier} />}
-                    {venue && !venue.stable && (
-                      <span
-                        className="px-1.5 py-0.5 rounded"
-                        style={{ fontSize: '10px', fontWeight: 600, backgroundColor: 'hsl(var(--warning-muted))', color: '#9A7414' }}
-                      >
-                        {venue.asset}, not stable
-                      </span>
-                    )}
-                    {p.badge === 'beta' && (
-                      <span
-                        className="px-1.5 py-0.5 rounded uppercase"
-                        style={{ fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.03em', backgroundColor: 'hsl(var(--surface-2))', color: 'hsl(var(--foreground))' }}
-                        title={p.badgeReason ?? 'Beta: newer, less battle-tested integration.'}
-                      >
-                        Beta
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-                    {disabled && evmStatus ? evmStatus.reason : (p.badge === 'beta' && p.badgeReason ? p.badgeReason : p.desc)}
-                  </div>
-                  {venue && (
-                    <div style={{ fontSize: '11.5px', color: 'hsl(var(--faint))', marginTop: '2px' }}>
-                      Exit: {venue.exitNote}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={enabled}
-                  onClick={() => toggleProtocol(p.key)}
-                  disabled={disabled}
-                  className="flex-shrink-0 relative rounded-full ml-3"
-                  style={{
-                    width: '38px',
-                    height: '22px',
-                    backgroundColor: enabled ? '#111827' : '#E5E0D2',
-                    transition: 'background-color 0.18s',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                  }}
-                  title={disabled && evmStatus ? evmStatus.reason : `Toggle ${p.label}`}
-                >
-                  <span
-                    className="absolute top-[2px] rounded-full bg-white"
+        <div className="pt-2 space-y-6">
+          {/* 3 Demo Sliders */}
+          <div>
+            <PolicySlider
+              label="Keep safe in reserve"
+              hint="Never invested, so surprises are always covered."
+              min={10}
+              max={80}
+              value={policy.minStablecoin}
+              onChange={(v) => setPolicy({ minStablecoin: v, liquidityReserve: Math.min(policy.liquidityReserve, v), riskPreset: 'custom' })}
+              accent
+            />
+            <PolicySlider
+              label="Most that can be put to work"
+              hint="The ceiling for earning placements."
+              min={20}
+              max={90}
+              value={policy.maxDeployment}
+              onChange={(v) => setPolicy({ maxDeployment: v, riskPreset: 'custom' })}
+            />
+            <PolicySlider
+              label="Most in any single place"
+              hint="Spreads the risk."
+              min={10}
+              max={80}
+              value={policy.maxLending}
+              onChange={(v) => setPolicy({ maxLending: v, riskPreset: 'custom' })}
+            />
+          </div>
+
+          {/* Approved places (merged with Strategy Menu — single list with inline APY) */}
+          <div data-testid="strategy-menu">
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '6px',
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Approved places
+            </label>
+            {protocolOptions.length === 0 && chain === 'evm' && (
+              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55 }}>
+                No earning places are configured on this network yet.
+              </p>
+            )}
+            <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+              {protocolOptions.map((p) => {
+                const evmStatus = chain === 'evm'
+                  ? evmStatusByProtocol.get(p.key as EvmAdapterProtocolId)
+                  : undefined;
+                const disabled = chain === 'evm' && !evmStatus?.configured;
+                const enabled = !disabled && !!policy.approvedProtocols[p.key];
+                const venue = strategyChain ? findVenue(strategyChain, p.key) : undefined;
+                const rate = venue ? rates.get(venue.id) : undefined;
+                const apyLabel = venue && venue.rate
+                  ? `${formatApy(effectiveApy(rate, venue.fallbackApy))}/yr`
+                  : null;
+                return (
+                  <div
+                    key={p.key}
+                    data-testid={`strategy-venue-${p.key}`}
+                    className="flex items-center justify-between gap-3"
                     style={{
-                      width: '18px',
-                      height: '18px',
-                      left: enabled ? '18px' : '2px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
-                      transition: 'left 0.18s',
+                      padding: '13px 0',
+                      borderBottom: '1px solid hsl(var(--surface-2))',
+                      opacity: disabled ? 0.62 : 1,
                     }}
-                  />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </CollapsibleSection>
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
+                          {p.label}
+                        </span>
+                        {apyLabel && (
+                          <span
+                            className="nave-mono"
+                            style={{
+                              fontSize: '12px',
+                              color: '#2F7D4F',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {apyLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                        {disabled && evmStatus ? evmStatus.reason : p.desc}
+                        {venue ? ` · Exit: ${venue.exitNote}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={enabled}
+                      onClick={() => toggleProtocol(p.key)}
+                      disabled={disabled}
+                      className="flex-shrink-0 relative rounded-full ml-3"
+                      style={{
+                        width: '38px',
+                        height: '22px',
+                        backgroundColor: enabled ? '#111827' : '#E5E0D2',
+                        transition: 'background-color 0.18s',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                      }}
+                      title={disabled && evmStatus ? evmStatus.reason : `Toggle ${p.label}`}
+                    >
+                      <span
+                        className="absolute top-[2px] rounded-full bg-white"
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          left: enabled ? '18px' : '2px',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+                          transition: 'left 0.18s',
+                        }}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
-      {strategyChain && (
-        <StrategyMenu
-          strategyChain={strategyChain}
-          preset={policy.riskPreset}
-          rates={rates}
-          asOf={asOf}
-        />
-      )}
-
-      {/* Automation — rebalance pills */}
-      <CollapsibleSection title="Automation & Operations">
-        <div className="space-y-4">
+          {/* Rebalancing cadence */}
           <div>
             <label
               style={{
@@ -823,7 +703,7 @@ export default function ConstitutionStep({
                 color: 'hsl(var(--foreground))',
               }}
             >
-              Rebalancing Frequency
+              Rebalancing cadence
             </label>
             <div className="flex flex-wrap gap-2">
               {REBALANCE_OPTIONS.map((opt) => {
@@ -835,8 +715,8 @@ export default function ConstitutionStep({
                     onClick={() => setPolicy({ rebalanceFreq: opt })}
                     className="rounded-full border transition-all"
                     style={{
-                      padding: '8px 14px',
-                      fontSize: '13px',
+                      padding: '7px 14px',
+                      fontSize: '12.5px',
                       fontWeight: selected ? 600 : 400,
                       backgroundColor: selected ? '#111827' : '#ffffff',
                       borderColor: selected ? '#111827' : 'hsl(var(--border))',
@@ -849,11 +729,49 @@ export default function ConstitutionStep({
               })}
             </div>
           </div>
-        </div>
-      </CollapsibleSection>
 
-      {/* Live sim result */}
-      <SimResult policy={policy} />
+          {showAgentThreshold && (
+            <div
+              style={{
+                paddingTop: '14px',
+                borderTop: '1px solid hsl(var(--surface-2))',
+              }}
+            >
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  marginBottom: '6px',
+                  color: 'hsl(var(--foreground))',
+                }}
+              >
+                Minimum balance to rebalance (USD)
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={policy.agentThresholdUsd ?? 1000}
+                onChange={(e) => {
+                  const val = Math.max(1, Number(e.target.value) || 1);
+                  setPolicy({ agentThresholdUsd: val });
+                }}
+                className="w-full max-w-[200px] px-3 py-2 rounded-[10px] border outline-none nave-mono"
+                style={{
+                  fontSize: '13.5px',
+                  backgroundColor: '#ffffff',
+                  borderColor: 'hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
+                }}
+              />
+              <p style={{ fontSize: '12px', color: 'hsl(var(--faint))', marginTop: '5px' }}>
+                Avoids fiddling with small balances.
+              </p>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }

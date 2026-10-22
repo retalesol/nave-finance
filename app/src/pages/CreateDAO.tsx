@@ -30,11 +30,9 @@ import {
   type SetupMode,
   DEFAULT_CONFIG,
   ADVANCED_STEPS,
-  QUICK_STEPS,
   EVM_SUB_STEP_LABELS,
   SOLANA_SUB_STEP_LABELS,
   ZERO_EVM_ADDRESS,
-  displayStepIndex,
   StepIndicator,
 } from '../components/create-dao/CreateDaoHelpers';
 import Step1 from '../components/create-dao/Step1';
@@ -92,23 +90,23 @@ export default function CreateDAO() {
   const { connected, publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
   const { setVisible } = useWalletModal();
-  const { setDaoAddress } = useDaoContext();
+  const { setDaoAddress, isMockMode } = useDaoContext();
   const { setChainFamily, rememberDaoChain } = useChain();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedEvmChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { signMessageAsync: signEvmMessage } = useSignMessage();
   const tx = useSendTransaction();
-  const [setupMode, setSetupMode] = useState<SetupMode>('quick');
+  const [setupMode] = useState<SetupMode>('advanced');
   const [step, setStep] = useState(0);
   // Launch create is Base. Solana and Ethereum stay on their non-create paths.
   const [config, setConfigState] = useState<DAOConfig>(() => ({
     ...DEFAULT_CONFIG,
     chain: 'base',
   }));
-  // Constitution policy state — quick setup starts on the Conservative preset.
-  const [policy, setPolicyState] = useState<PolicyState>(() => policyForChain('base', 'conservative'));
-  // Treasury seed amount (native SOL or ETH as string). 0 is a valid seed and must not block Deploy.
-  const [seedAmount, setSeedAmount] = useState<string>('0');
+  // Constitution policy state — starts on the Balanced preset matching demo.html.
+  const [policy, setPolicyState] = useState<PolicyState>(() => policyForChain('base', 'balanced'));
+  // Treasury seed amount — empty so creation is a clean gas-only step.
+  const [seedAmount, setSeedAmount] = useState<string>('');
   const [deploying, setDeploying] = useState(false);
   const [deploySteps, setDeploySteps] = useState<DeployStep[]>([]);
 
@@ -219,7 +217,7 @@ export default function CreateDAO() {
   }
   const onSlugReadyChange = useCallback(handleSlugReadyChange, []);
 
-  const wizardSteps = setupMode === 'quick' ? QUICK_STEPS : ADVANCED_STEPS;
+  const wizardSteps = ADVANCED_STEPS;
   const connectedWallet =
     config.chain === 'solana'
       ? (publicKey?.toBase58() ?? null)
@@ -235,51 +233,30 @@ export default function CreateDAO() {
     setPendingResume(findPendingDaoCreationForWallet(connectedWallet));
   }, [connectedWallet]);
 
-  function selectSetupMode(mode: SetupMode) {
-    setSetupMode(mode);
-    if (mode === 'quick') {
-      setStep(0);
-      setConfig({
-        governanceType: 'wallets',
-        authorizedWallets: connectedWallet ? [connectedWallet] : [],
-      });
-      setPolicyState(policyForChain(config.chain, 'conservative'));
-    }
-  }
-
-  useEffect(() => {
-    if (setupMode !== 'quick') return;
-    setPolicyState(policyForChain(config.chain, 'conservative'));
-  }, [setupMode, config.chain]);
-
   function openCreateWallet() {
     if (config.chain === 'solana') setVisible(true);
     else openConnectModal?.();
   }
 
-  // Keep quick-mode guardian in sync when the wallet connects after mode selection.
+  // Keep founder guardian in sync when the wallet connects.
   useEffect(() => {
-    if (setupMode !== 'quick' || !connectedWallet) return;
-    if (config.governanceType !== 'wallets') {
-      setConfig({ governanceType: 'wallets' });
-    }
-    if (!config.authorizedWallets.includes(connectedWallet)) {
+    if (!connectedWallet) return;
+    if (config.governanceType === 'wallets' && !config.authorizedWallets.includes(connectedWallet)) {
       setConfig({ authorizedWallets: [connectedWallet] });
     }
-  }, [setupMode, connectedWallet, config.governanceType, config.authorizedWallets]);
+  }, [connectedWallet, config.governanceType, config.authorizedWallets]);
 
   function canAdvance() {
     if (step === 0) {
-      if (config.chain === 'solana') {
-        if (!connected || !publicKey) return false;
-      } else if (!evmConnected || !evmAddress) {
-        return false;
+      if (!isMockMode) {
+        if (config.chain === 'solana') {
+          if (!connected || !publicKey) return false;
+        } else if (!evmConnected || !evmAddress) {
+          return false;
+        }
       }
       if (!config.name.trim()) return false;
       if (!config.slug.trim() || !slugReady) return false;
-      if (setupMode === 'quick') {
-        return config.governanceType === 'wallets' && config.authorizedWallets.length > 0;
-      }
       if (!config.governanceType) return false;
       if (config.governanceType === 'token' && !config.tokenMode) return false;
       if (config.governanceType === 'token' && config.tokenMode === 'existing') {
@@ -300,11 +277,6 @@ export default function CreateDAO() {
     if (step === 1) {
       // At least one protocol must be approved
       return Object.values(policy.approvedProtocols).some((v) => v);
-    }
-    if (step === 2) {
-      // Seed must be a valid non-negative number (empty = not ready; "0" is valid)
-      const seedNum = parseFloat(seedAmount);
-      return !isNaN(seedNum) && seedNum >= 0;
     }
     return true;
   }
@@ -1726,36 +1698,12 @@ export default function CreateDAO() {
           </p>
         </div>
 
-        {/* Mode toggle pills + Step Indicator */}
+        {/* Step Indicator */}
         <div className="flex items-center justify-between gap-4 flex-wrap my-7">
           <StepIndicator
             steps={wizardSteps}
-            current={setupMode ? displayStepIndex(step, setupMode) : 0}
+            current={step}
           />
-          {step === 0 && (
-            <div className="flex items-center gap-1.5">
-              {(['quick', 'advanced'] as const).map((m) => {
-                const active = setupMode === m;
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => selectSetupMode(m)}
-                    className="px-3 py-1 rounded-full border transition-all"
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: active ? 600 : 400,
-                      backgroundColor: active ? 'hsl(var(--foreground))' : '#ffffff',
-                      borderColor: active ? 'hsl(var(--foreground))' : 'hsl(var(--border))',
-                      color: active ? '#ffffff' : 'hsl(var(--muted-foreground))',
-                    }}
-                  >
-                    {m === 'quick' ? 'Quick setup' : 'Advanced'}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         {pendingResume && !deploying && (
@@ -1836,10 +1784,9 @@ export default function CreateDAO() {
             setConfig={setConfig}
             connectedWallet={connectedWallet}
             onSlugReadyChange={onSlugReadyChange}
-            quickMode={setupMode === 'quick'}
           />
         )}
-        {setupMode === 'advanced' && step === 1 && (
+        {step === 1 && (
           <ConstitutionStep
             policy={policy}
             setPolicy={setPolicy}
@@ -1849,7 +1796,6 @@ export default function CreateDAO() {
                 ? activeEvmChainId(config.chain as Exclude<ChainFamily, 'solana'>)
                 : undefined
             }
-            offeredPresets={['conservative', 'balanced', 'yield6']}
           />
         )}
         {step === 2 && (
@@ -1868,18 +1814,10 @@ export default function CreateDAO() {
         {/* Nav buttons */}
         {step === 0 && (
           <>
-            <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+            <div className="flex items-center justify-end mt-8 pt-6" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
               <button
                 type="button"
-                onClick={() => selectSetupMode(setupMode === 'quick' ? 'advanced' : 'quick')}
-                className="px-3.5 py-2 rounded-[9px]"
-                style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-              >
-                {setupMode === 'quick' ? 'Advanced setup' : 'Quick setup'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(setupMode === 'quick' ? 2 : 1)}
+                onClick={() => setStep(1)}
                 disabled={!canAdvance()}
                 className="inline-flex items-center gap-2 px-5 py-2 rounded-[9px] font-semibold transition-all"
                 style={{
@@ -1890,8 +1828,7 @@ export default function CreateDAO() {
                   cursor: canAdvance() ? 'pointer' : 'not-allowed',
                 }}
               >
-                {setupMode === 'quick' ? 'Review' : 'Constitution'}
-                <Fi icon="arrow-right" style={{ fontSize: '11px' }} />
+                Continue →
               </button>
             </div>
             {slugMessage && config.slug.trim() && (
@@ -1902,7 +1839,7 @@ export default function CreateDAO() {
           </>
         )}
 
-        {setupMode === 'advanced' && step === 1 && (
+        {step === 1 && (
           <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             <button
               type="button"
@@ -1910,7 +1847,7 @@ export default function CreateDAO() {
               className="px-3.5 py-2 rounded-[9px]"
               style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
             >
-              ← Back to Identity
+              ← Back
             </button>
             <button
               type="button"
@@ -1925,7 +1862,7 @@ export default function CreateDAO() {
                 cursor: canAdvance() ? 'pointer' : 'not-allowed',
               }}
             >
-              Seed & Review →
+              Continue →
             </button>
           </div>
         )}
@@ -1934,11 +1871,11 @@ export default function CreateDAO() {
           <div className="flex items-center mt-6 pt-4" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             <button
               type="button"
-              onClick={() => setStep(setupMode === 'quick' ? 0 : 1)}
+              onClick={() => setStep(1)}
               className="px-3.5 py-2 rounded-[9px]"
               style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
             >
-              ← {setupMode === 'quick' ? 'Back to Setup' : 'Back to Constitution'}
+              ← Back
             </button>
           </div>
         )}

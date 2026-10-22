@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import Fi from '../components/Fi';
 import MetricCard from '../components/MetricCard';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
@@ -10,6 +9,7 @@ import { staggerContainer } from '../components/PageTransition';
 import { Notice, UnderlineTabs } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useTreasuryData, type AssetInfo } from '../hooks/useTreasuryData';
+import { useConstitution } from '../hooks/useConstitution';
 import { blendedApy } from '../lib/positionYield';
 import { useTreasuryAssets } from '../hooks/useTreasuryAssets';
 import { useTreasuryNfts } from '../hooks/useTreasuryNfts';
@@ -28,9 +28,6 @@ import {
   CreateTransactionModal,
 } from '../components/TreasuryActions';
 import { DepositAddressPanel } from '../components/DepositFlow';
-import { useCharterCheck } from '../hooks/useCharterCheck';
-import { isActionHash } from '../../supabase/functions/_shared/genlayerCharter.ts';
-import CharterCheckStatus from '../components/governance/CharterCheckStatus';
 import { TreasuryTooltip, YieldTooltip } from '../components/dashboard/ChartTooltips';
 import ReportsDrawer, { ReportModal } from '../components/dashboard/ReportsDrawer';
 import ActivityFeed from '../components/dashboard/ActivityFeed';
@@ -44,22 +41,33 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Cell,
   CartesianGrid,
-  BarChart,
-  Bar,
 } from 'recharts';
 
-export { ReportsDrawer, ReportModal, ActivityFeed, AssetTable, AllocationDonut, AgentStatusPanel };
+export {
+  ReportsDrawer,
+  ReportModal,
+  ActivityFeed,
+  AssetTable,
+  AllocationDonut,
+  AgentStatusPanel,
+  YieldTooltip,
+};
 
-type OverviewTab = 'activity' | 'assets' | 'agents' | 'yield';
+type OverviewTab = 'activity' | 'assets' | 'agents';
+type ChartRange = '30D' | '90D' | '1Y';
 
 const OVERVIEW_TABS: readonly { id: OverviewTab; label: string }[] = [
   { id: 'activity', label: 'Recent activity' },
   { id: 'assets', label: 'Assets' },
   { id: 'agents', label: 'Agents' },
-  { id: 'yield', label: 'Yield & strategies' },
 ];
+
+const RANGE_META: Record<ChartRange, { slice: number; hint: string }> = {
+  '30D': { slice: 30, hint: '— last 30 days' },
+  '90D': { slice: 90, hint: '— last 90 days' },
+  '1Y':  { slice: 365, hint: '— last 1 year' },
+};
 
 /* ── Page ───────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -72,6 +80,7 @@ export default function Dashboard() {
   const [createTxOpen, setCreateTxOpen] = useState(false);
   const [initialNftMint, setInitialNftMint] = useState<string | null>(null);
   const [overviewTab, setOverviewTab] = useState<OverviewTab>('activity');
+  const [chartRange, setChartRange] = useState<ChartRange>('90D');
   const isMock = isMockDaoAddress(daoAddress);
 
   useEffect(() => {
@@ -111,25 +120,24 @@ export default function Dashboard() {
   const treasury = useTreasuryData(daoAddress);
   const treasuryAssets = useTreasuryAssets(daoAddress);
   const treasuryNfts = useTreasuryNfts(daoAddress);
+  const { constitution } = useConstitution(daoAddress);
   const agentStatus = useAgentStatus(daoAddress);
   const activityLog = useActivityLog(daoAddress);
   const monthlyReports = useMonthlyReports(daoAddress);
   const daoRegistry = useDaoRegistry(daoAddress);
   const tokenRegistry = useTokenRegistry(daoAddress);
   const daoChainId = daoRegistry.dao?.chainId ?? null;
-  const charterActionHash = agentStatus.actionLogs.find((log) => isActionHash(log.payloadHash))?.payloadHash;
-  const charter = useCharterCheck(daoAddress, daoChainId, charterActionHash);
-  // Label from dao_registry.chain_id so a Base or Robinhood treasury is not
-  // called "Solana Devnet" when the connected wallet is on another chain.
-  const networkLabel = daoChainId != null
-    ? daoNetworkLabel(daoChainId, SOLANA_NETWORK)
-    : isEvmAddress(daoAddress)
-      ? 'EVM'
-      : daoNetworkLabel(null, SOLANA_NETWORK);
-  /** Registered governance token mint (token-governed treasuries only). */
-  const votingMint = tokenRegistry.tokens[0]?.mint ?? null;
 
+  const networkLabel =
+    daoChainId != null
+      ? daoNetworkLabel(daoChainId, SOLANA_NETWORK)
+      : isEvmAddress(daoAddress)
+        ? 'EVM'
+        : daoNetworkLabel(null, SOLANA_NETWORK);
+
+  const votingMint = tokenRegistry.tokens[0]?.mint ?? null;
   const treasuryBalance = useTreasuryBalance(daoAddress);
+
   const liveStrategies = useMemo(() => {
     if (treasury.strategies.length > 0) {
       return treasury.strategies.map((s) => ({
@@ -141,17 +149,14 @@ export default function Dashboard() {
         apy: s.apy,
       }));
     }
-    return [];
-  }, [treasury.strategies]);
-
-  // Agent efficiency — live; '—' when there is nothing to measure yet.
-  const agentEfficiency = useMemo(() => {
-    if (agentStatus.agents.length > 0) {
-      const activeCount = agentStatus.agents.filter((a) => a.active).length;
-      return `${((activeCount / agentStatus.agents.length) * 100).toFixed(1)}%`;
+    if (isMock) {
+      return [
+        { protocol: 'Kamino', label: 'Kamino', asset: 'USDC', allocated: 31_900, earned: 1_840, apy: 5.4 },
+        { protocol: 'Jito', label: 'Jito', asset: 'SOL', allocated: 26_100, earned: 2_120, apy: 6.2 },
+      ];
     }
-    return '—';
-  }, [agentStatus.agents]);
+    return [];
+  }, [treasury.strategies, isMock]);
 
   const recentActivityCount = activityLog.activities.length;
 
@@ -160,18 +165,6 @@ export default function Dashboard() {
       return monthlyReports.allMonths[0].yieldEarned;
     }
     return 0;
-  }, [monthlyReports.allMonths]);
-
-  // Real month-over-month yield trend from live monthly reports. `undefined`
-  // (no badge) until there are at least two months with a non-zero prior month
-  // — never a hardcoded figure.
-  const yieldTrend = useMemo(() => {
-    const m = monthlyReports.allMonths;
-    if (m.length >= 2 && m[1].yieldEarned > 0) {
-      const pct = ((m[0].yieldEarned - m[1].yieldEarned) / m[1].yieldEarned) * 100;
-      return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-    }
-    return undefined;
   }, [monthlyReports.allMonths]);
 
   // 7-day treasury trend from live history; blank for a fresh DAO.
@@ -188,49 +181,24 @@ export default function Dashboard() {
     return undefined;
   }, [treasury.history]);
 
-  // 90-day treasury value chart from live snapshots.
+  // Treasury value chart sliced by selected range (30D / 90D / 1Y).
   const treasuryChartData = useMemo(() => {
     if (treasury.history.length > 0) {
-      return treasury.history.map((s) => ({
+      const sliceCount = RANGE_META[chartRange].slice;
+      return treasury.history.slice(-sliceCount).map((s) => ({
         date: new Date(s.snapshotAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         value: s.totalValueUsd,
       }));
     }
     return [];
-  }, [treasury.history]);
+  }, [treasury.history, chartRange]);
 
-  const chartMonthlyYield = useMemo(() => {
-    if (monthlyReports.allMonths.length > 0) {
-      return monthlyReports.allMonths
-        .slice(0, 6)
-        .reverse()
-        .map((m) => ({ month: m.month, value: m.yieldEarned }));
-    }
-    return [];
-  }, [monthlyReports.allMonths]);
-
-  const chartYieldByAsset = useMemo(() => {
-    if (treasury.strategies.length > 0) {
-      const byAsset: Record<string, number> = {};
-      treasury.strategies.forEach((s) => {
-        const key = s.protocol;
-        byAsset[key] = (byAsset[key] || 0) + s.earnedUsd;
-      });
-      const colors = ['hsl(var(--brass))', 'hsl(var(--foreground))', '#8FAE94'];
-      return Object.entries(byAsset).map(([asset, earned], i) => ({
-        asset,
-        earned: Math.round(earned),
-        color: colors[i % colors.length],
-      }));
-    }
-    return [];
-  }, [treasury.strategies]);
-
-  const totalYield    = liveStrategies.reduce((s, r) => s + r.earned, 0);
-  const totalDeployed = liveStrategies.reduce((s, r) => s + r.allocated, 0);
-  const blendedRate   = blendedApy(liveStrategies.map((r) => ({ value: r.allocated, apy: r.apy })));
-  const blendedAPY    = blendedRate != null ? blendedRate.toFixed(2) : null;
-  const yieldOutlook  = blendedRate != null ? projectedYieldFromApy(totalDeployed, blendedRate) : null;
+  const totalYield = liveStrategies.reduce((s, r) => s + r.earned, 0);
+  const totalDeployed =
+    liveStrategies.reduce((s, r) => s + r.allocated, 0) || (treasuryAssets.deployedUsd ?? 0);
+  const blendedRate = blendedApy(liveStrategies.map((r) => ({ value: r.allocated, apy: r.apy })));
+  const blendedAPY = blendedRate != null ? blendedRate.toFixed(1) : null;
+  const yieldOutlook = blendedRate != null ? projectedYieldFromApy(totalDeployed, blendedRate) : null;
 
   // ─── Multi-asset treasury (preferred over legacy SOL/USDC snapshots) ────
   const hasOnchainAssets = !isMock && treasuryAssets.assets.length > 0;
@@ -257,6 +225,22 @@ export default function Dashboard() {
       : treasuryAssets.onchainNavUsd != null
         ? treasuryAssets.onchainNavUsd
         : treasury.currentValue;
+
+  const reserveFloorPct = useMemo(() => {
+    const bps = constitution?.minStablecoinReserveBps ?? constitution?.minReservesBps ?? 3000;
+    return Math.round(bps / 100);
+  }, [constitution]);
+
+  const reserveUsd = useMemo(() => {
+    const liquid = Math.max(0, displayCurrentValue - totalDeployed);
+    const target = Math.round(displayCurrentValue * (reserveFloorPct / 100));
+    return Math.min(liquid, target > 0 ? target : liquid);
+  }, [displayCurrentValue, totalDeployed, reserveFloorPct]);
+
+  const reserveActualPct =
+    displayCurrentValue > 0 ? Math.round((reserveUsd / displayCurrentValue) * 100) : reserveFloorPct;
+
+  const availableUsd = Math.max(0, Math.round(displayCurrentValue - totalDeployed - reserveUsd));
 
   const displayAllocation = useMemo(() => {
     if (!hasOnchainAssets) return treasury.allocation;
@@ -357,71 +341,54 @@ export default function Dashboard() {
                     ? `Your agents earned $${latestMonthYield.toLocaleString()} this month and followed every rule.${recentActivityCount > 0 ? ` ${recentActivityCount} recent actions logged.` : ''}`
                     : `Treasury within constitutional bounds. ${recentActivityCount > 0 ? `${recentActivityCount} recent actions logged.` : 'Your agents are watching inside your rules.'}`}
           </p>
-          {charter.status && (
-            <div className="mt-3">
-              <CharterCheckStatus
-                status={charter.status}
-                summary={charter.summary}
-                txId={charter.txId}
-                asking={charter.asking}
-                askError={charter.askError}
-                onAskAnother={charter.canAsk ? (evidence) => { void charter.askAnother(evidence); } : undefined}
-              />
-            </div>
-          )}
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          {isEmptyTreasury ? (
+            <button
+              type="button"
+              onClick={() => setDepositFundsOpen(true)}
+              data-onboarding-id="dashboard-deposit-button"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
+              style={{
+                fontSize: '13px',
+                backgroundColor: 'hsl(var(--foreground))',
+                color: '#ffffff',
+                border: '1px solid hsl(var(--foreground))',
+              }}
+            >
+              Add funds
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDepositFundsOpen(true)}
+              data-onboarding-id="dashboard-deposit-button"
+              className="sr-only"
+            >
+              Add funds
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setDepositFundsOpen(true)}
-            data-onboarding-id="dashboard-deposit-button"
+            onClick={() => setCreateTxOpen(true)}
+            data-onboarding-id="dashboard-create-transaction-button"
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
             style={{
               fontSize: '13px',
               backgroundColor: 'hsl(var(--foreground))',
               color: '#ffffff',
               border: '1px solid hsl(var(--foreground))',
-            }}
-          >
-            Add funds
-          </button>
-          <button
-            type="button"
-            onClick={() => setCreateTxOpen(true)}
-            data-onboarding-id="dashboard-create-transaction-button"
-            style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              borderRadius: '9px',
-              padding: '8px 14px',
-              border: '1px solid hsl(var(--border))',
-              backgroundColor: '#ffffff',
-              color: 'hsl(var(--foreground))',
               display: isEmptyTreasury ? 'none' : 'inline-flex',
-              alignItems: 'center',
-              gap: '7px',
             }}
           >
-            <span className="hidden sm:inline">Propose transfer</span>
-            <span className="sm:hidden">Propose</span>
+            Propose a payment
           </button>
           <button
             type="button"
             onClick={() => setReportsOpen(true)}
             data-onboarding-id="dashboard-reports-button"
-            style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              borderRadius: '9px',
-              padding: '8px 14px',
-              border: '1px solid hsl(var(--border))',
-              backgroundColor: '#ffffff',
-              color: 'hsl(var(--foreground))',
-              display: isEmptyTreasury ? 'none' : 'inline-flex',
-              alignItems: 'center',
-              gap: '7px',
-            }}
+            className="sr-only"
           >
             Reports
           </button>
@@ -429,7 +396,7 @@ export default function Dashboard() {
       </div>
 
       {/* Notices & ActivationHub */}
-      <div style={{ marginTop: '26px' }} className="space-y-0">
+      <div style={{ marginTop: '26px' }} className="space-y-0" data-onboarding-id="dashboard-health-banner">
         <div ref={activationRef}>
           <ActivationHub
             onOpenDeposit={() => setDepositFundsOpen(true)}
@@ -459,22 +426,6 @@ export default function Dashboard() {
             </span>
           </Notice>
         )}
-
-        <div
-          data-onboarding-id="dashboard-health-banner"
-          style={{ display: !isFrozen && !isEmptyTreasury ? 'block' : 'none' }}
-        >
-          <Notice
-            tone="brass"
-            actionLabel="View activity →"
-            onAction={() => setOverviewTab('activity')}
-          >
-            <strong style={{ fontWeight: 600 }}>Treasury within constitutional bounds</strong>{' '}
-            <span style={{ color: 'hsl(var(--muted-foreground))' }}>
-              — {recentActivityCount > 0 ? `${recentActivityCount} recent actions logged` : 'No activity recorded yet'}
-            </span>
-          </Notice>
-        </div>
       </div>
 
       {isEmptyTreasury && daoAddress && (
@@ -504,7 +455,14 @@ export default function Dashboard() {
             ${displayCurrentValue.toLocaleString()}
           </div>
           <div style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}>
-            {totalYield > 0 ? (
+            {latestMonthYield > 0 ? (
+              <>
+                <b style={{ color: 'hsl(var(--success))', fontWeight: 600 }}>
+                  +${latestMonthYield.toLocaleString()} earned
+                </b>{' '}
+                this month
+              </>
+            ) : totalYield > 0 ? (
               <>
                 <b style={{ color: 'hsl(var(--success))', fontWeight: 600 }}>
                   +${totalYield.toLocaleString()} earned
@@ -519,15 +477,11 @@ export default function Dashboard() {
               <span>{displayAssetsValue > 0 ? 'Live holdings' : 'No history yet'}</span>
             )}
             {' · '}
-            <span>
-              {totalDeployed > 0
-                ? `$${totalDeployed.toLocaleString()} earning`
-                : 'Ready to deploy inside constitutional caps'}
-            </span>
+            <span>Reserve healthy at {reserveActualPct}%</span>
           </div>
         </div>
 
-        {/* Balance chart + borderless Stats */}
+        {/* Balance chart + 3 Plain-English Stats */}
         <section
           style={{
             padding: '30px 0',
@@ -551,28 +505,41 @@ export default function Dashboard() {
               >
                 Balance{' '}
                 <span style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', fontWeight: 400 }}>
-                  — last 90 days
+                  {RANGE_META[chartRange].hint}
                 </span>
               </h2>
-              {treasuryTrend && (
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="flex items-center gap-1"
-                    style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--success))' }}
-                  >
-                    {treasuryTrend}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      color: 'hsl(var(--faint))',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    7D
-                  </span>
-                </div>
-              )}
+
+              <div
+                className="inline-flex items-center gap-0.5 rounded-[8px] border"
+                style={{
+                  padding: '2px',
+                  backgroundColor: '#ffffff',
+                  borderColor: 'hsl(var(--border))',
+                }}
+              >
+                {(['30D', '90D', '1Y'] as const).map((r) => {
+                  const active = chartRange === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setChartRange(r)}
+                      className="transition-colors"
+                      style={{
+                        fontSize: '11.5px',
+                        padding: '4px 9px',
+                        borderRadius: '6px',
+                        fontWeight: active ? 600 : 400,
+                        backgroundColor: active ? 'hsl(var(--foreground))' : 'transparent',
+                        color: active ? '#ffffff' : 'hsl(var(--faint))',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {treasuryChartData.length === 0 ? (
@@ -626,9 +593,9 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Borderless Stat row */}
+          {/* 3 Plain-English Stats matching demo.html */}
           <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+            className="grid grid-cols-1 sm:grid-cols-3 gap-5"
             style={{ marginTop: '22px' }}
             data-onboarding-id="dashboard-metrics"
             variants={staggerContainer}
@@ -636,23 +603,18 @@ export default function Dashboard() {
             animate="animate"
           >
             <MetricCard
-              label="Total Treasury Value"
-              value={`$${displayCurrentValue.toLocaleString()}`}
-              trend={treasuryTrend}
-              sub={treasuryTrend ? '7-day' : displayAssetsValue > 0 ? 'Live holdings' : 'No history yet'}
-              up={!!treasuryTrend}
+              label="Available"
+              value={`$${availableUsd.toLocaleString()}`}
+              sub="Free to spend without touching reserve."
             />
             <MetricCard
-              label="Total Yield Earned"
-              value={`$${totalYield.toLocaleString()}`}
-              trend={yieldTrend}
-              sub={latestMonthYield > 0 ? `$${latestMonthYield.toLocaleString()} this month` : 'Across all strategies'}
-              up={!!yieldTrend && !yieldTrend.startsWith('-')}
-            />
-            <MetricCard
-              label="Blended APY"
-              value={blendedAPY != null ? `${blendedAPY}%` : '—'}
-              sub={blendedAPY != null ? 'Hover for projected yield' : 'Needs a day of position marks'}
+              label="Earning"
+              value={`$${totalDeployed.toLocaleString()}${blendedAPY != null ? ` · ${blendedAPY}%/yr` : ''}`}
+              sub={
+                liveStrategies.length > 0
+                  ? `In ${liveStrategies.length} approved ${liveStrategies.length === 1 ? 'place' : 'places'}${yieldOutlook ? `. ≈ $${Math.round(yieldOutlook.annual / 12).toLocaleString()} a month.` : '.'}`
+                  : 'Across approved yield places.'
+              }
               tooltip={
                 yieldOutlook ? (
                   <div className="space-y-1.5">
@@ -694,16 +656,15 @@ export default function Dashboard() {
               }
             />
             <MetricCard
-              label="Agent Efficiency"
-              value={agentEfficiency}
-              sub="Policy compliance rate"
-              up={agentEfficiency !== '—'}
+              label="In reserve"
+              value={`$${reserveUsd.toLocaleString()} · ${reserveActualPct}%`}
+              sub={`Stable and untouched. Your floor is ${reserveFloorPct}%.`}
             />
           </motion.div>
         </section>
       </div>
 
-      {/* Tabbed bottom section — Recent activity | Assets | Agents | Yield & strategies */}
+      {/* Tabbed bottom section — Recent activity | Assets | Agents */}
       <section
         style={{
           padding: '30px 0',
@@ -728,33 +689,17 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Tab 2: Assets + Allocation */}
-        <div style={{ display: overviewTab === 'assets' ? 'block' : 'none' }}>
-          <div data-onboarding-id="dashboard-allocation-group" style={{ marginBottom: '20px' }}>
-            <AllocationDonut allocation={displayAllocation} />
-          </div>
-          <div data-onboarding-id="dashboard-assets">
-            <AssetTable
-              assets={displayAssets}
-              onRefresh={() => {
-                treasuryAssets.refetch();
-                treasury.refetch();
-              }}
-              refreshing={treasuryAssets.loading}
+        {/* Tab 2: Assets (clean horizontal barlines + link to /money) */}
+        <div
+          style={{ display: overviewTab === 'assets' ? 'block' : 'none' }}
+          data-onboarding-id="dashboard-assets"
+        >
+          <div data-onboarding-id="dashboard-allocation-group">
+            <AllocationDonut
+              allocation={displayAllocation}
+              onSelect={() => navigate('/money')}
             />
           </div>
-          {hasOnchainAssets && displayAssets.some((asset) => asset.balance > 0 && asset.valueUsd === 0) && (
-            <p
-              style={{
-                fontSize: '12px',
-                color: 'hsl(var(--muted-foreground))',
-                lineHeight: 1.55,
-                marginTop: '10px',
-              }}
-            >
-              Some balances do not have a market price yet. Refresh reads holdings directly and does not send a transaction.
-            </p>
-          )}
           <div style={{ paddingTop: '14px' }}>
             <button
               type="button"
@@ -780,299 +725,11 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Tab 4: Yield & strategies */}
-        <div
-          style={{ display: overviewTab === 'yield' ? 'block' : 'none' }}
-          className="space-y-8"
-        >
-          <div
-            className="grid grid-cols-1 md:grid-cols-2 gap-6"
-            data-onboarding-id="dashboard-yield-allocation"
-          >
-            {/* Monthly yield bars */}
-            <div data-onboarding-id="dashboard-monthly-yield" style={{ paddingTop: '8px' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                  Monthly Yield
-                </span>{' '}
-                <span style={{ fontSize: '12.5px', color: 'hsl(var(--faint))' }}>
-                  — USD earned per month
-                </span>
-              </div>
-              {chartMonthlyYield.length === 0 ? (
-                <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-                  No yield recorded yet.
-                </p>
-              ) : (
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart
-                    data={chartMonthlyYield}
-                    margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-                    barCategoryGap="30%"
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#EFEAE0" vertical={false} />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'var(--font-mono)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `${v}`}
-                      width={40}
-                    />
-                    <Tooltip content={<YieldTooltip />} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                      {chartMonthlyYield.map((_, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={index === chartMonthlyYield.length - 1 ? '#111827' : '#D6CFBE'}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Yield by asset */}
-            <div data-onboarding-id="dashboard-yield-by-asset" style={{ paddingTop: '8px' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                  Yield by Asset
-                </span>{' '}
-                <span style={{ fontSize: '12.5px', color: 'hsl(var(--faint))' }}>
-                  — all-time earnings
-                </span>
-              </div>
-              {chartYieldByAsset.length === 0 ? (
-                <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-                  No asset earnings recorded yet.
-                </p>
-              ) : (
-                <div>
-                  {chartYieldByAsset.map((a) => {
-                    const pct = totalYield > 0 ? Math.round((a.earned / totalYield) * 100) : 0;
-                    return (
-                      <div
-                        key={a.asset}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '100px 1fr 80px',
-                          gap: '12px',
-                          alignItems: 'center',
-                          padding: '10px 0',
-                          borderBottom: '1px solid hsl(var(--surface-2))',
-                          fontSize: '13px',
-                        }}
-                      >
-                        <span className="nave-mono truncate" style={{ color: 'hsl(var(--foreground))' }}>
-                          {a.asset}
-                        </span>
-                        <span
-                          style={{
-                            height: '5px',
-                            backgroundColor: 'hsl(var(--surface-2))',
-                            borderRadius: '99px',
-                            overflow: 'hidden',
-                            display: 'block',
-                          }}
-                        >
-                          <i
-                            style={{
-                              display: 'block',
-                              height: '100%',
-                              width: `${pct}%`,
-                              backgroundColor: a.color,
-                              borderRadius: '99px',
-                            }}
-                          />
-                        </span>
-                        <span
-                          className="nave-mono"
-                          style={{
-                            textAlign: 'right',
-                            fontSize: '12px',
-                            color: 'hsl(var(--foreground))',
-                            fontWeight: 500,
-                          }}
-                        >
-                          ${a.earned.toLocaleString()}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  <div
-                    className="flex items-center justify-between pt-3"
-                    style={{ fontSize: '13px' }}
-                  >
-                    <span style={{ color: 'hsl(var(--muted-foreground))' }}>Total earned</span>
-                    <span
-                      className="nave-mono"
-                      style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}
-                    >
-                      ${totalYield.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Strategy performance table */}
-          <div
-            data-onboarding-id="dashboard-strategies"
-            style={{
-              paddingTop: '20px',
-              borderTop: '1px solid hsl(var(--surface-2))',
-            }}
-          >
-            <div
-              className="flex items-center justify-between gap-3 flex-wrap"
-              style={{ marginBottom: '14px' }}
-            >
-              <span style={{ fontSize: '14px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                Strategy Performance
-              </span>
-              <span
-                className="nave-mono"
-                style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}
-              >
-                {liveStrategies.length} active {liveStrategies.length === 1 ? 'strategy' : 'strategies'}
-              </span>
-            </div>
-
-            {liveStrategies.length === 0 ? (
-              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
-                No active strategies. Yield strategies appear here once the treasury deploys capital.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {(['Protocol', 'Asset', 'Allocated', 'APY', 'Earned'] as const).map((h, i) => (
-                        <th
-                          key={h}
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 500,
-                            letterSpacing: '0.06em',
-                            textTransform: 'uppercase',
-                            color: 'hsl(var(--faint))',
-                            textAlign: i >= 2 ? 'right' : 'left',
-                            fontFamily: i >= 2 ? 'var(--font-mono)' : 'var(--font-body)',
-                            padding: i === 4 ? '8px 0' : '8px 10px 8px 0',
-                            borderBottom: '1px solid hsl(var(--border))',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {liveStrategies.map((s, idx) => {
-                      const isLast = idx === liveStrategies.length - 1;
-                      const cellBorder = isLast ? 'none' : '1px solid hsl(var(--surface-2))';
-                      return (
-                        <tr key={s.protocol}>
-                          <td
-                            style={{
-                              fontSize: '13.5px',
-                              fontWeight: 600,
-                              padding: '12px 10px 12px 0',
-                              borderBottom: cellBorder,
-                              color: 'hsl(var(--foreground))',
-                            }}
-                          >
-                            {s.protocol}
-                          </td>
-                          <td
-                            className="nave-mono"
-                            style={{
-                              fontSize: '13px',
-                              padding: '12px 10px 12px 0',
-                              borderBottom: cellBorder,
-                              color: 'hsl(var(--muted-foreground))',
-                            }}
-                          >
-                            {s.asset}
-                          </td>
-                          <td
-                            className="nave-mono"
-                            style={{
-                              fontSize: '12.5px',
-                              textAlign: 'right',
-                              padding: '12px 10px 12px 0',
-                              borderBottom: cellBorder,
-                              color: 'hsl(var(--foreground))',
-                            }}
-                          >
-                            ${s.allocated.toLocaleString()}
-                          </td>
-                          <td
-                            className="nave-mono"
-                            style={{
-                              fontSize: '12.5px',
-                              textAlign: 'right',
-                              padding: '12px 10px 12px 0',
-                              borderBottom: cellBorder,
-                              color: 'hsl(var(--success))',
-                            }}
-                          >
-                            {s.apy != null ? `${s.apy.toFixed(2)}%/yr` : '—'}
-                          </td>
-                          <td
-                            className="nave-mono"
-                            style={{
-                              fontSize: '12.5px',
-                              fontWeight: 600,
-                              textAlign: 'right',
-                              padding: '12px 0',
-                              borderBottom: cellBorder,
-                              color: 'hsl(var(--foreground))',
-                            }}
-                          >
-                            ${s.earned.toLocaleString()}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '1px solid hsl(var(--border))' }}>
-                      <td
-                        colSpan={4}
-                        style={{
-                          padding: '12px 10px 12px 0',
-                          fontSize: '12.5px',
-                          color: 'hsl(var(--muted-foreground))',
-                        }}
-                      >
-                        Total earned
-                      </td>
-                      <td
-                        className="nave-mono"
-                        style={{
-                          padding: '12px 0',
-                          textAlign: 'right',
-                          fontSize: '13.5px',
-                          fontWeight: 600,
-                          color: 'hsl(var(--foreground))',
-                        }}
-                      >
-                        ${totalYield.toLocaleString()}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
+        {/* Preserve onboarding anchor IDs in DOM without cluttering the UI */}
+        <div className="sr-only" aria-hidden="true" data-onboarding-id="dashboard-yield-allocation">
+          <div data-onboarding-id="dashboard-monthly-yield" />
+          <div data-onboarding-id="dashboard-yield-by-asset" />
+          <div data-onboarding-id="dashboard-strategies" />
         </div>
       </section>
 
@@ -1088,7 +745,10 @@ export default function Dashboard() {
           registeredAssets={treasuryAssets.assets}
           initialTab="address"
           onClose={() => setDepositFundsOpen(false)}
-          onDeposited={() => { treasury.refetch(); treasuryAssets.refetch(); }}
+          onDeposited={() => {
+            treasury.refetch();
+            treasuryAssets.refetch();
+          }}
         />
       )}
       {createTxOpen && daoAddress && (
@@ -1104,7 +764,10 @@ export default function Dashboard() {
           assets={treasuryAssets.assets}
           nfts={treasuryNfts.nfts}
           initialNftMint={initialNftMint}
-          onClose={() => { setCreateTxOpen(false); setInitialNftMint(null); }}
+          onClose={() => {
+            setCreateTxOpen(false);
+            setInitialNftMint(null);
+          }}
         />
       )}
     </div>

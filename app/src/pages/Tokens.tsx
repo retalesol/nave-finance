@@ -16,7 +16,6 @@ import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import NaveModal from '../components/NaveModal';
-import { UnderlineTabs } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useTokenRegistry, type TokenInfo } from '../hooks/useTokenRegistry';
 import { useSendTransaction } from '../hooks/useSendTransaction';
@@ -681,7 +680,6 @@ export default function Tokens() {
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
   const { tokens, tokenCount, hasMintedToken, loading, refetch } = useTokenRegistry(daoAddress);
-  const [activeTab, setActiveTab] = useState<'tokens' | 'holders'>('tokens');
   const [showCreate, setShowCreate] = useState(false);
 
   const canManage = !!daoAddress && (isMockMode || (chainKind === 'evm' ? !!evmAddress : !!publicKey));
@@ -911,60 +909,37 @@ export default function Tokens() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <UnderlineTabs
-        tabs={[
-          { id: 'tokens', label: 'Tokens' },
-          { id: 'holders', label: 'Holders' },
-        ]}
-        activeTab={activeTab}
-        onChange={setActiveTab}
-      />
-
       {/* Content */}
-      {activeTab === 'tokens' && (
-        <div className="mt-4">
-          {loading && (
-            <div className="space-y-3">
-              <CardSkeleton lines={4} />
-              <CardSkeleton lines={3} />
-            </div>
-          )}
-
-          {!loading && !hasMintedToken && (
-            <NaveEmptyState
-              icon="coins"
-              title="No tokens minted yet"
-              description={`This treasury has no token. Use “Mint a Token” to create one — it costs ${mintFeeLabel} from the treasury and gives the DAO full mint, freeze, and metadata authority. Revoking those authorities later returns ${revokeRewardLabel}.`}
-            />
-          )}
-
-          {!loading && tokens.length > 0 && (
-            <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
-              {tokens.map((token) => (
-                <TokenCard key={token.mint} token={token} chainKind={chainKind} onAction={handleTokenAction} />
-              ))}
-            </div>
-          )}
-
-          {!loading && tokenCount < 3 && hasMintedToken && (
-            <p style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', marginTop: '16px' }}>
-              {3 - tokenCount} token slot{3 - tokenCount > 1 ? 's' : ''} available — create a Token Mint proposal to use.
-            </p>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'holders' && (
-        <div className="mt-5 max-w-[620px] space-y-3" style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '20px' }}>
-          <div style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
-            No holder annotations yet
+      <div className="mt-4">
+        {loading && (
+          <div className="space-y-3">
+            <CardSkeleton lines={4} />
+            <CardSkeleton lines={3} />
           </div>
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6, margin: 0 }}>
-            The DAO can set annotation data on any holder wallet address through governance. Only approved annotations become publicly visible, protecting holder privacy while allowing DAOs to assign roles or labels.
+        )}
+
+        {!loading && !hasMintedToken && (
+          <NaveEmptyState
+            icon="coins"
+            title="No tokens minted yet"
+            description={`This treasury has no token. Use “Mint a Token” to create one — it costs ${mintFeeLabel} from the treasury and gives the DAO full mint, freeze, and metadata authority. Revoking those authorities later returns ${revokeRewardLabel}.`}
+          />
+        )}
+
+        {!loading && tokens.length > 0 && (
+          <div style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+            {tokens.map((token) => (
+              <TokenCard key={token.mint} token={token} chainKind={chainKind} onAction={handleTokenAction} />
+            ))}
+          </div>
+        )}
+
+        {!loading && tokenCount < 3 && hasMintedToken && (
+          <p style={{ fontSize: '12.5px', color: 'hsl(var(--faint))', marginTop: '16px' }}>
+            {3 - tokenCount} token slot{3 - tokenCount > 1 ? 's' : ''} available — create a Token Mint proposal to use.
           </p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

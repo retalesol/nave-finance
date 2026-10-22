@@ -2,22 +2,28 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount } from 'wagmi';
-import { hexToBytes, parseUnits } from 'viem';
+import { hexToBytes } from 'viem';
 import Fi from './Fi';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
 import { toast } from '../hooks/use-toast';
 import { fetchDaoContracts } from '../lib/evm/readers';
-import { buildCreateProposalEvm } from '../lib/evm/writers';
+import {
+  buildCreateProposalEvm,
+  encodeEvmNftTransferProposalPayload,
+  encodeEvmTransferProposalPayload,
+} from '../lib/evm/writers';
 import { storeEvmProposalPayloadRemote } from '../lib/evmProposalPayloadStore';
 import { persistEvmProposalPayload } from './governance/proposalStorage';
-import { getAssociatedTokenAddressSync, getAccount } from '@solana/spl-token';
-import { buildCreateProposal, encodeSolanaNftTransferProposalPayload, encodeSolanaTransferProposalPayload } from '../lib/transactionBuilders';
+import { getAccount } from '@solana/spl-token';
+import {
+  buildCreateProposal,
+  encodeSolanaNftTransferProposalPayload,
+  encodeSolanaTransferProposalPayload,
+} from '../lib/transactionBuilders';
 import { fetchTreasuryVault } from '../lib/onChainFetcher';
 import { getNavePrograms } from '../lib/naveProgram';
 import { ProposalType, type GovernanceType } from '../lib/onChainTypes';
-import { encodeEvmNftTransferProposalPayload, encodeEvmTransferProposalPayload } from '../lib/evm/writers';
 import type { TreasuryAssetRow } from '../hooks/useTreasuryAssets';
 import { isSendableTreasuryAsset } from '../lib/treasuryAssetEligibility';
 import type { TreasuryNft } from '../hooks/useTreasuryNfts';
@@ -73,8 +79,8 @@ export function CopyableAddressRow({
       title={`Copy ${label}: ${address}`}
       className={`w-full flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors ${className}`}
       style={{ backgroundColor: 'transparent' }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--surface-2))')}
+      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
     >
       <span
         className="flex-shrink-0"
@@ -100,7 +106,6 @@ export function CopyableAddressRow({
   );
 }
 
-
 const overlay: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
@@ -115,7 +120,7 @@ const overlay: React.CSSProperties = {
 
 const panel: React.CSSProperties = {
   width: '100%',
-  maxWidth: '520px',
+  maxWidth: '480px',
   borderRadius: '18px',
   border: '1px solid hsl(var(--border))',
   backgroundColor: '#ffffff',
@@ -123,25 +128,47 @@ const panel: React.CSSProperties = {
   overflow: 'hidden',
 };
 
-function ModalHeader({ title, icon: _icon, onClose }: { title: string; icon?: string; onClose: () => void }) {
+function ModalHeader({
+  title,
+  subtitle,
+  onClose,
+}: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+}) {
   return (
     <div
       className="flex items-start justify-between gap-3.5"
       style={{ padding: '20px 22px 0', backgroundColor: '#ffffff' }}
     >
-      <span
-        className="text-display"
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 400,
-          fontSize: '23px',
-          letterSpacing: '-0.02em',
-          lineHeight: 1.15,
-          color: 'hsl(var(--foreground))',
-        }}
-      >
-        {title}
-      </span>
+      <div>
+        <span
+          className="text-display block"
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: '23px',
+            letterSpacing: '-0.02em',
+            lineHeight: 1.15,
+            color: 'hsl(var(--foreground))',
+          }}
+        >
+          {title}
+        </span>
+        {subtitle && (
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'hsl(var(--muted-foreground))',
+              lineHeight: 1.5,
+              margin: '4px 0 0',
+            }}
+          >
+            {subtitle}
+          </p>
+        )}
+      </div>
       <button
         type="button"
         onClick={onClose}
@@ -155,11 +182,11 @@ function ModalHeader({ title, icon: _icon, onClose }: { title: string; icon?: st
           border: '1px solid hsl(var(--surface-2))',
           color: 'hsl(var(--muted-foreground))',
         }}
-        onMouseEnter={e => {
+        onMouseEnter={(e) => {
           e.currentTarget.style.color = 'hsl(var(--foreground))';
           e.currentTarget.style.borderColor = 'hsl(var(--border))';
         }}
-        onMouseLeave={e => {
+        onMouseLeave={(e) => {
           e.currentTarget.style.color = 'hsl(var(--muted-foreground))';
           e.currentTarget.style.borderColor = 'hsl(var(--surface-2))';
         }}
@@ -170,7 +197,7 @@ function ModalHeader({ title, icon: _icon, onClose }: { title: string; icon?: st
   );
 }
 
-/* ── Propose transfer — build a Transfer proposal from the treasury ── */
+/* ── Propose a payment — build a Transfer proposal from the treasury ── */
 export function CreateTransactionModal({
   daoAddress,
   proposalCount,
@@ -184,12 +211,10 @@ export function CreateTransactionModal({
 }: {
   daoAddress: string;
   proposalCount: number;
-  /** Token DAOs use the registered voting mint; wallet DAOs resolve mint from the vault (see Governance proposal flow). */
   governanceType: GovernanceType;
   votingMint: string | null;
   assets: TreasuryAssetRow[];
   nfts?: TreasuryNft[];
-  /** Pre-select NFT mode with this mint (from Assets → Send via governance). */
   initialNftMint?: string | null;
   onClose: () => void;
   onCreated?: () => void;
@@ -197,62 +222,64 @@ export function CreateTransactionModal({
   const { publicKey } = useWallet();
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
-  const [mode, setMode] = useState<'token' | 'nft'>(initialNftMint ? 'nft' : 'token');
-  const [recipient, setRecipient] = useState('');
-  const [amount, setAmount] = useState('');
-  const [assetMint, setAssetMint] = useState('');
-  const [assetQuery, setAssetQuery] = useState('');
-  const [nftMint, setNftMint] = useState(initialNftMint ?? '');
-  const [evmCollection, setEvmCollection] = useState('');
-  const [evmTokenId, setEvmTokenId] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const registeredNfts = useMemo(() => nfts.filter((n) => !n.compressed), [nfts]);
+  const hasNfts = registeredNfts.length > 0;
+
+  const [mode, setMode] = useState<'token' | 'nft'>(
+    initialNftMint && hasNfts ? 'nft' : 'token',
+  );
+  const [recipient, setRecipient] = useState('');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [assetMint, setAssetMint] = useState('');
+  const [nftMint, setNftMint] = useState(initialNftMint ?? '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const transferableAssets = useMemo(
     () => assets.filter((a) => isSendableTreasuryAsset(a)),
     [assets],
   );
-  const filteredTransferable = useMemo(() => {
-    const q = assetQuery.trim().toLowerCase();
-    if (!q) return transferableAssets;
-    return transferableAssets.filter(
-      (a) =>
-        a.symbol.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q) ||
-        a.mint.toLowerCase().includes(q),
-    );
-  }, [transferableAssets, assetQuery]);
 
   const selectedAsset =
-    filteredTransferable.find((a) => a.mint === assetMint) ?? filteredTransferable[0] ?? null;
+    transferableAssets.find((a) => a.mint === assetMint) ?? transferableAssets[0] ?? null;
 
-  const selectedNft = registeredNfts.find((n) => n.mint === nftMint) ?? registeredNfts[0] ?? null;
+  const selectedNft =
+    registeredNfts.find((n) => n.mint === nftMint) ?? registeredNfts[0] ?? null;
 
   const recipientValid = useMemo(() => {
     const r = recipient.trim();
+    if (!r) return false;
     if (chainKind === 'evm') return /^0x[0-9a-fA-F]{40}$/.test(r);
-    try { new PublicKey(r); return true; } catch { return false; }
+    try {
+      new PublicKey(r);
+      return true;
+    } catch {
+      return false;
+    }
   }, [recipient, chainKind]);
+
   const amountValid = Number(amount) > 0;
   const amountWithinBalance = selectedAsset ? Number(amount) <= selectedAsset.uiBalance : false;
-  const evmTokenIdValid = /^\d+$/.test(evmTokenId.trim()) && BigInt(evmTokenId.trim()) >= 0n;
-  const evmCollectionValid = chainKind !== 'evm' || /^0x[0-9a-fA-F]{40}$/.test(evmCollection.trim());
   const walletReady = chainKind === 'evm' || !!publicKey;
-  const canSubmitToken = mode === 'token' && recipientValid && amountValid && amountWithinBalance && !submitting && walletReady && !!selectedAsset;
-  const canSubmitNft = mode === 'nft' && recipientValid && !submitting && walletReady && (
-    chainKind === 'evm'
-      ? evmCollectionValid && evmTokenIdValid
-      : !!selectedNft
-  );
+  const canSubmitToken =
+    mode === 'token' &&
+    recipientValid &&
+    amountValid &&
+    amountWithinBalance &&
+    !submitting &&
+    walletReady &&
+    !!selectedAsset;
+  const canSubmitNft =
+    mode === 'nft' && recipientValid && !submitting && walletReady && !!selectedNft;
   const canSubmit = mode === 'token' ? canSubmitToken : canSubmitNft;
 
   useEffect(() => {
-    if (filteredTransferable.length && !filteredTransferable.some((a) => a.mint === assetMint)) {
-      setAssetMint(filteredTransferable[0].mint);
+    if (transferableAssets.length && !transferableAssets.some((a) => a.mint === assetMint)) {
+      setAssetMint(transferableAssets[0].mint);
     }
-  }, [filteredTransferable, assetMint]);
+  }, [transferableAssets, assetMint]);
 
   useEffect(() => {
     if (registeredNfts.length && !registeredNfts.some((n) => n.mint === nftMint)) {
@@ -281,44 +308,80 @@ export function CreateTransactionModal({
       }),
     );
 
+    const trimmedReason = reason.trim();
+
     if (mode === 'nft') {
+      if (!selectedNft) {
+        setError('This treasury has no NFTs to send.');
+        return;
+      }
+      if (!recipientValid) {
+        setError('Enter a valid recipient wallet address.');
+        return;
+      }
+
       if (chainKind === 'evm') {
-        if (!evmChainId) { toast({ variant: 'destructive', title: 'Wrong network', description: 'Select an Ethereum or Base network.' }); return; }
-        if (!recipientValid) { setError('Enter a valid recipient address.'); return; }
-        if (!evmCollectionValid) { setError('Enter a valid ERC-721 collection contract address.'); return; }
-        if (!evmTokenIdValid) { setError('Enter a valid token ID (non-negative integer).'); return; }
+        if (!evmChainId) {
+          toast({
+            variant: 'destructive',
+            title: 'Wrong network',
+            description: 'Select an Ethereum or Base network.',
+          });
+          return;
+        }
         const trio = await fetchDaoContracts(evmChainId, daoAddress);
-        if (!trio) { toast({ variant: 'destructive', title: 'Not available', description: 'EVM contracts are not configured for this network yet.' }); return; }
+        if (!trio) {
+          toast({
+            variant: 'destructive',
+            title: 'Not available',
+            description: 'EVM contracts are not configured for this network yet.',
+          });
+          return;
+        }
         setSubmitting(true);
         try {
-          const tokenId = BigInt(evmTokenId.trim());
+          const collectionAddr = (selectedNft.collection || selectedNft.mint) as `0x${string}`;
           const payloadHex = encodeEvmNftTransferProposalPayload(
-            evmCollection.trim() as `0x${string}`,
+            collectionAddr,
             recipient.trim() as `0x${string}`,
-            tokenId,
+            0n,
           );
           const evmPayloadBytes = Array.from(hexToBytes(payloadHex));
           const outcome = await tx.sendEvm(
             buildCreateProposalEvm(evmChainId, trio.governor, {
-              title: `Send NFT #${tokenId.toString()}`,
-              description: `Transfer ERC-721 token ${tokenId.toString()} from ${evmCollection.trim()} to ${recipient.trim()}`,
+              title: trimmedReason
+                ? `${trimmedReason.slice(0, 48)} — ${selectedNft.name}`
+                : `Send NFT: ${selectedNft.name}`,
+              description:
+                trimmedReason ||
+                `Transfer NFT ${selectedNft.name} to ${recipient.trim()}`,
               payload: payloadHex,
               proposalType: ProposalType.Transfer,
               votingPeriodSeconds,
-              votingMint: (governanceType === 'token' && votingMint ? votingMint : EVM_ZERO_ADDRESS) as `0x${string}`,
+              votingMint: (governanceType === 'token' && votingMint
+                ? votingMint
+                : EVM_ZERO_ADDRESS) as `0x${string}`,
             }),
-            { successLabel: 'NFT transfer proposal created' },
+            { successLabel: 'Payment proposal created' },
           );
           if (outcome.status === 'success' || outcome.status === 'mock') {
             if (evmPayloadBytes.length > 0) {
               persistEvmProposalPayload(daoAddress, proposalCount, 'transfer', evmPayloadBytes);
               if (outcome.status === 'success' && evmChainId) {
-                void storeEvmProposalPayloadRemote(evmChainId, daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+                void storeEvmProposalPayloadRemote(
+                  evmChainId,
+                  daoAddress,
+                  proposalCount,
+                  'transfer',
+                  evmPayloadBytes,
+                );
               }
             }
             onCreated?.();
             onClose();
-          } else setError(outcome.error || 'Failed to create NFT transfer proposal.');
+          } else {
+            setError(outcome.error || 'Failed to create NFT transfer proposal.');
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to create NFT transfer proposal.');
         } finally {
@@ -327,16 +390,17 @@ export function CreateTransactionModal({
         return;
       }
 
-      if (!publicKey) { setError('Connect your wallet first.'); return; }
-      if (!selectedNft) { setError('This treasury has no NFTs to send.'); return; }
-      if (!recipientValid) { setError('Enter a valid recipient address.'); return; }
+      if (!publicKey) {
+        setError('Connect your wallet first.');
+        return;
+      }
 
       const dao = new PublicKey(daoAddress);
       let daoTokenMint: PublicKey;
       try {
         if (governanceType === 'token') {
           if (!votingMint) {
-            setError('This DAO has no voting token yet. Configure a voting token in Settings before creating transaction proposals.');
+            setError('This DAO has no voting token yet.');
             return;
           }
           daoTokenMint = new PublicKey(votingMint);
@@ -347,11 +411,14 @@ export function CreateTransactionModal({
             return;
           }
           const { core } = getNavePrograms();
-          const acct = await getAccount(core.provider.connection, new PublicKey(vault.vaultTokenAccount));
+          const acct = await getAccount(
+            core.provider.connection,
+            new PublicKey(vault.vaultTokenAccount),
+          );
           daoTokenMint = acct.mint;
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to resolve the DAO mint for this proposal.');
+        setError(err instanceof Error ? err.message : 'Failed to resolve the DAO mint.');
         return;
       }
 
@@ -366,8 +433,12 @@ export function CreateTransactionModal({
           proposalCount,
           publicKey,
           {
-            title: `Send NFT: ${selectedNft.name}`,
-            description: `Transfer NFT ${selectedNft.name} (${selectedNft.mint}) to ${recipient.trim()}`,
+            title: trimmedReason
+              ? `${trimmedReason.slice(0, 48)} — ${selectedNft.name}`
+              : `Send NFT: ${selectedNft.name}`,
+            description:
+              trimmedReason ||
+              `Transfer NFT ${selectedNft.name} (${selectedNft.mint}) to ${recipient.trim()}`,
             payload,
             proposalType: ProposalType.Transfer,
             votingPeriodSeconds,
@@ -375,7 +446,7 @@ export function CreateTransactionModal({
           daoTokenMint,
         );
 
-        const outcome = await tx.send([result], { successLabel: 'NFT transfer proposal created' });
+        const outcome = await tx.send([result], { successLabel: 'Payment proposal created' });
         if (outcome.status === 'success' || outcome.status === 'mock') {
           onCreated?.();
           onClose();
@@ -390,15 +461,48 @@ export function CreateTransactionModal({
       return;
     }
 
+    const proposalTitle = selectedAsset
+      ? trimmedReason
+        ? `${trimmedReason.slice(0, 48)} — ${amount} ${selectedAsset.symbol}`
+        : `Send ${amount} ${selectedAsset.symbol}`
+      : 'Payment proposal';
+    const proposalDescription = selectedAsset
+      ? trimmedReason ||
+        `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`
+      : trimmedReason;
+
     // ── EVM: create a Transfer governance proposal on the governor ──────────
     if (chainKind === 'evm') {
-      if (!evmChainId) { toast({ variant: 'destructive', title: 'Wrong network', description: 'Select an Ethereum or Base network.' }); return; }
-      if (!selectedAsset) { setError('No deposited assets are available to send.'); return; }
-      if (!recipientValid) { setError('Enter a valid recipient address.'); return; }
+      if (!evmChainId) {
+        toast({
+          variant: 'destructive',
+          title: 'Wrong network',
+          description: 'Select an Ethereum or Base network.',
+        });
+        return;
+      }
+      if (!selectedAsset) {
+        setError('No deposited assets are available to send.');
+        return;
+      }
+      if (!recipientValid) {
+        setError('Enter a valid recipient address.');
+        return;
+      }
       const baseUnits = parseUiAmount(amount, selectedAsset.decimals);
-      if (baseUnits === null || baseUnits <= 0n) { setError(`Enter an amount with up to ${selectedAsset.decimals} decimals.`); return; }
+      if (baseUnits === null || baseUnits <= 0n) {
+        setError(`Enter an amount with up to ${selectedAsset.decimals} decimals.`);
+        return;
+      }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
-      if (!trio) { toast({ variant: 'destructive', title: 'Not available', description: 'EVM contracts are not configured for this network yet.' }); return; }
+      if (!trio) {
+        toast({
+          variant: 'destructive',
+          title: 'Not available',
+          description: 'EVM contracts are not configured for this network yet.',
+        });
+        return;
+      }
       setSubmitting(true);
       try {
         const payloadHex = encodeEvmTransferProposalPayload(
@@ -409,41 +513,54 @@ export function CreateTransactionModal({
         const evmPayloadBytes = Array.from(hexToBytes(payloadHex));
         const outcome = await tx.sendEvm(
           buildCreateProposalEvm(evmChainId, trio.governor, {
-            title: `Send ${amount} ${selectedAsset.symbol}`,
-            description: `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`,
+            title: proposalTitle,
+            description: proposalDescription,
             payload: payloadHex,
             proposalType: ProposalType.Transfer,
             votingPeriodSeconds,
-            votingMint: (governanceType === 'token' && votingMint ? votingMint : EVM_ZERO_ADDRESS) as `0x${string}`,
+            votingMint: (governanceType === 'token' && votingMint
+              ? votingMint
+              : EVM_ZERO_ADDRESS) as `0x${string}`,
           }),
-          { successLabel: 'Transaction proposal created' },
+          { successLabel: 'Payment proposal created' },
         );
         if (outcome.status === 'success' || outcome.status === 'mock') {
           if (evmPayloadBytes.length > 0) {
             persistEvmProposalPayload(daoAddress, proposalCount, 'transfer', evmPayloadBytes);
             if (outcome.status === 'success' && evmChainId) {
-              void storeEvmProposalPayloadRemote(evmChainId, daoAddress, proposalCount, 'transfer', evmPayloadBytes);
+              void storeEvmProposalPayloadRemote(
+                evmChainId,
+                daoAddress,
+                proposalCount,
+                'transfer',
+                evmPayloadBytes,
+              );
             }
           }
           onCreated?.();
           onClose();
-        } else setError(outcome.error || 'Failed to create transaction proposal.');
+        } else {
+          setError(outcome.error || 'Failed to create payment proposal.');
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to create transaction proposal.');
+        setError(err instanceof Error ? err.message : 'Failed to create payment proposal.');
       } finally {
         setSubmitting(false);
       }
       return;
     }
 
-    if (!publicKey) { setError('Connect your wallet first.'); return; }
+    if (!publicKey) {
+      setError('Connect your wallet first.');
+      return;
+    }
 
     const dao = new PublicKey(daoAddress);
     let daoTokenMint: PublicKey;
     try {
       if (governanceType === 'token') {
         if (!votingMint) {
-          setError('This DAO has no voting token yet. Configure a voting token in Settings before creating transaction proposals.');
+          setError('This DAO has no voting token yet.');
           return;
         }
         daoTokenMint = new PublicKey(votingMint);
@@ -454,11 +571,14 @@ export function CreateTransactionModal({
           return;
         }
         const { core } = getNavePrograms();
-        const acct = await getAccount(core.provider.connection, new PublicKey(vault.vaultTokenAccount));
+        const acct = await getAccount(
+          core.provider.connection,
+          new PublicKey(vault.vaultTokenAccount),
+        );
         daoTokenMint = acct.mint;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resolve the DAO mint for this proposal.');
+      setError(err instanceof Error ? err.message : 'Failed to resolve the DAO mint.');
       return;
     }
 
@@ -474,7 +594,6 @@ export function CreateTransactionModal({
         return;
       }
 
-      // Payload: 32-byte recipient + 32-byte mint/SOL sentinel + 8-byte amount.
       const baseUnits = parseUiAmount(amount, selectedAsset.decimals);
       if (baseUnits === null || baseUnits <= 0n) {
         setError(`Enter an amount with up to ${selectedAsset.decimals} decimals.`);
@@ -488,8 +607,8 @@ export function CreateTransactionModal({
         proposalCount,
         publicKey,
         {
-          title: `Send ${amount} ${selectedAsset.symbol}`,
-          description: `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`,
+          title: proposalTitle,
+          description: proposalDescription,
           payload,
           proposalType: ProposalType.Transfer,
           votingPeriodSeconds,
@@ -497,15 +616,15 @@ export function CreateTransactionModal({
         daoTokenMint,
       );
 
-      const outcome = await tx.send([result], { successLabel: 'Transaction proposal created' });
+      const outcome = await tx.send([result], { successLabel: 'Payment proposal created' });
       if (outcome.status === 'success' || outcome.status === 'mock') {
         onCreated?.();
         onClose();
       } else {
-        setError(outcome.error || 'Failed to create transaction proposal.');
+        setError(outcome.error || 'Failed to create payment proposal.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create transaction proposal.');
+      setError(err instanceof Error ? err.message : 'Failed to create payment proposal.');
     } finally {
       setSubmitting(false);
     }
@@ -513,8 +632,7 @@ export function CreateTransactionModal({
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    fontSize: '13.5px',
-    fontFamily: 'var(--font-mono)',
+    fontSize: '14px',
     padding: '10px 13px',
     borderRadius: '10px',
     border: '1px solid hsl(var(--border))',
@@ -522,203 +640,189 @@ export function CreateTransactionModal({
     color: 'hsl(var(--foreground))',
     outline: 'none',
   };
-  const estimatedFee = chainKind === 'evm' ? 'Network gas fee' : '~0.00001 SOL network fee';
-  const estimatedValue = selectedAsset?.priceUsd != null && amountValid
-    ? Number(amount) * selectedAsset.priceUsd
-    : null;
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: '12.5px',
+    fontWeight: 600,
+    color: 'hsl(var(--foreground))',
+    marginBottom: '6px',
+    display: 'block',
+  };
+
+  const estimatedUsd =
+    selectedAsset?.priceUsd != null && amountValid
+      ? Number(amount) * selectedAsset.priceUsd
+      : null;
 
   return createPortal(
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={panel}>
-        <ModalHeader title="Propose Transfer" icon="paper-plane" onClose={onClose} />
+    <div style={overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={panel} role="dialog" aria-modal="true" aria-label="Propose a payment">
+        <ModalHeader
+          title="Propose a payment"
+          subtitle="Your agents check it against the rules before anyone votes."
+          onClose={onClose}
+        />
         <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
-          <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5, marginTop: '-10px' }}>
-            Creates a governance proposal — guardians must vote before any funds move.
-          </p>
-          <div
-            className="flex gap-1 p-1 rounded-[10px]"
-            style={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--surface-2))' }}
-          >
-            {(['token', 'nft'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className="flex-1 px-3 py-1.5 rounded-[8px] transition-all"
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: mode === m ? 600 : 500,
-                  backgroundColor: mode === m ? '#ffffff' : 'transparent',
-                  color: mode === m ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                  boxShadow: mode === m ? '0 1px 3px rgba(17, 24, 39, 0.08)' : 'none',
-                }}
-              >
-                {m === 'token' ? 'Token transfer' : 'NFT transfer'}
-              </button>
-            ))}
-          </div>
-
-          <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-            {mode === 'token'
-              ? 'Select any asset the treasury holds, a recipient wallet, and an amount.'
-              : 'Propose sending a treasury-held NFT to a recipient. EVM uses the ERC-721 collection address and token ID.'}
-          </p>
-
-          {mode === 'nft' && chainKind === 'solana' && registeredNfts.length === 0 && (
+          {hasNfts && (
             <div
-              className="px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--surface-1))', fontSize: '12px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}
+              className="flex gap-1 p-1 rounded-[10px]"
+              style={{
+                backgroundColor: 'hsl(var(--background))',
+                border: '1px solid hsl(var(--surface-2))',
+              }}
             >
-              No NFTs are held by this treasury yet.
+              {(['token', 'nft'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className="flex-1 px-3 py-1.5 rounded-[8px] transition-all"
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: mode === m ? 600 : 500,
+                    backgroundColor: mode === m ? '#ffffff' : 'transparent',
+                    color: mode === m ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                    boxShadow: mode === m ? '0 1px 3px rgba(17, 24, 39, 0.08)' : 'none',
+                  }}
+                >
+                  {m === 'token' ? 'Token' : 'NFT'}
+                </button>
+              ))}
             </div>
           )}
 
-          {mode === 'token' && (
-          <>
           <div>
-            <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-              Search assets
-            </label>
-            <input
-              value={assetQuery}
-              onChange={(e) => setAssetQuery(e.target.value)}
-              placeholder="Filter by symbol, name, or address…"
-              style={inputStyle}
-              disabled={transferableAssets.length === 0}
-            />
-          </div>
-
-          <div>
-            <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-              Asset
-            </label>
-            <select
-              value={selectedAsset?.mint ?? ''}
-              onChange={e => setAssetMint(e.target.value)}
-              style={inputStyle}
-              disabled={filteredTransferable.length === 0}
-            >
-              {filteredTransferable.length === 0 ? (
-                <option value="">
-                  {assetQuery.trim()
-                    ? 'No assets match this search'
-                    : 'No deposited assets found'}
-                </option>
-              ) : filteredTransferable.map((a) => (
-                <option key={a.mint} value={a.mint}>
-                  {a.symbol} · {a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} available
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-              Recipient address
-            </label>
+            <label style={labelStyle}>Who gets paid?</label>
             <input
               value={recipient}
-              onChange={e => setRecipient(e.target.value)}
-              placeholder="Destination wallet address…"
-              style={inputStyle}
+              onChange={(e) => setRecipient(e.target.value)}
+              placeholder="Wallet address…"
+              style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: '13px' }}
             />
           </div>
+
+          {mode === 'token' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label style={labelStyle}>Asset</label>
+                <select
+                  value={selectedAsset?.mint ?? ''}
+                  onChange={(e) => setAssetMint(e.target.value)}
+                  style={inputStyle}
+                  disabled={transferableAssets.length === 0}
+                >
+                  {transferableAssets.length === 0 ? (
+                    <option value="">No deposited assets</option>
+                  ) : (
+                    transferableAssets.map((a) => (
+                      <option key={a.mint} value={a.mint}>
+                        {a.symbol} ({a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between" style={{ marginBottom: '6px' }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Amount</label>
+                  {selectedAsset && (
+                    <button
+                      type="button"
+                      onClick={() => setAmount(String(selectedAsset.uiBalance))}
+                      className="hover:underline underline-offset-2 bg-transparent border-0 cursor-pointer"
+                      style={{
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        color: 'hsl(var(--brass))',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      Max
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label style={labelStyle}>NFT</label>
+              <select
+                value={selectedNft?.mint ?? ''}
+                onChange={(e) => setNftMint(e.target.value)}
+                style={inputStyle}
+              >
+                {registeredNfts.map((n) => (
+                  <option key={n.mint} value={n.mint}>
+                    {n.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
-            <div className="flex items-center justify-between" style={{ marginBottom: '6px' }}>
-              <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, display: 'block' }}>
-                Amount
-              </label>
-              {selectedAsset && (
-                <button
-                  type="button"
-                  onClick={() => setAmount(String(selectedAsset.uiBalance))}
-                  className="text-xs font-medium underline-offset-2 hover:underline"
-                  style={{ color: 'hsl(var(--primary))', background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  Max
-                </button>
-              )}
-            </div>
-            <input
-              type="number"
-              min="0"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              placeholder="0.00"
-              style={inputStyle}
+            <label style={labelStyle}>What is it for?</label>
+            <textarea
+              rows={2}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Q3 grants — six community projects"
+              style={{ ...inputStyle, resize: 'vertical', minHeight: '68px' }}
             />
           </div>
 
-          <div className="border-t" style={{ borderColor: 'hsl(var(--surface-2))' }}>
-            <div className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13.5px' }}>
-              <span style={{ color: 'hsl(var(--muted-foreground))' }}>Estimated value</span>
-              <b className="nave-mono" style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>
-                {estimatedValue == null ? '—' : `$${estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-              </b>
-            </div>
-            <div className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'hsl(var(--surface-2))', fontSize: '13.5px' }}>
-              <span style={{ color: 'hsl(var(--muted-foreground))' }}>Estimated fee</span>
-              <b className="nave-mono" style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{estimatedFee}</b>
-            </div>
+          <div
+            style={{
+              backgroundColor: 'hsl(var(--background))',
+              border: '1px solid hsl(var(--surface-2))',
+              borderRadius: '12px',
+              padding: '11px 13px',
+              fontSize: '12.5px',
+              color: 'hsl(var(--muted-foreground))',
+              lineHeight: 1.55,
+            }}
+          >
+            {mode === 'token' && amountValid ? (
+              <>
+                <b style={{ color: 'hsl(var(--foreground))' }}>Needs a community vote</b>
+                {estimatedUsd != null
+                  ? ` (~$${estimatedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}). `
+                  : '. '}
+                Your agents verify the reserve rule before any funds move.
+              </>
+            ) : (
+              'Enter a recipient, amount, and reason to publish this payment for a vote.'
+            )}
           </div>
-
-          <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.5 }}>
-            Estimated USD uses DexScreener (or stable parity) for orientation only. On-chain agents and risk checks use oracle-backed prices at execution time, not this estimate.
-          </p>
-          </>
-          )}
-
-          {mode === 'nft' && (
-            <>
-              {chainKind === 'evm' ? (
-                <>
-                  <div>
-                    <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-                      ERC-721 collection address
-                    </label>
-                    <input value={evmCollection} onChange={(e) => setEvmCollection(e.target.value)} placeholder="0x…" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-                      Token ID
-                    </label>
-                    <input value={evmTokenId} onChange={(e) => setEvmTokenId(e.target.value)} placeholder="0" style={inputStyle} />
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-                    NFT
-                  </label>
-                  <select value={selectedNft?.mint ?? ''} onChange={(e) => setNftMint(e.target.value)} style={inputStyle} disabled={registeredNfts.length === 0}>
-                    {registeredNfts.length === 0 ? (
-                      <option value="">No NFTs in this treasury</option>
-                    ) : registeredNfts.map((n) => (
-                      <option key={n.mint} value={n.mint}>{n.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="nave-label" style={{ fontSize: '12px', fontWeight: 500, marginBottom: '6px', display: 'block' }}>
-                  Recipient address
-                </label>
-                <input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="Destination wallet address…" style={inputStyle} />
-              </div>
-            </>
-          )}
 
           {error && (
             <div
               className="px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: 'hsl(var(--destructive-muted))', fontSize: '12px', color: 'hsl(var(--destructive))', lineHeight: 1.4 }}
+              style={{
+                backgroundColor: 'hsl(var(--destructive-muted))',
+                fontSize: '12px',
+                color: 'hsl(var(--destructive))',
+                lineHeight: 1.4,
+              }}
             >
               {error}
             </div>
           )}
 
-          <div className="pt-3 border-t flex justify-end gap-2" style={{ borderColor: 'hsl(var(--surface-2))' }}>
+          <div
+            className="pt-3 border-t flex justify-end gap-2"
+            style={{ borderColor: 'hsl(var(--surface-2))' }}
+          >
             <button
               type="button"
               onClick={onClose}
@@ -728,7 +832,8 @@ export function CreateTransactionModal({
               Cancel
             </button>
             <button
-              onClick={handleSubmit}
+              type="button"
+              onClick={() => void handleSubmit()}
               disabled={!canSubmit}
               className="flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
               style={{
@@ -739,8 +844,7 @@ export function CreateTransactionModal({
                 cursor: canSubmit ? 'pointer' : 'not-allowed',
               }}
             >
-              <Fi icon="paper-plane" style={{ fontSize: '12px' }} />
-              {submitting ? 'Creating proposal…' : 'Confirm Proposal'}
+              {submitting ? 'Publishing…' : 'Publish for a vote →'}
             </button>
           </div>
         </div>
@@ -749,4 +853,3 @@ export function CreateTransactionModal({
     document.body,
   );
 }
-

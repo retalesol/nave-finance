@@ -49,7 +49,6 @@ test('Create DAO shows chain family picker when EVM is configured', async ({ pag
   test.skip(!evmUiLikelyEnabled(), 'Set VITE_EVM_*_FACTORY_ADDRESS and VITE_WALLETCONNECT_PROJECT_ID to assert ChainSelector');
   await page.goto('/create-dao', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('heading', { name: 'Create a treasury' })).toBeVisible();
-  await page.getByRole('button', { name: /Quick setup/i }).click();
   await expect(page.getByRole('button', { name: 'Solana', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ethereum', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Base', exact: true }).first()).toBeVisible();
@@ -58,15 +57,13 @@ test('Create DAO shows chain family picker when EVM is configured', async ({ pag
 test('Create DAO review step requires connected wallet for selected chain', async ({ page }) => {
   test.skip(!hasCoreViteEnv(), 'Set core VITE_* vars (see .env.example)');
   await page.goto('/create-dao', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  await page.getByRole('button', { name: /Quick setup/i }).click();
   await page.getByPlaceholder('e.g. Solana Builders Collective').fill('E2E Review DAO');
-  await expect(page.getByRole('button', { name: 'Review' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Continue/i })).toBeDisabled();
 });
 
 test('Create DAO slug validation surfaces reserved names', async ({ page }) => {
   test.skip(!hasCoreViteEnv(), 'Set core VITE_* vars (see .env.example)');
   await page.goto('/create-dao', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  await page.getByRole('button', { name: /Quick setup/i }).click();
   await page.getByPlaceholder('nave').fill('admin');
   await expect(page.getByText(/reserved/i)).toBeVisible({ timeout: 8_000 });
 });

@@ -15,10 +15,6 @@ import { useDaoRegistry } from '@/hooks/useDaoRegistry';
 import { useGuardianConfig } from '@/hooks/useGuardianConfig';
 import { useDaoMembership } from '@/hooks/useDaoMembership';
 import { useTokenRegistry } from '@/hooks/useTokenRegistry';
-import {
-  TOKEN_MINT_QUORUM_PCT,
-  SWITCH_VOTING_QUORUM_PCT,
-} from '@/lib/programConfig';
 
 type FilterTab = 'all' | 'active' | 'passed' | 'rejected';
 
@@ -98,12 +94,8 @@ export default function Governance() {
   const passed = allProposals.filter((p) => p.status === 'passed').length;
   const rejected = allProposals.filter((p) => p.status === 'rejected').length;
 
-  const votingSystemLabel = isTokenGov ? 'Token-weighted' : 'Authorized wallets';
-  const quorumLabel = isTokenGov
-    ? 'Token majority'
-    : guardian.threshold > 0
-      ? `${guardian.threshold}-of-${guardian.walletCount}`
-      : 'Guardian majority';
+  const votingSystemLabel = isTokenGov ? 'Token holders vote' : 'People vote';
+  const quorumLabel = 'majority';
 
   if (liveProposals.loading && liveProposals.proposals.length === 0) {
     return <PageSkeleton variant="governance" />;
@@ -148,7 +140,7 @@ export default function Governance() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 pt-1">
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
           <span
             className="nave-mono"
             style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
@@ -157,6 +149,21 @@ export default function Governance() {
             <b style={{ color: '#2F7D4F', fontWeight: 600 }}>{passed}</b> passed ·{' '}
             <b style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>{rejected}</b> rejected
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              setProposeInitial(null);
+              setCreating(true);
+            }}
+            className="px-4 py-2 rounded-[9px] font-semibold transition-colors"
+            style={{
+              fontSize: '13px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
+            }}
+          >
+            Start a decision
+          </button>
         </div>
       </div>
 
@@ -174,19 +181,11 @@ export default function Governance() {
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>
-            Voting system: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{votingSystemLabel}</b>
+            Voting: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{votingSystemLabel}</b>
           </span>
           <span>·</span>
           <span>
             Quorum: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{quorumLabel}</b>
-          </span>
-          <span>·</span>
-          <span>
-            Token mint: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{TOKEN_MINT_QUORUM_PCT}%</b>
-          </span>
-          <span>·</span>
-          <span>
-            Switch voting: <b style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}>{SWITCH_VOTING_QUORUM_PCT}%</b>
           </span>
         </div>
         <button

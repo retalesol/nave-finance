@@ -4,10 +4,10 @@ import { useAgentHealth, timeAgo } from '../../hooks/useAgentHealth';
 import { computeAgentStatus, summarizeAgentStatuses } from '../../lib/agentStatus';
 
 const AGENT_ROLE_META: Record<string, { label: string; description: string }> = {
-  executive:   { label: 'Executive Agent',   description: 'Turns decisions into plans. Signs first.' },
-  financial:   { label: 'Financial Agent',   description: 'Moves money to approved earning places. Signs second.' },
-  oversight:   { label: 'Operational Agent', description: 'Checks every move against your rules. Signs last — or refuses.' },
-  operational: { label: 'Oversight Agent',   description: 'Watches around the clock. Can freeze everything instantly.' },
+  executive:   { label: 'The Coordinator', description: 'Turns decisions into plans. Signs first.' },
+  financial:   { label: 'The Investor',    description: 'Moves money to approved earning places. Signs second.' },
+  oversight:   { label: 'The Guardrail',   description: 'Checks every move against your rules. Signs last — or refuses.' },
+  operational: { label: 'The Watcher',     description: 'Watches around the clock. Can freeze everything instantly.' },
 };
 
 const AGENT_ROLES_ORDER = ['executive', 'financial', 'oversight', 'operational'] as const;

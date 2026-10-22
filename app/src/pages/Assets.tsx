@@ -1,1130 +1,702 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount, useSignMessage } from 'wagmi';
+import { parseUnits } from 'viem';
 import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import MetricCard from '../components/MetricCard';
-import { Notice, Section, UnderlineTabs } from '../components/calm';
+import { Notice, Section } from '../components/calm';
 import { useDaoContext } from '../hooks/useDaoContext';
+import { useDaoRegistry } from '../hooks/useDaoRegistry';
+import { useTokenRegistry } from '../hooks/useTokenRegistry';
+import { useConstitution } from '../hooks/useConstitution';
+import { useTreasuryData, type StrategyInfo } from '../hooks/useTreasuryData';
 import { useTreasuryAssets, type TreasuryAssetRow } from '../hooks/useTreasuryAssets';
 import { useTreasuryNfts, type TreasuryNft } from '../hooks/useTreasuryNfts';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
 import { DepositFlowModal } from '../components/DepositFlow';
+import { CreateTransactionModal } from '../components/TreasuryActions';
 import NaveModal from '../components/NaveModal';
 import { toast } from '../hooks/use-toast';
 import { describeTransactionError } from '../lib/errorMessages';
-import { buildRegisterAssetEvm } from '../lib/evm/writers';
-import {
-  buildInitStrategyPosition,
-  buildInitStrategyEscrow,
-  buildConfigurePositionTargets,
-  buildConfigureMarginfiPosition,
-  buildRegisterAsset,
-  buildRegisterNftAsset,
-  buildSetFeeAsset,
-} from '../lib/transactionBuilders';
-import { evmAllowedAssets, resolveAsset, riskLabel, type AllowedAsset, type EvmAllowedAsset } from '../lib/allowedAssets';
-import { fetchYieldData, solanaAccessSigner } from '../lib/edgeFunctionClient';
+import { fetchDaoContracts } from '../lib/evm/readers';
+import { buildWithdrawFromStrategyEvm, resolveEvmMinOut } from '../lib/evm/writers';
+import { buildRegisterAsset } from '../lib/transactionBuilders';
+import { solanaAccessSigner, withdrawStrategyViaProxyEvm } from '../lib/edgeFunctionClient';
 import { getSolanaRegisterAssetPlan } from '../lib/solanaTreasuryRegistrationDefaults';
-import { getSolanaStrategyStatuses } from '../lib/strategyReadiness';
-
-const MARGINFI_STRATEGY_ENABLED = getSolanaStrategyStatuses().find((s) => s.id === 'marginfi')?.supported ?? false;
-const JUPITER_STRATEGY_BADGE = getSolanaStrategyStatuses().find((s) => s.id === 'jupiter')?.badge ?? null;
+import { blendedApy } from '../lib/positionYield';
+import type { EvmChainId } from '../lib/chain/types';
 
 const USD = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const USD_EXACT = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const FIELD_STYLE: React.CSSProperties = {
-  width: '100%',
-  fontSize: '14px',
-  padding: '11px 13px',
-  borderRadius: '10px',
-  backgroundColor: '#ffffff',
-  border: '1px solid hsl(var(--border))',
-  color: 'hsl(var(--foreground))',
-  outline: 'none',
-};
+const MOCK_FALLBACK_STRATEGIES: StrategyInfo[] = [
+  {
+    name: 'Kamino',
+    protocol: 'kamino',
+    allocation: 55,
+    currentValueUsd: 31_900,
+    earnedUsd: 1_840,
+    apy: 5.4,
+  },
+  {
+    name: 'Jito',
+    protocol: 'jito',
+    allocation: 45,
+    currentValueUsd: 26_100,
+    earnedUsd: 2_120,
+    apy: 6.2,
+  },
+];
 
-function ModalShell({
-  title,
-  subtitle,
-  children,
-  onClose,
+interface VenueMeta {
+  place: string;
+  what: string;
+  exit: string;
+  risk: string;
+}
+
+function describeVenue(strategy: StrategyInfo): VenueMeta {
+  const key = (strategy.protocol || strategy.name).toLowerCase();
+  if (key.includes('aave')) {
+    return {
+      place: 'Aave',
+      what: 'Lends USDC to borrowers',
+      exit: 'Instantly',
+      risk: 'Approved lending venue. Capped by your single-place rule.',
+    };
+  }
+  if (key.includes('compound')) {
+    return {
+      place: 'Compound',
+      what: 'Lends USDC, second venue',
+      exit: 'Instantly',
+      risk: 'Second lending venue so no single protocol holds everything.',
+    };
+  }
+  if (key.includes('kamino')) {
+    return {
+      place: 'Kamino',
+      what: 'Lends USDC in audited vaults',
+      exit: 'Instantly',
+      risk: 'Approved Solana lending market. Guardrail checks caps on every move.',
+    };
+  }
+  if (key.includes('marginfi')) {
+    return {
+      place: 'MarginFi',
+      what: 'Lends stablecoins & SOL',
+      exit: 'Instantly',
+      risk: 'Approved lending venue under your constitutional limits.',
+    };
+  }
+  if (key.includes('jupiter')) {
+    return {
+      place: 'Jupiter Lend',
+      what: 'Lends stablecoins for yield',
+      exit: 'Instantly',
+      risk: 'Approved yield venue capped by your constitution.',
+    };
+  }
+  if (key.includes('jito')) {
+    return {
+      place: 'Jito staking',
+      what: 'Stakes SOL, back in ~1 day',
+      exit: '~1 day',
+      risk: 'SOL price moves affect the dollar value; stake is held with major validators.',
+    };
+  }
+  if (key.includes('lido') || key.includes('eth') || key.includes('stak')) {
+    return {
+      place: 'ETH staking',
+      what: 'Stakes ETH, back in ~1 day',
+      exit: '~1 day',
+      risk: 'ETH price moves affect the dollar value; the stake itself is with a major operator.',
+    };
+  }
+  const cleanName =
+    strategy.name && !strategy.name.startsWith('0x')
+      ? strategy.name.charAt(0).toUpperCase() + strategy.name.slice(1)
+      : strategy.protocol.startsWith('0x')
+        ? `Adapter ${strategy.protocol.slice(0, 6)}…${strategy.protocol.slice(-4)}`
+        : strategy.protocol;
+  return {
+    place: cleanName,
+    what: 'Earns yield inside your rules',
+    exit: 'Instantly',
+    risk: 'Approved in your Rules. Protected by your reserve floor and single-place cap.',
+  };
+}
+
+function describeHoldingJob(asset: TreasuryAssetRow): string {
+  const sym = asset.symbol.toUpperCase();
+  if (asset.isStablecoin || sym === 'USDC' || sym === 'USDT' || sym === 'DAI' || sym === 'USDS') {
+    return 'Reserve + lending. The stable core: part sits safe in reserve, part lends in approved places.';
+  }
+  if (sym === 'SOL' || sym === 'WSOL') {
+    return 'Staked or held to power Solana operations. Back in about a day when unstaked.';
+  }
+  if (sym === 'ETH' || sym === 'WETH' || sym === 'STETH' || sym === 'WSTETH') {
+    return 'Staked or held to secure Ethereum. Back in about a day when unstaked.';
+  }
+  if (sym === 'NAVE') {
+    return 'Held. The protocol token — no role in this treasury’s day-to-day unless a decision says so.';
+  }
+  return 'Held in the treasury. Can be sent or allocated when a community decision approves it.';
+}
+
+function KvRow({
+  label,
+  value,
+  valueColor,
+  mono,
 }: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  onClose: () => void;
+  label: string;
+  value: React.ReactNode;
+  valueColor?: string;
+  mono?: boolean;
 }) {
   return (
-    <NaveModal open title={title} subtitle={subtitle} onClose={onClose} maxWidth={480}>
-      <div style={{ padding: '18px 22px 22px' }} className="space-y-4">
-        {children}
+    <div
+      className="flex items-center justify-between gap-4"
+      style={{
+        padding: '11px 0',
+        borderBottom: '1px solid hsl(var(--surface-2))',
+        fontSize: '13.5px',
+      }}
+    >
+      <span style={{ color: 'hsl(var(--muted-foreground))' }}>{label}</span>
+      <b
+        className={mono ? 'nave-mono' : undefined}
+        style={{
+          fontWeight: 600,
+          color: valueColor ?? 'hsl(var(--foreground))',
+          textAlign: 'right',
+        }}
+      >
+        {value}
+      </b>
+    </div>
+  );
+}
+
+/* ── Earning place detail modal ─────────────────────────────── */
+function EarningPlaceModal({
+  strategy,
+  totalValueUsd,
+  daoAddress,
+  isMockMode,
+  onClose,
+  onUpdated,
+}: {
+  strategy: StrategyInfo;
+  totalValueUsd: number;
+  daoAddress: string;
+  isMockMode: boolean;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const meta = describeVenue(strategy);
+  const { chainKind, evmChainId, chainFamily } = useChain();
+  const { address: evmAddress } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const tx = useSendTransaction();
+
+  const [showMoveForm, setShowMoveForm] = useState(false);
+  const [direction, setDirection] = useState<'withdraw' | 'deposit'>('withdraw');
+  const [amount, setAmount] = useState(
+    String(Math.min(1000, Math.max(1, Math.round(strategy.currentValueUsd)))),
+  );
+  const [busy, setBusy] = useState(false);
+  const [doneMsg, setDoneMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const sharePct =
+    totalValueUsd > 0 ? Math.round((strategy.currentValueUsd / totalValueUsd) * 100) : Math.round(strategy.allocation);
+
+  async function handleConfirmMove(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    const num = Number(amount);
+    if (!Number.isFinite(num) || num <= 0) {
+      setErr('Enter an amount greater than zero.');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      if (isMockMode || direction === 'deposit' || chainKind !== 'evm') {
+        await new Promise((r) => setTimeout(r, 650));
+        setDoneMsg(
+          direction === 'withdraw'
+            ? `Withdrew $${num.toLocaleString()} from ${meta.place} back to Available. The Guardrail checked Rules 01–03 first.`
+            : `Your placement with ${meta.place} was queued. The Guardrail checks Rules 01–03 before moving funds.`,
+        );
+        onUpdated();
+        return;
+      }
+
+      if (!evmChainId || !evmAddress) {
+        setErr('Connect your wallet to withdraw to Available.');
+        return;
+      }
+      const trio = await fetchDaoContracts(evmChainId, daoAddress);
+      if (!trio?.execution) {
+        setErr('Execution contract is not available on this network.');
+        return;
+      }
+      const amountBase = parseUnits(String(num), 6);
+      const minOut = resolveEvmMinOut(evmChainId as EvmChainId, amountBase);
+      const built = buildWithdrawFromStrategyEvm(evmChainId, trio.execution, 0, amountBase, minOut);
+      const direct = await tx.sendEvm(built, {
+        successLabel: `Withdrawn from ${meta.place}`,
+        quietToast: true,
+      });
+      if (direct.status === 'success' || direct.status === 'mock') {
+        setDoneMsg(`Withdrew $${num.toLocaleString()} from ${meta.place} to Available.`);
+        onUpdated();
+        return;
+      }
+
+      const { data, error } = await withdrawStrategyViaProxyEvm(
+        daoAddress,
+        evmAddress,
+        (m) => signMessageAsync({ message: m }),
+        {
+          chainId: evmChainId,
+          chain: chainFamily === 'solana' ? 'base' : chainFamily,
+          executionAddress: trio.execution,
+          index: 0,
+          amount: amountBase.toString(),
+          minOut: minOut.toString(),
+        },
+      );
+      if (error || !data?.success) {
+        setErr(error || direct.error || 'Could not withdraw from this place right now.');
+        return;
+      }
+      setDoneMsg(`Withdrew $${num.toLocaleString()} from ${meta.place} to Available.`);
+      onUpdated();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not complete move.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <NaveModal open title={meta.place} subtitle={meta.what} onClose={onClose} maxWidth={480}>
+      <div style={{ padding: '18px 22px 22px' }}>
+        {doneMsg ? (
+          <div className="text-center py-4 space-y-3">
+            <div
+              className="mx-auto grid place-items-center rounded-full"
+              style={{
+                width: '38px',
+                height: '38px',
+                backgroundColor: '#EAF5EE',
+                color: 'hsl(var(--success))',
+                fontWeight: 700,
+              }}
+            >
+              ✓
+            </div>
+            <h4
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '21px',
+                fontWeight: 400,
+                margin: 0,
+                color: 'hsl(var(--foreground))',
+              }}
+            >
+              Move complete
+            </h4>
+            <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
+              {doneMsg}
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-[9px] font-semibold"
+                style={{ fontSize: '13px', backgroundColor: 'hsl(var(--foreground))', color: '#ffffff' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <KvRow label="Placed" value={`${USD(strategy.currentValueUsd)} · ${sharePct}%`} mono />
+            <KvRow
+              label="Rate"
+              value={strategy.apy != null ? `${strategy.apy.toFixed(1)}%/yr` : '—'}
+              valueColor="hsl(var(--success))"
+              mono
+            />
+            <KvRow label="Earned so far" value={USD(strategy.earnedUsd)} mono />
+            <KvRow label="Get it back" value={meta.exit} />
+
+            <p
+              style={{
+                fontSize: '13px',
+                color: 'hsl(var(--muted-foreground))',
+                lineHeight: 1.65,
+                margin: '14px 0 0',
+              }}
+            >
+              {meta.risk}
+            </p>
+
+            {showMoveForm && (
+              <form
+                onSubmit={(e) => void handleConfirmMove(e)}
+                className="mt-4 pt-4 space-y-3"
+                style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'hsl(var(--foreground))',
+                        marginBottom: '6px',
+                        display: 'block',
+                      }}
+                    >
+                      Direction
+                    </label>
+                    <select
+                      value={direction}
+                      onChange={(e) => setDirection(e.target.value as 'withdraw' | 'deposit')}
+                      style={{
+                        width: '100%',
+                        fontSize: '13.5px',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: '#ffffff',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                    >
+                      <option value="withdraw">Withdraw to Available</option>
+                      <option value="deposit">Move in (from Available)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'hsl(var(--foreground))',
+                        marginBottom: '6px',
+                        display: 'block',
+                      }}
+                    >
+                      Amount (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        fontSize: '13.5px',
+                        fontFamily: 'var(--font-mono)',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: '#ffffff',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                    />
+                  </div>
+                </div>
+                {err && (
+                  <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', margin: 0 }}>{err}</p>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="px-4 py-2 rounded-[9px] font-semibold transition-all"
+                    style={{
+                      fontSize: '13px',
+                      backgroundColor: 'hsl(var(--foreground))',
+                      color: '#ffffff',
+                      opacity: busy ? 0.5 : 1,
+                    }}
+                  >
+                    {busy ? 'Moving…' : 'Confirm move'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div
+              className="flex items-center justify-end gap-2"
+              style={{
+                marginTop: '18px',
+                paddingTop: '14px',
+                borderTop: '1px solid hsl(var(--surface-2))',
+              }}
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-[9px] font-semibold"
+                style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+              >
+                Close
+              </button>
+              {!showMoveForm && (
+                <button
+                  type="button"
+                  onClick={() => setShowMoveForm(true)}
+                  className="px-4 py-2 rounded-[9px] font-semibold"
+                  style={{
+                    fontSize: '13px',
+                    backgroundColor: 'hsl(var(--foreground))',
+                    color: '#ffffff',
+                  }}
+                >
+                  Move money
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </NaveModal>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  mono,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div>
-      <label
-        style={{
-          fontSize: '12.5px',
-          fontWeight: 600,
-          color: 'hsl(var(--foreground))',
-          marginBottom: '7px',
-          display: 'block',
-        }}
-      >
-        {label}
-      </label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          ...FIELD_STYLE,
-          fontSize: mono ? '12.5px' : '14px',
-          fontFamily: mono ? 'var(--font-mono)' : 'var(--font-body)',
-        }}
-      />
-    </div>
-  );
-}
-
-function Err({ msg }: { msg: string | null }) {
-  if (!msg) return null;
-  return <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', margin: 0 }}>{msg}</p>;
-}
-
-function PrimaryBtn({
-  onClick,
-  busy,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  busy: boolean;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  const isDisabled = busy || !!disabled;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={isDisabled}
-      className="px-4 py-2 rounded-[9px] font-semibold transition-all"
-      style={{
-        fontSize: '13px',
-        backgroundColor: 'hsl(var(--foreground))',
-        color: '#ffffff',
-        opacity: isDisabled ? 0.45 : 1,
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-const ZERO_PYTH_FEED = '0'.repeat(64);
-
-function evmAssetKind(asset: EvmAllowedAsset): number {
-  if (asset.assetClass === 'stablecoin') return 0;
-  if (asset.assetClass === 'sol-like' || asset.symbol.toUpperCase().includes('ETH')) return 1;
-  return 2;
-}
-
-function normalizePythFeed(feed: string): `0x${string}` | null {
-  const hex = feed.trim().replace(/^0x/i, '');
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null;
-  return `0x${hex}` as `0x${string}`;
-}
-
-/* ── Pool discovery helper ───────────────────────────────────── */
-interface DiscoveredPool {
-  poolId: string;
-  symbol: string;
-  extMarket: string;
-  extReserve: string;
-  collateralMint?: string;
-  apyBps: number;
-  riskScore: number;
-  adjustedScore: number;
-  tvlUsd: number;
-  source: string;
-}
-
-async function discoverPoolsForAsset(
-  protocol: string,
-  mint: string,
-): Promise<DiscoveredPool[]> {
-  const { data } = await fetchYieldData();
-  if (!data) return [];
-  return (data.opportunities ?? []).filter(
-    (o) => o.protocolId === protocol && o.mint === mint && o.extMarket && o.extReserve,
-  );
-}
-
-/* ── Configure position targets (adaptive) ──────────────────── */
-function ConfigureTargetsModal({
-  daoAddress,
-  founder,
+/* ── Holding detail modal ───────────────────────────────────── */
+function HoldingDetailModal({
   asset,
+  isHidden,
+  canManage,
+  daoAddress,
   onClose,
-  onDone,
+  onAddFunds,
+  onProposePayment,
+  onToggleHide,
+  onEnabled,
 }: {
-  daoAddress: string;
-  founder: PublicKey | null;
   asset: TreasuryAssetRow;
+  isHidden: boolean;
+  canManage: boolean;
+  daoAddress: string;
   onClose: () => void;
-  onDone: () => void;
+  onAddFunds: (asset: TreasuryAssetRow) => void;
+  onProposePayment: () => void;
+  onToggleHide: (asset: TreasuryAssetRow, currentlyHidden: boolean) => void;
+  onEnabled: () => void;
 }) {
-  const tx = useSendTransaction();
   const { chainKind } = useChain();
-  const [protocol, setProtocol] = useState('kamino');
-  const [collateralMint, setCollateralMint] = useState('');
-  const [extMarket, setExtMarket] = useState('');
-  const [extReserve, setExtReserve] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [discovering, setDiscovering] = useState(false);
-  const [discoveredPools, setDiscoveredPools] = useState<DiscoveredPool[]>([]);
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const allowedAsset: AllowedAsset | undefined = resolveAsset(asset.mint);
-
-  useEffect(() => {
-    void handleDiscover();
-    // Auto-discover best pool when the modal opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset.mint, protocol]);
-
-  async function handleDiscover() {
-    setErr(null);
-    setDiscovering(true);
-    setDiscoveredPools([]);
-    try {
-      const pools = await discoverPoolsForAsset(protocol, asset.mint);
-      if (pools.length === 0) {
-        setErr(`No live pools found for ${asset.symbol} on ${protocol}. Enter addresses manually.`);
-      } else {
-        setDiscoveredPools(pools);
-        const best = pools[0];
-        setSelectedPoolId(best.poolId);
-        setExtMarket(best.extMarket);
-        setExtReserve(best.extReserve);
-        if (best.collateralMint) setCollateralMint(best.collateralMint);
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Discovery failed');
-    } finally {
-      setDiscovering(false);
-    }
-  }
-
-  function selectPool(pool: DiscoveredPool) {
-    setSelectedPoolId(pool.poolId);
-    setExtMarket(pool.extMarket);
-    setExtReserve(pool.extReserve);
-    if (pool.collateralMint) setCollateralMint(pool.collateralMint);
-  }
-
-  async function submit() {
-    setErr(null);
-    if (chainKind === 'evm') {
-      toast({
-        variant: 'destructive',
-        title: 'Solana-only step',
-        description:
-          'EVM adapters self-target their pool — approve adapters and set caps via the Policy constitution instead.',
-      });
-      return;
-    }
-    if (!founder) {
-      setErr('Connect your wallet to configure strategy targets on-chain.');
-      return;
-    }
-    let market: PublicKey, reserve: PublicKey;
-    try {
-      market = new PublicKey(extMarket.trim());
-      reserve = new PublicKey(extReserve.trim());
-    } catch {
-      setErr('Market and reserve must be valid Solana addresses');
-      return;
-    }
-    setBusy(true);
-    try {
-      const dao = new PublicKey(daoAddress);
-      const mintKey = new PublicKey(asset.mint);
-      const initPos = await buildInitStrategyPosition(dao, founder, protocol, mintKey);
-      const initEsc = await buildInitStrategyEscrow(dao, founder, protocol, mintKey);
-      if (protocol === 'marginfi') {
-        const configure = await buildConfigureMarginfiPosition(dao, founder, mintKey, market, reserve);
-        const out = await tx.sendGrouped([[initPos, initEsc, configure]], {
-          successLabel: 'MarginFi position configured',
-        });
-        if (out.status === 'success' || out.status === 'mock') {
-          onDone();
-          onClose();
-        } else setErr(out.error || 'Configuration failed');
-        return;
-      }
-      let collateral: PublicKey;
-      try {
-        collateral = new PublicKey((collateralMint || extMarket).trim());
-      } catch {
-        setErr('Collateral mint must be a valid Solana address');
-        return;
-      }
-      const configure = await buildConfigurePositionTargets(
-        dao,
-        founder,
-        protocol,
-        mintKey,
-        collateral,
-        market,
-        reserve,
-      );
-      const out = await tx.sendGrouped([[initPos, initEsc, configure]], {
-        successLabel: 'Strategy targets configured',
-      });
-      if (out.status === 'success' || out.status === 'mock') {
-        onDone();
-        onClose();
-      } else setErr(out.error || 'Configuration failed');
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Configuration failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const canSubmit = !!extMarket && !!extReserve;
-  const fieldLabels: Record<string, { collateral: string; market: string; reserve: string }> = {
-    kamino:   { collateral: 'Reserve collateral mint', market: 'Lending market', reserve: 'Reserve' },
-    jito:     { collateral: 'Pool mint (poolSOL)',     market: 'Stake pool',     reserve: 'Reserve stake' },
-    marginfi: { collateral: 'Collateral mint',         market: 'MarginFi group', reserve: 'Bank address' },
-    jupiter:  { collateral: 'jlToken (fToken) mint',   market: 'Lending PDA',    reserve: 'Liquidity vault' },
-  };
-  const labels = fieldLabels[protocol] ?? fieldLabels.kamino;
-
-  return (
-    <ModalShell
-      title={`Configure ${asset.symbol} strategy targets`}
-      subtitle={`We pick the best yield pool for ${asset.symbol}. Confirm to continue.`}
-      onClose={onClose}
-    >
-      {/* Protocol selector */}
-      <div>
-        <label
-          style={{
-            fontSize: '12.5px',
-            fontWeight: 600,
-            color: 'hsl(var(--foreground))',
-            marginBottom: '7px',
-            display: 'block',
-          }}
-        >
-          Protocol
-        </label>
-        <select
-          value={protocol}
-          onChange={(e) => {
-            setProtocol(e.target.value);
-            setDiscoveredPools([]);
-            setSelectedPoolId(null);
-          }}
-          style={FIELD_STYLE}
-        >
-          <option value="kamino">Kamino (klend)</option>
-          <option value="jito">Jito (SPL stake pool)</option>
-          {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">MarginFi (lending)</option>}
-          <option value="jupiter">
-            Jupiter (Lend Earn){JUPITER_STRATEGY_BADGE === 'beta' ? ' — Beta' : ''}
-          </option>
-        </select>
-        {discovering && (
-          <p
-            style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}
-            className="flex items-center gap-1.5"
-          >
-            <Fi icon="arrows-rotate" className="animate-spin" style={{ fontSize: 10 }} />
-            Scanning live pools…
-          </p>
-        )}
-      </div>
-
-      {/* Discovered pools list */}
-      {discoveredPools.length > 0 && (
-        <div>
-          <label
-            style={{
-              fontSize: '12.5px',
-              fontWeight: 600,
-              color: 'hsl(var(--foreground))',
-              marginBottom: '7px',
-              display: 'block',
-            }}
-          >
-            Live pools found — ranked by risk-adjusted yield
-          </label>
-          <div
-            className="max-h-44 overflow-y-auto"
-            style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
-          >
-            {discoveredPools.map((pool) => {
-              const rl = riskLabel(pool.riskScore);
-              const selected = pool.poolId === selectedPoolId;
-              return (
-                <button
-                  type="button"
-                  key={pool.poolId}
-                  onClick={() => selectPool(pool)}
-                  className="w-full flex items-center justify-between text-left transition-colors"
-                  style={{
-                    padding: '10px 4px',
-                    borderBottom: '1px solid hsl(var(--surface-2))',
-                    fontSize: '12.5px',
-                  }}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      style={{
-                        width: '15px',
-                        height: '15px',
-                        borderRadius: '50%',
-                        border: `1.5px solid ${selected ? 'hsl(var(--foreground))' : '#CFC8B8'}`,
-                        display: 'grid',
-                        placeItems: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {selected && (
-                        <span
-                          style={{
-                            width: '7px',
-                            height: '7px',
-                            borderRadius: '50%',
-                            backgroundColor: 'hsl(var(--foreground))',
-                          }}
-                        />
-                      )}
-                    </span>
-                    <span className="nave-mono truncate" style={{ color: 'hsl(var(--foreground))' }}>
-                      {pool.source}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                    <span className="nave-mono" style={{ fontSize: '11.5px', color: 'hsl(var(--success))', fontWeight: 600 }}>
-                      {(pool.apyBps / 100).toFixed(2)}% APY
-                    </span>
-                    <span style={{ fontSize: '11px', color: rl.color, fontFamily: 'var(--font-mono)' }}>
-                      {rl.label} risk
-                    </span>
-                    {pool.tvlUsd > 0 && (
-                      <span style={{ fontSize: '11px', color: 'hsl(var(--faint))', fontFamily: 'var(--font-mono)' }}>
-                        ${(pool.tvlUsd / 1e6).toFixed(0)}M TVL
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Manual fields — Advanced */}
-      <button
-        type="button"
-        onClick={() => setShowAdvanced((v) => !v)}
-        className="flex items-center gap-1.5 w-full text-left"
-        style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}
-      >
-        <Fi icon={showAdvanced ? 'chevron-up' : 'chevron-down'} style={{ fontSize: 10 }} />
-        Advanced — manual pool addresses
-      </button>
-      {showAdvanced && (
-        <div
-          className="space-y-3 pt-3"
-          style={{ borderTop: '1px solid hsl(var(--surface-2))' }}
-        >
-          <button
-            type="button"
-            onClick={handleDiscover}
-            disabled={discovering || busy}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border font-semibold"
-            style={{
-              fontSize: '12px',
-              backgroundColor: '#ffffff',
-              borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--foreground))',
-            }}
-          >
-            <Fi
-              icon={discovering ? 'arrows-rotate' : 'magnifying-glass'}
-              style={{ fontSize: 11 }}
-              className={discovering ? 'animate-spin' : ''}
-            />
-            {discovering ? 'Scanning…' : 'Re-scan pools'}
-          </button>
-          {protocol !== 'marginfi' && (
-            <Field
-              label={labels.collateral}
-              value={collateralMint}
-              onChange={setCollateralMint}
-              placeholder="cToken / pool / jlToken mint…"
-              mono
-            />
-          )}
-          <Field
-            label={labels.market}
-            value={extMarket}
-            onChange={setExtMarket}
-            placeholder="ext market / lending PDA…"
-            mono
-          />
-          <Field
-            label={labels.reserve}
-            value={extReserve}
-            onChange={setExtReserve}
-            placeholder="ext reserve / vault…"
-            mono
-          />
-        </div>
-      )}
-
-      {allowedAsset && (
-        <div
-          style={{
-            backgroundColor: 'hsl(var(--background))',
-            border: '1px solid hsl(var(--surface-2))',
-            borderRadius: '12px',
-            padding: '11px 13px',
-            fontSize: '12px',
-            color: 'hsl(var(--muted-foreground))',
-            lineHeight: 1.55,
-          }}
-        >
-          <strong style={{ color: 'hsl(var(--foreground))' }}>{allowedAsset.symbol}</strong> is in the curated allowlist — asset class: {allowedAsset.assetClass}, max risk: {allowedAsset.maxRisk}/100.
-        </div>
-      )}
-
-      <Err msg={err} />
-      <div
-        className="flex items-center justify-end gap-2"
-        style={{
-          marginTop: '20px',
-          paddingTop: '16px',
-          borderTop: '1px solid hsl(var(--surface-2))',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3.5 py-2 rounded-[9px] font-semibold"
-          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-        >
-          Cancel
-        </button>
-        <PrimaryBtn onClick={submit} busy={busy} disabled={!canSubmit}>
-          {busy ? 'Configuring…' : 'Configure targets'}
-        </PrimaryBtn>
-      </div>
-    </ModalShell>
-  );
-}
-
-/* ── Register EVM asset ───────────────────────────────────── */
-function RegisterEvmAssetModal({
-  daoAddress,
-  onClose,
-  onDone,
-}: {
-  daoAddress: string;
-  onClose: () => void;
-  onDone: () => void;
-}) {
+  const { publicKey } = useWallet();
   const tx = useSendTransaction();
-  const { evmChainId } = useChain();
-  const assets = evmChainId ? evmAllowedAssets(evmChainId) : [];
-  const [selected, setSelected] = useState(assets[0]?.address ?? '');
-  const asset = assets.find((a) => a.address === selected) ?? assets[0] ?? null;
-  const defaultFeed = asset?.assetClass === 'stablecoin' ? ZERO_PYTH_FEED : asset?.pythFeedId ?? '';
-  const [pythFeed, setPythFeed] = useState(defaultFeed);
-  const pythPresetLocked = !!(asset?.assetClass === 'stablecoin' || asset?.pythFeedId);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [enabling, setEnabling] = useState(false);
+  const [enableErr, setEnableErr] = useState<string | null>(null);
 
-  function selectAsset(address: string) {
-    const next = assets.find((a) => a.address === address) ?? null;
-    setSelected(address);
-    setPythFeed(next?.assetClass === 'stablecoin' ? ZERO_PYTH_FEED : next?.pythFeedId ?? '');
-    setErr(null);
+  const solanaPlan =
+    chainKind === 'solana' && !asset.onChainRegistered && asset.mint !== 'SOL'
+      ? getSolanaRegisterAssetPlan(asset.mint, asset.symbol, asset.name)
+      : null;
+  const canOneClickEnable = canManage && !!publicKey && solanaPlan?.mode === 'ready';
+
+  function copyAddress() {
+    navigator.clipboard.writeText(asset.mint);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
   }
 
-  async function submit() {
-    setErr(null);
-    if (!evmChainId) {
-      setErr('Select an Ethereum or Base network.');
-      return;
-    }
-    if (!asset) {
-      setErr('Select an asset to register.');
-      return;
-    }
-    const feedHex = pythPresetLocked ? defaultFeed : pythFeed;
-    const feed = normalizePythFeed(feedHex);
-    if (!feed) {
-      setErr('Pyth feed id must be 32 bytes / 64 hex chars. Stablecoins use all zeros.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const out = await tx.sendEvm(
-        buildRegisterAssetEvm(
-          evmChainId,
-          daoAddress,
-          asset.address,
-          feed,
-          asset.assetClass === 'stablecoin',
-          evmAssetKind(asset),
-        ),
-        { successLabel: `${asset.symbol} registered` },
-      );
-      if (out.status === 'success' || out.status === 'mock') {
-        onDone();
-        onClose();
-      } else setErr(out.error || 'Registration failed');
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Registration failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ModalShell
-      title="Add a token"
-      subtitle="Choose a supported token. Setup happens automatically so you can deposit next."
-      onClose={onClose}
-    >
-      <div>
-        <label
-          style={{
-            fontSize: '12.5px',
-            fontWeight: 600,
-            color: 'hsl(var(--foreground))',
-            marginBottom: '7px',
-            display: 'block',
-          }}
-        >
-          Asset
-        </label>
-        <select
-          value={asset?.address ?? ''}
-          onChange={(e) => selectAsset(e.target.value)}
-          style={FIELD_STYLE}
-        >
-          {assets.map((a) => (
-            <option key={a.address} value={a.address}>
-              {a.symbol} — {a.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      {!pythPresetLocked && (
-        <details style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '12px' }}>
-          <summary
-            style={{
-              fontSize: '12.5px',
-              fontWeight: 600,
-              color: 'hsl(var(--muted-foreground))',
-              cursor: 'pointer',
-            }}
-          >
-            Advanced
-          </summary>
-          <div className="pt-3">
-            <Field
-              label="Price feed id"
-              value={pythFeed}
-              onChange={setPythFeed}
-              placeholder={ZERO_PYTH_FEED}
-              mono
-            />
-          </div>
-        </details>
-      )}
-      <Err msg={err} />
-      <div
-        className="flex items-center justify-end gap-2"
-        style={{
-          marginTop: '20px',
-          paddingTop: '16px',
-          borderTop: '1px solid hsl(var(--surface-2))',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3.5 py-2 rounded-[9px] font-semibold"
-          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-        >
-          Cancel
-        </button>
-        <PrimaryBtn onClick={submit} busy={busy} disabled={!asset}>
-          {busy ? 'Adding…' : 'Add token'}
-        </PrimaryBtn>
-      </div>
-    </ModalShell>
-  );
-}
-
-/* ── Register SPL treasury asset (lazy / guided) ─────────── */
-function RegisterSolanaHeldAssetModal({
-  daoAddress,
-  founder,
-  asset,
-  onClose,
-  onDone,
-}: {
-  daoAddress: string;
-  founder: PublicKey;
-  asset: TreasuryAssetRow;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const tx = useSendTransaction();
-  const [advancedFeed, setAdvancedFeed] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const plan = getSolanaRegisterAssetPlan(asset.mint, asset.symbol, asset.name);
-
-  async function submit() {
-    setErr(null);
-    let pythHex: string;
-    let isStable: boolean;
-    let assetKind: number;
-    if (plan.mode === 'ready') {
-      pythHex = plan.pythFeedHex;
-      isStable = plan.isStablecoin;
-      assetKind = plan.assetKind;
-    } else {
-      const h = advancedFeed.trim().replace(/^0x/i, '');
-      if (!/^[0-9a-fA-F]{64}$/.test(h)) {
-        setErr(
-          'Pyth price feed id must be 32 bytes (64 hex characters). Use the feed id from Pyth for this token.',
-        );
-        return;
-      }
-      pythHex = h;
-      isStable = false;
-      assetKind = plan.assetKind;
-    }
-    setBusy(true);
+  async function handleOneClickEnable() {
+    if (!publicKey || !solanaPlan || solanaPlan.mode !== 'ready') return;
+    setEnableErr(null);
+    setEnabling(true);
     try {
       const dao = new PublicKey(daoAddress);
       const mint = new PublicKey(asset.mint);
-      const r = await buildRegisterAsset(dao, founder, mint, pythHex, isStable, assetKind);
-      const out = await tx.send(r, { successLabel: `${asset.symbol} enabled for treasury` });
+      const r = await buildRegisterAsset(
+        dao,
+        publicKey,
+        mint,
+        solanaPlan.pythFeedHex,
+        solanaPlan.isStablecoin,
+        solanaPlan.assetKind,
+      );
+      const out = await tx.send(r, { successLabel: `${asset.symbol} enabled` });
       if (out.status === 'success' || out.status === 'mock') {
-        onDone();
+        onEnabled();
         onClose();
-      } else
-        setErr(
+      } else {
+        setEnableErr(
           describeTransactionError(out.error, {
             programHint: 'core',
-            fallback: 'Registration failed',
+            fallback: 'Could not enable token',
           }),
         );
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Registration failed');
+      setEnableErr(e instanceof Error ? e.message : 'Could not enable token');
     } finally {
-      setBusy(false);
+      setEnabling(false);
     }
   }
 
+  const shareStr = `${asset.allocationPct.toFixed(asset.allocationPct % 1 === 0 ? 0 : 1)}%`;
+
   return (
-    <ModalShell
-      title={`Enable ${asset.symbol}`}
-      subtitle={`Enables ${asset.symbol} for deposits and transfers from this treasury.`}
+    <NaveModal
+      open
+      title={`${asset.symbol} · ${asset.name}`}
+      subtitle="Holding detail"
       onClose={onClose}
+      maxWidth={480}
     >
-      {plan.mode === 'needs_pyth_feed' && (
-        <details open style={{ borderTop: '1px solid hsl(var(--surface-2))', paddingTop: '12px' }}>
-          <summary
-            style={{
-              fontSize: '12.5px',
-              fontWeight: 600,
-              color: 'hsl(var(--muted-foreground))',
-              cursor: 'pointer',
-            }}
-          >
-            Advanced — price feed
-          </summary>
-          <div className="pt-3">
-            <Field
-              label="Price feed id"
-              value={advancedFeed}
-              onChange={setAdvancedFeed}
-              placeholder="64 hex characters"
-              mono
-            />
-          </div>
-        </details>
-      )}
-      {plan.mode === 'ready' && (
-        <div
+      <div style={{ padding: '18px 22px 22px' }}>
+        <KvRow
+          label="Balance"
+          value={`${asset.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${asset.symbol}`}
+          mono
+        />
+        <KvRow label="Value · share" value={`${USD_EXACT(asset.valueUsd)} · ${shareStr}`} mono />
+
+        <p
           style={{
-            backgroundColor: 'hsl(var(--background))',
-            border: '1px solid hsl(var(--surface-2))',
-            borderRadius: '12px',
-            padding: '12px 14px',
             fontSize: '13px',
             color: 'hsl(var(--muted-foreground))',
-            lineHeight: 1.55,
+            lineHeight: 1.65,
+            margin: '14px 0 0',
           }}
         >
-          <strong style={{ color: 'hsl(var(--foreground))' }}>{asset.symbol}</strong> is ready to enable.
-        </div>
-      )}
-      <Err msg={err} />
-      <div
-        className="flex items-center justify-end gap-2"
-        style={{
-          marginTop: '20px',
-          paddingTop: '16px',
-          borderTop: '1px solid hsl(var(--surface-2))',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3.5 py-2 rounded-[9px] font-semibold"
-          style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
-        >
-          Cancel
-        </button>
-        <PrimaryBtn onClick={submit} busy={busy}>
-          {busy ? 'Confirming…' : 'Enable asset'}
-        </PrimaryBtn>
-      </div>
-    </ModalShell>
-  );
-}
+          {describeHoldingJob(asset)}
+        </p>
 
-function treasuryAssetDexScreenerUrl(
-  asset: TreasuryAssetRow,
-  chainKind: 'solana' | 'evm',
-  evmChainId: number | null | undefined,
-): string | null {
-  if (chainKind === 'solana' && asset.mint !== 'SOL' && asset.mint.length > 20) {
-    return `https://dexscreener.com/solana/${asset.mint}`;
-  }
-  if (chainKind === 'evm' && /^0x[0-9a-fA-F]{40}$/i.test(asset.mint)) {
-    if (evmChainId === 4663 || evmChainId === 46630 || evmChainId === 5042 || evmChainId === 5042002) {
-      return null;
-    }
-    const seg = evmChainId === 8453 || evmChainId === 84532 ? 'base' : 'ethereum';
-    return `https://dexscreener.com/${seg}/${asset.mint}`;
-  }
-  return null;
-}
-
-/* ── Asset row (calm hairline style replacing heavy card) ─── */
-function AssetCard({
-  asset,
-  canManage,
-  onAction,
-  hidden = false,
-}: {
-  asset: TreasuryAssetRow;
-  canManage: boolean;
-  onAction: (a: string, asset: TreasuryAssetRow) => void;
-  hidden?: boolean;
-}) {
-  const { chainKind, evmChainId } = useChain();
-  const tx = useSendTransaction();
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [copiedMint, setCopiedMint] = useState(false);
-  const depositBlocked = chainKind === 'evm' && asset.mint === 'ETH';
-  const dexHref = treasuryAssetDexScreenerUrl(asset, chainKind, evmChainId);
-  const inUseUi = asset.deployedCapital / Math.pow(10, asset.decimals);
-
-  function copyMint() {
-    navigator.clipboard.writeText(asset.mint);
-    setCopiedMint(true);
-    setTimeout(() => setCopiedMint(false), 1400);
-  }
-
-  return (
-    <div
-      style={{
-        padding: '15px 0',
-        borderBottom: '1px solid hsl(var(--surface-2))',
-      }}
-    >
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              style={{
-                fontFamily: 'var(--font-body)',
-                fontSize: '14.5px',
-                fontWeight: 600,
-                color: 'hsl(var(--foreground))',
-              }}
-            >
-              {asset.symbol}
-            </span>
-            <span style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}>
-              · {asset.name}
-            </span>
-            <span
-              className="nave-mono"
-              style={{
-                fontSize: '10px',
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'hsl(var(--faint))',
-              }}
-            >
-              {asset.assetKindLabel}
-            </span>
-            {asset.onChainRegistered && !asset.enabled && (
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: 'hsl(var(--destructive))',
-                }}
-              >
-                Disabled
-              </span>
-            )}
-          </div>
-          <div
-            style={{
-              fontSize: '12.5px',
-              color: 'hsl(var(--muted-foreground))',
-              marginTop: '3px',
-              lineHeight: 1.5,
-            }}
-          >
-            Available:{' '}
-            <span className="nave-mono" style={{ color: 'hsl(var(--foreground))' }}>
-              {asset.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-            </span>
-            {' · '}
-            In use:{' '}
-            <span className="nave-mono" style={{ color: 'hsl(var(--foreground))' }}>
-              {inUseUi.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-            </span>
-          </div>
-        </div>
-
-        <div className="text-right flex-shrink-0">
-          <div
-            className="nave-mono"
-            style={{
-              fontSize: '14px',
-              fontWeight: 600,
-              color: 'hsl(var(--foreground))',
-            }}
-          >
-            {USD(asset.valueUsd)}
-          </div>
-          <div
-            className="nave-mono"
-            style={{
-              fontSize: '12px',
-              color: 'hsl(var(--muted-foreground))',
-              marginTop: '2px',
-            }}
-          >
-            {asset.allocationPct.toFixed(1)}% of NAV
-          </div>
-        </div>
-      </div>
-
-      {/* Quiet hairline actions + details toggle */}
-      <div className="flex items-center gap-3 flex-wrap mt-2.5">
-        {canManage && (
-          <>
+        {/* Quiet utility links: Copy address + Hide/Unhide + 1-click Enable if ready */}
+        <div className="flex items-center gap-3 flex-wrap mt-3">
+          {asset.mint !== 'SOL' && asset.mint !== 'ETH' && (
             <button
               type="button"
-              onClick={() => onAction('deposit', asset)}
-              disabled={depositBlocked}
-              title={depositBlocked ? 'Use WETH to add ETH to the treasury.' : undefined}
-              className="hover:underline underline-offset-4 bg-transparent border-0"
+              onClick={copyAddress}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
               style={{
                 fontSize: '12.5px',
-                fontWeight: 600,
-                color: depositBlocked ? 'hsl(var(--faint))' : 'hsl(var(--foreground))',
-                cursor: depositBlocked ? 'not-allowed' : 'pointer',
+                color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))',
+              }}
+            >
+              {copied ? 'Copied ✓' : 'Copy address'}
+            </button>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                onToggleHide(asset, isHidden);
+                onClose();
+              }}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
+            >
+              {isHidden ? 'Unhide token' : 'Hide token'}
+            </button>
+          )}
+          {canOneClickEnable && (
+            <button
+              type="button"
+              onClick={() => void handleOneClickEnable()}
+              disabled={enabling}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--brass))' }}
+            >
+              {enabling ? 'Enabling…' : 'Enable token'}
+            </button>
+          )}
+        </div>
+
+        {enableErr && (
+          <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', marginTop: '8px' }}>
+            {enableErr}
+          </p>
+        )}
+
+        <div
+          className="flex items-center justify-end gap-2 flex-wrap"
+          style={{
+            marginTop: '18px',
+            paddingTop: '14px',
+            borderTop: '1px solid hsl(var(--surface-2))',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3.5 py-2 rounded-[9px] font-semibold"
+            style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+          >
+            Close
+          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onAddFunds(asset);
+              }}
+              className="px-3.5 py-2 rounded-[9px] border font-semibold"
+              style={{
+                fontSize: '13px',
+                backgroundColor: '#ffffff',
+                borderColor: 'hsl(var(--border))',
+                color: 'hsl(var(--foreground))',
               }}
             >
               Add funds
             </button>
-            <span style={{ color: 'hsl(var(--border))' }}>·</span>
-            <button
-              type="button"
-              onClick={() => onAction('configure', asset)}
-              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-              style={{
-                fontSize: '12.5px',
-                color: 'hsl(var(--muted-foreground))',
-              }}
-            >
-              Yield setup
-            </button>
-            {chainKind !== 'evm' && asset.onChainRegistered && asset.isStablecoin && (
-              <>
-                <span style={{ color: 'hsl(var(--border))' }}>·</span>
-                <button
-                  type="button"
-                  onClick={() => onAction('feeAsset', asset)}
-                  disabled={tx.status === 'signing'}
-                  className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-                  style={{
-                    fontSize: '12.5px',
-                    color: 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  Set as fee asset
-                </button>
-              </>
-            )}
-            {chainKind === 'solana' && !asset.onChainRegistered && asset.mint !== 'SOL' && (
-              <>
-                <span style={{ color: 'hsl(var(--border))' }}>·</span>
-                <button
-                  type="button"
-                  onClick={() => onAction('registerSolana', asset)}
-                  className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-                  style={{
-                    fontSize: '12.5px',
-                    color: 'hsl(var(--brass))',
-                    fontWeight: 500,
-                  }}
-                >
-                  Enable
-                </button>
-              </>
-            )}
-            <span style={{ color: 'hsl(var(--border))' }}>·</span>
-            <button
-              type="button"
-              onClick={() => onAction(hidden ? 'unhide' : 'hide', asset)}
-              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-              style={{
-                fontSize: '12.5px',
-                color: 'hsl(var(--muted-foreground))',
-              }}
-              title={
-                hidden
-                  ? 'Show this asset in the default view'
-                  : 'Hide this asset (e.g. airdrop spam) from the default view'
-              }
-            >
-              {hidden ? 'Unhide' : 'Hide'}
-            </button>
-            <span style={{ color: 'hsl(var(--border))' }}>·</span>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => setDetailsOpen((v) => !v)}
-          className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-          style={{
-            fontSize: '12.5px',
-            color: 'hsl(var(--faint))',
-          }}
-        >
-          {detailsOpen ? 'Hide details' : 'Details'}
-        </button>
-      </div>
-
-      {detailsOpen && (
-        <div
-          className="mt-3 flex items-center justify-between gap-3 flex-wrap rounded-[10px] border px-3 py-2"
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: 'hsl(var(--surface-2))',
-          }}
-        >
-          <code
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onProposePayment();
+            }}
+            className="px-4 py-2 rounded-[9px] font-semibold"
             style={{
-              fontSize: '11.5px',
-              color: 'hsl(var(--foreground))',
-              fontFamily: 'var(--font-mono)',
-              wordBreak: 'break-all',
+              fontSize: '13px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
             }}
           >
-            {asset.mint}
-          </code>
-          <div className="flex items-center gap-3 ml-auto flex-shrink-0">
-            <button
-              type="button"
-              onClick={copyMint}
-              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-              style={{
-                fontSize: '12px',
-                color: copiedMint ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))',
-              }}
-              title="Copy"
-            >
-              {copiedMint ? 'Copied ✓' : 'Copy'}
-            </button>
-            {dexHref && (
-              <a
-                href={dexHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 hover:underline underline-offset-4"
-                style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}
-              >
-                Market <Fi icon="arrow-up-right-from-square" style={{ fontSize: 10 }} />
-              </a>
-            )}
-          </div>
+            Propose a payment
+          </button>
         </div>
-      )}
-    </div>
+      </div>
+    </NaveModal>
   );
 }
 
-/* ── NFT row (calm hairline item replacing heavy card) ───── */
-function NftCard({
+/* ── NFT row (only rendered when nfts.length > 0) ──────────── */
+function NftRow({
   nft,
   canManage,
-  onAction,
+  onSendNft,
 }: {
   nft: TreasuryNft;
   canManage: boolean;
-  onAction: (action: string, nft: TreasuryNft) => void;
+  onSendNft: (nft: TreasuryNft) => void;
 }) {
   return (
     <div
@@ -1136,7 +708,7 @@ function NftCard({
     >
       <div className="flex items-center gap-3.5 min-w-0 flex-1">
         <div
-          className="w-11 h-11 rounded-[10px] overflow-hidden flex items-center justify-center flex-shrink-0 border"
+          className="w-10 h-10 rounded-[10px] overflow-hidden flex items-center justify-center flex-shrink-0 border"
           style={{
             backgroundColor: '#ffffff',
             borderColor: 'hsl(var(--border))',
@@ -1146,73 +718,37 @@ function NftCard({
           {nft.image ? (
             <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" loading="lazy" />
           ) : (
-            <Fi icon="image" style={{ fontSize: 16 }} />
+            <Fi icon="image" style={{ fontSize: 15 }} />
           )}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className="truncate"
-              style={{
-                fontSize: '14px',
-                fontWeight: 500,
-                color: 'hsl(var(--foreground))',
-              }}
-            >
-              {nft.name}
-            </span>
-            {nft.compressed && (
-              <span
-                className="nave-mono"
-                style={{
-                  fontSize: '10px',
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  color: 'hsl(var(--faint))',
-                }}
-              >
-                Compressed
-              </span>
-            )}
+          <div
+            className="truncate"
+            style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}
+          >
+            {nft.name}
           </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span
-              className="nave-mono truncate"
-              style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}
-            >
-              {nft.mint.slice(0, 6)}…{nft.mint.slice(-4)}
-            </span>
-            {nft.collection && (
-              <span style={{ fontSize: '11.5px', color: 'hsl(var(--faint))' }}>
-                · Collection {nft.collection.slice(0, 4)}…{nft.collection.slice(-4)}
-              </span>
-            )}
+          <div className="nave-mono truncate" style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
+            {nft.mint.slice(0, 6)}…{nft.mint.slice(-4)}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {canManage && !nft.compressed && (
-          <button
-            type="button"
-            onClick={() => onAction('sendNft', nft)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] border font-semibold transition-colors"
-            style={{
-              fontSize: '12.5px',
-              backgroundColor: '#ffffff',
-              borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--foreground))',
-            }}
-          >
-            Send via governance →
-          </button>
-        )}
-        {nft.compressed && (
-          <span style={{ fontSize: '12px', color: 'hsl(var(--faint))' }}>
-            cNFT transfers coming soon
-          </span>
-        )}
-      </div>
+      {canManage && !nft.compressed && (
+        <button
+          type="button"
+          onClick={() => onSendNft(nft)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] border font-semibold transition-colors"
+          style={{
+            fontSize: '12.5px',
+            backgroundColor: '#ffffff',
+            borderColor: 'hsl(var(--border))',
+            color: 'hsl(var(--foreground))',
+          }}
+        >
+          Propose transfer →
+        </button>
+      )}
     </div>
   );
 }
@@ -1221,11 +757,15 @@ function NftCard({
 export default function Assets() {
   const navigate = useNavigate();
   const { daoAddress, isMockMode } = useDaoContext();
+  const daoRegistry = useDaoRegistry(daoAddress);
+  const tokenRegistry = useTokenRegistry(daoAddress);
+  const { constitution } = useConstitution(daoAddress);
+  const treasury = useTreasuryData(daoAddress);
   const { publicKey, signMessage } = useWallet();
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const { chainKind } = useChain();
-  const tx = useSendTransaction();
+
   const {
     assets,
     visibleAssets,
@@ -1238,129 +778,131 @@ export default function Assets() {
     hideAsset,
     unhideAsset,
   } = useTreasuryAssets(daoAddress);
-  const {
-    nfts,
-    loading: nftsLoading,
-    error: nftsError,
-    unsupported: nftsUnsupported,
-    refetch: refetchNfts,
-  } = useTreasuryNfts(daoAddress);
+
+  const { nfts, refetch: refetchNfts } = useTreasuryNfts(daoAddress);
+
   const [depositAsset, setDepositAsset] = useState<TreasuryAssetRow | null>(null);
   const [showDeposit, setShowDeposit] = useState(false);
-  const [configureAsset, setConfigureAsset] = useState<TreasuryAssetRow | null>(null);
-  const [registerEvmAsset, setRegisterEvmAsset] = useState(false);
-  const [registerSolanaAsset, setRegisterSolanaAsset] = useState<TreasuryAssetRow | null>(null);
-  const [tab, setTab] = useState<'tokens' | 'hidden' | 'nfts'>('tokens');
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [initialNftMint, setInitialNftMint] = useState<string | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyInfo | null>(null);
+  const [selectedHolding, setSelectedHolding] = useState<{
+    asset: TreasuryAssetRow;
+    hidden: boolean;
+  } | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [refreshStamp, setRefreshStamp] = useState('Updated just now');
 
-  const canManage = !!daoAddress && (isMockMode || (chainKind === 'evm' ? !!evmAddress : !!publicKey));
+  const canManage =
+    !!daoAddress && (isMockMode || (chainKind === 'evm' ? !!evmAddress : !!publicKey));
+  const votingMint = tokenRegistry.tokens[0]?.mint ?? null;
 
-  async function handleAction(action: string, asset: TreasuryAssetRow) {
+  const strategies: StrategyInfo[] = useMemo(() => {
+    if (treasury.strategies.length > 0) return treasury.strategies;
+    if (isMockMode) return MOCK_FALLBACK_STRATEGIES;
+    return [];
+  }, [treasury.strategies, isMockMode]);
+
+  const holdingsSumUsd = useMemo(
+    () => visibleAssets.reduce((sum, a) => sum + a.valueUsd, 0),
+    [visibleAssets],
+  );
+
+  const totalValueUsd =
+    onchainNavUsd != null && onchainNavUsd > 0
+      ? onchainNavUsd
+      : holdingsSumUsd > 0
+        ? holdingsSumUsd
+        : treasury.currentValue;
+
+  const earningUsd = useMemo(() => {
+    const stratSum = strategies.reduce((sum, s) => sum + s.currentValueUsd, 0);
+    if (stratSum > 0) return stratSum;
+    return deployedUsd ?? 0;
+  }, [strategies, deployedUsd]);
+
+  const blendedRate = useMemo(
+    () => blendedApy(strategies.map((s) => ({ value: s.currentValueUsd, apy: s.apy }))),
+    [strategies],
+  );
+
+  const reserveFloorPct = useMemo(() => {
+    const bps = constitution?.minStablecoinReserveBps ?? constitution?.minReservesBps ?? 3000;
+    return Math.round(bps / 100);
+  }, [constitution]);
+
+  const safeAvailableUsd = Math.max(0, totalValueUsd - earningUsd);
+  const reserveTargetUsd = totalValueUsd * (reserveFloorPct / 100);
+  const freeToSpendUsd = Math.max(0, safeAvailableUsd - reserveTargetUsd);
+
+  async function handleToggleHide(asset: TreasuryAssetRow, currentlyHidden: boolean) {
     if (!canManage) return;
-    if (action === 'hide' || action === 'unhide') {
-      const wallet = chainKind === 'evm' ? evmAddress : publicKey?.toBase58();
-      if (!wallet) return;
-      const signChallenge = chainKind === 'evm'
+    const wallet = chainKind === 'evm' ? evmAddress : publicKey?.toBase58();
+    if (!wallet) return;
+    const signChallenge =
+      chainKind === 'evm'
         ? (m: string) => signMessageAsync({ message: m })
         : signMessage
           ? solanaAccessSigner(signMessage)
           : null;
-      if (!signChallenge) {
-        toast({
-          variant: 'destructive',
-          title: 'Wallet cannot sign',
-          description: 'Connect a wallet that can sign messages.',
-        });
-        return;
-      }
-      const write = action === 'hide' ? hideAsset : unhideAsset;
-      const { error: hErr } = await write(asset.mint, wallet, signChallenge);
-      if (hErr) {
-        toast({
-          variant: 'destructive',
-          title: action === 'hide' ? 'Could not hide asset' : 'Could not unhide asset',
-          description: hErr,
-        });
-      } else {
-        toast({
-          title: action === 'hide' ? 'Asset hidden' : 'Asset restored',
-          description: action === 'hide'
-            ? `${asset.symbol} moved to Hidden Assets.`
-            : `${asset.symbol} is visible again.`,
-        });
-      }
+    if (!signChallenge) {
+      toast({
+        variant: 'destructive',
+        title: 'Wallet cannot sign',
+        description: 'Connect a wallet that can sign messages.',
+      });
       return;
     }
-    if (action === 'deposit') {
-      if (chainKind === 'evm' && asset.mint === 'ETH') {
-        toast({
-          variant: 'destructive',
-          title: 'Use WETH',
-          description: 'Add ETH by depositing WETH. Extra ETH in your wallet is wrapped automatically.',
-        });
-        return;
-      }
-      setDepositAsset(asset);
-      return;
-    }
-    if (action === 'configure') {
-      if (chainKind === 'evm') {
-        toast({
-          variant: 'destructive',
-          title: 'Configured in Constitution',
-          description: 'EVM strategy adapters are approved and capped from the Constitution page.',
-        });
-        return;
-      }
-      setConfigureAsset(asset);
-      return;
-    }
-    if (action === 'registerSolana') {
-      if (chainKind !== 'solana' || !publicKey) return;
-      setRegisterSolanaAsset(asset);
-      return;
-    }
-    if (action === 'feeAsset') {
-      if (chainKind === 'evm') return;
-      const r = await buildSetFeeAsset(new PublicKey(daoAddress!), publicKey!, new PublicKey(asset.mint));
-      const out = await tx.send(r, { successLabel: 'Fee asset set' });
-      if (out.status === 'success') refetch();
+    const write = currentlyHidden ? unhideAsset : hideAsset;
+    const { error: hErr } = await write(asset.mint, wallet, signChallenge);
+    if (hErr) {
+      toast({
+        variant: 'destructive',
+        title: currentlyHidden ? 'Could not unhide token' : 'Could not hide token',
+        description: hErr,
+      });
+    } else {
+      toast({
+        title: currentlyHidden ? 'Token restored' : 'Token hidden',
+        description: currentlyHidden
+          ? `${asset.symbol} is visible in Holdings again.`
+          : `${asset.symbol} moved to hidden tokens.`,
+      });
     }
   }
 
-  async function handleNftAction(action: string, nft: TreasuryNft) {
-    if (!canManage || chainKind !== 'solana' || !publicKey || !daoAddress) return;
-    if (action === 'registerNft') {
-      try {
-        const r = await buildRegisterNftAsset(new PublicKey(daoAddress), publicKey, new PublicKey(nft.mint));
-        const out = await tx.send(r, { successLabel: 'NFT registered for governance' });
-        if (out.status === 'success') refetchNfts();
-      } catch (err) {
-        toast({
-          variant: 'destructive',
-          title: 'Registration failed',
-          description: err instanceof Error ? err.message : 'Could not register NFT.',
-        });
-      }
-      return;
-    }
-    if (action === 'sendNft') {
-      navigate('/overview', { state: { openCreateTx: true, nftTransfer: { mint: nft.mint, name: nft.name } } });
+  function handleRefreshHoldings() {
+    refetch();
+    treasury.refetch();
+    refetchNfts();
+    const now = new Date();
+    setRefreshStamp(
+      `Updated ${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+    );
+  }
+
+  function openWithdrawFlow(nftMint?: string) {
+    if (daoAddress) {
+      setInitialNftMint(nftMint ?? null);
+      setShowWithdrawModal(true);
+    } else {
+      navigate('/overview', {
+        state: { openCreateTx: true, ...(nftMint ? { nftTransfer: { mint: nftMint } } : {}) },
+      });
     }
   }
 
-  const showAssetTabs = !loading && !error && (assets.length > 0 || tab === 'nfts');
-
-  const tabItems = [
-    { id: 'tokens' as const, label: `Tokens (${visibleAssets.length})` },
-    { id: 'hidden' as const, label: `Hidden${hiddenAssets.length ? ` (${hiddenAssets.length})` : ''}` },
-    { id: 'nfts' as const, label: `NFTs${nfts.length ? ` (${nfts.length})` : ''}` },
-  ];
+  const earningCaption =
+    strategies.length > 0
+      ? `${strategies.length} approved ${strategies.length === 1 ? 'place' : 'places'}${blendedRate != null ? `, ${blendedRate.toFixed(1)}% blended.` : '.'}`
+      : 'Across approved yield places.';
 
   return (
     <div className="animate-fade-in pb-8" data-onboarding-id="assets-root">
-      {(showDeposit || depositAsset) && canManage && daoAddress && (
+      {(showDeposit || depositAsset) && daoAddress && (
         <DepositFlowModal
           daoAddress={daoAddress}
+          daoName={daoRegistry.dao?.name}
           registeredAssets={assets}
           preselectedAsset={depositAsset ?? undefined}
           initialTab="wallet"
@@ -1368,32 +910,69 @@ export default function Assets() {
             setShowDeposit(false);
             setDepositAsset(null);
           }}
-          onDeposited={refetch}
+          onDeposited={() => {
+            refetch();
+            treasury.refetch();
+          }}
         />
       )}
-      {configureAsset && canManage && (publicKey || isMockMode) && (
-        <ConfigureTargetsModal
-          daoAddress={daoAddress!}
-          founder={publicKey}
-          asset={configureAsset}
-          onClose={() => setConfigureAsset(null)}
-          onDone={refetch}
+
+      {showWithdrawModal && daoAddress && (
+        <CreateTransactionModal
+          daoAddress={daoAddress}
+          proposalCount={
+            typeof daoRegistry.dao?.nextProposalIndex === 'number'
+              ? daoRegistry.dao.nextProposalIndex
+              : (daoRegistry.dao?.proposalCount ?? 0) + (daoRegistry.dao?.archivedProposalCount ?? 0)
+          }
+          governanceType={daoRegistry.dao?.governanceType ?? 'wallet'}
+          votingMint={votingMint}
+          assets={assets}
+          nfts={nfts}
+          initialNftMint={initialNftMint}
+          onClose={() => {
+            setShowWithdrawModal(false);
+            setInitialNftMint(null);
+          }}
+          onCreated={() => {
+            refetch();
+            treasury.refetch();
+          }}
         />
       )}
-      {registerEvmAsset && canManage && chainKind === 'evm' && (
-        <RegisterEvmAssetModal
-          daoAddress={daoAddress!}
-          onClose={() => setRegisterEvmAsset(false)}
-          onDone={refetch}
+
+      {selectedStrategy && daoAddress && (
+        <EarningPlaceModal
+          strategy={selectedStrategy}
+          totalValueUsd={totalValueUsd}
+          daoAddress={daoAddress}
+          isMockMode={isMockMode}
+          onClose={() => setSelectedStrategy(null)}
+          onUpdated={() => {
+            refetch();
+            treasury.refetch();
+          }}
         />
       )}
-      {registerSolanaAsset && canManage && chainKind === 'solana' && publicKey && (
-        <RegisterSolanaHeldAssetModal
-          daoAddress={daoAddress!}
-          founder={publicKey}
-          asset={registerSolanaAsset}
-          onClose={() => setRegisterSolanaAsset(null)}
-          onDone={refetch}
+
+      {selectedHolding && daoAddress && (
+        <HoldingDetailModal
+          asset={selectedHolding.asset}
+          isHidden={selectedHolding.hidden}
+          canManage={canManage}
+          daoAddress={daoAddress}
+          onClose={() => setSelectedHolding(null)}
+          onAddFunds={(asset) => {
+            if (chainKind === 'evm' && asset.mint === 'ETH') {
+              setDepositAsset(null);
+              setShowDeposit(true);
+              return;
+            }
+            setDepositAsset(asset);
+          }}
+          onProposePayment={() => openWithdrawFlow()}
+          onToggleHide={(asset, hidden) => void handleToggleHide(asset, hidden)}
+          onEnabled={refetch}
         />
       )}
 
@@ -1426,18 +1005,16 @@ export default function Assets() {
               lineHeight: 1.55,
             }}
           >
-            {onchainNavUsd != null
-              ? `${USD(onchainNavUsd)} total. Nothing sits anywhere your rules haven't approved.`
-              : 'Deposit and withdraw from your treasury. Agents use these balances automatically.'}
+            {totalValueUsd > 0
+              ? `${USD(totalValueUsd)} total. Nothing sits anywhere your rules haven't approved.`
+              : "Nothing sits anywhere your rules haven't approved."}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+
+        <div className="flex items-center gap-2 flex-wrap pt-1">
           <button
             type="button"
-            onClick={() => {
-              refetch();
-              refetchNfts();
-            }}
+            onClick={() => openWithdrawFlow()}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] border font-semibold transition-colors"
             style={{
               fontSize: '13px',
@@ -1446,182 +1023,361 @@ export default function Assets() {
               color: 'hsl(var(--foreground))',
             }}
           >
-            Refresh
+            Withdraw
           </button>
-          {canManage && daoAddress && (
-            <button
-              type="button"
-              onClick={() => {
-                setDepositAsset(null);
-                setShowDeposit(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
-              style={{
-                fontSize: '13px',
-                backgroundColor: 'hsl(var(--foreground))',
-                color: '#ffffff',
-                border: '1px solid hsl(var(--foreground))',
-              }}
-            >
-              Deposit
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!daoAddress) {
+                navigate('/treasuries');
+                return;
+              }
+              setDepositAsset(null);
+              setShowDeposit(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
+            style={{
+              fontSize: '13px',
+              backgroundColor: 'hsl(var(--foreground))',
+              color: '#ffffff',
+              border: '1px solid hsl(var(--foreground))',
+            }}
+          >
+            Add funds
+          </button>
         </div>
       </div>
 
-      {/* NAV 3-stat hairline strip */}
+      {/* 3 Calm Stats Strip */}
       <Section>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           <MetricCard
-            label="Total value"
-            value={onchainNavUsd != null ? USD(onchainNavUsd) : '—'}
-            sub="Withdrawable or placed by rules"
+            label="Safe & available"
+            value={USD(safeAvailableUsd)}
+            sub="Withdrawable any time."
           />
           <MetricCard
-            label="In use by agents"
-            value={deployedUsd != null ? USD(deployedUsd) : '—'}
-            sub="Across approved yield places"
+            label="Earning"
+            value={USD(earningUsd)}
+            sub={earningCaption}
           />
           <MetricCard
-            label="Tokens"
-            value={visibleAssets.length.toString()}
-            sub={hiddenAssets.length > 0 ? `${hiddenAssets.length} hidden` : 'Tracked in treasury'}
+            label="Free to spend"
+            value={USD(freeToSpendUsd)}
+            sub="Without touching reserve or investments."
           />
         </div>
       </Section>
 
-      {/* Holdings section with UnderlineTabs: Tokens / Hidden / NFTs */}
-      <Section>
-        {showAssetTabs && (
-          <UnderlineTabs
-            tabs={tabItems}
-            activeTab={tab}
-            onChange={setTab}
-          />
-        )}
+      {/* Earning places section */}
+      <Section title="Earning places" hint="Approved in your Rules">
+        <div className="overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {(['Place', 'What it does', 'Amount', 'Rate', 'Earned'] as const).map((h, i) => (
+                  <th
+                    key={h}
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      color: 'hsl(var(--faint))',
+                      textAlign: i >= 2 ? 'right' : 'left',
+                      fontFamily: i >= 2 ? 'var(--font-mono)' : 'var(--font-body)',
+                      padding: i === 4 ? '8px 0' : '8px 10px 8px 0',
+                      borderBottom: '1px solid hsl(var(--border))',
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {strategies.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    style={{
+                      padding: '16px 0',
+                      fontSize: '13.5px',
+                      color: 'hsl(var(--muted-foreground))',
+                    }}
+                  >
+                    No funds placed yet. Your agents place capital above your {reserveFloorPct}% reserve floor automatically.
+                  </td>
+                </tr>
+              ) : (
+                strategies.map((s, idx) => {
+                  const meta = describeVenue(s);
+                  const isLast = idx === strategies.length - 1;
+                  const cellBorder = isLast ? 'none' : '1px solid hsl(var(--surface-2))';
+                  return (
+                    <tr
+                      key={`${s.protocol}-${idx}`}
+                      onClick={() => setSelectedStrategy(s)}
+                      className="cursor-pointer group"
+                    >
+                      <td
+                        className="group-hover:text-brass transition-colors"
+                        style={{
+                          fontSize: '13.5px',
+                          fontWeight: 600,
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {meta.place}
+                      </td>
+                      <td
+                        style={{
+                          fontSize: '13.5px',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--muted-foreground))',
+                        }}
+                      >
+                        {meta.what}
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {USD(s.currentValueUsd)}
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {s.apy != null ? `${s.apy.toFixed(1)}%/yr` : '—'}
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {USD(s.earnedUsd)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
-        {loading && (
+      {/* Holdings section */}
+      <Section
+        title="Holdings"
+        action={
+          <div className="flex items-center gap-3">
+            <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+              {refreshStamp}
+            </span>
+            <button
+              type="button"
+              onClick={handleRefreshHoldings}
+              disabled={loading}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{
+                fontSize: '13px',
+                color: 'hsl(var(--muted-foreground))',
+              }}
+            >
+              {loading ? 'Updating…' : 'Refresh'}
+            </button>
+          </div>
+        }
+      >
+        {loading && visibleAssets.length === 0 && (
           <div className="space-y-3 pt-2">
-            <CardSkeleton lines={4} />
             <CardSkeleton lines={3} />
           </div>
         )}
 
         {!loading && error && (
           <Notice tone="red">
-            <strong style={{ fontWeight: 600 }}>Could not load assets</strong>{' '}
+            <strong style={{ fontWeight: 600 }}>Could not load holdings</strong>{' '}
             <span style={{ color: 'hsl(var(--muted-foreground))' }}>— {error}</span>
           </Notice>
         )}
 
-        {!loading && !error && assets.length === 0 && tab !== 'nfts' && (
+        {!loading && !error && visibleAssets.length === 0 && (
           <NaveEmptyState
             icon="coins"
-            title="No deposited assets yet"
-            description="Deposit from your wallet to get started. Supported tokens are added automatically."
+            title="No holdings yet"
+            description="Add funds from your wallet or send tokens to your treasury address to get started."
           />
         )}
 
-        {!loading && !error && assets.length > 0 && tab === 'tokens' && (
-          <div>
-            {visibleAssets.map((a) => (
-              <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} />
-            ))}
-            {visibleAssets.length === 0 && (
-              <NaveEmptyState
-                icon="eye-slash"
-                title="All assets are hidden"
-                description="Every detected asset is in the Hidden tab. Unhide one to show it here."
-              />
-            )}
+        {visibleAssets.length > 0 && (
+          <div className="overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  {(['Asset', 'Balance', 'Value', 'Share'] as const).map((h, i) => (
+                    <th
+                      key={h}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        color: 'hsl(var(--faint))',
+                        textAlign: i === 0 ? 'left' : 'right',
+                        fontFamily: i === 0 ? 'var(--font-body)' : 'var(--font-mono)',
+                        padding: i === 3 ? '8px 0' : '8px 10px 8px 0',
+                        borderBottom: '1px solid hsl(var(--border))',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleAssets.map((a, idx) => {
+                  const isLast = idx === visibleAssets.length - 1;
+                  const cellBorder = isLast ? 'none' : '1px solid hsl(var(--surface-2))';
+                  return (
+                    <tr
+                      key={a.mint}
+                      onClick={() => setSelectedHolding({ asset: a, hidden: false })}
+                      className="cursor-pointer group"
+                    >
+                      <td
+                        className="group-hover:text-brass transition-colors"
+                        style={{
+                          fontSize: '13.5px',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        <b style={{ fontWeight: 600 }}>{a.symbol}</b>{' '}
+                        <span style={{ color: 'hsl(var(--muted-foreground))' }}>· {a.name}</span>
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 10px 12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      >
+                        {USD(a.valueUsd)}
+                      </td>
+                      <td
+                        className="nave-mono"
+                        style={{
+                          fontSize: '12.5px',
+                          textAlign: 'right',
+                          padding: '12px 0',
+                          borderBottom: cellBorder,
+                          color: 'hsl(var(--muted-foreground))',
+                        }}
+                      >
+                        {a.allocationPct.toFixed(a.allocationPct % 1 === 0 ? 0 : 1)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {!loading && !error && assets.length > 0 && tab === 'hidden' && (
-          <div>
-            {hiddenAssets.map((a) => (
-              <AssetCard key={a.mint} asset={a} canManage={canManage} onAction={handleAction} hidden />
-            ))}
-            {hiddenAssets.length === 0 && (
-              <NaveEmptyState
-                icon="eye"
-                title="No hidden assets"
-                description="Hide airdrop spam or dust from the Tokens tab to declutter the default view."
-              />
-            )}
-          </div>
-        )}
+        {/* Quiet Hidden tokens toggle — only rendered when hiddenAssets.length > 0 */}
+        {hiddenAssets.length > 0 && (
+          <div style={{ marginTop: '14px' }}>
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
+              style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
+            >
+              {showHidden
+                ? `Hide hidden tokens (${hiddenAssets.length})`
+                : `Hidden tokens (${hiddenAssets.length})`}
+            </button>
 
-        {tab === 'nfts' && (
-          <>
-            {nftsLoading && (
-              <div className="space-y-2 pt-2">
-                <CardSkeleton lines={2} />
-                <CardSkeleton lines={2} />
-              </div>
-            )}
-            {!nftsLoading && nftsError && (
-              <Notice tone="red">
-                <strong style={{ fontWeight: 600 }}>Could not load NFTs</strong>{' '}
-                <span style={{ color: 'hsl(var(--muted-foreground))' }}>— {nftsError}</span>
-              </Notice>
-            )}
-            {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'evm' && (
-              <NaveEmptyState
-                icon="image"
-                title="EVM NFT custody only"
-                description="The treasury can receive and governance-transfer ERC-721/1155, but there is no on-chain NFT registry (EIP-170). Gallery listing is intentionally unsupported until an off-chain indexer is productized."
-              />
-            )}
-            {!nftsLoading && !nftsError && nftsUnsupported && chainKind === 'solana' && (
-              <NaveEmptyState
-                icon="image"
-                title="NFT indexing unavailable"
-                description="Your RPC does not support DAS (getAssetsByOwner). Use a Helius or Triton endpoint to enumerate treasury NFTs."
-              />
-            )}
-            {!nftsLoading && !nftsError && !nftsUnsupported && nfts.length === 0 && (
-              <NaveEmptyState
-                icon="image"
-                title="No NFTs in treasury"
-                description={
-                  chainKind === 'evm'
-                    ? 'Transfer an ERC-721 to the treasury contract to hold it under governance.'
-                    : 'Transfer a Metaplex NFT to the vault authority address. It can be sent from here as soon as it arrives.'
-                }
-              />
-            )}
-            {!nftsLoading && !nftsError && nfts.length > 0 && (
-              <div>
-                {nfts.map((n) => (
-                  <NftCard key={n.id} nft={n} canManage={canManage} onAction={handleNftAction} />
+            {showHidden && (
+              <div className="mt-3 pt-2" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
+                {hiddenAssets.map((a) => (
+                  <div
+                    key={a.mint}
+                    onClick={() => setSelectedHolding({ asset: a, hidden: true })}
+                    className="flex items-center justify-between py-2.5 cursor-pointer group"
+                    style={{
+                      borderBottom: '1px solid hsl(var(--surface-2))',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <span className="group-hover:text-brass transition-colors">
+                      <b style={{ fontWeight: 600 }}>{a.symbol}</b>{' '}
+                      <span style={{ color: 'hsl(var(--muted-foreground))' }}>· {a.name}</span>
+                    </span>
+                    <span className="nave-mono" style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>
+                      {a.uiBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
-          </>
-        )}
-
-        {onchainNavUsd == null && !loading && assets.length > 0 && tab !== 'nfts' && (
-          <div style={{ marginTop: '16px' }}>
-            <Notice tone="brass">
-              Dollar values appear after the treasury is priced. Balances are already live.
-            </Notice>
-          </div>
-        )}
-
-        {canManage && chainKind === 'evm' && (
-          <div style={{ marginTop: '20px' }}>
-            <button
-              type="button"
-              onClick={() => setRegisterEvmAsset(true)}
-              className="hover:underline underline-offset-4 bg-transparent border-0 cursor-pointer"
-              style={{ fontSize: '12.5px', color: 'hsl(var(--faint))' }}
-            >
-              + Advanced — add a token manually
-            </button>
           </div>
         )}
       </Section>
+
+      {/* NFTs section — only rendered when nfts.length > 0 */}
+      {nfts.length > 0 && (
+        <Section title="NFTs" hint={`${nfts.length} held`}>
+          <div>
+            {nfts.map((n) => (
+              <NftRow
+                key={n.id}
+                nft={n}
+                canManage={canManage}
+                onSendNft={(nft) => openWithdrawFlow(nft.mint)}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
     </div>
   );
 }

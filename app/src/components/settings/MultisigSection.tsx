@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PublicKey } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import Fi from '../Fi';
-import { Section, Notice } from '../calm';
+import { Section } from '../calm';
 import { useSendTransaction } from '../../hooks/useSendTransaction';
 import { useChain } from '../../hooks/useChain';
 import { isEvmAddress } from '../../lib/chain/types';
@@ -92,6 +93,7 @@ export default function MultisigSection({
   guardiansBootstrapped?: boolean;
   first?: boolean;
 }) {
+  const navigate = useNavigate();
   const { publicKey } = useWallet();
   const { chainKind, evmChainId } = useChain();
   const tx = useSendTransaction();
@@ -251,28 +253,27 @@ export default function MultisigSection({
       title="Members & guardians"
       hint={signers.length === 0 ? 'Add people who can help freeze the treasury' : `${threshold} of ${signers.length} needed for emergency actions`}
       action={
-        !evmEditsLocked && !adding ? (
+        evmEditsLocked ? (
+          <button
+            type="button"
+            onClick={() => navigate('/decisions')}
+            className="hover:underline underline-offset-4"
+            style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
+          >
+            + Propose member change
+          </button>
+        ) : !adding ? (
           <button
             type="button"
             onClick={() => setAdding(true)}
             className="hover:underline underline-offset-4"
             style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}
           >
-            + Add wallet
+            + Invite / Add member
           </button>
         ) : undefined
       }
     >
-      {evmEditsLocked && (
-        <Notice tone="muted" className="mb-4">
-          <span style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
-            Guardians are bootstrapped on-chain. Create a{' '}
-            <strong style={{ color: 'hsl(var(--foreground))' }}>Permission Update</strong> proposal
-            in Governance to change wallets or threshold.
-          </span>
-        </Notice>
-      )}
-
       {/* Threshold — Advanced */}
       <MultisigThresholdAdvanced
         signersCount={signers.length}
@@ -331,7 +332,7 @@ export default function MultisigSection({
                     : signer.address}
                 </span>
                 <span>·</span>
-                <span>Added {signer.added}</span>
+                <span>{idx === 0 ? 'Founder · can freeze, propose, vote' : 'Guardian · can freeze and vote'}</span>
               </div>
             </div>
             <div className="flex items-center gap-3 ml-auto flex-shrink-0 pt-0.5">
@@ -343,23 +344,25 @@ export default function MultisigSection({
               >
                 {copied === signer.address ? 'Copied' : 'Copy'}
               </button>
-              {!evmEditsLocked && (
-                <button
-                  type="button"
-                  onClick={() => removeSigner(signer.id)}
-                  className="hover:underline underline-offset-4"
-                  style={{
-                    fontSize: '12.5px',
-                    color: 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  Remove…
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => (evmEditsLocked ? navigate('/decisions') : removeSigner(signer.id))}
+                className="hover:underline underline-offset-4"
+                style={{
+                  fontSize: '12.5px',
+                  color: 'hsl(var(--muted-foreground))',
+                }}
+              >
+                Remove…
+              </button>
             </div>
           </div>
         ))}
       </div>
+
+      <p style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', marginTop: '10px', marginBottom: 0 }}>
+        Removing a guardian takes a decision. Removing a member takes effect immediately and is recorded.
+      </p>
 
       {/* Add signer */}
       {!evmEditsLocked && adding && (

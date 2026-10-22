@@ -1,12 +1,8 @@
-import { NATIVE_MINT } from '@solana/spl-token';
 import Fi from '@/components/Fi';
-import { MARGINFI_STRATEGY_ENABLED } from '@/lib/programConfig';
 import { type Proposal } from './types';
-import { hasStoredStrategyPayload } from './proposalStorage';
 
 export function ProposalExecutePanels({
   proposal,
-  daoAddress,
   chainKind,
   isFounder,
   isMember,
@@ -23,17 +19,7 @@ export function ProposalExecutePanels({
   clearingHalt,
   clearHaltMsg,
   clearHaltError,
-  createReqAmount,
-  setCreateReqAmount,
-  createReqProtocol,
-  setCreateReqProtocol,
-  createReqAssetMint,
-  setCreateReqAssetMint,
-  registeredTreasuryAssets,
-  votingMint,
-  creatingReq,
   voteError,
-  navigate,
   onRatifyConstitution,
   onExecuteEnableAgents,
   onRatifyTokenMint,
@@ -41,10 +27,8 @@ export function ProposalExecutePanels({
   onExecutePermission,
   onExecuteSwitchVotingSystem,
   onClearProposalHalt,
-  onCreateExecutionRequest,
 }: {
   proposal: Proposal;
-  daoAddress: string | null;
   chainKind: 'solana' | 'evm';
   isFounder: boolean;
   isMember: boolean;
@@ -61,17 +45,7 @@ export function ProposalExecutePanels({
   clearingHalt: boolean;
   clearHaltMsg: string | null;
   clearHaltError: string | null;
-  createReqAmount: string;
-  setCreateReqAmount: (v: string) => void;
-  createReqProtocol: 'kamino' | 'jito' | 'marginfi' | 'jupiter';
-  setCreateReqProtocol: (v: 'kamino' | 'jito' | 'marginfi' | 'jupiter') => void;
-  createReqAssetMint: string;
-  setCreateReqAssetMint: (v: string) => void;
-  registeredTreasuryAssets: Array<{ mint: string; symbol: string }>;
-  votingMint: string | null;
-  creatingReq: boolean;
   voteError: string | null;
-  navigate: (p: string) => void;
   onRatifyConstitution: () => void;
   onExecuteEnableAgents: () => void;
   onRatifyTokenMint: () => void;
@@ -79,7 +53,6 @@ export function ProposalExecutePanels({
   onExecutePermission: () => void;
   onExecuteSwitchVotingSystem: () => void;
   onClearProposalHalt: () => void;
-  onCreateExecutionRequest: () => void;
 }) {
   const blockStyle = {
     padding: '14px 0',
@@ -89,40 +62,26 @@ export function ProposalExecutePanels({
 
   return (
     <>
-      {/* Ratify a passed constitution (policy) proposal — founder applies it on-chain */}
+      {/* Activate a passed rules (policy) proposal */}
       {proposal.status === 'passed' && proposal.type === 'policy' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Ratify Constitution
+            Activate new rules
           </div>
           {alreadyRatified ? (
-            <div className="space-y-2.5">
-              <div
-                className="flex items-start gap-2"
-                style={{ fontSize: '13px', color: '#2F7D4F', lineHeight: 1.5 }}
-              >
-                <Fi icon="circle-check" style={{ fontSize: '12px', flexShrink: 0, marginTop: '3px' }} />
-                <span>
-                  <strong>Constitution applied on-chain.</strong> Your agents are ready — go to the Agent page and click <strong>Propose to Enable Agents</strong> to put resuming them to a DAO vote.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate('/agents');
-                }}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[9px] font-semibold transition-all"
-                style={{ fontSize: '13px', backgroundColor: '#111827', color: '#ffffff' }}
-              >
-                <Fi icon="scale-balanced" style={{ fontSize: '10px' }} />
-                Propose to Enable Agents →
-              </button>
+            <div
+              className="flex items-start gap-2"
+              style={{ fontSize: '13px', color: '#2F7D4F', lineHeight: 1.5 }}
+            >
+              <Fi icon="circle-check" style={{ fontSize: '12px', flexShrink: 0, marginTop: '3px' }} />
+              <span>
+                <strong>Rules activated.</strong> Your agents now follow these rules on every move.
+              </span>
             </div>
           ) : (
             <>
               <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-                Apply this approved policy to the treasury constitution on-chain. Once ratified, go to the <strong>Agent page</strong> and click <strong>Propose to Enable Agents</strong> to put resuming them to a DAO vote, after which the agents operate under these constraints.
+                Apply these approved rules to the treasury so your agents follow them on every move.
               </p>
               {isFounder ? (
                 <button
@@ -141,7 +100,7 @@ export function ProposalExecutePanels({
                   }}
                 >
                   <Fi icon={ratifying ? 'arrows-rotate' : 'scroll'} style={{ fontSize: '12px' }} className={ratifying ? 'animate-spin' : ''} />
-                  {ratifying ? 'Ratifying…' : 'Ratify & apply constitution'}
+                  {ratifying ? 'Activating…' : 'Activate new rules'}
                 </button>
               ) : (
                 <div
@@ -149,7 +108,7 @@ export function ProposalExecutePanels({
                   style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
                 >
                   <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-                  Awaiting founder ratification to apply this constitution on-chain.
+                  Awaiting founder to activate these rules.
                 </div>
               )}
             </>
@@ -169,14 +128,14 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Execute a passed agent-enable proposal — founder resumes the agents on-chain */}
+      {/* Resume agents after a passed agent-enable proposal */}
       {proposal.status === 'passed' && proposal.type === 'agent-enable' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Execute: Enable Agents
+            Resume agents
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-            This proposal passed. Executing reconnects this DAO to the four autonomous agents (Executive, Financial, Operational, Oversight), which will resume checking the treasury for necessary actions under the current constitution.
+            This decision passed. Activate it so the four agents reconnect and resume working under your current rules.
           </p>
           {isFounder ? (
             <button
@@ -195,12 +154,12 @@ export function ProposalExecutePanels({
               }}
             >
               <Fi icon={enabling ? 'arrows-rotate' : 'play'} style={{ fontSize: '12px' }} className={enabling ? 'animate-spin' : ''} />
-              {enabling ? 'Enabling…' : 'Execute: Enable Agents'}
+              {enabling ? 'Resuming…' : 'Resume agents'}
             </button>
           ) : (
             <div className="flex items-center gap-2" style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
               <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-              Awaiting founder to execute and resume the agents on-chain.
+              Awaiting founder to resume the agents.
             </div>
           )}
           {enableMsg && (
@@ -218,14 +177,14 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Ratify a passed token-mint proposal — founder executes the on-chain mint */}
+      {/* Mint approved tokens */}
       {proposal.status === 'passed' && proposal.type === 'token-mint' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Execute Token Mint
+            Mint approved tokens
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-            This proposal passed. Executing will mint the approved token amount into the treasury vault on-chain.
+            This decision passed. Mint the approved token amount into the treasury.
           </p>
           {isFounder ? (
             <button
@@ -244,12 +203,12 @@ export function ProposalExecutePanels({
               }}
             >
               <Fi icon={ratifying ? 'arrows-rotate' : 'coins'} style={{ fontSize: '12px' }} className={ratifying ? 'animate-spin' : ''} />
-              {ratifying ? 'Minting…' : 'Execute Mint'}
+              {ratifying ? 'Minting…' : 'Mint approved tokens'}
             </button>
           ) : (
             <div className="flex items-center gap-2" style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}>
               <Fi icon="circle-info" style={{ fontSize: '11px' }} />
-              Awaiting founder to execute this mint on-chain.
+              Awaiting founder to mint the approved tokens.
             </div>
           )}
           {ratifyMsg && (
@@ -267,16 +226,14 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Passed treasury transfer — direct execution (no agent execution pipeline) */}
+      {/* Send approved payment */}
       {proposal.status === 'passed' && proposal.type === 'transfer' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Execute treasury transfer
+            Send approved payment
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-            {chainKind === 'evm'
-              ? 'This proposal passed. The governor only stores a hash on-chain — execution needs the raw recipient/asset/amount from when the proposal was created (saved in this browser).'
-              : 'This proposal passed. Execution moves native SOL from the vault authority PDA, or SPL from the DAO asset vault to the recipient ATA in the exact amounts fixed when the proposal was created.'}
+            This decision passed. Send the approved payment to the recipient in the exact amount agreed by the vote.
           </p>
           <button
             type="button"
@@ -294,7 +251,7 @@ export function ProposalExecutePanels({
             }}
           >
             <Fi icon={executingTransfer ? 'arrows-rotate' : 'paper-plane'} style={{ fontSize: '12px' }} className={executingTransfer ? 'animate-spin' : ''} />
-            {executingTransfer ? 'Executing…' : 'Execute transfer'}
+            {executingTransfer ? 'Sending…' : 'Send approved payment'}
           </button>
           {voteError && (
             <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
@@ -305,15 +262,14 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Passed Permission — apply guardian set via governor */}
+      {/* Update members (Permission proposal) */}
       {proposal.status === 'passed' && proposal.type === 'permission' && chainKind === 'evm' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Apply guardian config
+            Update members
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-            Calls <code>executePermissionProposal</code>, which applies wallets + threshold through
-            the treasury governor path (<code>applyGuardianConfigFromGovernor</code>).
+            This decision passed. Apply the updated member and guardian list to the treasury.
           </p>
           <button
             type="button"
@@ -331,7 +287,7 @@ export function ProposalExecutePanels({
             }}
           >
             <Fi icon={executingPermission ? 'arrows-rotate' : 'shield'} style={{ fontSize: '12px' }} className={executingPermission ? 'animate-spin' : ''} />
-            {executingPermission ? 'Applying…' : 'Execute permission proposal'}
+            {executingPermission ? 'Updating…' : 'Update members'}
           </button>
           {voteError && (
             <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
@@ -342,14 +298,14 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Ratify a passed switch-voting proposal — execute the governance change on-chain */}
+      {/* Update voting system */}
       {proposal.status === 'passed' && proposal.type === 'switch-voting' && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-            Apply Voting System Change
+            Update voting system
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-            This proposal passed. Execute the voting system switch on-chain to transition this DAO&apos;s governance model.
+            This decision passed. Update how members vote on future decisions.
           </p>
           <button
             type="button"
@@ -367,7 +323,7 @@ export function ProposalExecutePanels({
             }}
           >
             <Fi icon={executingSwitchVoting ? 'arrows-rotate' : 'scale-balanced'} style={{ fontSize: '12px' }} className={executingSwitchVoting ? 'animate-spin' : ''} />
-            {executingSwitchVoting ? 'Switching…' : 'Execute voting system switch'}
+            {executingSwitchVoting ? 'Updating…' : 'Update voting system'}
           </button>
           {voteError && (
             <div className="flex items-center gap-2" style={{ fontSize: '12px', color: 'hsl(var(--destructive))' }}>
@@ -382,10 +338,10 @@ export function ProposalExecutePanels({
       {haltedEr && (
         <div className="space-y-3" style={blockStyle}>
           <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--destructive))' }}>
-            Execution Request Halted
+            Execution Halted
           </div>
           <p style={{ fontSize: '13px', color: 'hsl(var(--destructive))', lineHeight: 1.55, margin: 0 }}>
-            {haltedEr.reason || 'This execution request is currently halted by the Oversight agent.'}
+            {haltedEr.reason || 'This move is currently paused by the Watcher.'}
           </p>
           {isFounder && (
             <button
@@ -422,107 +378,19 @@ export function ProposalExecutePanels({
         </div>
       )}
 
-      {/* Strategy execution — auto-chained or manual fallback */}
+      {/* Strategy execution — automatic agent review */}
       {proposal.status === 'passed' && proposal.type === 'strategy' && (
-        hasStoredStrategyPayload(daoAddress, proposal.number) ? (
-          <div className="flex items-start gap-2.5" style={blockStyle}>
-            <Fi icon="clock" style={{ fontSize: '13px', color: '#B9974F', flexShrink: 0, marginTop: '3px' }} />
-            <div>
-              <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                Queued for Agent Review
-              </div>
-              <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: '2px 0 0' }}>
-                This strategy is queued for agent review. The approval pipeline will execute it once the review window elapses.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3" style={blockStyle}>
+        <div className="flex items-start gap-2.5" style={blockStyle}>
+          <Fi icon="clock" style={{ fontSize: '13px', color: '#B9974F', flexShrink: 0, marginTop: '3px' }} />
+          <div>
             <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-              Move Passed Strategy to Execution
+              Agents carrying it out
             </div>
-            <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: 0 }}>
-              Create an execution request so the agent approval pipeline can review, sign, and execute this proposal.
+            <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, margin: '2px 0 0' }}>
+              The Coordinator, Investor, and Guardrail are reviewing and signing this move under your rules.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={createReqAmount}
-                onChange={(e) => setCreateReqAmount(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-[10px] border"
-                style={{
-                  fontSize: '12.5px',
-                  fontFamily: 'var(--font-mono)',
-                  backgroundColor: '#ffffff',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              />
-              <select
-                value={createReqProtocol}
-                onChange={(e) => setCreateReqProtocol(e.target.value as 'kamino' | 'jito' | 'marginfi' | 'jupiter')}
-                onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-[10px] border"
-                style={{
-                  fontSize: '12.5px',
-                  backgroundColor: '#ffffff',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              >
-                <option value="kamino">Kamino</option>
-                <option value="jito">Jito</option>
-                <option value="jupiter">Jupiter</option>
-                {MARGINFI_STRATEGY_ENABLED && <option value="marginfi">Marginfi</option>}
-              </select>
-              <select
-                value={createReqAssetMint}
-                onChange={(e) => setCreateReqAssetMint(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-[10px] border"
-                style={{
-                  fontSize: '12.5px',
-                  backgroundColor: '#ffffff',
-                  borderColor: 'hsl(var(--border))',
-                  color: 'hsl(var(--foreground))',
-                }}
-              >
-                {registeredTreasuryAssets.length > 0 ? (
-                  registeredTreasuryAssets.map((a) => (
-                    <option key={a.mint} value={a.mint}>
-                      {a.symbol}
-                    </option>
-                  ))
-                ) : (
-                  <option value={votingMint ?? NATIVE_MINT.toBase58()}>
-                    {votingMint ? `${votingMint.slice(0, 6)}…` : 'wSOL'}
-                  </option>
-                )}
-              </select>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCreateExecutionRequest();
-                }}
-                disabled={creatingReq || !isMember}
-                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-[9px] font-semibold"
-                style={{
-                  fontSize: '12.5px',
-                  backgroundColor: '#111827',
-                  color: '#ffffff',
-                  opacity: creatingReq || !isMember ? 0.6 : 1,
-                }}
-              >
-                <Fi icon={creatingReq ? 'arrows-rotate' : 'bolt'} style={{ fontSize: '11px' }} className={creatingReq ? 'animate-spin' : ''} />
-                {creatingReq ? 'Creating…' : 'Create request'}
-              </button>
-            </div>
           </div>
-        )
+        </div>
       )}
     </>
   );

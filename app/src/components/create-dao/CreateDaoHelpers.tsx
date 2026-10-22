@@ -11,6 +11,7 @@ export interface DAOConfig {
   name: string;
   slug: string;
   description: string;
+  treasuryPurpose?: string;
   logoBlob: Blob | null;
   logoPreview: string | null;
   governanceType: GovernanceType;
@@ -28,32 +29,28 @@ export const DEFAULT_CONFIG: DAOConfig = {
   chain: 'solana',
   name: '',
   slug: '',
-  description: '',
+  description: 'Revenue and support, shared with a community.',
+  treasuryPurpose: 'Creators & fans',
   logoBlob: null,
   logoPreview: null,
-  governanceType: null,
+  governanceType: 'wallets',
   authorizedWallets: [],
   website: '',
   twitter: '',
   discord: '',
-  tokenMode: null,
+  tokenMode: 'existing',
   existingTokenCA: '',
   newTokenName: '',
   newTokenSupply: '1000000',
 };
 
 export const ADVANCED_STEPS = [
-  { label: 'Identity',       icon: 'building'  },
-  { label: 'Constitution',   icon: 'shield'     },
-  { label: 'Seed & Review',  icon: 'list-check' },
-  { label: 'Deploying',      icon: 'rocket'     },
+  { label: 'About',      icon: 'building'   },
+  { label: 'Behaviour',  icon: 'shield'     },
+  { label: 'Launch',     icon: 'rocket'     },
 ];
 
-export const QUICK_STEPS = [
-  { label: 'Setup',          icon: 'building'  },
-  { label: 'Review',         icon: 'list-check' },
-  { label: 'Deploying',      icon: 'rocket'     },
-];
+export const QUICK_STEPS = ADVANCED_STEPS;
 
 /** Human-readable labels for the finer-grained post-creation sub-steps tracked
  *  for "Resume setup" checkpoints (distinct from the visible DeployStep rows). */

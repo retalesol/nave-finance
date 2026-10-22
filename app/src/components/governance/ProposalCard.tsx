@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
 import { findVenue, packSolanaAllocation } from '../../../supabase/functions/_shared/strategyCatalog.ts';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { getAssociatedTokenAddressSync, NATIVE_MINT } from '@solana/spl-token';
-import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { useAccount, useSignMessage } from 'wagmi';
 import { parseUnits, type Address } from 'viem';
 import { readContract } from '@wagmi/core';
 import Fi from '@/components/Fi';
@@ -15,8 +14,6 @@ import { useCharterCheck } from '@/hooks/useCharterCheck';
 import { useSendTransaction } from '@/hooks/useSendTransaction';
 import { useChain } from '@/hooks/useChain';
 import { useConstitution } from '@/hooks/useConstitution';
-import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
-import { isSelectableTreasuryMint } from '@/lib/treasuryAssetEligibility';
 import { isTreasuryOpsFamily } from '@/lib/chain/types';
 import { fetchDaoContracts, fetchExecutionRequestsEvm } from '@/lib/evm/readers';
 import { NaveTreasuryAbi } from '@/lib/evm/contracts';
@@ -26,7 +23,6 @@ import { ensureWalletOnChain } from '@/lib/evm/ensureWalletChain';
 import {
   buildApproveErc20Evm,
   buildCastVoteEvm,
-  buildCreateStrategyRequestEvm,
   buildExecuteTransferProposalEvm,
   buildExecuteNftTransferProposalEvm,
   buildExecutePermissionProposalEvm,
@@ -34,7 +30,6 @@ import {
   decodeEvmNftTransferRequestPayload,
   decodeEvmPermissionPayload,
   decodeEvmSwitchVotingPayload,
-  decodeEvmStrategyProposalPayload,
   buildFinalizeProposalEvm,
   buildMintAdditionalTokensEvm,
   buildReleaseVoteEscrowEvm,
@@ -61,10 +56,9 @@ import {
 } from '@/lib/transactionBuilders';
 import { getNavePrograms } from '@/lib/naveProgram';
 import { getProposalPDA, getAssetConfigPDA, getNftVaultRecordPDA, getExecutionRequestPDA } from '@/lib/pdaDerivation';
-import { fetchTreasuryVault, fetchProposal, fetchProposalPayload, fetchProposalPayloadBytes, fetchExecutionRequest } from '@/lib/onChainFetcher';
+import { fetchProposal, fetchProposalPayload, fetchProposalPayloadBytes, fetchExecutionRequest } from '@/lib/onChainFetcher';
 import {
   decodeConstitutionPayload,
-  decodeEvmStrategyRequestPayload,
   decodeEvmTokenMintPayload,
   decodeEvmTransferRequestPayload,
   rebalanceLabelToSeconds,
@@ -149,12 +143,9 @@ export default function ProposalCard({
   const { connection } = useConnection();
   const { chainKind, evmChainId, chainFamily } = useChain();
   const { constitution } = useConstitution(daoAddress);
-  const { assets: treasuryAssets } = useTreasuryAssets(daoAddress);
   const charter = useCharterCheck(daoAddress, chainId, proposal.actionHash);
   const { address: evmAddress } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const { signTypedDataAsync } = useSignTypedData();
-  const navigate = useNavigate();
   const tx = useSendTransaction();
   const [expanded, setExpanded] = useState(highlight);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -170,9 +161,6 @@ export default function ProposalCard({
   const [enableMsg, setEnableMsg] = useState<string | null>(null);
   const [enableError, setEnableError] = useState<string | null>(null);
 
-  // Vote state: EVM still uses localStorage (no VoteRecord fetch here). Solana
-  // uses VoteRecord as source of truth — see effect below (localStorage caused
-  // false "You voted" when keys were stale or txs never landed).
   const walletStr = chainKind === 'evm' ? evmAddress ?? null : publicKey?.toBase58() ?? null;
   const [myVote, setMyVote] = useState<'for' | 'against' | 'abstain' | null>(() =>
     chainKind === 'solana'
@@ -186,7 +174,6 @@ export default function ProposalCard({
       : (!!proposal.myVote || !!loadPersistedVote(daoAddress, walletStr, proposal.id)),
   );
 
-  // When the connected wallet or DAO changes, re-check persisted vote (EVM only).
   useEffect(() => {
     if (chainKind === 'solana') {
       setMyVote(proposal.myVote ?? null);
@@ -198,8 +185,6 @@ export default function ProposalCard({
     setVoted(!!proposal.myVote || !!persisted);
   }, [walletStr, proposal.id, daoAddress, proposal.myVote, chainKind]);
 
-  // Solana: authoritative vote from on-chain VoteRecord for every proposal status
-  // (clears ghost "You voted" on rejected/finalized rows).
   useEffect(() => {
     if (chainKind !== 'solana' || !daoAddress || !publicKey) return;
     let cancelled = false;
@@ -233,28 +218,6 @@ export default function ProposalCard({
   const [voteError, setVoteError] = useState<string | null>(null);
   const [lockAmount, setLockAmount] = useState('');
   const [finalizing, setFinalizing] = useState(false);
-  const [createReqAmount, setCreateReqAmount] = useState('1');
-  const [createReqProtocol, setCreateReqProtocol] = useState<'kamino' | 'jito' | 'marginfi' | 'jupiter'>('kamino');
-  const registeredTreasuryAssets = useMemo(
-    () => treasuryAssets.filter((a) => isSelectableTreasuryMint(a)),
-    [treasuryAssets],
-  );
-  const defaultReqAssetMint = useMemo(() => {
-    const wsol = registeredTreasuryAssets.find(
-      (a) => a.mint === 'So11111111111111111111111111111111111111112' || a.symbol.toUpperCase() === 'WSOL',
-    );
-    const usdc = registeredTreasuryAssets.find((a) => a.isStablecoin || a.symbol.toUpperCase().includes('USDC'));
-    if (createReqProtocol === 'jito' && wsol) return wsol.mint;
-    if ((createReqProtocol === 'kamino' || createReqProtocol === 'jupiter' || createReqProtocol === 'marginfi') && usdc) {
-      return usdc.mint;
-    }
-    return registeredTreasuryAssets[0]?.mint ?? votingMint ?? NATIVE_MINT.toBase58();
-  }, [registeredTreasuryAssets, createReqProtocol, votingMint]);
-  const [createReqAssetMint, setCreateReqAssetMint] = useState<string>(defaultReqAssetMint);
-  useEffect(() => {
-    setCreateReqAssetMint(defaultReqAssetMint);
-  }, [defaultReqAssetMint]);
-  const [creatingReq, setCreatingReq] = useState(false);
   const [executingTransfer, setExecutingTransfer] = useState(false);
   const [executingPermission, setExecutingPermission] = useState(false);
   const [executingSwitchVoting, setExecutingSwitchVoting] = useState(false);
@@ -369,9 +332,6 @@ export default function ProposalCard({
     return localStorage.getItem(`ratified:${daoAddress}:${proposal.id}`) === 'true';
   });
 
-  // Ratification is per proposal. Creation itself writes protocols, so a
-  // live protocolCount must not mark a later passed policy proposal applied.
-
   async function handleRatifyTokenMint() {
     if (chainKind === 'evm') {
       if (!daoAddress || ratifying) return;
@@ -382,7 +342,7 @@ export default function ProposalCard({
       try {
         const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, 'token-mint');
         if (!payload) {
-          setVoteError('Could not recover this EVM token-mint proposal payload from the on-chain payload index. Ratify from the device that created it, or recreate the proposal.');
+          setVoteError('Could not recover this token-mint payload. Please execute from the device that created it.');
           return;
         }
         const decoded = decodeEvmTokenMintPayload(payload);
@@ -393,7 +353,7 @@ export default function ProposalCard({
         }
         const outcome = await tx.sendEvm(
           buildMintAdditionalTokensEvm(evmChainId, trio.governor, proposal.number, decoded.mint, decoded.to, decoded.amount),
-          { successLabel: `Tokens minted — proposal #${proposal.number} ratified` },
+          { successLabel: `Tokens minted — proposal #${proposal.number}` },
         );
         if (outcome.status === 'success' || outcome.status === 'mock') {
           setRatifyMsg('Tokens minted on-chain. The updated supply is visible on the Tokens page.');
@@ -402,7 +362,7 @@ export default function ProposalCard({
           setVoteError(outcome.error || 'Failed to mint tokens on-chain.');
         }
       } catch (err) {
-        setVoteError(err instanceof Error ? err.message : 'Failed to ratify EVM token mint.');
+        setVoteError(err instanceof Error ? err.message : 'Failed to mint tokens.');
       } finally {
         setRatifying(false);
       }
@@ -414,29 +374,22 @@ export default function ProposalCard({
     setRatifyMsg(null);
     try {
       const daoPubkey = new PublicKey(daoAddress);
-      // Defense-in-depth: re-verify on-chain that this is a TokenMint proposal that
-      // actually PASSED governance before minting. mint_additional_tokens itself is
-      // founder-authorized (the on-chain instruction does not bind a proposal yet —
-      // tracked as a contract-side gate), so the client must never submit a mint for
-      // a proposal that has not been ratified through the governance vote.
       const onChainProposal = await fetchProposal(daoPubkey, proposal.number);
       if (!onChainProposal) {
         setVoteError('Could not load this proposal on-chain to verify it passed.');
         return;
       }
       if (onChainProposal.status !== OnChainProposalStatus.Passed) {
-        setVoteError('This token-mint proposal has not passed governance — minting is only allowed after the vote passes and is ratified.');
+        setVoteError('This proposal has not passed yet.');
         return;
       }
       if (onChainProposal.proposalType !== OnChainProposalType.TokenMint) {
         setVoteError('This proposal is not a token-mint proposal.');
         return;
       }
-      // Use raw bytes — the payload is binary (pubkeys + u64), not UTF-8 text.
       const raw = await fetchProposalPayloadBytes(daoPubkey, proposal.number);
-      // Payload layout: [destination (32 bytes)] + [mint (32 bytes)] + [amount LE u64 (8 bytes)]
       if (!raw || raw.length < 72) {
-        setVoteError('This proposal does not carry a valid token-mint payload (expected 72 bytes).');
+        setVoteError('This proposal does not carry a valid token-mint payload.');
         return;
       }
       const destination = new PublicKey(raw.slice(0, 32));
@@ -448,7 +401,7 @@ export default function ProposalCard({
       );
       const outcome = await tx.send(
         await buildMintAdditionalTokens(daoPubkey, publicKey, mint, destination, amount, proposal.number),
-        { successLabel: `Tokens minted — proposal #${proposal.number} ratified` },
+        { successLabel: `Tokens minted — proposal #${proposal.number}` },
       );
       if (outcome.status === 'success' || outcome.status === 'mock') {
         setRatifyMsg('Tokens minted on-chain. The updated supply is visible on the Tokens page.');
@@ -457,29 +410,21 @@ export default function ProposalCard({
         setVoteError(outcome.error || 'Failed to mint tokens on-chain.');
       }
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Failed to ratify token mint.');
+      setVoteError(err instanceof Error ? err.message : 'Failed to mint tokens.');
     } finally {
       setRatifying(false);
     }
   }
 
-  /**
-   * Execute a passed "Enable Autonomous Agents" proposal. Founder-only: the
-   * server proxy re-enables agents on-chain using the DAO's Executive agent key
-   * after the founder signs a challenge. This is the same proxy call previously
-   * triggered directly from the Agent page, now gated behind a passed DAO vote.
-   */
   async function handleExecuteEnableAgents() {
     if (!daoAddress || enabling) return;
-    // ── EVM: execute the passed enable proposal via the founder-signed
-    // agent-admin → /relay-evm path (Executive EOA calls toggleAgents(true)). ──
     if (chainKind === 'evm') {
       if (!evmChainId || !isTreasuryOpsFamily(chainFamily)) {
         setEnableError('Select an Ethereum, Base, Robinhood, or Arc network.');
         return;
       }
       if (!evmAddress) {
-        setEnableError('Connect your EVM founder wallet to execute this proposal.');
+        setEnableError('Connect your EVM founder wallet to resume the agents.');
         return;
       }
       setEnabling(true);
@@ -496,7 +441,6 @@ export default function ProposalCard({
         });
         const executive = (Array.isArray(agent) ? agent[0] : (agent as { authority: Address }).authority) as Address;
         await fundExecutiveGas(evmChainId, executive);
-        // First enable is the Executive key calling toggleAgents(true).
         const { data, error } = await setAgentsEnabledViaProxyEvm(
           daoAddress,
           evmAddress,
@@ -506,24 +450,24 @@ export default function ProposalCard({
           chainFamily,
         );
         if (error || !data?.success) {
-          setEnableError(error || data?.error || 'Failed to enable agents on-chain.');
+          setEnableError(error || data?.error || 'Failed to resume agents on-chain.');
           return;
         }
-        setEnableMsg('Agents enabled. The four agents will begin checking this DAO on the next cycle.');
+        setEnableMsg('Agents resumed. The four specialists will begin checking this treasury on the next cycle.');
         onChanged?.();
       } catch (err) {
-        setEnableError(err instanceof Error ? err.message : 'Failed to enable agents on-chain.');
+        setEnableError(err instanceof Error ? err.message : 'Failed to resume agents on-chain.');
       } finally {
         setEnabling(false);
       }
       return;
     }
     if (!publicKey) {
-      setEnableError('Connect your founder wallet to execute this proposal.');
+      setEnableError('Connect your founder wallet to resume the agents.');
       return;
     }
     if (!signMessage) {
-      setEnableError('Your wallet does not support message signing (required for the enable proxy).');
+      setEnableError('Your wallet does not support message signing.');
       return;
     }
     setEnabling(true);
@@ -537,13 +481,13 @@ export default function ProposalCard({
         true,
       );
       if (error || !data?.success) {
-        setEnableError(error || data?.error || 'Failed to enable agents on-chain.');
+        setEnableError(error || data?.error || 'Failed to resume agents on-chain.');
         return;
       }
-      setEnableMsg('Agents enabled. The four agents will begin checking this DAO on the next cycle.');
+      setEnableMsg('Agents resumed. The four specialists will begin checking this treasury on the next cycle.');
       onChanged?.();
     } catch (err) {
-      setEnableError(err instanceof Error ? err.message : 'Failed to enable agents on-chain.');
+      setEnableError(err instanceof Error ? err.message : 'Failed to resume agents on-chain.');
     } finally {
       setEnabling(false);
     }
@@ -559,12 +503,12 @@ export default function ProposalCard({
       try {
         const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, 'policy');
         if (!payload) {
-          setVoteError('Could not recover this EVM constitution proposal payload from the on-chain payload index. Ratify from the device that created it, or recreate the proposal.');
+          setVoteError('Could not recover this rules payload. Activate from the device that created it.');
           return;
         }
         const decoded = decodeConstitutionPayload(payload);
         if (!decoded) {
-          setVoteError('This proposal does not carry a decodable constitution payload.');
+          setVoteError('This proposal does not carry a decodable rules payload.');
           return;
         }
         const resolvedProtocols = decoded.protocols.flatMap((p) => {
@@ -581,7 +525,7 @@ export default function ProposalCard({
         );
         if (missingAdapters.length > 0) {
           setVoteError(
-            `EVM adapter addresses are not configured for: ${missingAdapters.map((p) => p.id).join(', ')}. Add adapter addresses to the payload before ratifying.`,
+            `Adapter addresses are not configured for: ${missingAdapters.map((p) => p.id).join(', ')}.`,
           );
           return;
         }
@@ -621,21 +565,21 @@ export default function ProposalCard({
           );
         }
         if (evmResults.length === 0) {
-          setVoteError('This constitution proposal has no changes to apply.');
+          setVoteError('This rules proposal has no changes to apply.');
           return;
         }
         const outcome = await tx.sendEvm(evmResults, {
-          successLabel: `Constitution ratified — agents now follow proposal #${proposal.number}`,
+          successLabel: `Rules activated — agents now follow decision #${proposal.number}`,
         });
         if (outcome.status === 'success' || outcome.status === 'mock') {
           if (ratifyStorageKey) localStorage.setItem(ratifyStorageKey, 'true');
           setAlreadyRatified(true);
           onChanged?.();
         } else {
-          setVoteError(outcome.error || 'Failed to apply the constitution on-chain.');
+          setVoteError(outcome.error || 'Failed to activate rules on-chain.');
         }
       } catch (err) {
-        setVoteError(err instanceof Error ? err.message : 'Failed to ratify the EVM constitution.');
+        setVoteError(err instanceof Error ? err.message : 'Failed to activate rules.');
       } finally {
         setRatifying(false);
       }
@@ -650,10 +594,9 @@ export default function ProposalCard({
       const raw = await fetchProposalPayload(daoPubkey, proposal.number);
       const decoded = decodeConstitutionPayload(raw);
       if (!decoded) {
-        setVoteError('This proposal does not carry a decodable constitution payload.');
+        setVoteError('This proposal does not carry a decodable rules payload.');
         return;
       }
-      // Re-resolve adapter program IDs at ratify time; skip protocols without one.
       const protocols: ProtocolInput[] = decoded.protocols
         .map((p): ProtocolInput | null => {
           const programId = getAdapterProgramId(p.id);
@@ -681,10 +624,6 @@ export default function ProposalCard({
           ? constitution.agentThresholdUsdMicro
           : undefined);
 
-      // Split into two sequential transactions to stay within the 1232-byte
-      // legacy-transaction size limit. update_constitution carries protocol
-      // pubkeys + bps data; set_policy_parameters carries numeric policy fields.
-      // Grouping both in one tx pushes the size to ~1245 bytes — 13 bytes over.
       const txGroups: TransactionBuildResult[][] = [
         [
           await buildUpdateConstitution(
@@ -714,14 +653,12 @@ export default function ProposalCard({
         ]);
       }
       const outcome = await tx.sendGrouped(txGroups, {
-        successLabel: `Constitution ratified — agents now follow proposal #${proposal.number}`,
+        successLabel: `Rules activated — agents now follow decision #${proposal.number}`,
       });
       if (outcome.status === 'success' || outcome.status === 'mock') {
         if (ratifyStorageKey) localStorage.setItem(ratifyStorageKey, 'true');
         setAlreadyRatified(true);
         onChanged?.();
-        // Best-effort: founder-gated poll so the signer pipeline can pick up ERs
-        // as soon as Helius/index-events land (orchestrator also scans correct event names).
         if (signMessage) {
           void dispatchViaProxy(daoAddress, publicKey.toBase58(), (m) => signMessage(m)).then(
             ({ error }) => {
@@ -730,10 +667,10 @@ export default function ProposalCard({
           );
         }
       } else {
-        setVoteError(outcome.error || 'Failed to apply the constitution on-chain.');
+        setVoteError(outcome.error || 'Failed to activate rules on-chain.');
       }
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Failed to ratify the constitution.');
+      setVoteError(err instanceof Error ? err.message : 'Failed to activate rules.');
     } finally {
       setRatifying(false);
     }
@@ -746,7 +683,6 @@ export default function ProposalCard({
   const totalCast = vf + va;
   const pctFor = totalCast > 0 ? Math.round((vf / totalCast) * 100) : 0;
   const gc = guardianCount ?? 0;
-  // EVM finalizeProposal settles a missed quorum as `Failed` instead of reverting.
   const quorumRounding = chainKind === 'evm' ? 'ceil' as const : 'floor' as const;
   const finalizeOpts = { allowMissedQuorum: chainKind === 'evm', quorumRounding };
   const finalizable = canFinalize(proposal, gc, finalizeOpts);
@@ -765,8 +701,6 @@ export default function ProposalCard({
       setVoteError('Select a treasury before voting.');
       return;
     }
-    // Demo DAO: optimistic local vote (no chain). Real DAOs require a connected
-    // member wallet — we no longer fake a successful vote when unauthenticated.
     if (isMockDaoAddress(daoAddress)) {
       setMyVote(vote);
       setVoting(true);
@@ -774,14 +708,11 @@ export default function ProposalCard({
       return;
     }
 
-    // ── EVM: cast the vote on the per-DAO governor ──────────────────────────
     if (chainKind === 'evm') {
       if (!evmChainId) { setVoteError('Select an Ethereum or Base network.'); return; }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
       if (!trio) { setVoteError('EVM contracts are not configured for this network yet.'); return; }
       const evmChoice = vote === 'for' ? 0 : 1;
-      // method 0 = wallet governance, 1 = token escrow; weight is the escrow
-      // amount (token base units) and is ignored for wallet votes.
       const method = isTokenGov ? 1 : 0;
       let weight = 0n;
       if (isTokenGov) {
@@ -809,7 +740,7 @@ export default function ProposalCard({
               buildCastVoteEvm(evmChainId, trio.governor, proposal.number, evmChoice, method, weight),
             ]
           : buildCastVoteEvm(evmChainId, trio.governor, proposal.number, evmChoice, method, weight),
-        { successLabel: `Vote cast — ${vote}`, quietMock: true },
+        { successLabel: `Vote cast — ${vote === 'for' ? 'in favour' : 'against'}`, quietMock: true },
       );
       setVoting(false);
       if (evmOutcome.status === 'success' || evmOutcome.status === 'mock') {
@@ -831,23 +762,12 @@ export default function ProposalCard({
     const daoPubkey = new PublicKey(daoAddress);
     const choice = vote === 'for' ? 0 : 1;
 
-    // Token governance locks voting-token weight; wallet governance is 1-wallet
-    // 1-vote. The on-chain program enforces the matching mode (Phase 2), so the
-    // client must pick the correct instruction.
     let result;
     if (isTokenGov) {
       if (!votingMint) {
         setVoteError('This DAO has no voting token configured.');
         return;
       }
-      // FN-H3: scale by the token's actual decimals (mirrors the EVM branch's
-      // parseUnits(lockAmount, votingTokenDecimals) above) — lock_tokens_and_vote
-      // takes a raw base-unit BN, not a human-readable token count. Passing the
-      // human count directly used to under-weight every Solana token vote by a
-      // factor of 10^decimals. parseUnits also throws on invalid/malformed input
-      // (e.g. more decimal places than the mint supports), so this is wrapped in
-      // try/catch — previously a value like "0.5" with certain decimal configs
-      // could throw unhandled inside `new BN()`.
       let amountBaseUnits: bigint;
       try {
         amountBaseUnits = parseUnits(lockAmount || '0', votingTokenDecimals);
@@ -882,25 +802,22 @@ export default function ProposalCard({
     setMyVote(vote);
     setVoting(true);
     const outcome = await tx.send(result, {
-      successLabel: `Vote cast — ${vote}`,
+      successLabel: `Vote cast — ${vote === 'for' ? 'in favour' : 'against'}`,
       quietMock: true,
     });
 
     setVoting(false);
     if (outcome.status === 'mock' || outcome.status === 'success') {
       setVoted(true);
-      // Persist the vote so it survives page reloads.
       if (walletStr && daoAddress) persistVote(daoAddress, walletStr, proposal.id, vote);
       onChanged?.();
     } else {
       const rawErr = outcome.error || 'Vote submission failed.';
       const errLower = rawErr.toLowerCase();
 
-      // Detect "already voted" — update state to reflect reality and save to localStorage.
       const isAlreadyVoted = isAlreadyVotedError(errLower);
 
       if (isAlreadyVoted) {
-        // The attempt is not the vote that landed. Keep the stored choice.
         setVoted(true);
         const stored = walletStr && daoAddress ? loadPersistedVote(daoAddress, walletStr, proposal.id) : null;
         setMyVote(stored);
@@ -914,7 +831,6 @@ export default function ProposalCard({
   }
 
   async function handleFinalize() {
-    // ── EVM: finalize on the per-DAO governor ───────────────────────────────
     if (chainKind === 'evm') {
       if (finalizing || !daoAddress) return;
       setVoteError(null);
@@ -929,7 +845,7 @@ export default function ProposalCard({
       try {
         const evmOutcome = await tx.sendEvm(
           buildFinalizeProposalEvm(evmChainId, trio.governor, proposal.number),
-          { successLabel: `Proposal #${proposal.number} finalized` },
+          { successLabel: `Decision #${proposal.number} finalized` },
         );
         if (evmOutcome.status === 'success' || evmOutcome.status === 'mock') {
           if (walletStr && daoAddress) clearPersistedVote(daoAddress, walletStr, proposal.id);
@@ -946,8 +862,6 @@ export default function ProposalCard({
     if (!publicKey || !daoAddress || finalizing) return;
     setVoteError(null);
 
-    // Client-side guard — the on-chain instruction also checks this but the
-    // wallet shows "Unexpected error" for custom Anchor errors, which is confusing.
     if (!canFinalize(proposal, guardianCount)) {
       setVoteError(formatFinalizeWindowError(proposal.votingEndTimestamp));
       return;
@@ -958,10 +872,6 @@ export default function ProposalCard({
       const daoPubkey = new PublicKey(daoAddress);
       const result = await buildFinalizeProposal(daoPubkey, proposal.number, publicKey);
 
-      // Pre-simulate to surface errors before the wallet prompt.
-      // NOTE: simulateTransaction with an unsigned tx can return false-positive
-      // GlobalPaused errors due to signer resolution quirks, so we only block
-      // on errors we're certain are reliable (not GlobalPaused).
       if (result.instruction) {
         try {
           const { blockhash } = await connection.getLatestBlockhash();
@@ -975,21 +885,14 @@ export default function ProposalCard({
             ) ?? '';
             console.warn('[finalize simulation] error:', errorLine, simResult.value.err);
 
-            // Only block on errors that are definitely real (not GlobalPaused which
-            // can be a simulation false-positive on unsigned transactions).
             const simMsg = classifyFinalizeSimulationError(errorLine);
             if (simMsg) {
               setFinalizing(false);
               setVoteError(simMsg);
               return;
             }
-            // For other errors (GlobalPaused, DaoOwnershipMismatch, etc.) fall through
-            // to the actual wallet transaction — simulation may be a false positive.
           }
         } catch (simErr) {
-          // Simulation threw an exception (e.g. RPC error, unsigned-tx rejection).
-          // Fall through to the actual wallet transaction — simulation may be a
-          // false positive — but warn the user so they can review carefully.
           console.warn('[finalize simulation] exception:', simErr);
           setVoteError(
             'Pre-flight simulation failed — proceeding with transaction anyway. ' +
@@ -998,11 +901,6 @@ export default function ProposalCard({
         }
       }
 
-      // For strategy proposals: if the creation payload was stored locally,
-      // bundle finalize_proposal + create_execution_request in a single tx.
-      // Within a Solana transaction, state written by an earlier instruction is
-      // visible to subsequent CPIs, so the execution request can read the
-      // Passed status set by finalize_proposal atomically.
       if (proposal.type === 'strategy') {
         const rawPayload = loadSolanaStrategyPayload(daoAddress, proposal.number);
         if (rawPayload) {
@@ -1018,13 +916,13 @@ export default function ProposalCard({
               new PublicKey(rawPayload.mint),
             );
             const bundledOutcome = await tx.sendGrouped([[result, execReqResult]], {
-              successLabel: `Proposal #${proposal.number} finalized and queued for execution`,
+              successLabel: `Decision #${proposal.number} finalized and queued for agents`,
             });
             if (bundledOutcome.status === 'success' || bundledOutcome.status === 'mock') {
               if (walletStr && daoAddress) clearPersistedVote(daoAddress, walletStr, proposal.id);
               onChanged?.();
             } else {
-              setVoteError(formatFinalizeSubmissionError(bundledOutcome.error || 'Finalize + execution request failed.'));
+              setVoteError(formatFinalizeSubmissionError(bundledOutcome.error || 'Finalize failed.'));
             }
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'Finalize failed — please try again.';
@@ -1037,9 +935,8 @@ export default function ProposalCard({
         }
       }
 
-      const outcome = await tx.send(result, { successLabel: `Proposal #${proposal.number} finalized` });
+      const outcome = await tx.send(result, { successLabel: `Decision #${proposal.number} finalized` });
       if (outcome.status === 'success' || outcome.status === 'mock') {
-        // Clear persisted vote once the proposal is finalized — it's no longer active.
         if (walletStr && daoAddress) clearPersistedVote(daoAddress, walletStr, proposal.id);
         onChanged?.();
       } else {
@@ -1054,13 +951,7 @@ export default function ProposalCard({
     }
   }
 
-  /**
-   * Reclaim governance tokens locked for a vote, once the proposal is no longer
-   * Active. Token voters lock weight via lock_tokens_and_vote; release_vote_escrow
-   * returns those tokens from the per-(proposal, voter) escrow to the voter's ATA.
-   */
   async function handleReleaseEscrow() {
-    // ── EVM: release the vote escrow on the per-DAO governor ────────────────
     if (chainKind === 'evm') {
       if (releasing || !daoAddress) return;
       if (!evmChainId) { setVoteError('Select an Ethereum or Base network.'); return; }
@@ -1122,7 +1013,7 @@ export default function ProposalCard({
     setExecutingPermission(true);
     try {
       if (chainKind !== 'evm') {
-        setVoteError('Permission execute via governor is EVM-only in this UI.');
+        setVoteError('Member updates via governor are EVM-only in this UI.');
         return;
       }
       if (!evmChainId) {
@@ -1131,9 +1022,7 @@ export default function ProposalCard({
       }
       const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, 'permission');
       if (!payload?.length) {
-        setVoteError(
-          'Could not recover this Permission proposal payload. Execute from the device that created it, or re-submit the Permission proposal.',
-        );
+        setVoteError('Could not recover this member update payload. Execute from the device that created it.');
         return;
       }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
@@ -1144,12 +1033,12 @@ export default function ProposalCard({
       const { wallets, threshold } = decodeEvmPermissionPayload(payload);
       const outcome = await tx.sendEvm(
         buildExecutePermissionProposalEvm(evmChainId, trio.governor, proposal.number, wallets, threshold),
-        { successLabel: `Guardian config applied — proposal #${proposal.number}` },
+        { successLabel: `Members updated — decision #${proposal.number}` },
       );
       if (outcome.status === 'success' || outcome.status === 'mock') onChanged?.();
-      else setVoteError(outcome.error || 'Permission execution failed.');
+      else setVoteError(outcome.error || 'Failed to update members.');
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Permission execution failed.');
+      setVoteError(err instanceof Error ? err.message : 'Failed to update members.');
     } finally {
       setExecutingPermission(false);
     }
@@ -1168,7 +1057,7 @@ export default function ProposalCard({
         const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, 'transfer');
         if (!payload?.length) {
           setVoteError(
-            'Could not recover this transfer proposal payload. The governor only stores a hash on-chain — execute from the device that created it, or create a new transfer from Treasury so the payload is re-indexed.',
+            'Could not recover this payment payload. Send the payment from the device that created it.',
           );
           return;
         }
@@ -1187,34 +1076,34 @@ export default function ProposalCard({
         }
         const outcome = await tx.sendEvm(
           buildResult,
-          { successLabel: `Treasury transfer executed — proposal #${proposal.number}` },
+          { successLabel: `Payment sent — decision #${proposal.number}` },
         );
         if (outcome.status === 'success' || outcome.status === 'mock') onChanged?.();
-        else setVoteError(outcome.error || 'Transfer execution failed.');
+        else setVoteError(outcome.error || 'Payment failed.');
         return;
       }
 
       if (!publicKey) {
-        setVoteError('Connect a Solana wallet to execute.');
+        setVoteError('Connect a Solana wallet to send this payment.');
         return;
       }
       const daoPubkey = new PublicKey(daoAddress);
       const onChainProposal = await fetchProposal(daoPubkey, proposal.number);
       if (!onChainProposal) {
-        setVoteError('Could not load this proposal on-chain.');
+        setVoteError('Could not load this decision on-chain.');
         return;
       }
       if (onChainProposal.status !== OnChainProposalStatus.Passed) {
-        setVoteError('This transfer proposal has not passed yet.');
+        setVoteError('This payment decision has not passed yet.');
         return;
       }
       if (onChainProposal.proposalType !== OnChainProposalType.Transfer) {
-        setVoteError('This is not a transfer proposal on-chain.');
+        setVoteError('This is not a payment decision on-chain.');
         return;
       }
       const raw = await fetchProposalPayloadBytes(daoPubkey, proposal.number);
       if (!raw || raw.length < 72) {
-        setVoteError('Invalid or missing transfer payload on-chain (expected 72 bytes).');
+        setVoteError('Invalid or missing payment details on-chain.');
         return;
       }
       const dec = decodeSolanaTransferProposalPayload(Buffer.from(raw));
@@ -1223,10 +1112,10 @@ export default function ProposalCard({
       if (isNativeSol) {
         const outcome = await tx.send(
           await buildExecuteTreasuryTransferNativeSol(daoPubkey, proposal.number, publicKey, dec.recipient),
-          { successLabel: `Treasury transfer executed — proposal #${proposal.number}` },
+          { successLabel: `Payment sent — decision #${proposal.number}` },
         );
         if (outcome.status === 'success' || outcome.status === 'mock') onChanged?.();
-        else setVoteError(outcome.error || 'Transfer execution failed.');
+        else setVoteError(outcome.error || 'Payment failed.');
         return;
       }
 
@@ -1238,10 +1127,10 @@ export default function ProposalCard({
         if (nftRecord && !nftRecord.transferred) {
           const outcome = await tx.send(
             await buildExecuteTreasuryTransferNft(daoPubkey, proposal.number, publicKey, dec.mint, dec.recipient),
-            { successLabel: `NFT transfer executed — proposal #${proposal.number}` },
+            { successLabel: `NFT sent — decision #${proposal.number}` },
           );
           if (outcome.status === 'success' || outcome.status === 'mock') onChanged?.();
-          else setVoteError(outcome.error || 'NFT transfer execution failed.');
+          else setVoteError(outcome.error || 'NFT transfer failed.');
           return;
         }
       }
@@ -1262,110 +1151,14 @@ export default function ProposalCard({
           dec.mint,
           dec.recipient,
         ),
-        { successLabel: `Treasury transfer executed — proposal #${proposal.number}` },
+        { successLabel: `Payment sent — decision #${proposal.number}` },
       );
       if (outcome.status === 'success' || outcome.status === 'mock') onChanged?.();
-      else setVoteError(outcome.error || 'Transfer execution failed.');
+      else setVoteError(outcome.error || 'Payment failed.');
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Transfer execution failed.');
+      setVoteError(err instanceof Error ? err.message : 'Payment failed.');
     } finally {
       setExecutingTransfer(false);
-    }
-  }
-
-  async function handleCreateExecutionRequest() {
-    if (chainKind === 'evm') {
-      if (!daoAddress || creatingReq) return;
-      if (proposal.type === 'transfer') {
-        setVoteError(
-          'Treasury transfers no longer use the agent execution-request pipeline. After finalization, use “Execute treasury transfer” in this card instead.',
-        );
-        return;
-      }
-      if (!evmChainId) { setVoteError('Select an Ethereum or Base network.'); return; }
-      const payload = await resolveEvmProposalPayload(daoAddress, evmChainId, proposal.number, proposal.type);
-      if (!payload) {
-        setVoteError('Could not recover this EVM execution payload from the on-chain payload index. Queue execution from the device that created the proposal, or recreate it.');
-        return;
-      }
-      setCreatingReq(true);
-      setVoteError(null);
-      try {
-        const trio = await fetchDaoContracts(evmChainId, daoAddress);
-        if (!trio) {
-          setVoteError('EVM contracts are not configured for this network yet.');
-          return;
-        }
-        const buildResult = (() => {
-          let decoded: { adapter: `0x${string}`; asset: `0x${string}`; amount: bigint };
-          try {
-            const d = decodeEvmStrategyProposalPayload(payload);
-            decoded = { adapter: d.adapter, asset: d.asset, amount: d.amount };
-          } catch {
-            decoded = decodeEvmStrategyRequestPayload(payload);
-          }
-          return buildCreateStrategyRequestEvm(
-            evmChainId,
-            trio.execution,
-            proposal.number,
-            decoded.amount,
-            decoded.adapter,
-            decoded.asset,
-          );
-        })();
-        const outcome = await tx.sendEvm(buildResult, {
-          successLabel: `Execution request created for proposal #${proposal.number}`,
-        });
-        if (outcome.status === 'success' || outcome.status === 'mock') {
-          onChanged?.();
-        } else {
-          setVoteError(outcome.error || 'Failed to create EVM execution request.');
-        }
-      } catch (err) {
-        setVoteError(err instanceof Error ? err.message : 'Failed to create EVM execution request.');
-      } finally {
-        setCreatingReq(false);
-      }
-      return;
-    }
-    if (!publicKey || !daoAddress || creatingReq) return;
-    setCreatingReq(true);
-    setVoteError(null);
-    try {
-      const amount = Number(createReqAmount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        setVoteError('Enter a valid execution amount.');
-        return;
-      }
-      const protocolProgram = getAdapterProgramId(createReqProtocol);
-      if (!protocolProgram) {
-        setVoteError(`Adapter program is not configured for ${createReqProtocol}.`);
-        return;
-      }
-      const daoPubkey = new PublicKey(daoAddress);
-      const [proposalPubkey] = getProposalPDA(daoPubkey, proposal.number);
-      const selectedMintStr = createReqAssetMint || votingMint || NATIVE_MINT.toBase58();
-      const mint = new PublicKey(selectedMintStr);
-      const matchedAsset = registeredTreasuryAssets.find((a) => a.mint === selectedMintStr);
-      const amountBaseUnits = matchedAsset
-        ? parseUnits(createReqAmount.trim() || '1', matchedAsset.decimals)
-        : BigInt(Math.floor(amount));
-      const result = await buildCreateExecutionRequest(
-        daoPubkey,
-        proposalPubkey,
-        publicKey,
-        amountBaseUnits,
-        protocolProgram,
-        mint,
-      );
-      const outcome = await tx.send(result, { successLabel: `Execution request created for proposal #${proposal.number}` });
-      if (outcome.status === 'success' || outcome.status === 'mock') {
-        onChanged?.();
-      } else {
-        setVoteError(outcome.error || 'Failed to create execution request.');
-      }
-    } finally {
-      setCreatingReq(false);
     }
   }
 
@@ -1396,31 +1189,31 @@ export default function ProposalCard({
         }
         const outcome = await tx.sendEvm(
           buildExecuteSwitchVotingSystemEvm(evmChainId, trio.governor, proposal.number, newGovType, newVotingToken),
-          { successLabel: `Voting system switched — proposal #${proposal.number}` },
+          { successLabel: `Voting system updated — decision #${proposal.number}` },
         );
         if (outcome.status === 'success' || outcome.status === 'mock') {
           onChanged?.();
         } else {
-          setVoteError(outcome.error || 'Failed to execute voting system switch.');
+          setVoteError(outcome.error || 'Failed to update voting system.');
         }
         return;
       }
       if (!publicKey) {
-        setVoteError('Connect your Solana wallet to execute this voting system switch.');
+        setVoteError('Connect your Solana wallet to update the voting system.');
         return;
       }
       const daoPubkey = new PublicKey(daoAddress);
       const outcome = await tx.send(
         await buildSwitchVotingSystem(daoPubkey, publicKey, proposal.number),
-        { successLabel: `Voting system switched — proposal #${proposal.number}` },
+        { successLabel: `Voting system updated — decision #${proposal.number}` },
       );
       if (outcome.status === 'success' || outcome.status === 'mock') {
         onChanged?.();
       } else {
-        setVoteError(outcome.error || 'Failed to execute voting system switch.');
+        setVoteError(outcome.error || 'Failed to update voting system.');
       }
     } catch (err) {
-      setVoteError(err instanceof Error ? err.message : 'Failed to execute voting system switch.');
+      setVoteError(err instanceof Error ? err.message : 'Failed to update voting system.');
     } finally {
       setExecutingSwitchVoting(false);
     }
@@ -1440,13 +1233,17 @@ export default function ProposalCard({
 
   if (pipelineStage === 'vote' && proposal.status === 'active' && !voted && isMember) {
     primaryAction = {
-      label: 'Cast vote',
+      label: 'Vote in favour',
       icon: 'check-to-slot',
       disabled: voting,
       loading: voting,
       onClick: (e) => {
         e.stopPropagation();
-        setExpanded(true);
+        if (isTokenGov) {
+          setExpanded(true);
+        } else {
+          void handleVote('for');
+        }
       },
     };
   } else if (pipelineStage === 'finalize' && proposal.status === 'active' && isMember && finalizable) {
@@ -1463,7 +1260,7 @@ export default function ProposalCard({
   } else if (pipelineStage === 'execute' && proposal.status === 'passed') {
     if (proposal.type === 'policy' && isFounder && !alreadyRatified && isMember) {
       primaryAction = {
-        label: ratifying ? 'Ratifying…' : 'Ratify constitution',
+        label: ratifying ? 'Activating…' : 'Activate new rules',
         icon: 'scroll',
         disabled: ratifying,
         loading: ratifying,
@@ -1474,7 +1271,7 @@ export default function ProposalCard({
       };
     } else if (proposal.type === 'agent-enable' && isFounder && isMember) {
       primaryAction = {
-        label: enabling ? 'Enabling…' : 'Execute: Enable agents',
+        label: enabling ? 'Resuming…' : 'Resume agents',
         icon: 'play',
         disabled: enabling,
         loading: enabling,
@@ -1485,7 +1282,7 @@ export default function ProposalCard({
       };
     } else if (proposal.type === 'token-mint' && isFounder && isMember) {
       primaryAction = {
-        label: ratifying ? 'Minting…' : 'Execute mint',
+        label: ratifying ? 'Minting…' : 'Mint approved tokens',
         icon: 'coins',
         disabled: ratifying,
         loading: ratifying,
@@ -1496,7 +1293,7 @@ export default function ProposalCard({
       };
     } else if (proposal.type === 'transfer' && isMember) {
       primaryAction = {
-        label: executingTransfer ? 'Executing…' : 'Execute transfer',
+        label: executingTransfer ? 'Sending…' : 'Send approved payment',
         icon: 'paper-plane',
         disabled: executingTransfer,
         loading: executingTransfer,
@@ -1505,9 +1302,20 @@ export default function ProposalCard({
           void handleExecuteTreasuryTransfer();
         },
       };
+    } else if (proposal.type === 'permission' && isMember && chainKind === 'evm') {
+      primaryAction = {
+        label: executingPermission ? 'Updating…' : 'Update members',
+        icon: 'shield',
+        disabled: executingPermission,
+        loading: executingPermission,
+        onClick: (e) => {
+          e.stopPropagation();
+          void handleExecutePermission();
+        },
+      };
     } else if (proposal.type === 'switch-voting' && isMember) {
       primaryAction = {
-        label: executingSwitchVoting ? 'Switching…' : 'Execute voting system switch',
+        label: executingSwitchVoting ? 'Updating…' : 'Update voting system',
         icon: 'scale-balanced',
         disabled: executingSwitchVoting,
         loading: executingSwitchVoting,
@@ -1518,7 +1326,7 @@ export default function ProposalCard({
       };
     } else {
       primaryAction = {
-        label: 'Review next steps',
+        label: 'Details',
         icon: 'arrow-right',
         disabled: false,
         loading: false,
@@ -1662,7 +1470,7 @@ export default function ProposalCard({
                         : 'hsl(var(--destructive))',
                 }}
               >
-                You voted {myVote}
+                You voted {myVote === 'for' ? 'in favour' : myVote}
               </span>
             </>
           )}
@@ -1703,6 +1511,30 @@ export default function ProposalCard({
             />
             {primaryAction.label}
           </button>
+          {pipelineStage === 'vote' && proposal.status === 'active' && !voted && isMember && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isTokenGov) {
+                  setExpanded(true);
+                } else {
+                  void handleVote('against');
+                }
+              }}
+              disabled={voting}
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-[9px] border font-semibold transition-all"
+              style={{
+                fontSize: '13px',
+                backgroundColor: '#ffffff',
+                borderColor: 'hsl(var(--border))',
+                color: 'hsl(var(--foreground))',
+                opacity: voting ? 0.6 : 1,
+              }}
+            >
+              Vote against
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -1762,7 +1594,6 @@ export default function ProposalCard({
 
           <ProposalExecutePanels
             proposal={proposal}
-            daoAddress={daoAddress}
             chainKind={chainKind}
             isFounder={isFounder}
             isMember={isMember}
@@ -1779,17 +1610,7 @@ export default function ProposalCard({
             clearingHalt={clearingHalt}
             clearHaltMsg={clearHaltMsg}
             clearHaltError={clearHaltError}
-            createReqAmount={createReqAmount}
-            setCreateReqAmount={setCreateReqAmount}
-            createReqProtocol={createReqProtocol}
-            setCreateReqProtocol={setCreateReqProtocol}
-            createReqAssetMint={createReqAssetMint}
-            setCreateReqAssetMint={setCreateReqAssetMint}
-            registeredTreasuryAssets={registeredTreasuryAssets}
-            votingMint={votingMint}
-            creatingReq={creatingReq}
             voteError={voteError}
-            navigate={navigate}
             onRatifyConstitution={() => void handleRatifyConstitution()}
             onExecuteEnableAgents={() => void handleExecuteEnableAgents()}
             onRatifyTokenMint={() => void handleRatifyTokenMint()}
@@ -1797,7 +1618,6 @@ export default function ProposalCard({
             onExecutePermission={() => void handleExecutePermission()}
             onExecuteSwitchVotingSystem={() => void handleExecuteSwitchVotingSystem()}
             onClearProposalHalt={() => void handleClearProposalHalt()}
-            onCreateExecutionRequest={() => void handleCreateExecutionRequest()}
           />
 
           <ProposalPayloadSummary

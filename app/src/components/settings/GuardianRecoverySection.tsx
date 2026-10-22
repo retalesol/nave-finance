@@ -112,7 +112,7 @@ export default function GuardianRecoverySection({
         <Notice tone="brass" className="mb-3">
           <span style={{ fontSize: '13px' }}>
             Pending recovery: {pending.pendingWalletCount} wallet(s), threshold {pending.pendingThreshold}.{' '}
-            Executable at unix {pending.executableAt.toString()}
+            Executable {new Date(Number(pending.executableAt) * 1000).toLocaleString()}
             {canExecute ? ' — ready now.' : ' — waiting on timelock.'}
           </span>
         </Notice>

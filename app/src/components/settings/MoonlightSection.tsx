@@ -58,7 +58,8 @@ import {
 } from '../../lib/actionDelays';
 import { withdrawStrategyViaProxyEvm } from '../../lib/edgeFunctionClient';
 import { useExecutionPipeline } from '../../hooks/useExecutionPipeline';
-import { ExecutionStatus } from '../../lib/onChainTypes';
+import { useProposals } from '../../hooks/useProposals';
+import { ExecutionStatus, ProposalType } from '../../lib/onChainTypes';
 
 const MOONLIGHT_REQUEST_TYPE = 9;
 const MOONLIGHT_DISTRIBUTION_TYPE = 10;
@@ -316,6 +317,29 @@ export function EvmMoonlightSection({ daoAddress, first = false }: { daoAddress:
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const proposalTotal = (dao?.proposalCount ?? 0) + (dao?.archivedProposalCount ?? 0);
+  const { passedProposals } = useProposals(daoAddress, proposalTotal);
+  const passedRequestProp = useMemo(
+    () => passedProposals.find((p) => p.proposalType === ProposalType.MoonlightRequest),
+    [passedProposals],
+  );
+  const passedDistProp = useMemo(
+    () => passedProposals.find((p) => p.proposalType === ProposalType.MoonlightDistribution),
+    [passedProposals],
+  );
+
+  useEffect(() => {
+    if (passedRequestProp != null && !requestIdx) {
+      setRequestIdx(String(passedRequestProp.index));
+    }
+  }, [passedRequestProp, requestIdx]);
+
+  useEffect(() => {
+    if (passedDistProp != null && !distIdx) {
+      setDistIdx(String(passedDistProp.index));
+    }
+  }, [passedDistProp, distIdx]);
 
   const load = useCallback(async () => {
     if (!evmChainId) return;
@@ -615,6 +639,28 @@ export default function MoonlightSection({ daoAddress, first = false }: { daoAdd
     typeof dao?.nextProposalIndex === 'number'
       ? dao.nextProposalIndex
       : (dao?.proposalCount ?? 0) + (dao?.archivedProposalCount ?? 0);
+  const proposalTotal = (dao?.proposalCount ?? 0) + (dao?.archivedProposalCount ?? 0);
+  const { passedProposals } = useProposals(daoAddress, proposalTotal);
+  const passedRequestProp = useMemo(
+    () => passedProposals.find((p) => p.proposalType === ProposalType.MoonlightRequest),
+    [passedProposals],
+  );
+  const passedDistProp = useMemo(
+    () => passedProposals.find((p) => p.proposalType === ProposalType.MoonlightDistribution),
+    [passedProposals],
+  );
+
+  useEffect(() => {
+    if (passedRequestProp != null && !requestProposalIdx) {
+      setRequestProposalIdx(String(passedRequestProp.index + 1));
+    }
+  }, [passedRequestProp, requestProposalIdx]);
+
+  useEffect(() => {
+    if (passedDistProp != null && !distProposalIdx) {
+      setDistProposalIdx(String(passedDistProp.index + 1));
+    }
+  }, [passedDistProp, distProposalIdx]);
 
   const loadState = useCallback(async () => {
     if (!daoAddress || !isSolanaDao) return;

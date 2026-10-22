@@ -230,32 +230,11 @@ export default function EmergencyControls({ daoAddress, initialFrozen = false }:
   }
 
   return (
-    <Section title="Safety" hint="Override agent operations in critical situations">
+    <Section title="Safety">
       <div className="space-y-4">
-        {/* Transaction threshold hairline row */}
-        <div
-          className="flex items-start justify-between gap-4 py-3"
-          style={{ borderBottom: '1px solid hsl(var(--surface-2))' }}
-        >
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))' }}>
-              Single-operation approval threshold
-            </div>
-            <div style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-              Operations above this value require multisig approval
-            </div>
-          </div>
-          <div
-            className="nave-mono font-semibold flex-shrink-0"
-            style={{ fontSize: '13.5px', color: 'hsl(var(--foreground))' }}
-          >
-            $10,000
-          </div>
-        </div>
-
         {/* Emergency freeze (.danger-zone) */}
         <div
-          className="rounded-[12px] border"
+          className="danger-zone rounded-[12px] border"
           style={{
             backgroundColor: '#FFF9F8',
             borderColor: '#F2C7C2',

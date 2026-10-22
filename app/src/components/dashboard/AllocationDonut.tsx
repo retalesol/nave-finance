@@ -7,8 +7,10 @@ const BARLINE_PALETTE = [
 
 export default function AllocationDonut({
   allocation,
+  onSelect,
 }: {
   allocation: Array<{ name: string; value: number; color: string }>;
+  onSelect?: (name: string) => void;
 }) {
   if (allocation.length === 0) {
     return (
@@ -33,6 +35,20 @@ export default function AllocationDonut({
         return (
           <div
             key={d.name}
+            role={onSelect ? 'button' : undefined}
+            tabIndex={onSelect ? 0 : undefined}
+            onClick={onSelect ? () => onSelect(d.name) : undefined}
+            onKeyDown={
+              onSelect
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelect(d.name);
+                    }
+                  }
+                : undefined
+            }
+            className={onSelect ? 'cursor-pointer group' : undefined}
             style={{
               display: 'grid',
               gridTemplateColumns: '110px 1fr 56px',
@@ -44,7 +60,7 @@ export default function AllocationDonut({
             }}
           >
             <span
-              className="truncate"
+              className={`truncate ${onSelect ? 'group-hover:text-brass transition-colors' : ''}`}
               style={{ color: 'hsl(var(--foreground))', fontWeight: 500 }}
             >
               {d.name}
