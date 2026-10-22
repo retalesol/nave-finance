@@ -3,7 +3,7 @@
  * Mirrors app `readContract(..., 'currentNav')` (micro-USD) and native balance.
  */
 import { createPublicClient, http } from "npm:viem@2.21.55";
-import { EVM_RPC_CONFIG } from "./evmFounder.ts";
+import { EVM_RPC_CONFIG, evmRpcUrlFor } from "./evmFounder.ts";
 
 const NAV_ABI = [
   {
@@ -66,7 +66,7 @@ export async function readEvmTreasurySnapshotMetrics(
 ): Promise<EvmTreasurySnapshotMetrics | null> {
   const cfg = EVM_RPC_CONFIG[chainId];
   if (!cfg) return null;
-  const rpcUrl = Deno.env.get(cfg.rpcEnv) ?? cfg.fallbackUrl;
+  const rpcUrl = evmRpcUrlFor(chainId);
   if (!rpcUrl) return null;
   try {
     const client = createPublicClient({ chain: cfg.chain, transport: http(rpcUrl) });

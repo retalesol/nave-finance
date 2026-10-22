@@ -11,7 +11,7 @@ import {
   http,
   type Chain,
 } from "npm:viem@2.21.55";
-import { EVM_RPC_CONFIG } from "./evmFounder.ts";
+import { EVM_RPC_CONFIG, evmRpcUrlFor } from "./evmFounder.ts";
 
 const NAVE_TREASURY_ABI = [
   {
@@ -142,7 +142,7 @@ export interface EvmPositionAccounting {
 function clientFor(chainId: number) {
   const cfg = EVM_RPC_CONFIG[chainId];
   if (!cfg) return null;
-  const rpcUrl = Deno.env.get(cfg.rpcEnv) ?? cfg.fallbackUrl;
+  const rpcUrl = evmRpcUrlFor(chainId);
   if (!rpcUrl) return null;
   return createPublicClient({ chain: cfg.chain as Chain, transport: http(rpcUrl) });
 }

@@ -35,6 +35,7 @@ import {
   buildReleaseVoteEscrowEvm,
   buildSetPolicyParametersEvm,
   buildUpdateConstitutionEvm,
+  type EvmBuildResult,
 } from '@/lib/evm/writers';
 import {
   buildCastVoteWallet,
@@ -66,8 +67,10 @@ import {
 import { isMockDaoAddress } from '@/lib/mockData';
 import {
   getAdapterProgramId,
+  getEvmAdapterAddress,
   isConfiguredEvmAdapterAddress,
   MARGINFI_STRATEGY_ENABLED,
+  type EvmAdapterProtocolId,
 } from '@/lib/programConfig';
 import {
   clearHaltViaProxy,
@@ -561,32 +564,33 @@ export default function ProposalCard({
           setVoteError('This proposal does not carry a decodable constitution payload.');
           return;
         }
-        const missingAdapters = decoded.protocols.filter((p) => p.approved && !p.adapter);
+        const resolvedProtocols = decoded.protocols.flatMap((p) => {
+          const fromPayload = p.adapter && isConfiguredEvmAdapterAddress(evmChainId, p.adapter)
+            ? p.adapter
+            : null;
+          const adapter = fromPayload
+            ?? (p.approved ? getEvmAdapterAddress(evmChainId, p.id as EvmAdapterProtocolId) : null);
+          if (!adapter) return [];
+          return [{ ...p, adapter }];
+        });
+        const missingAdapters = decoded.protocols.filter(
+          (p) => p.approved && !resolvedProtocols.some((r) => r.id === p.id),
+        );
         if (missingAdapters.length > 0) {
           setVoteError(
             `EVM adapter addresses are not configured for: ${missingAdapters.map((p) => p.id).join(', ')}. Add adapter addresses to the payload before ratifying.`,
           );
           return;
         }
-        const unconfiguredAdapters = decoded.protocols.filter(
-          (p) => p.adapter && !isConfiguredEvmAdapterAddress(evmChainId, p.adapter),
-        );
-        if (unconfiguredAdapters.length > 0) {
-          setVoteError(
-            `This constitution references unsupported or unconfigured EVM adapters for: ${unconfiguredAdapters.map((p) => p.id).join(', ')}. Recreate the proposal after configuring supported adapter addresses for this chain.`,
-          );
-          return;
-        }
-        const adapters = decoded.protocols
-          .filter((p) => p.adapter)
-          .map((p) => ({
-            protocolId: p.id,
-            adapter: p.adapter!,
-            maxAllocationBps: p.maxAllocationBps,
-            approved: p.approved,
-          }));
-        const evmResults = [
-          buildUpdateConstitutionEvm(
+        const adapters = resolvedProtocols.map((p) => ({
+          protocolId: p.id,
+          adapter: p.adapter,
+          maxAllocationBps: p.maxAllocationBps,
+          approved: p.approved,
+        }));
+        const evmResults: EvmBuildResult[] = [];
+        if (adapters.length > 0) {
+          evmResults.push(buildUpdateConstitutionEvm(
             evmChainId,
             daoAddress,
             adapters,
@@ -594,8 +598,8 @@ export default function ProposalCard({
             constitution?.agentThresholdUsdMicro && constitution.agentThresholdUsdMicro > 0
               ? constitution.agentThresholdUsdMicro
               : 100_000_000,
-          ),
-        ];
+          ));
+        }
         if (
           decoded.minStablecoin != null ||
           decoded.maxDeployment != null ||
@@ -612,6 +616,10 @@ export default function ProposalCard({
               rebalanceLabelToSeconds(decoded.rebalanceFreq),
             ),
           );
+        }
+        if (evmResults.length === 0) {
+          setVoteError('This constitution proposal has no changes to apply.');
+          return;
         }
         const outcome = await tx.sendEvm(evmResults, {
           successLabel: `Constitution ratified — agents now follow proposal #${proposal.number}`,

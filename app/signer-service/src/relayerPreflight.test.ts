@@ -195,7 +195,10 @@ test('rpcUrlFor: uses public testnet fallbacks when env vars are unset and requi
     assert.equal(rpcUrlFor(11155111), 'https://ethereum-sepolia-rpc.publicnode.com');
     assert.equal(rpcUrlFor(84532), 'https://sepolia.base.org');
     assert.equal(rpcUrlFor(46630), 'https://rpc.testnet.chain.robinhood.com');
-    assert.equal(rpcUrlFor(5042002), 'https://rpc.testnet.arc.network');
+    assert.equal(rpcUrlFor(5042002), 'https://rpc.testnet.arc.io');
+
+    process.env.EVM_ARC_TESTNET_RPC_URL = 'https://rpc.testnet.arc.network';
+    assert.equal(rpcUrlFor(5042002), 'https://rpc.testnet.arc.io');
 
     process.env.EVM_ARC_TESTNET_RPC_URL = 'https://custom-arc-rpc.example';
     assert.equal(rpcUrlFor(5042002), 'https://custom-arc-rpc.example');

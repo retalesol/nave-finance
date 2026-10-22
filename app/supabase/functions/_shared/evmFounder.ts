@@ -30,7 +30,7 @@ const arcTestnet = defineChain({
   id: EVM_CHAIN_IDS.arc.testnet,
   name: "Arc Testnet",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } },
+  rpcUrls: { default: { http: ["https://rpc.testnet.arc.io"] } },
   blockExplorers: { default: { name: "Arc Explorer", url: "https://explorer.testnet.arc.io" } },
   testnet: true,
 });
@@ -83,7 +83,7 @@ export const EVM_RPC_CONFIG: Record<
   5042002: {
     chain: arcTestnet,
     rpcEnv: "EVM_ARC_TESTNET_RPC_URL",
-    fallbackUrl: "https://rpc.testnet.arc.network",
+    fallbackUrl: "https://rpc.testnet.arc.io",
     protocolEnv: "EVM_ARC_TESTNET_PROTOCOL_ADDRESS",
     fallbackProtocolAddress: "0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255",
   },
@@ -116,12 +116,27 @@ const NAVE_PROTOCOL_REGISTRY_ABI = [
   },
 ] as const;
 
+const RETIRED_ARC_RPC_HOSTS = new Set(["rpc.testnet.arc.network", "www.rpc.testnet.arc.network"]);
+
+/** Ignore the retired Arc host, which does not resolve. */
+function usableEvmRpcUrl(chainId: number, url: string | undefined): string | undefined {
+  if (!url) return url;
+  if (chainId !== 5042002) return url;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (RETIRED_ARC_RPC_HOSTS.has(host)) return "https://rpc.testnet.arc.io";
+  } catch {
+    return "https://rpc.testnet.arc.io";
+  }
+  return url.replace(/\/$/, "");
+}
+
 /** Resolved RPC URL for `chainId` (env, else testnet-only fallback), or null. */
 export function evmRpcUrlFor(chainId: number | null | undefined): string | null {
   if (chainId == null) return null;
   const cfg = EVM_RPC_CONFIG[chainId];
   if (!cfg) return null;
-  return Deno.env.get(cfg.rpcEnv) ?? cfg.fallbackUrl ?? null;
+  return usableEvmRpcUrl(chainId, Deno.env.get(cfg.rpcEnv) ?? cfg.fallbackUrl) ?? null;
 }
 
 /** True when a per-chain RPC is configured (env or testnet fallback) for `chainId`. */

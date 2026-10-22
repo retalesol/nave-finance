@@ -32,7 +32,7 @@ const CHAIN_CONFIG: Record<number, { chain: Chain; rpcEnv: string; fallbackUrl?:
   5042002: {
     chain: arcTestnet,
     rpcEnv: 'EVM_ARC_TESTNET_RPC_URL',
-    fallbackUrl: 'https://rpc.testnet.arc.network',
+    fallbackUrl: 'https://rpc.testnet.arc.io',
   },
 };
 
@@ -265,10 +265,25 @@ export interface EvmRelayResult {
   deadline?: string;
 }
 
+const RETIRED_ARC_RPC_HOSTS = new Set(['rpc.testnet.arc.network', 'www.rpc.testnet.arc.network']);
+
+/** Ignore the retired Arc host, which does not resolve. */
+function usableRpcUrl(chainId: number, url: string | undefined): string | undefined {
+  if (!url) return url;
+  if (chainId !== 5042002) return url;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (RETIRED_ARC_RPC_HOSTS.has(host)) return 'https://rpc.testnet.arc.io';
+  } catch {
+    return 'https://rpc.testnet.arc.io';
+  }
+  return url.replace(/\/$/, '');
+}
+
 export function rpcUrlFor(chainId: number): string {
   const cfg = CHAIN_CONFIG[chainId];
   if (!cfg) throw new Error(`Unsupported chain_id ${chainId} (Ethereum, Base, Robinhood, Arc Testnet)`);
-  const url = process.env[cfg.rpcEnv]?.trim() || cfg.fallbackUrl;
+  const url = usableRpcUrl(chainId, process.env[cfg.rpcEnv]?.trim() || cfg.fallbackUrl);
   if (!url) throw new Error(`Relayer RPC not configured: set ${cfg.rpcEnv} for chain ${chainId}`);
   return url;
 }
@@ -325,6 +340,76 @@ export async function withSenderLock<T>(
       senderLocks.delete(key);
     }
   }
+}
+
+/**
+ * New agent EOAs are created with a zero balance. Fund the broadcaster from the
+ * ops wallet before the first toggle, or agent start fails as soon as the
+ * treasury exists. No-op when the balance already covers `requiredWei`.
+ */
+async function fundCustodiedSender(params: {
+  chainId: number;
+  chain: Chain;
+  transport: ReturnType<typeof http>;
+  publicClient: PublicClient;
+  address: `0x${string}`;
+  requiredWei: bigint;
+}): Promise<void> {
+  const { chainId, chain, transport, publicClient, address, requiredWei } = params;
+  if (requiredWei <= 0n) return;
+  const balance = await publicClient.getBalance({ address });
+  if (balance >= requiredWei) return;
+
+  const ops = loadEvmOpsAccount();
+  if (!ops) {
+    throw new Error(
+      `Custodied signer ${address} has ${formatEther(balance)} native gas on chain ${chainId} ` +
+      `but this transaction needs about ${formatEther(requiredWei)}. ` +
+      `Set EVM_OPS_PRIVATE_KEY or NAVE_EVM_OPS_PRIVATE_KEY so the relayer can fund agent wallets.`,
+    );
+  }
+  if (ops.address.toLowerCase() === address.toLowerCase()) {
+    throw new Error(
+      `Ops wallet ${address} on chain ${chainId} has ${formatEther(balance)} native gas and needs about ${formatEther(requiredWei)}.`,
+    );
+  }
+
+  const cap = parseEther('0.2');
+  if (requiredWei > cap) {
+    throw new Error(
+      `Estimated gas cost ${formatEther(requiredWei)} on chain ${chainId} exceeds the ${formatEther(cap)} relayer top-up cap.`,
+    );
+  }
+  const target = requiredWei * 2n > parseEther('0.005') ? requiredWei * 2n : parseEther('0.005');
+  const deficit = requiredWei - balance;
+
+  await withSenderLock(chainId, ops.address, async () => {
+    const opsBalance = await publicClient.getBalance({ address: ops.address });
+    const reserve = parseEther('0.0005');
+    const preferred = target > balance ? target - balance : deficit;
+    let amount = 0n;
+    if (opsBalance > preferred + reserve) amount = preferred;
+    else if (opsBalance > deficit + reserve) amount = deficit;
+    if (amount <= 0n) {
+      throw new Error(
+        `EVM ops wallet ${ops.address} balance ${formatEther(opsBalance)} on chain ${chainId} ` +
+        `cannot fund ${address} (needs ${formatEther(deficit)} plus reserve).`,
+      );
+    }
+    const opsWallet = createWalletClient({ account: ops, chain, transport });
+    const nonce = await publicClient.getTransactionCount({ address: ops.address, blockTag: 'latest' });
+    const hash = await opsWallet.sendTransaction({
+      account: ops,
+      chain,
+      to: address,
+      value: amount,
+      nonce,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: receiptTimeoutMs() });
+    if (receipt.status !== 'success') {
+      throw new Error(`Gas top-up ${hash} reverted on chain ${chainId}`);
+    }
+  });
 }
 
 /**
@@ -432,6 +517,18 @@ async function broadcastCall(params: {
           effectiveMaxPriorityFeePerGas = effectiveMaxFeePerGas;
         }
       }
+    }
+
+    const feePerGas = effectiveMaxFeePerGas ?? 0n;
+    if (feePerGas > 0n) {
+      await fundCustodiedSender({
+        chainId,
+        chain: cfg.chain,
+        transport,
+        publicClient,
+        address: account.address,
+        requiredWei: gasLimit * feePerGas + (value ?? 0n),
+      });
     }
 
     let txHash!: Hash;

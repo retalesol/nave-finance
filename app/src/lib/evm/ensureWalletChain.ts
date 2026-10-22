@@ -1,8 +1,8 @@
 import { getAccount, switchChain } from '@wagmi/core';
 import { numberToHex } from 'viem';
 import type { EvmChainId } from '../chain/types';
-import { EVM_RPC_URLS } from '../programConfig';
 import { classifyChainSwitchError } from './chainSwitchError';
+import { walletRpcHint } from './walletRpcError';
 import { wagmiConfig, WAGMI_CHAIN_BY_ID } from './wagmi';
 
 type EthProvider = {
@@ -78,6 +78,49 @@ let inflight: { chainId: number; promise: Promise<void> } | null = null;
  * transaction. Concurrent callers share one wallet request so MetaMask does
  * not reject a second `wallet_switchEthereumChain` with -32002.
  */
+/**
+ * Ask the wallet to add `chainId` with the app's RPC. Wallets that already
+ * have the chain usually ignore the new URL; the caller still retries the
+ * transaction and, if it fails, tells the user which URL to set by hand.
+ */
+export async function offerWalletChain(chainId: EvmChainId): Promise<void> {
+  const connector = getAccount(wagmiConfig).connector;
+  let provider = ethereumProvider();
+  if (connector && typeof connector.getProvider === 'function') {
+    try {
+      provider = (await connector.getProvider() as EthProvider | undefined) ?? provider;
+    } catch {
+      // Use window.ethereum.
+    }
+  }
+  const chain = WAGMI_CHAIN_BY_ID[chainId];
+  const name = chainNameForId(chainId);
+  if (!provider || !chain) {
+    throw new Error(`Add ${name} in your wallet, then try again.`);
+  }
+  // Public chain RPC only. App RPC overrides are often keyed provider URLs;
+  // wallets that call them get EIP-1474 -32002 "Requested resource not available".
+  const rpc = walletRpcHint(chainId) ?? chain.rpcUrls.default.http[0];
+  try {
+    await provider.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: numberToHex(chainId),
+        chainName: chain.name,
+        nativeCurrency: chain.nativeCurrency,
+        rpcUrls: rpc ? [rpc] : [...chain.rpcUrls.default.http],
+        blockExplorerUrls: chain.blockExplorers?.default?.url
+          ? [chain.blockExplorers.default.url]
+          : undefined,
+      }],
+    });
+  } catch (err) {
+    const kind = classifyChainSwitchError(err);
+    if (kind === 'rejected') throw new Error(`Adding ${name} was declined in your wallet.`);
+    // Already added, or the wallet only switches. The send path retries once.
+  }
+}
+
 export async function ensureWalletOnChain(chainId: EvmChainId): Promise<void> {
   if ((await readConnectorChainId()) === chainId) {
     syncWagmiChain(chainId);
@@ -162,7 +205,7 @@ async function requestWalletChain(provider: EthProvider | null, chainId: EvmChai
   if (!provider || !chain) {
     throw new Error(`Add ${name} in your wallet, then try again.`);
   }
-  const rpc = EVM_RPC_URLS[chainId] ?? chain.rpcUrls.default.http[0];
+  const rpc = walletRpcHint(chainId) ?? chain.rpcUrls.default.http[0];
   try {
     await provider.request({
       method: 'wallet_switchEthereumChain',

@@ -1804,6 +1804,7 @@ export default function CreateDAO() {
             await ensureWalletOnChain(chainId);
             return signEvmMessage({ message: msg });
           },
+          executiveAddress: keyData.agents.executive.address,
           onStep: (label) => {
             if (label.includes('Activate')) beginDeployStep('activate');
             if (label.includes('agents')) beginDeployStep('agents');

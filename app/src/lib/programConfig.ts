@@ -13,6 +13,7 @@ import {
 } from './chain/types';
 import { getSelectableSolanaStrategyIds, isMarginfiStrategyEnabled } from './strategyReadiness';
 import { readViteEnv, type ViteEnvKey } from './viteEnv';
+import { resolveArcTestnetRpc } from './evm/arcRpc';
 
 // ─── Environment configuration ───────────────────────────────────────────────
 // All configuration comes from VITE_-prefixed environment variables (see
@@ -634,7 +635,7 @@ export const EVM_RPC_URLS: Partial<Record<EvmChainId, string>> = {
   11155111: optionalEnvString('VITE_EVM_SEPOLIA_RPC_URL'),
   84532: optionalEnvString('VITE_EVM_BASE_SEPOLIA_RPC_URL'),
   46630: optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_RPC_URL'),
-  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_RPC_URL'),
+  5042002: resolveArcTestnetRpc(optionalEnvString('VITE_EVM_ARC_TESTNET_RPC_URL')),
 };
 
 /** Wrapped NAVE token contracts, populated after NTT mint/burn deployments. */

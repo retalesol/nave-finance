@@ -55,7 +55,7 @@ async function safeRead<T>(fn: () => Promise<T>): Promise<T | null> {
  * chain). Prefer the wagmi-configured transport; fall back to a one-off client
  * on the env RPC so Base/Robinhood stake balances cannot cross-wire.
  */
-function publicClientForChain(chainId: EvmChainId): PublicClient {
+export function publicClientForChain(chainId: EvmChainId): PublicClient {
   assertSupportedChain(chainId);
   const existing = getPublicClient(wagmiConfig, { chainId });
   if (existing) return existing as PublicClient;

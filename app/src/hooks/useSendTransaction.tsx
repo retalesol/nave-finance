@@ -1,12 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { Transaction, type Connection } from '@solana/web3.js';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { writeContract, waitForTransactionReceipt, getAccount, getPublicClient } from '@wagmi/core';
+import { writeContract, waitForTransactionReceipt, getAccount } from '@wagmi/core';
 import { toast } from '../hooks/use-toast';
 import { USE_MOCKS, SOLANA_NETWORK, SOLANA_RPC_URL } from '../lib/programConfig';
 import type { TransactionBuildResult } from '../lib/transactionBuilders';
 import { wagmiConfig } from '../lib/evm/wagmi';
-import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
+import { ensureWalletOnChain, offerWalletChain } from '../lib/evm/ensureWalletChain';
+import { publicClientForChain } from '../lib/evm/readers';
+import { explainEvmSendError } from '../lib/evm/walletRpcError';
 import { type EvmBuildResult } from '../lib/evm/writers';
 import { useChain } from './useChain';
 import type { EvmChainId } from '../lib/chain/types';
@@ -763,18 +765,27 @@ export function useSendTransaction() {
           // Surface the revert now instead. Only transport/RPC estimation
           // failures fall through to wallet estimation.
           let gas: bigint | undefined;
+          let maxFeePerGas: bigint | undefined;
+          let maxPriorityFeePerGas: bigint | undefined;
           try {
-            const publicClient = getPublicClient(wagmiConfig, { chainId: req.chainId });
-            if (publicClient) {
-              const estimated = await publicClient.estimateContractGas({
-                address: req.address,
-                abi: req.abi,
-                functionName: req.functionName,
-                args: req.args as readonly unknown[],
-                value: req.value,
-                account: account.address,
-              });
-              gas = (estimated * 125n) / 100n;
+            const publicClient = publicClientForChain(req.chainId);
+            const estimated = await publicClient.estimateContractGas({
+              address: req.address,
+              abi: req.abi,
+              functionName: req.functionName,
+              args: req.args as readonly unknown[],
+              value: req.value,
+              account: account.address,
+            });
+            gas = (estimated * 125n) / 100n;
+            try {
+              const fees = await publicClient.estimateFeesPerGas();
+              if (fees.maxFeePerGas != null && fees.maxPriorityFeePerGas != null) {
+                maxFeePerGas = fees.maxFeePerGas;
+                maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+              }
+            } catch {
+              // The wallet fills fees when the public RPC cannot.
             }
           } catch (estimateErr) {
             const estimateMsg = estimateErr instanceof Error ? estimateErr.message : String(estimateErr);
@@ -782,7 +793,7 @@ export function useSendTransaction() {
             gas = undefined;
           }
 
-          const hash = await writeContract(wagmiConfig, {
+          const submit = () => writeContract(wagmiConfig, {
             address: req.address,
             abi: req.abi,
             functionName: req.functionName,
@@ -790,7 +801,22 @@ export function useSendTransaction() {
             value: req.value,
             chainId: req.chainId,
             gas,
+            maxFeePerGas,
+            maxPriorityFeePerGas,
           });
+          let hash: `0x${string}`;
+          try {
+            hash = await submit();
+          } catch (submitErr) {
+            const submitText = submitErr instanceof Error ? submitErr.message : String(submitErr);
+            const unreachable = /requested resource not available|resource unavailable/i.test(submitText)
+              && !/already pending/i.test(submitText);
+            if (!unreachable) throw submitErr;
+            // The wallet's saved RPC for this chain is down (Arc's retired host
+            // is the common case). Offer the current URL once, then retry.
+            await offerWalletChain(req.chainId);
+            hash = await submit();
+          }
           lastHash = hash;
 
           setState((prev) => ({ ...prev, status: 'confirming' }));
@@ -814,7 +840,7 @@ export function useSendTransaction() {
         }
         return success;
       } catch (err: unknown) {
-        let msg = walletErrorMessage(err);
+        let msg = explainEvmSendError(err, lastChainId) ?? walletErrorMessage(err);
         if (lastChainId === 5042002 && /insufficient funds/i.test(msg)) {
           msg = 'Insufficient USDC for gas. Arc charges gas in native USDC (18 decimals), not ETH. Treasury balances use the 6-decimal ERC-20.';
         }

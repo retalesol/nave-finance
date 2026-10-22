@@ -15,7 +15,8 @@
 // landed but the wallet rejected setPolicyParameters) must skip the step(s)
 // that already landed on-chain, or it will double-submit them.
 
-import { readContract } from '@wagmi/core';
+import { getBalance, readContract, sendTransaction, waitForTransactionReceipt } from '@wagmi/core';
+import { parseEther, type Address } from 'viem';
 import { constitutionCapsBps, findVenue, strategyChainForEvmId } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
 import {
@@ -29,7 +30,7 @@ import { fetchConstitutionEvm } from './evm/readers';
 import { NaveTreasuryAbi } from './evm/contracts';
 import { toAddress } from './evm/addresses';
 import { wagmiConfig } from './evm/wagmi';
-import { type EvmChainId } from './chain/types';
+import { evmNativeGasSymbol, isEvmTestnet, type EvmChainId } from './chain/types';
 import { getEvmAdapterAddress, SYSTEM_CONFIDENCE_THRESHOLD } from './programConfig';
 import { setAgentsEnabledViaProxyEvm } from './edgeFunctionClient';
 
@@ -54,6 +55,8 @@ export interface EvmActivationContext {
   ) => Promise<{ status: string; error: string | null }>;
   signMessage: (message: string) => Promise<string>;
   onStep: (label: string) => void;
+  /** Executive agent EOA. Funded with a little native gas before the first enable. */
+  executiveAddress?: string;
 }
 
 // ─── Resume detection helpers (EVM analogue of createDaoActivation.ts's Solana checks) ──
@@ -238,6 +241,8 @@ export async function runEvmActivation(
     return { ok: true };
   }
   try {
+    const executive = toAddress(ctx.executiveAddress);
+    if (executive) await fundExecutiveGas(chainId, executive);
     const chain = ctx.chain;
     const { error: agentError } = await setAgentsEnabledViaProxyEvm(
       daoAddress,
@@ -260,4 +265,26 @@ export async function runEvmActivation(
   }
 
   return { ok: true };
+}
+
+/**
+ * The executive EOA is created with a zero balance, so the first
+ * `toggleAgents` reverts until someone pays its gas. On testnets the founder
+ * sends a small stipend. Arc's stipend is 18-decimal native USDC.
+ */
+async function fundExecutiveGas(chainId: EvmChainId, executive: Address): Promise<void> {
+  if (!isEvmTestnet(chainId)) return;
+  const floor = chainId === 5042002 ? parseEther('0.02') : parseEther('0.001');
+  const balance = await getBalance(wagmiConfig, { address: executive, chainId });
+  if (balance.value >= floor) return;
+  const symbol = evmNativeGasSymbol(chainId);
+  const hash = await sendTransaction(wagmiConfig, {
+    to: executive,
+    value: floor - balance.value,
+    chainId,
+  });
+  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId });
+  if (receipt.status !== 'success') {
+    throw new Error(`Funding the executive agent with ${symbol} for gas failed.`);
+  }
 }

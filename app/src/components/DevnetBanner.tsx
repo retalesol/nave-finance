@@ -4,6 +4,7 @@ import Fi from './Fi';
 import { useChain } from '../hooks/useChain';
 import type { ChainFamily } from '../lib/chain/types';
 import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
+import { ARC_TESTNET_RPC_URL } from '../lib/evm/arcRpc';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -149,7 +150,7 @@ const ARC_TESTNET: NetworkChip = {
   // 5042002 = 0x4cef52. Native gas is 18-decimal USDC, not ETH.
   action: () => addOrSwitchChain('0x4cef52', {
     chainName: 'Arc Testnet',
-    rpcUrls: ['https://rpc.testnet.arc.network'],
+    rpcUrls: [ARC_TESTNET_RPC_URL],
     blockExplorerUrls: ['https://explorer.testnet.arc.io'],
     nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
   }),

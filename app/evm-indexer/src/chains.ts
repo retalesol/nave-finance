@@ -25,7 +25,7 @@ export const arcTestnet: Chain = defineChain({
   id: 5042002,
   name: 'Arc Testnet',
   nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.testnet.arc.network'] } },
+  rpcUrls: { default: { http: ['https://rpc.testnet.arc.io'] } },
   blockExplorers: {
     default: { name: 'Arc Explorer', url: 'https://explorer.testnet.arc.io' },
   },
@@ -128,8 +128,12 @@ export const EVM_CHAINS: EvmChainConfig[] = [
 export function enabledChains(): Array<EvmChainConfig & { rpcUrl: string }> {
   const out: Array<EvmChainConfig & { rpcUrl: string }> = [];
   for (const c of EVM_CHAINS) {
-    const rpcUrl = process.env[c.rpcEnv];
-    if (rpcUrl && rpcUrl.trim()) out.push({ ...c, rpcUrl: rpcUrl.trim() });
+    const raw = process.env[c.rpcEnv]?.trim();
+    if (!raw) continue;
+    const rpcUrl = c.chainId === 5042002 && /rpc\.testnet\.arc\.network/i.test(raw)
+      ? 'https://rpc.testnet.arc.io'
+      : raw;
+    out.push({ ...c, rpcUrl });
   }
   return out;
 }

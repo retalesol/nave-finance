@@ -274,6 +274,11 @@ export default function DaoCreated() {
             <div style={{ fontSize: 12.5, color: displayAgentColor }}>
               {displayAgentLabel}
             </div>
+            {displayAgentStatus === 'error' && state.agentError && (
+              <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 4, lineHeight: 1.45 }}>
+                {state.agentError.length > 280 ? `${state.agentError.slice(0, 280)}…` : state.agentError}
+              </div>
+            )}
           </div>
         </div>
 

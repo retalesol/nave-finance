@@ -104,7 +104,7 @@ const CHAINS = {
   },
   arc: {
     chainId: 5042002,
-    rpc: "https://rpc.testnet.arc.network",
+    rpc: "https://rpc.testnet.arc.io",
     factory: "0xa7bd919a5249DD1Da6E02a6716D2Db2B2e0A99f0",
     name: "nave-live-arc",
     mode: "transfer",

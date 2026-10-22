@@ -7,8 +7,12 @@
 // payload is decoded and applied on-chain via `update_constitution`, which is
 // what binds the autonomous agents to the new policy.
 //
-// The payload is compact JSON so it stays well under the 512-byte on-chain cap
+// The payload is compact JSON so it stays under the 512-byte on-chain cap
 // (`MAX_PROPOSAL_PAYLOAD_LEN`) while remaining trivially decodable on ratify.
+// Wire version 2 stores approved protocol ids and caps only. Adapter addresses
+// are resolved at ratify time, because embedding them pushes three protocols
+// past 512 bytes. Version 1 payloads (full objects, including adapters) still
+// decode.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { decodeAbiParameters, encodeAbiParameters } from 'viem';
@@ -89,9 +93,32 @@ function assertEvmAddress(value: string, label: string): `0x${string}` {
 /**
  * Serialize a constitution policy into proposal payload bytes.
  * Throws if the encoded payload exceeds the on-chain limit.
+ * Only approved protocols are stored; ratification replaces the on-chain set.
  */
 export function encodeConstitutionPayload(payload: ConstitutionPolicyPayload): number[] {
-  const json = JSON.stringify({ k: MARKER, ...payload });
+  const approved = payload.protocols.filter((p) => p.approved);
+  const body: Record<string, unknown> = {
+    k: MARKER,
+    v: 2,
+    p: approved.map((p) => [p.id, p.maxAllocationBps]),
+    c: payload.confidenceThreshold,
+  };
+  if (payload.riskPreset) body.r = payload.riskPreset;
+  if (
+    payload.minStablecoin != null
+    || payload.maxDeployment != null
+    || payload.maxLending != null
+    || payload.liquidityReserve != null
+  ) {
+    body.m = [
+      payload.minStablecoin ?? 0,
+      payload.maxDeployment ?? 0,
+      payload.maxLending ?? 0,
+      payload.liquidityReserve ?? 0,
+    ];
+  }
+  if (payload.rebalanceFreq) body.f = payload.rebalanceFreq;
+  const json = JSON.stringify(body);
   const bytes = Array.from(new TextEncoder().encode(json));
   if (bytes.length > MAX_PROPOSAL_PAYLOAD_LEN) {
     throw new Error(
@@ -125,6 +152,27 @@ export function decodeConstitutionPayload(
   try {
     const obj = JSON.parse(json) as Record<string, unknown>;
     if (obj.k !== MARKER) return null;
+    if (obj.v === 2 && Array.isArray(obj.p)) {
+      const metrics = Array.isArray(obj.m) ? obj.m : [];
+      return {
+        v: 1,
+        protocols: obj.p.flatMap((entry) => {
+          if (!Array.isArray(entry) || entry.length < 2) return [];
+          return [{
+            id: String(entry[0]),
+            approved: true,
+            maxAllocationBps: Number(entry[1]) || 0,
+          }];
+        }),
+        confidenceThreshold: obj.c == null ? null : Number(obj.c),
+        riskPreset: obj.r != null ? String(obj.r) : undefined,
+        minStablecoin: metrics[0] != null ? Number(metrics[0]) : undefined,
+        maxDeployment: metrics[1] != null ? Number(metrics[1]) : undefined,
+        maxLending: metrics[2] != null ? Number(metrics[2]) : undefined,
+        liquidityReserve: metrics[3] != null ? Number(metrics[3]) : undefined,
+        rebalanceFreq: obj.f != null ? String(obj.f) : undefined,
+      };
+    }
     if (!Array.isArray(obj.protocols)) return null;
     return {
       v: 1,
