@@ -1,0 +1,1173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Nave — Dashboard concept</title>
+<meta name="description" content="A quiet, simplified concept for the Nave treasury dashboard and creation flow. Entirely mock."/>
+<link rel="icon" href="/favicon.svg"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FAF8F3; --ink:#111827; --muted:#6B7280; --faint:#9CA3AF;
+  --line:#E7E2D6; --line-soft:#EFEAE0; --card:#fff;
+  --brass:#B9974F; --green:#2F7D4F;
+  --font:"DM Sans",system-ui,sans-serif; --serif:"Instrument Serif",Georgia,serif; --mono:"JetBrains Mono",monospace;
+}
+*{box-sizing:border-box}
+html{overflow-x:clip}
+body{margin:0;font-family:var(--font);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.55;overflow-x:clip}
+button{font-family:inherit;cursor:pointer;background:none;border:0;color:inherit}
+input{font-family:inherit}
+::selection{background:var(--ink);color:var(--paper)}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.serif{font-family:var(--serif);font-weight:400;letter-spacing:-.02em}
+.muted{color:var(--muted)} .small{font-size:13px} .tiny{font-size:12px}
+.label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+
+/* demo bar */
+.demo-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:8px 20px;background:var(--ink);color:#ECE7DB;font-size:12.5px}
+.demo-bar .tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:var(--brass);color:#111;padding:3px 7px;border-radius:99px;font-weight:600}
+.demo-bar a{color:#ECE7DB;opacity:.7;text-decoration:underline;text-underline-offset:3px;margin-left:auto}
+
+/* shell */
+.shell{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:calc(100vh - 33px)}
+.sidebar{position:sticky;top:33px;height:calc(100vh - 33px);display:flex;flex-direction:column;padding:22px 18px;border-right:1px solid var(--line-soft)}
+.brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:28px}
+.brand i{width:20px;height:20px;border-radius:6px;background:var(--ink);color:#fff;display:grid;place-items:center;font-family:var(--serif);font-style:normal;font-size:13px}
+.brand b{font-family:var(--serif);font-weight:400;font-size:19px}
+.brand span{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--faint);border:1px solid var(--line);padding:2px 5px;border-radius:99px}
+.tname{font-size:13.5px;font-weight:600;line-height:1.3}
+.tsub{font-size:11.5px;color:var(--faint);margin:2px 0 26px}
+nav.main{display:flex;flex-direction:column;gap:2px}
+.navitem{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:13.5px;color:var(--muted);transition:.15s}
+.navitem:hover{color:var(--ink);background:#fff}
+.navitem.active{color:var(--ink);font-weight:600;background:#fff;box-shadow:0 1px 3px rgba(17,24,39,.05)}
+.navitem .n{margin-left:auto;font-size:11px;color:#fff;background:var(--brass);min-width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font-weight:600}
+.navitem .live{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--green)}
+.side-foot{margin-top:auto;padding-top:18px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.side-foot .av{width:24px;height:24px;border-radius:50%;background:var(--brass);color:#fff;display:grid;place-items:center;font-size:9px;font-weight:600;flex:none}
+
+.main{min-width:0}
+.topbar{position:sticky;top:33px;z-index:40;display:flex;align-items:center;gap:10px;padding:13px 32px;background:rgba(250,248,243,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line-soft)}
+.topbar .crumb{font-size:13px;color:var(--faint)} .topbar .crumb b{color:var(--ink);font-weight:600}
+.top-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 11px}
+.pill i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.btn{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;border-radius:9px;padding:8px 14px;border:1px solid var(--line);background:#fff;color:var(--ink);transition:.15s;text-decoration:none}
+.btn:hover{border-color:#CFC8B8}
+.btn-dark{background:var(--ink);color:#fff;border-color:var(--ink)} .btn-dark:hover{background:#1F2937}
+.btn-brass{background:var(--brass);border-color:var(--brass);color:#fff}
+.btn-quiet{border-color:transparent;background:transparent;color:var(--muted)} .btn-quiet:hover{color:var(--ink);background:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.content{max-width:860px;margin:0 auto;padding:44px 32px 90px}
+.view{display:none;animation:rise .35s ease both} .view.active{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* headings */
+.eyebrow{margin-bottom:10px}
+h1.page{font-family:var(--serif);font-weight:400;font-size:34px;line-height:1.1;letter-spacing:-.02em;margin:0 0 8px}
+h1.page em{font-style:italic;color:var(--muted)}
+.lede{color:var(--muted);font-size:14.5px;margin:0;max-width:520px}
+.headrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head-actions{display:flex;gap:6px;padding-top:4px}
+
+/* quiet notice — one line, not a banner */
+.notice{display:flex;align-items:center;gap:9px;margin:26px 0 0;padding:11px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);font-size:13.5px}
+.notice .dot{width:7px;height:7px;border-radius:50%;background:var(--brass);flex:none}
+.notice button{margin-left:auto;color:var(--ink);font-weight:600;font-size:13px;white-space:nowrap}
+.notice button:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* balance */
+.balance-block{padding:38px 0 8px}
+.balance{font-family:var(--serif);font-size:56px;line-height:1;letter-spacing:-.03em;margin:10px 0 10px}
+.balance-sub{color:var(--muted);font-size:13.5px}
+.balance-sub b{color:var(--green);font-weight:600}
+
+/* sections separated by hairlines, not boxes */
+.section{padding:30px 0;border-top:1px solid var(--line-soft);margin-top:30px}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.section-head h2{font-size:14px;font-weight:600;margin:0}
+.section-head .hint{font-size:12.5px;color:var(--faint);font-weight:400}
+.seg{display:inline-flex;gap:2px}
+.seg button{font-size:12px;color:var(--faint);padding:5px 9px;border-radius:99px;font-weight:500}
+.seg button.active{color:var(--ink);background:#fff;box-shadow:0 1px 3px rgba(17,24,39,.07);font-weight:600}
+.textlink{font-size:13px;color:var(--muted)} .textlink:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+
+.chart svg{width:100%;height:auto;display:block}
+.split3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.stat .v{font-size:19px;font-weight:600;letter-spacing:-.01em;margin:5px 0 3px}
+.stat p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+
+/* tabs panel */
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.tabs button{padding:9px 1px;font-size:13.5px;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button.active{color:var(--ink);font-weight:600;border-color:var(--ink)}
+.tabpane{display:none} .tabpane.active{display:block;animation:rise .3s ease both}
+
+/* lists */
+.row{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.row:last-child{border-bottom:0}
+.row .dot{width:7px;height:7px;border-radius:50%;margin-top:7px;flex:none}
+.row h3{font-size:14px;font-weight:500;margin:0;line-height:1.4}
+.row p{font-size:13px;color:var(--muted);margin:3px 0 0;line-height:1.55}
+.row .when{margin-left:auto;font-size:12px;color:var(--faint);white-space:nowrap;padding-top:2px}
+.row .chev{margin-left:auto;color:var(--faint);padding-top:2px}
+.status{font-size:12px;font-weight:600;white-space:nowrap}
+.status.green{color:var(--green)} .status.amber{color:#9A7414}
+.meter{height:5px;background:var(--line-soft);border-radius:99px;overflow:hidden;margin-top:10px;max-width:420px}
+.meter i{display:block;height:100%;background:var(--ink);border-radius:99px}
+.barline{display:grid;grid-template-columns:110px 1fr 52px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.barline:last-child{border:0}
+.barline .track{height:5px;background:var(--line-soft);border-radius:99px;overflow:hidden}
+.barline .track i{display:block;height:100%;border-radius:99px}
+.barline .amt{text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 10px 8px 0;border-bottom:1px solid var(--line)}
+td{font-size:13.5px;padding:12px 10px 12px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tr:last-child td{border:0}
+td.num,th.num{text-align:right;font-family:var(--mono);font-size:12.5px}
+.tablewrap{overflow-x:auto}
+
+/* agents */
+.switch{width:42px;height:24px;border-radius:99px;background:#E5E0D2;position:relative;flex:none;padding:0;transition:.18s}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:.18s}
+.switch.on{background:var(--ink)} .switch.on:after{left:20px}
+.agent-detail{display:none;padding:2px 0 14px 19px;font-size:13px;color:var(--muted);line-height:1.6}
+.agent-detail.open{display:block}
+.agent-detail li{margin:3px 0}
+
+/* rules */
+.rule{display:flex;gap:14px;padding:15px 0;border-bottom:1px solid var(--line-soft)}
+.rule:last-child{border:0}
+.rule .no{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:3px}
+.rule h3{font-size:14px;font-weight:500;margin:0}
+.rule p{font-size:13px;color:var(--muted);margin:3px 0 0}
+.rule .ok{margin-left:auto;font-size:12px;color:var(--green);font-weight:600;white-space:nowrap;padding-top:2px}
+
+/* create */
+.steps{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--faint);margin:30px 0 34px;flex-wrap:wrap}
+.steps b{color:var(--ink);font-weight:600}
+.steps .sep{width:26px;height:1px;background:var(--line)}
+.narrow{max-width:620px}
+.field{margin-bottom:26px}
+.field>label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
+.field .hint{font-size:12.5px;color:var(--faint);margin-top:7px}
+.input{width:100%;border:1px solid var(--line);background:#fff;border-radius:10px;padding:11px 13px;font-size:14.5px;outline:none}
+.input:focus{border-color:var(--ink)}
+.opts{display:flex;flex-direction:column}
+.opt{display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;padding:13px 2px;border-bottom:1px solid var(--line-soft)}
+.opt:last-child{border:0}
+.opt .radio{width:17px;height:17px;border-radius:50%;border:1.5px solid #CFC8B8;margin-top:2px;flex:none;display:grid;place-items:center}
+.opt.sel .radio{border-color:var(--ink)} .opt.sel .radio:after{content:"";width:9px;height:9px;border-radius:50%;background:var(--ink)}
+.opt b{font-size:14px;font-weight:500;display:block}
+.opt p{font-size:12.5px;color:var(--muted);margin:2px 0 0;line-height:1.5}
+.opt .rec{margin-left:auto;font-size:11px;color:var(--brass);font-weight:600;white-space:nowrap}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pills button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:8px 14px;font-size:13px}
+.pills button.sel{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:600}
+.summary-line{font-family:var(--serif);font-size:21px;line-height:1.45;letter-spacing:-.01em;padding:20px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.summary-line em{color:var(--brass)}
+details.custom{border-top:1px solid var(--line-soft);padding-top:16px}
+details.custom summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+details.custom summary:hover{color:var(--ink)}
+.slider-row{padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.slider-row .sh{display:flex;justify-content:space-between;font-size:13.5px}
+.slider-row .sh b{font-weight:500}.slider-row .sh span{font-family:var(--mono);font-size:12.5px}
+.slider-row p{font-size:12.5px;color:var(--muted);margin:4px 0 8px}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.kv{display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--line-soft);font-size:13.5px}
+.kv span{color:var(--muted)} .kv b{font-weight:500;text-align:right}
+.wiznav{display:flex;justify-content:space-between;margin-top:30px}
+.wiz-panel{display:none}.wiz-panel.active{display:block;animation:rise .3s ease both}
+.success{display:none;padding:30px 0}
+.success.show{display:block}
+.success .tick{width:44px;height:44px;border-radius:50%;border:1px solid #BFE0CC;color:var(--green);display:grid;place-items:center;font-size:19px;margin-bottom:16px}
+
+/* ── Modal system ─────────────────────────── */
+.overlay{position:fixed;inset:0;z-index:120;background:rgba(17,24,39,.48);backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:7vh 16px 24px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:18px;box-shadow:0 24px 70px -12px rgba(17,24,39,.35);width:100%;max-width:520px;animation:modalIn .28s cubic-bezier(.16,1,.3,1) both;max-height:86vh;display:flex;flex-direction:column}
+.modal.wide{max-width:620px}
+@keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.modal-head{display:flex;align-items:flex-start;gap:14px;padding:20px 22px 0}
+.modal-head h3{font-family:var(--serif);font-weight:400;font-size:23px;letter-spacing:-.02em;margin:0;line-height:1.15}
+.modal-head .sub{font-size:13px;color:var(--muted);margin-top:4px;line-height:1.5}
+.modal-x{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--paper);border:1px solid var(--line-soft);display:grid;place-items:center;font-size:15px;color:var(--muted);flex:none}
+.modal-x:hover{color:var(--ink);border-color:var(--line)}
+.modal-body{padding:18px 22px 22px;overflow-y:auto}
+body.locked{overflow:hidden}
+.mfield{margin-bottom:16px}
+.mfield label{display:block;font-size:12.5px;font-weight:600;margin-bottom:7px}
+.mfield .hint{font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5}
+.mfield .err{font-size:12px;color:#B42318;margin-top:6px;display:none}
+select.input,textarea.input{appearance:auto}
+textarea.input{resize:vertical;min-height:74px;line-height:1.5}
+.input.invalid{border-color:#D92D20}
+.mrow2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mactions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--line-soft);flex-wrap:wrap}
+.mtabs{display:flex;gap:4px;background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;padding:3px;margin-bottom:18px}
+.mtabs button{flex:1;padding:7px 8px;border-radius:8px;font-size:12.5px;color:var(--muted);font-weight:500}
+.mtabs button.active{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(17,24,39,.08)}
+.mpane{display:none}.mpane.active{display:block;animation:rise .25s ease both}
+.notebox{background:var(--paper);border:1px solid var(--line-soft);border-radius:12px;padding:13px 14px;font-size:13px;color:var(--muted);line-height:1.6}
+.notebox b{color:var(--ink)}
+.addrbox{display:flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.addrbox code{font-family:var(--mono);font-size:11.5px;word-break:break-all;flex:1}
+.qr{width:132px;height:132px;margin:4px auto 14px;border:1px solid var(--line);border-radius:12px;background-color:#fff;background-image:radial-gradient(rgba(17,24,39,.75) 1.2px,transparent 1.4px);background-size:11px 11px;display:grid;place-items:center}
+.qr:after{content:"MOCK QR";font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;background:#fff;border:1px solid var(--line);border-radius:6px;padding:4px 6px;color:var(--muted)}
+.checkline{display:flex;gap:9px;align-items:flex-start;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line-soft);color:var(--muted);line-height:1.5}
+.checkline:last-child{border:0}.checkline .ck{color:var(--green);font-weight:700;flex:none}.checkline b{color:var(--ink)}
+.successbox{text-align:center;padding:14px 0 4px}
+.successbox .tick{width:48px;height:48px;border-radius:50%;border:1px solid #BFE0CC;background:#F2F9F4;color:var(--green);display:grid;place-items:center;font-size:21px;margin:0 auto 14px}
+.successbox h4{font-family:var(--serif);font-weight:400;font-size:24px;margin:0 0 7px}
+.successbox p{font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 auto;max-width:400px}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:spin .7s linear infinite;display:inline-block}
+.btn-dark .spinner,.btn-brass .spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progstep{display:flex;gap:10px;align-items:center;padding:9px 0;font-size:13.5px;color:var(--faint)}
+.progstep .pn{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:11px;flex:none;background:#fff}
+.progstep.doing{color:var(--ink)} .progstep.doing .pn{border-color:var(--ink)}
+.progstep.done{color:var(--muted)} .progstep.done .pn{background:var(--green);border-color:var(--green);color:#fff}
+.listbtn{display:flex;gap:11px;align-items:center;width:100%;text-align:left;padding:12px 4px;border-bottom:1px solid var(--line-soft)}
+.listbtn:last-child{border:0}.listbtn:hover h4{color:var(--brass)}
+.listbtn h4{font-size:14px;font-weight:500;margin:0}
+.listbtn p{font-size:12.5px;color:var(--muted);margin:2px 0 0}
+.listbtn .r{margin-left:auto;text-align:right;flex:none}
+.iconbtn2{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;display:grid;place-items:center;font-size:15px;position:relative;flex:none}
+.iconbtn2:hover{border-color:#CFC8B8}
+.iconbtn2 .nb{position:absolute;top:-4px;right:-4px;background:#B42318;color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:99px;display:grid;place-items:center;padding:0 3px}
+.chips2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chips2 button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 11px;font-size:12px;color:var(--muted)}
+.chips2 button.active{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:600}
+.comment{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.comment:last-of-type{border:0}
+.comment .av{width:28px;height:28px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:grid;place-items:center;font-size:9.5px;font-weight:700;flex:none}
+.comment h5{margin:0;font-size:13px}.comment p{margin:3px 0 0;font-size:13px;color:var(--muted);line-height:1.55}
+.timeline{margin:4px 0}.tl{display:flex;gap:11px;padding:7px 0;font-size:13px;color:var(--muted)}
+.tl .tdot{width:9px;height:9px;border-radius:50%;border:2px solid #CFC8B8;margin-top:4px;flex:none;background:#fff}
+.tl.done{color:var(--ink)}.tl.done .tdot{background:var(--green);border-color:var(--green)}
+.tl.now .tdot{border-color:var(--brass);background:var(--brass)}
+.clickable{cursor:pointer}.clickable:hover h3,.clickable:hover td:first-child{color:var(--brass)}
+.danger-zone{border:1px solid #F2C7C2;background:#FFF9F8;border-radius:12px;padding:14px}
+.switch.sm{width:38px;height:22px}.switch.sm:after{width:18px;height:18px}.switch.sm.on:after{left:18px}
+.frozen-banner{display:none;background:#FDECEA;border:1px solid #F2C7C2;border-radius:12px;padding:14px 16px;margin-top:22px;font-size:13.5px}
+.frozen-banner.show{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,16px);background:var(--ink);color:#fff;font-size:13px;padding:11px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:.25s;z-index:90;max-width:calc(100vw - 32px);text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.footnote{margin-top:36px;font-size:12.5px;color:var(--faint);line-height:1.6}
+.mobile-nav{display:none}
+
+@media(max-width:900px){.split3{grid-template-columns:1fr}}
+@media(max-width:760px){
+  .shell{grid-template-columns:1fr}.sidebar{display:none}
+  .content{padding:28px 20px 100px;width:100%}.topbar{padding:11px 16px}.topbar .pill{display:none}
+  h1.page{font-size:30px}.lede{max-width:100%}
+  .notice{flex-wrap:wrap;row-gap:6px}.notice button{margin-left:16px}
+  .section-head{flex-wrap:wrap;row-gap:8px}
+  .mobile-nav button{padding:5px 3px;font-size:9px}
+  .head-actions{width:100%}
+  .balance{font-size:44px}.barline{grid-template-columns:86px 1fr 46px}
+  .mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:60;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:7px 4px calc(7px + env(safe-area-inset-bottom));justify-content:space-around}
+  .mobile-nav button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:9.5px;color:var(--faint);padding:5px 9px;border-radius:8px}
+  .mobile-nav button.active{color:var(--ink);font-weight:600;background:var(--paper)}
+  .demo-bar .hidemb{display:none}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="demo-bar"><span class="tag">CONCEPT · MOCK</span><span class="hidemb">A quieter Nave dashboard. Nothing here is real data.</span><a href="/">nave.finance →</a></div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#" onclick="return go('overview')"><i>N</i><b>Nave</b><span>DEMO</span></a>
+    <button style="text-align:left;width:100%" onclick="openTreasurySwitcher()" title="Switch treasury">
+      <div class="tname" id="sideTreasuryName">Atlas Community Treasury</div>
+      <div class="tsub" id="sideTreasurySub">Base · nave.finance/atlas ⌄</div>
+    </button>
+    <nav class="main">
+      <button class="navitem active" data-view="overview" onclick="go('overview')">Overview</button>
+      <button class="navitem" data-view="money" onclick="go('money')">Money</button>
+      <button class="navitem" data-view="agents" onclick="go('agents')">Agents <span class="live" title="Active"></span></button>
+      <button class="navitem" data-view="decisions" onclick="go('decisions')">Decisions <span class="n" id="decisionBadge">1</span></button>
+      <button class="navitem" data-view="rules" onclick="go('rules')">Rules</button>
+      <button class="navitem" data-view="reports" onclick="go('reports')">Reports</button>
+      <button class="navitem" data-view="bridge" onclick="go('bridge')">Bridge & stake</button>
+      <button class="navitem" data-view="settings" onclick="go('settings')">Settings</button>
+      <button class="navitem" data-view="create" onclick="go('create')" style="margin-top:14px">+ New treasury</button>
+    </nav>
+    <button class="side-foot" style="text-align:left;width:100%" onclick="openAccount()"><span class="av">YO</span><span id="sideAccount">you.eth<br><span style="color:var(--faint);font-size:11px">Founder · connected</span></span></button>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <span class="crumb"><b id="crumb">Overview</b> · <span id="crumbTreasury">Atlas</span></span>
+      <div class="top-actions">
+        <button class="iconbtn2" onclick="openSearch()" aria-label="Search" title="Search (⌘K)">⌕</button>
+        <button class="iconbtn2" onclick="openNotifications()" aria-label="Notifications" title="Notifications">🔔<span class="nb" id="notifBadge">2</span></button>
+        <button class="pill" onclick="openNetwork()" title="Switch network"><i></i><span id="networkLabel">Base</span> ⌄</button>
+        <button class="btn" onclick="openAddFunds()">Add funds</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+    <!-- ══════════ OVERVIEW ══════════ -->
+    <section class="view active" id="view-overview">
+      <div class="headrow">
+        <div>
+          <div class="label eyebrow">Tuesday, Oct 21</div>
+          <h1 class="page">Everything is <em>in order.</em></h1>
+          <p class="lede">Your agents earned $1,284 this month and followed every rule. One decision is waiting for you — nothing else needs attention.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-dark" onclick="openPayment()">Propose a payment</button>
+        </div>
+      </div>
+
+      <div class="notice"><span class="dot"></span><span><b>1 decision awaiting your vote</b> <span class="muted">— Community grants, $18,000 · closes in 2 days</span></span><button onclick="go('decisions')">Vote →</button></div>
+
+      <div class="balance-block">
+        <div class="label">Total balance</div>
+        <div class="balance" id="totalBalance">$284,920</div>
+        <div class="balance-sub"><b>+$1,284 earned</b> this month &nbsp;·&nbsp; Reserve healthy at 35%</div>
+      </div>
+
+      <div class="section" style="margin-top:22px">
+        <div class="section-head"><h2>Balance <span class="hint" id="chartHint">— last 90 days</span></h2>
+          <div class="seg"><button onclick="setRange(this,'30 days')">30D</button><button class="active" onclick="setRange(this,'90 days')">90D</button><button onclick="setRange(this,'1 year')">1Y</button></div></div>
+        <div class="chart">
+          <svg viewBox="0 0 720 150" role="img" aria-label="Balance trending gently upward">
+            <path id="chartArea" d="M0,118 C90,110 150,112 230,96 C310,80 380,86 470,60 C560,36 640,30 720,16 L720,150 L0,150 Z" fill="rgba(17,24,39,.05)"/>
+            <path id="chartLine" d="M0,118 C90,110 150,112 230,96 C310,80 380,86 470,60 C560,36 640,30 720,16" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="720" cy="16" r="3.5" fill="#B9974F"/>
+          </svg>
+        </div>
+        <div class="split3" style="margin-top:22px">
+          <div class="stat"><div class="label">Available</div><div class="v">$71,230</div><p>Free to spend without a vote under $5,000.</p></div>
+          <div class="stat"><div class="label">Earning</div><div class="v">$183,400 · 5.1%/yr</div><p>In three approved places. ≈ $782 a month.</p></div>
+          <div class="stat"><div class="label">In reserve</div><div class="v">$99,722 · 35%</div><p>Stable and untouched. Your floor is 30%.</p></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="tabs" role="tablist">
+          <button class="active" onclick="tab(this,'activity')">Recent activity</button>
+          <button onclick="tab(this,'assets')">Assets</button>
+          <button onclick="tab(this,'team')">Agents</button>
+        </div>
+
+        <div class="tabpane active" id="pane-activity">
+          <div id="activityFeed">
+          <div class="row clickable" onclick="openActivityDetail('earn')"><span class="dot" style="background:var(--green)"></span><div><h3>Earned $212 from lending</h3><p>The Investor added it back to the treasury. All 6 rules checked.</p></div><span class="when">2 min ago</span></div>
+          <div class="row clickable" onclick="openActivityDetail('deposit')"><span class="dot" style="background:var(--green)"></span><div><h3>alex.eth deposited $2,500</h3><p>Available balance increased.</p></div><span class="when">1 hr ago</span></div>
+          <div class="row clickable" onclick="openActivityDetail('reserve')"><span class="dot" style="background:var(--brass)"></span><div><h3>Reserve dipped, then recovered</h3><p>The Watcher paused new investments for 3 hours. No money moved.</p></div><span class="when">Yesterday</span></div>
+          <div class="row clickable" onclick="openReport('September')"><span class="dot" style="background:#CBD5E1"></span><div><h3>September report is ready</h3><p>+$5,940 earned. One page, exportable.</p></div><span class="when">Oct 1</span></div>
+          </div>
+          <div style="padding-top:14px"><button class="textlink" onclick="openActivity()">View all activity →</button></div>
+        </div>
+
+        <div class="tabpane" id="pane-assets">
+          <div class="barline clickable" onclick="openAsset('USDC')"><span>Safe reserve</span><span class="track"><i style="width:35%;background:var(--brass)"></i></span><span class="amt">35%</span></div>
+          <div class="barline clickable" onclick="openVenue('Aave')"><span>USDC lending</span><span class="track"><i style="width:38%;background:var(--ink)"></i></span><span class="amt">38%</span></div>
+          <div class="barline clickable" onclick="openVenue('ETH staking')"><span>ETH staking</span><span class="track"><i style="width:18%;background:#8FAE94"></i></span><span class="amt">18%</span></div>
+          <div class="barline clickable" onclick="go('money')"><span>Other</span><span class="track"><i style="width:9%;background:#D6CFBE"></i></span><span class="amt">9%</span></div>
+          <div style="padding-top:14px"><button class="textlink" onclick="go('money')">See all money & assets →</button></div>
+        </div>
+
+        <div class="tabpane" id="pane-team">
+          <div class="row"><span class="dot" style="background:var(--green)"></span><div><h3>All four agents active</h3><p>214 actions this month · 0 rules broken · Last check 12 minutes ago.</p></div><button class="textlink" style="margin-left:auto" onclick="go('agents')">Meet them →</button></div>
+          <div class="row"><span class="dot" style="background:#CBD5E1"></span><div><h3>Most recent</h3><p>Investor moved $4,200 to Aave after rates rose. Guardrail approved it.</p></div><span class="when">2 min ago</span></div>
+        </div>
+      </div>
+
+      <p class="footnote">Concept demo — all figures are illustrative. Detail lives one click away, not on the surface.</p>
+    </section>
+
+    <!-- ══════════ MONEY ══════════ -->
+    <section class="view" id="view-money">
+      <div class="headrow"><div><div class="label eyebrow">Money</div>
+      <h1 class="page">Where it is, <em>what it's doing.</em></h1>
+      <p class="lede">$284,920 total. Nothing sits anywhere your rules haven't approved.</p></div>
+      <div class="head-actions"><button class="btn" onclick="openWithdraw()">Withdraw</button><button class="btn btn-dark" onclick="openAddFunds()">Add funds</button></div></div>
+
+      <div class="section">
+        <div class="split3">
+          <div class="stat"><div class="label">Safe & available</div><div class="v">$99,722</div><p>Withdrawable any time.</p></div>
+          <div class="stat"><div class="label">Earning</div><div class="v">$183,400</div><p>Three approved places, 5.1% blended.</p></div>
+          <div class="stat"><div class="label">Free to spend</div><div class="v">$71,230</div><p>Without touching reserve or investments.</p></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Earning places</h2><span class="hint">Approved in your Rules</span></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Place</th><th>What it does</th><th class="num">Amount</th><th class="num">Rate</th><th class="num">Earned</th></tr></thead>
+          <tbody>
+            <tr class="clickable" onclick="openVenue('Aave')"><td><b style="font-weight:600">Aave</b></td><td class="muted">Lends USDC</td><td class="num">$108,400</td><td class="num">4.8%/yr</td><td class="num">$7,214</td></tr>
+            <tr class="clickable" onclick="openVenue('Compound')"><td><b style="font-weight:600">Compound</b></td><td class="muted">Lends USDC, second venue</td><td class="num">$42,600</td><td class="num">4.5%/yr</td><td class="num">$2,908</td></tr>
+            <tr class="clickable" onclick="openVenue('ETH staking')"><td><b style="font-weight:600">ETH staking</b></td><td class="muted">Stakes ETH, back in ~1 day</td><td class="num">$32,400</td><td class="num">6.2%/yr</td><td class="num">$4,120</td></tr>
+          </tbody></table></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Holdings</h2><span style="display:flex;gap:12px;align-items:center"><span class="tiny muted" id="refreshStamp">Updated just now</span><button class="textlink" id="refreshBtn" onclick="refreshHoldings()">Refresh</button></span></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Asset</th><th class="num">Balance</th><th class="num">Value</th><th class="num">Share</th></tr></thead>
+          <tbody>
+            <tr class="clickable" onclick="openAsset('USDC')"><td><b style="font-weight:600">USDC</b> <span class="muted">· USD Coin</span></td><td class="num">208,122</td><td class="num">$208,122</td><td class="num">73%</td></tr>
+            <tr class="clickable" onclick="openAsset('ETH')"><td><b style="font-weight:600">ETH</b> <span class="muted">· Ethereum</span></td><td class="num">18.42</td><td class="num">$51,340</td><td class="num">18%</td></tr>
+            <tr class="clickable" onclick="openAsset('NAVE')"><td><b style="font-weight:600">NAVE</b> <span class="muted">· Nave Shares</span></td><td class="num">12,500</td><td class="num">$18,940</td><td class="num">7%</td></tr>
+            <tr class="clickable" onclick="openAsset('SOL')"><td><b style="font-weight:600">SOL</b> <span class="muted">· Solana</span></td><td class="num">31.8</td><td class="num">$6,518</td><td class="num">2%</td></tr>
+          </tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ══════════ AGENTS ══════════ -->
+    <section class="view" id="view-agents">
+      <div class="headrow">
+        <div>
+          <div class="label eyebrow">Agents</div>
+          <h1 class="page">A small team, <em>quietly working.</em></h1>
+          <p class="lede">Four specialists who can only act inside your rules. Every move needs three of them to agree.</p>
+        </div>
+        <div class="head-actions" style="align-items:center;gap:10px"><span class="small muted" id="agentState">Active</span><button class="switch on" id="agentSwitch" aria-label="Pause or resume agents" onclick="requestToggleAgents()"></button></div>
+      </div>
+      <div class="frozen-banner" id="frozenBanner"><span>🧊</span><span style="flex:1"><b>Treasury frozen.</b> No money can move. Monitoring continues.</span><button class="btn btn-dark" onclick="openResumeAgents()">About restarting</button></div>
+
+      <div class="section" style="margin-top:34px">
+        <div class="row"><div><h3>The Coordinator</h3><p>Turns decisions into plans. Signs first.</p><div class="agent-detail" id="d-coord"><ul style="margin:6px 0;padding-left:17px"><li>Reads what the community voted for</li><li>Checks the plan matches the vote</li><li>Last: planned the weekly rebalance, 4 min ago</li></ul></div></div><span class="status green">Active</span><button class="chev" onclick="expand('d-coord',this)">⌄</button></div>
+        <div class="row"><div><h3>The Investor</h3><p>Moves money to approved earning places. Signs second.</p><div class="agent-detail" id="d-inv"><ul style="margin:6px 0;padding-left:17px"><li>Compares rates across approved places only</li><li>Never acts on a plan it made itself</li><li>Last: moved $4,200 to Aave, 2 min ago</li></ul></div></div><span class="status green">Active</span><button class="chev" onclick="expand('d-inv',this)">⌄</button></div>
+        <div class="row"><div><h3>The Guardrail</h3><p>Checks every move against your rules. Signs last — or refuses.</p><div class="agent-detail" id="d-guard"><ul style="margin:6px 0;padding-left:17px"><li>Blocked 2 moves this month that would have broken the reserve rule</li><li>Cannot be overridden except by a community vote</li><li>Last: approved 3 moves, 2 min ago</li></ul></div></div><span class="status green">Active</span><button class="chev" onclick="expand('d-guard',this)">⌄</button></div>
+        <div class="row"><div><h3>The Watcher</h3><p>Watches around the clock. Can freeze everything instantly.</p><div class="agent-detail" id="d-watch"><ul style="margin:6px 0;padding-left:17px"><li>Hourly safety checks, day and night</li><li>Keeps the books and writes the diary below</li><li>Last: safety check passed, 12 min ago</li></ul></div></div><span class="status green">Watching</span><button class="chev" onclick="expand('d-watch',this)">⌄</button></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Their diary</h2><span class="hint">Plain English · proof on tap</span></div>
+        <div class="row clickable" onclick="openDiary('investor')"><span class="dot" style="background:var(--green)"></span><div><h3>Investor — “Rates rose, so I moved $4,200 to Aave.”</h3><p>Guardrail checked 6 rules · all passed.</p></div><span class="when">2 min</span></div>
+        <div class="row clickable" onclick="openDiary('guardrail')"><span class="dot" style="background:var(--brass)"></span><div><h3>Guardrail — “I blocked a $22,000 move.”</h3><p>It would have taken the reserve below its floor. No money moved.</p></div><span class="when">Tuesday</span></div>
+        <div class="row clickable" onclick="openDiary('coordinator')"><span class="dot" style="background:#CBD5E1"></span><div><h3>Coordinator — “Grants vote passed. Payment scheduled.”</h3><p>Linked to the decision, with all three signatures.</p></div><span class="when">Monday</span></div>
+      </div>
+
+      <p class="footnote">Pausing is instant and needs no vote — any founder or guardian can do it. Restarting always takes a community vote. &nbsp;<button class="textlink" style="color:#B42318" onclick="openFreeze()">Emergency freeze…</button></p>
+    </section>
+
+    <!-- ══════════ DECISIONS ══════════ -->
+    <section class="view" id="view-decisions">
+      <div class="headrow">
+        <div>
+          <div class="label eyebrow">Decisions</div>
+          <h1 class="page">Decide together, <em>then watch it happen.</em></h1>
+          <p class="lede">128 members. A simple majority decides, your agents carry it out, and the result is reported in the same place.</p>
+        </div>
+        <div class="head-actions"><button class="btn btn-dark" onclick="openDecisionForm()">Start a decision</button></div>
+      </div>
+
+      <div class="section" style="margin-top:34px">
+        <div style="padding-bottom:20px;border-bottom:1px solid var(--line-soft)">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0;font-size:16px;font-weight:600">Fund the Q3 community grants program — $18,000</h3><span class="status amber">Closes in 2 days</span></div>
+          <p class="small muted" style="margin:8px 0 0;max-width:560px;line-height:1.6">Pays six community projects. Comes from Available ($71,230), so the reserve stays untouched. If it passes, payments are scheduled within 48 hours.</p>
+          <div class="meter"><i id="voteBar" style="width:61%"></i></div>
+          <p class="tiny muted" id="voteMeta" style="margin:8px 0 0">61% voted · 78 of 128 · mostly in favour</p>
+          <div id="voteBtns" style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-dark" onclick="castVote('in favour')">Vote in favour</button>
+            <button class="btn" onclick="castVote('against')">Vote against</button>
+            <button class="btn btn-quiet" onclick="openDecision('grants')">Details & discussion</button>
+          </div>
+        </div>
+
+        <div id="newDecisions"></div>
+        <div class="row clickable" onclick="openDecision('limit')"><div><h3>Raise the spending limit from 65% to 70%</h3><p>A rule change by maria.eth. The reserve floor stays at 30%.</p><div class="meter"><i style="width:34%"></i></div></div><span class="when">Closes in 5 days</span></div>
+        <div class="row clickable" onclick="openDecision('bounties')"><div><h3>Fund design bounties — $6,000</h3><p>Passed with 84% in favour. Being carried out now.</p></div><span class="status green">Passed</span></div>
+        <div class="row clickable" onclick="openDecision('lisbon')"><div><h3>Sponsor the Lisbon hackathon — $10,000</h3><p>Didn't reach a majority. No money moved.</p></div><span class="when">Closed Sep 28</span></div>
+      </div>
+    </section>
+
+    <!-- ══════════ RULES ══════════ -->
+    <section class="view" id="view-rules">
+      <div class="headrow">
+        <div>
+          <div class="label eyebrow">Rules</div>
+          <h1 class="page">The rules your agents <em>must obey.</em></h1>
+          <p class="lede">Set by the community, checked on every move, changeable only by a vote.</p>
+        </div>
+        <div class="head-actions"><button class="btn btn-quiet" onclick="openRuleHistory()">History</button><button class="btn" onclick="openRuleChange()">Suggest a change</button></div>
+      </div>
+
+      <div class="section narrow" style="margin-top:34px">
+        <div class="rule clickable" onclick="openRule(1)"><span class="no">01</span><div><h3>Keep at least 30% in safe, stable funds</h3><p>So bills and surprises are always covered.</p></div><span class="ok">At 35% ✓</span></div>
+        <div class="rule clickable" onclick="openRule(2)"><span class="no">02</span><div><h3>Put at most 65% to work earning</h3><p>The rest always stays within reach.</p></div><span class="ok">At 64% ✓</span></div>
+        <div class="rule clickable" onclick="openRule(3)"><span class="no">03</span><div><h3>Never more than 40% in any single place</h3><p>So no single venue can hurt you too much.</p></div><span class="ok">Highest 38% ✓</span></div>
+        <div class="rule clickable" onclick="openRule(4)"><span class="no">04</span><div><h3>Approved places only: Aave, Compound, ETH staking</h3><p>Adding a new one always takes a vote.</p></div><span class="ok">Followed ✓</span></div>
+        <div class="rule clickable" onclick="openRule(5)"><span class="no">05</span><div><h3>Rebalance weekly, only above $1,000</h3><p>Avoids fiddling with small balances.</p></div><span class="ok">Followed ✓</span></div>
+        <div class="rule clickable" onclick="openRule(6)"><span class="no">06</span><div><h3>Any founder or guardian can freeze everything, instantly</h3><p>Restarting requires a vote. No exceptions.</p></div><span class="ok">Ready ✓</span></div>
+      </div>
+
+      <p class="footnote narrow">If a move would break a rule, the Guardrail refuses to sign and the move is cancelled before any money moves. That has happened twice — both times, rule 01 protected you. &nbsp;·&nbsp; Posture: <b style="color:var(--ink)">Balanced</b> — steady earnings, strong cushion.</p>
+    </section>
+
+    <!-- ══════════ CREATE ══════════ -->
+    <section class="view" id="view-create">
+      <div class="label eyebrow">New treasury</div>
+      <h1 class="page">Start a treasury, <em>simply.</em></h1>
+      <p class="lede">About two minutes. No token required, no protocol fee — just network gas. Every choice can be changed later, by vote.</p>
+
+      <div class="steps"><span id="sb1"><b>1 · About</b></span><span class="sep"></span><span id="sb2">2 · Behaviour</span><span class="sep"></span><span id="sb3">3 · Launch</span></div>
+
+      <div class="narrow">
+        <!-- Step 1 -->
+        <div class="wiz-panel active" id="wiz1">
+          <div class="field"><label for="tname">Name</label><input class="input" id="tname" value="Harbor Creators Fund" oninput="syncName()"/><div class="hint" id="slugHint">Its home will be nave.finance/harbor-creators-fund</div><div class="hint" id="nameCheck" style="color:var(--green)">✓ Available (mock check)</div><div class="err" id="nameErr" style="font-size:12px;color:#B42318;margin-top:6px;display:none">Give your treasury a name to continue.</div></div>
+          <div class="field"><label>What is it for?</label>
+            <div class="opts">
+              <button class="opt" onclick="pick(this);syncType('Community')"><span class="radio"></span><span><b>Community</b><p>A group pooling funds for shared goals.</p></span></button>
+              <button class="opt sel" onclick="pick(this);syncType('Creators & fans')"><span class="radio"></span><span><b>Creators & fans</b><p>Revenue and support, shared with a community.</p></span></button>
+              <button class="opt" onclick="pick(this);syncType('Protocol or project')"><span class="radio"></span><span><b>Protocol or project</b><p>Reserves and operating funds.</p></span></button>
+              <button class="opt" onclick="pick(this);syncType('Investment club')"><span class="radio"></span><span><b>Investment club</b><p>Investing together, under agreed rules.</p></span></button>
+            </div></div>
+          <div class="field"><label>Who decides?</label>
+            <div class="opts">
+              <button class="opt sel" onclick="pick(this);syncGov('people')"><span class="radio"></span><span><b>People vote</b><p>Named members, one vote each. Simplest to start.</p></span><span class="rec">Recommended</span></button>
+              <button class="opt" onclick="pick(this);syncGov('token')"><span class="radio"></span><span><b>Token holders vote</b><p>Power follows a token. For large, open communities.</p></span></button>
+            </div>
+            <div id="tokenFields" style="display:none;margin-top:16px">
+              <div class="mtabs" style="max-width:300px"><button class="active" id="tokExisting" onclick="tokenMode('existing')">Use existing token</button><button id="tokNew" onclick="tokenMode('new')">Create a token</button></div>
+              <div id="tokenExisting">
+                <div class="mfield"><label>Token contract address</label><input class="input" id="tokenAddr" placeholder="0x… or mint address"><div class="hint" id="tokenHint">We'll read its name and supply — mock lookup happens when you paste.</div></div>
+              </div>
+              <div id="tokenNew" style="display:none">
+                <div class="mrow2"><div class="mfield"><label>Token name</label><input class="input" id="tokenName" placeholder="Harbor Token"></div><div class="mfield"><label>Symbol</label><input class="input" id="tokenSymbol" placeholder="HBR"></div></div>
+                <div class="mfield"><label>Total supply</label><input class="input" type="number" value="1000000"><div class="hint">Created with the treasury in the same signature. Fair-launch options appear in the real flow.</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="field"><label>Network</label>
+            <div class="pills"><button class="sel" onclick="pill(this)">Base</button><button onclick="pill(this)">Solana</button><button onclick="pill(this)">Robinhood</button></div>
+            <div class="hint" id="chainHint">Base — low fees, earning via Aave & Compound built in. You invite members after launch.</div></div>
+          <div class="wiznav"><span></span><button class="btn btn-dark" onclick="validateStep1()">Continue →</button></div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="wiz-panel" id="wiz2">
+          <div class="field"><label>How careful should your agents be?</label>
+            <div class="opts">
+              <button class="opt" data-preset="careful" onclick="preset(this)"><span class="radio"></span><span><b>Careful</b><p>Half stays safe. Modest, steady earnings.</p></span></button>
+              <button class="opt sel" data-preset="balanced" onclick="preset(this)"><span class="radio"></span><span><b>Balanced</b><p>A strong cushion, most of the rest earning.</p></span></button>
+              <button class="opt" data-preset="bold" onclick="preset(this)"><span class="radio"></span><span><b>Bold</b><p>Thin cushion, maximum working capital.</p></span></button>
+            </div></div>
+          <p class="summary-line" id="plainLine">“Keep at least <em>35%</em> safe, put at most <em>65%</em> to work, never more than <em>40%</em> in one place — only in places we've approved.”</p>
+          <details class="custom"><summary>Customise the numbers</summary>
+            <div class="slider-row"><div class="sh"><b>Keep safe in reserve</b><span id="vR">35%</span></div><p>Never invested, so surprises are always covered.</p><input type="range" id="sR" min="10" max="80" value="35" oninput="sliders()"></div>
+            <div class="slider-row"><div class="sh"><b>Most that can be put to work</b><span id="vD">65%</span></div><p>The ceiling for earning placements.</p><input type="range" id="sD" min="20" max="90" value="65" oninput="sliders()"></div>
+            <div class="slider-row"><div class="sh"><b>Most in any single place</b><span id="vS">40%</span></div><p>Spreads the risk.</p><input type="range" id="sS" min="10" max="80" value="40" oninput="sliders()"></div>
+          </details>
+          <div class="wiznav"><button class="btn btn-quiet" onclick="wiz(1)">← Back</button><button class="btn btn-dark" onclick="wiz(3)">Continue →</button></div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="wiz-panel" id="wiz3">
+          <div id="reviewBlock">
+            <div class="kv"><span>Name</span><b id="rName">Harbor Creators Fund</b></div>
+            <div class="kv"><span>Home</span><b id="rSlug" style="font-family:var(--mono);font-size:12px">nave.finance/harbor-creators-fund</b></div>
+            <div class="kv"><span>Type</span><b id="rType">Creators & fans · People vote</b></div>
+            <div class="kv"><span>Network</span><b id="rChain">Base</b></div>
+            <div class="kv"><span>Rules</span><b id="rRules">Balanced · 35% safe · up to 65% working</b></div>
+            <div class="kv"><span>Team</span><b>Coordinator, Investor, Guardrail, Watcher</b></div>
+            <div class="kv"><span>Cost</span><b id="rCost">Network gas only · about $0.40</b></div>
+            <p class="small muted" style="line-height:1.6;margin:18px 0 0">One signature creates the treasury, its rules, its agents and its voting — together. Afterwards: add funds, invite members, and your agents begin within the rules.</p>
+            <div id="launchSteps" style="display:none;margin-top:18px">
+              <div class="progstep" id="ls1"><span class="pn">1</span>Preparing your treasury</div>
+              <div class="progstep" id="ls2"><span class="pn">2</span>Waiting for your signature</div>
+              <div class="progstep" id="ls3"><span class="pn">3</span>Creating treasury, rules, agents & voting</div>
+              <div class="progstep" id="ls4"><span class="pn">4</span>Done — treasury is live</div>
+            </div>
+            <div class="wiznav"><button class="btn btn-quiet" id="launchBack" onclick="wiz(2)">← Back</button><button class="btn btn-brass" id="launchBtn" onclick="launch()">Launch treasury</button></div>
+          </div>
+          <div class="success" id="successBlock">
+            <div class="tick">✓</div>
+            <h2 class="serif" style="font-size:28px;margin:0 0 8px;font-weight:400">Welcome aboard, Harbor.</h2>
+            <p class="small muted" style="line-height:1.65;max-width:440px">Your treasury is live. Three gentle next steps — do them in any order:</p>
+            <div style="text-align:left;max-width:440px;margin-top:18px">
+              <div class="checkline"><span class="ck">1</span><span style="flex:1"><b>Add your first funds</b><br>Deposit so your agents have something to work with.</span><button class="btn" onclick="openAddFunds()">Add funds</button></div>
+              <div class="checkline"><span class="ck">2</span><span style="flex:1"><b>Invite members</b><br>People who can propose and vote.</span><button class="btn" onclick="openInvite()">Invite</button></div>
+              <div class="checkline"><span class="ck">3</span><span style="flex:1"><b>Meet your agents</b><br>See the team bound by your rules.</span><button class="btn" onclick="go('agents')">View</button></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:20px;flex-wrap:wrap"><button class="btn btn-dark" onclick="go('overview')">See the dashboard</button><button class="btn btn-quiet" onclick="resetWiz()">Start over</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ REPORTS ══════════ -->
+    <section class="view" id="view-reports">
+      <div class="headrow"><div><div class="label eyebrow">Reports</div><h1 class="page">Monthly statements, <em>ready to share.</em></h1><p class="lede">One page per month — what came in, what was earned, what your agents did. Exportable for accountants and members.</p></div>
+      <div class="head-actions"><button class="btn" onclick="downloadReport('2026 full year')">Export year (mock)</button></div></div>
+      <div class="section" style="margin-top:34px">
+        <div class="row clickable" onclick="openReport('October')"><div><h3>October 2026 — in progress</h3><p>+$1,284 earned so far · 41 agent actions · closes Oct 31</p></div><span class="when">Current</span></div>
+        <div class="row clickable" onclick="openReport('September')"><div><h3>September 2026</h3><p>+$5,940 earned · 52 agent actions · 3 decisions carried out</p></div><span class="status green">Ready ✓</span></div>
+        <div class="row clickable" onclick="openReport('August')"><div><h3>August 2026</h3><p>+$5,112 earned · 47 agent actions · 2 decisions carried out</p></div><span class="status green">Ready ✓</span></div>
+        <div class="row clickable" onclick="openReport('July')"><div><h3>July 2026</h3><p>+$4,860 earned · 44 agent actions · treasury created Jul 8</p></div><span class="status green">Ready ✓</span></div>
+      </div>
+      <p class="footnote">Reports generate automatically. Nothing to prepare, nothing to reconcile by hand.</p>
+    </section>
+
+    <!-- ══════════ BRIDGE & STAKE ══════════ -->
+    <section class="view" id="view-bridge">
+      <div class="label eyebrow">Bridge & stake</div>
+      <h1 class="page">Move money in, <em>put it to work.</em></h1>
+      <p class="lede">Bring assets from another network, or stake what you already hold. Quotes update as you type — all mock.</p>
+      <div class="section narrow" style="margin-top:34px">
+        <div class="mtabs" style="max-width:320px"><button class="active" id="btabBridge" onclick="bridgeTab('bridge')">Bridge</button><button id="btabStake" onclick="bridgeTab('stake')">Stake</button></div>
+        <div id="bridgePane">
+          <form onsubmit="return submitBridge(event)">
+            <div class="mrow2">
+              <div class="mfield"><label>From</label><select class="input" id="brFrom"><option>Ethereum</option><option>Solana</option><option>Robinhood</option><option>Arbitrum</option></select></div>
+              <div class="mfield"><label>To</label><select class="input" id="brTo"><option>Base</option><option>Ethereum</option><option>Solana</option></select></div>
+            </div>
+            <div style="text-align:center;margin:-6px 0 10px"><button type="button" class="textlink" onclick="swapBridge()">⇅ Swap direction</button></div>
+            <div class="mfield"><label>Amount (USDC)</label><input class="input" id="brAmount" type="number" min="1" value="5000" oninput="bridgeQuote()"><div class="hint" id="brQuote">You receive ≈ 4,990 USDC on Base · fee $10 · arrives in ~4 minutes (mock quote)</div></div>
+            <div id="bridgeResult"></div>
+            <div class="mactions"><button class="btn btn-dark" type="submit" id="bridgeBtn">Review bridge →</button></div>
+          </form>
+        </div>
+        <div id="stakePane" style="display:none">
+          <form onsubmit="return submitStake(event)">
+            <div class="mrow2">
+              <div class="mfield"><label>Asset</label><select class="input" id="stAsset" onchange="stakeQuote()"><option>ETH — 6.2%/yr</option><option>SOL — 7.1%/yr</option></select></div>
+              <div class="mfield"><label>Amount</label><input class="input" id="stAmount" type="number" min="0" step="0.1" value="2" oninput="stakeQuote()"></div>
+            </div>
+            <div class="notebox" id="stQuote">Estimated earnings: <b>≈ 0.124 ETH / year</b>. Withdrawable in about a day. Your agents keep watching it like any other placement.</div>
+            <div id="stakeResult"></div>
+            <div class="mactions"><button class="btn btn-dark" type="submit" id="stakeBtn">Stake →</button></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ SETTINGS ══════════ -->
+    <section class="view" id="view-settings">
+      <div class="label eyebrow">Settings</div>
+      <h1 class="page">Treasury <em>settings.</em></h1>
+      <p class="lede">Profile, people, and preferences. Structural changes — members, guardians, rules — always go through a decision.</p>
+
+      <form class="section narrow" style="margin-top:34px" onsubmit="return saveProfile(event)">
+        <div class="section-head"><h2>Profile</h2></div>
+        <div class="mfield"><label>Treasury name</label><input class="input" id="setName" value="Atlas Community Treasury"></div>
+        <div class="mfield"><label>Public home</label><input class="input" id="setSlug" value="nave.finance/atlas"></div>
+        <div class="mfield"><label>Description</label><textarea class="input" id="setDesc">A community treasury funding open-source grants and local projects.</textarea></div>
+        <div class="mactions" style="justify-content:flex-start"><button class="btn btn-dark" type="submit">Save profile</button><span class="small" id="profileSaved" style="color:var(--green);display:none;align-self:center">Saved ✓</span></div>
+      </form>
+
+      <div class="section narrow">
+        <div class="section-head"><h2>Members & guardians</h2><button class="textlink" onclick="openInvite()">+ Invite</button></div>
+        <div id="memberList">
+          <div class="row"><span class="av" style="width:28px;height:28px;border-radius:50%;background:var(--brass);color:#fff;display:grid;place-items:center;font-size:9px;font-weight:700">YO</span><div><h3>you.eth</h3><p>Founder · can freeze, propose, vote</p></div><span class="status green">You</span></div>
+          <div class="row"><span class="av" style="width:28px;height:28px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:grid;place-items:center;font-size:9px;font-weight:700">MA</span><div><h3>maria.eth</h3><p>Guardian · can freeze and vote</p></div><button class="textlink" style="margin-left:auto" onclick="confirmRemoveMember(this,'maria.eth')">Remove…</button></div>
+          <div class="row"><span class="av" style="width:28px;height:28px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:grid;place-items:center;font-size:9px;font-weight:700">AL</span><div><h3>alex.eth</h3><p>Member · can propose and vote</p></div><button class="textlink" style="margin-left:auto" onclick="confirmRemoveMember(this,'alex.eth')">Remove…</button></div>
+        </div>
+        <p class="tiny muted">Removing a guardian takes a decision. Removing a member takes effect immediately and is recorded.</p>
+      </div>
+
+      <div class="section narrow">
+        <div class="section-head"><h2>Notifications</h2></div>
+        <div class="row"><div><h3>Decision needs my vote</h3><p>Email and in-app, when voting opens or is about to close.</p></div><button class="switch sm on" style="margin-left:auto" onclick="toggleSwitch(this)" aria-label="Toggle decision notifications"></button></div>
+        <div class="row"><div><h3>Agent blocked a move</h3><p>Tell me whenever the Guardrail refuses to sign.</p></div><button class="switch sm on" style="margin-left:auto" onclick="toggleSwitch(this)" aria-label="Toggle blocked-move notifications"></button></div>
+        <div class="row"><div><h3>Monthly report ready</h3><p>One email when the statement is generated.</p></div><button class="switch sm" style="margin-left:auto" onclick="toggleSwitch(this)" aria-label="Toggle report notifications"></button></div>
+      </div>
+
+      <div class="section narrow">
+        <div class="section-head"><h2>Safety</h2></div>
+        <div class="danger-zone">
+          <h3 style="margin:0;font-size:14px">Emergency freeze</h3>
+          <p class="small muted" style="margin:5px 0 12px;line-height:1.6">Halts all money movement instantly. Monitoring continues. Restarting requires a community vote.</p>
+          <button class="btn" style="border-color:#E5A49E;color:#B42318" onclick="openFreeze()">Freeze treasury…</button>
+        </div>
+      </div>
+    </section>
+
+    </main>
+  </div>
+</div>
+
+<nav class="mobile-nav">
+  <button class="active" data-view="overview" onclick="go('overview')">◈<span>Overview</span></button>
+  <button data-view="money" onclick="go('money')">▦<span>Money</span></button>
+  <button data-view="agents" onclick="go('agents')">✦<span>Agents</span></button>
+  <button data-view="decisions" onclick="go('decisions')">✓<span>Decide</span></button>
+  <button data-view="rules" onclick="go('rules')">⚖<span>Rules</span></button>
+  <button data-view="create" onclick="go('create')">+<span>New</span></button>
+</nav>
+
+<!-- Modal root -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalCard" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head"><div><h3 id="modalTitle"></h3><div class="sub" id="modalSub"></div></div><button class="modal-x" onclick="closeModal()" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TITLES={overview:'Overview',money:'Money',agents:'Agents',decisions:'Decisions',rules:'Rules',reports:'Reports',bridge:'Bridge & stake',settings:'Settings',create:'New treasury'};
+function go(v){
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active',s.id==='view-'+v));
+  document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.getElementById('crumb').textContent=TITLES[v];
+  try{history.replaceState(null,'','#'+v)}catch(e){}
+  window.scrollTo({top:0,behavior:'smooth'}); return false;
+}
+let toastT; function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),3200);}
+function tab(btn,id){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+id));
+}
+const LINES={'30 days':'M0,112 C100,104 200,108 320,88 C440,70 580,44 720,22','90 days':'M0,118 C90,110 150,112 230,96 C310,80 380,86 470,60 C560,36 640,30 720,16','1 year':'M0,132 C90,126 190,118 300,104 C410,90 520,58 720,14'};
+function setRange(btn,label){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  const d=LINES[label];document.getElementById('chartLine').setAttribute('d',d);
+  document.getElementById('chartArea').setAttribute('d',d+' L720,150 L0,150 Z');
+  document.getElementById('chartHint').textContent='— last '+label;
+}
+function expand(id,btn){const el=document.getElementById(id);const open=el.classList.toggle('open');btn.textContent=open?'⌃':'⌄';}
+function toggleAgents(){
+  const s=document.getElementById('agentSwitch');const on=s.classList.toggle('on');
+  document.getElementById('agentState').textContent=on?'Active':'Paused';
+  toast(on?'Demo — restarting would need a passed vote in the real app.':'Demo — paused instantly. No money will move.');
+}
+const ORIGINAL_VOTE_BTNS=document.getElementById('voteBtns').innerHTML;
+function castVote(how){
+  document.getElementById('voteBar').style.width='63%';
+  document.getElementById('voteMeta').textContent='63% voted · 80 of 128 · you voted '+how;
+  document.getElementById('voteBtns').innerHTML='<span class="small" style="color:var(--green);font-weight:600">✓ You voted '+how+'</span><button class="textlink" onclick="changeVote()">Change vote</button><button class="btn btn-quiet" onclick="openDecision(\'grants\')">Details & discussion</button>';
+  toast('Vote recorded (mock). You can change it until voting closes.');
+}
+function changeVote(){
+  document.getElementById('voteBar').style.width='61%';
+  document.getElementById('voteMeta').textContent='61% voted · 78 of 128 · mostly in favour';
+  document.getElementById('voteBtns').innerHTML=ORIGINAL_VOTE_BTNS;
+}
+/* wizard */
+function wiz(n){
+  [1,2,3].forEach(i=>{
+    document.getElementById('wiz'+i).classList.toggle('active',i===n);
+    const s=document.getElementById('sb'+i);
+    s.innerHTML=(i===n?'<b>':'')+i+' · '+['About','Behaviour','Launch'][i-1]+(i===n?'</b>':'');
+  });
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function pick(btn){btn.parentElement.querySelectorAll('.opt').forEach(o=>o.classList.remove('sel'));btn.classList.add('sel');}
+const CHAIN_INFO={Base:{cost:'Network gas only · about $0.40',hint:'Base — low fees, earning via Aave & Compound built in. You invite members after launch.'},Solana:{cost:'Network fees only · about $0.05',hint:'Solana — fast and cheap, staking via Jito & Kamino. You invite members after launch.'},Robinhood:{cost:'Network gas only · about $0.60',hint:'Robinhood — stock-token friendly; earning bridges to Ethereum. You invite members after launch.'}};
+function pill(btn){btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');const c=CHAIN_INFO[btn.textContent]||CHAIN_INFO.Base;document.getElementById('rChain').textContent=btn.textContent;document.getElementById('rCost').textContent=c.cost;document.getElementById('chainHint').textContent=c.hint;}
+const PRESETS={careful:[50,50,30,'Careful'],balanced:[35,65,40,'Balanced'],bold:[20,80,50,'Bold']};
+let styleName='Balanced';
+function preset(btn){
+  pick(btn);const p=PRESETS[btn.dataset.preset];styleName=p[3];
+  document.getElementById('sR').value=p[0];document.getElementById('sD').value=p[1];document.getElementById('sS').value=p[2];sliders();
+}
+function sliders(){
+  const r=document.getElementById('sR').value,d=document.getElementById('sD').value,s=document.getElementById('sS').value;
+  document.getElementById('vR').textContent=r+'%';document.getElementById('vD').textContent=d+'%';document.getElementById('vS').textContent=s+'%';
+  document.getElementById('plainLine').innerHTML='“Keep at least <em>'+r+'%</em> safe, put at most <em>'+d+'%</em> to work, never more than <em>'+s+'%</em> in one place — only in places we\'ve approved.”';
+  document.getElementById('rRules').textContent=styleName+' · '+r+'% safe · up to '+d+'% working';
+}
+function launch(){
+  const steps=document.getElementById('launchSteps');steps.style.display='block';
+  const btn=document.getElementById('launchBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Creating…';
+  document.getElementById('launchBack').style.visibility='hidden';
+  [1,2,3,4].forEach(i=>{const s=document.getElementById('ls'+i);s.className='progstep';s.querySelector('.pn').textContent=i;});
+  [1,2,3,4].forEach((n,i)=>{
+    setTimeout(()=>{const s=document.getElementById('ls'+n);s.classList.add('doing');},i*650);
+    setTimeout(()=>{const s=document.getElementById('ls'+n);s.classList.remove('doing');s.classList.add('done');s.querySelector('.pn').textContent='✓';},i*650+560);
+  });
+  setTimeout(()=>{
+    document.getElementById('reviewBlock').style.display='none';document.getElementById('successBlock').classList.add('show');
+    const n=document.getElementById('tname').value.trim();if(n)document.querySelector('#successBlock h2').textContent='Welcome aboard, '+n.split(' ')[0]+'.';
+    window.scrollTo({top:0,behavior:'smooth'});
+  },2850);
+}
+function resetWiz(){
+  document.getElementById('reviewBlock').style.display='';document.getElementById('successBlock').classList.remove('show');
+  const steps=document.getElementById('launchSteps');steps.style.display='none';
+  const btn=document.getElementById('launchBtn');btn.disabled=false;btn.textContent='Launch treasury';
+  document.getElementById('launchBack').style.visibility='';
+  [1,2,3,4].forEach(i=>{const s=document.getElementById('ls'+i);s.className='progstep';s.querySelector('.pn').textContent=i;});
+  wiz(1);
+}
+/* ═══════════ MODAL ENGINE ═══════════ */
+let lastFocus=null;
+function openModal(title,sub,html,wide){
+  lastFocus=document.activeElement;
+  document.getElementById('modalTitle').textContent=title;
+  const s=document.getElementById('modalSub');s.textContent=sub||'';s.style.display=sub?'block':'none';
+  document.getElementById('modalBody').innerHTML=html;
+  document.getElementById('modalCard').classList.toggle('wide',!!wide);
+  document.getElementById('overlay').classList.add('open');document.body.classList.add('locked');
+  setTimeout(()=>{const f=document.querySelector('#modalBody input,#modalBody select,#modalBody textarea,#modalBody button:not(.modal-x)');if(f)f.focus();},60);
+}
+function setModal(title,sub,html){openModal(title,sub,html,document.getElementById('modalCard').classList.contains('wide'));}
+function modalBody(html){document.getElementById('modalBody').innerHTML=html;}
+function closeModal(){document.getElementById('overlay').classList.remove('open');document.body.classList.remove('locked');if(lastFocus&&lastFocus.focus)lastFocus.focus();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}});
+function successHTML(title,msg,actions){
+  return '<div class="successbox"><div class="tick">✓</div><h4>'+title+'</h4><p>'+msg+'</p><div class="mactions" style="justify-content:center;border:0">'+(actions||'<button class="btn btn-dark" onclick="closeModal()">Done</button>')+'</div></div>';
+}
+function copyText(txt,btn){
+  const done=()=>{if(btn){const o=btn.textContent;btn.textContent='Copied ✓';setTimeout(()=>btn.textContent=o,1600);}toast('Copied (mock).');};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(done);}else done();
+}
+function toggleSwitch(el){el.classList.toggle('on');toast(el.classList.contains('on')?'Preference on (mock).':'Preference off (mock).');}
+function fmt(n){return '$'+Math.round(n).toLocaleString();}
+const state={balance:284920,network:'Base',treasury:'Atlas Community Treasury',treasuryShort:'Atlas',slug:'atlas',connected:true,agentsOn:true,frozen:false};
+
+/* ═══════════ ADD FUNDS / WITHDRAW ═══════════ */
+function openAddFunds(){
+  openModal('Add funds','Choose how money arrives. All mock — nothing moves.',`
+  <div class="mtabs"><button class="active" onclick="fundTab(this,'transfer')">Transfer in</button><button onclick="fundTab(this,'wallet')">From wallet</button><button onclick="fundTab(this,'card')">Card</button></div>
+  <div class="mpane active" id="fund-transfer">
+    <p class="small muted" style="line-height:1.6;margin-top:0">Send USDC or ETH on <b style="color:var(--ink)">${state.network}</b> to your treasury:</p>
+    <div class="qr" aria-hidden="true"></div>
+    <div class="addrbox"><code id="treasuryAddr">0x7a3F…AtlasTreasuryBase…F42c9D</code><button class="btn" onclick="copyText('0x7a3FAtlasTreasuryBaseF42c9D',this)">Copy</button></div>
+    <p class="tiny muted">Only send on ${state.network}. Funds appear after one confirmation in the real app.</p>
+    <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sentBtn" onclick="fundSent(this)">I've sent it</button></div>
+  </div>
+  <div class="mpane" id="fund-wallet">
+    <form onsubmit="return depositWallet(event)">
+      <div class="mrow2"><div class="mfield"><label>Asset</label><select class="input" id="depAsset"><option>USDC</option><option>ETH</option><option>NAVE</option></select></div>
+      <div class="mfield"><label>Amount</label><input class="input" id="depAmount" type="number" min="1" value="2500" required></div></div>
+      <div class="notebox">Your wallet: <b>you.eth</b> · available mock balance 18,400 USDC. Your agents will place anything above the reserve according to your rules.</div>
+      <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="depBtn">Deposit</button></div>
+    </form>
+  </div>
+  <div class="mpane" id="fund-card">
+    <form onsubmit="return depositCard(event)">
+      <div class="mfield"><label>Amount (USD)</label><input class="input" id="cardAmount" type="number" min="10" value="500" required><div class="hint">Card purchases settle as USDC. Mock checkout — no real card is charged.</div></div>
+      <div class="mrow2"><div class="mfield"><label>Card number</label><input class="input" placeholder="4242 4242 4242 4242"></div><div class="mfield"><label>Expiry / CVC</label><input class="input" placeholder="12/28 · 123"></div></div>
+      <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="cardBtn">Buy</button></div>
+    </form>
+  </div>`);
+}
+function fundTab(btn,id){btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.mpane').forEach(p=>p.classList.toggle('active',p.id==='fund-'+id));}
+function fundSent(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Watching…';setTimeout(()=>{modalBody(successHTML('We’ll watch for it','In the real app this closes automatically when your transfer lands. In this demo, consider it arrived.','<button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="closeModal();go(\'money\')">View money</button>'));},1100);}
+function depositWallet(e){e.preventDefault();const amt=parseFloat(document.getElementById('depAmount').value)||0;const btn=document.getElementById('depBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Confirm in wallet…';
+  setTimeout(()=>{state.balance+=amt;document.getElementById('totalBalance').textContent=fmt(state.balance);prependActivity('Deposited '+fmt(amt)+' from your wallet','Available balance increased.','deposit');modalBody(successHTML('Deposit complete',fmt(amt)+' added. New balance '+fmt(state.balance)+'. Your agents will put anything above the reserve to work within your rules.','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},1200);return false;}
+function depositCard(e){e.preventDefault();const amt=parseFloat(document.getElementById('cardAmount').value)||0;const btn=document.getElementById('cardBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Processing…';
+  setTimeout(()=>{state.balance+=amt;document.getElementById('totalBalance').textContent=fmt(state.balance);modalBody(successHTML('Purchase complete',fmt(amt)+' of USDC is on its way to the treasury (mock).','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},1200);return false;}
+function prependActivity(title,desc,kind){
+  const feed=document.getElementById('activityFeed');if(!feed)return;
+  const d=document.createElement('div');d.className='row clickable';d.onclick=()=>openActivityDetail(kind||'deposit');
+  d.innerHTML='<span class="dot" style="background:var(--green)"></span><div><h3></h3><p></p></div><span class="when">Just now</span>';
+  d.querySelector('h3').textContent=title;d.querySelector('p').textContent=desc;feed.prepend(d);
+}
+function openWithdraw(){
+  openModal('Withdraw','Move money out of the treasury. Large withdrawals may need a decision.',`
+  <form onsubmit="return submitWithdraw(event)">
+    <div class="mfield"><label>To (wallet or address)</label><input class="input" id="wdTo" placeholder="you.eth or 0x…" required></div>
+    <div class="mrow2"><div class="mfield"><label>Asset</label><select class="input" id="wdAsset"><option>USDC</option><option>ETH</option></select></div>
+    <div class="mfield"><label>Amount</label><input class="input" id="wdAmount" type="number" min="1" value="1000" oninput="withdrawCheck()" required></div></div>
+    <div class="notebox" id="wdCheck">Available to withdraw without a vote: <b>$71,230</b>. Reserve stays untouched.</div>
+    <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="wdBtn">Review withdrawal</button></div>
+  </form>`);
+}
+function withdrawCheck(){const a=parseFloat(document.getElementById('wdAmount').value)||0;const el=document.getElementById('wdCheck');if(a>71230)el.innerHTML='<b style="color:#9A7414">This needs a decision.</b> It exceeds Available ($71,230) and would touch invested or reserve funds.';else el.innerHTML='Available to withdraw without a vote: <b>$71,230</b>. Reserve stays untouched.';}
+function submitWithdraw(e){e.preventDefault();const a=fmt(parseFloat(document.getElementById('wdAmount').value)||0);const to=document.getElementById('wdTo').value;const btn=document.getElementById('wdBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Checking rules…';
+  setTimeout(()=>{modalBody('<div class="successbox"><div class="tick">→</div><h4>Review withdrawal</h4><p>'+a+' to '+to+'. Guardrail check passed in this mock.</p></div><div class="kv"><span>From</span><b>Available balance</b></div><div class="kv"><span>Reserve after</span><b>35% — unchanged</b></div><div class="mactions"><button class="btn btn-quiet" onclick="openWithdraw()">Back</button><button class="btn btn-dark" onclick="finishWithdraw(this,\''+a+'\')">Confirm withdrawal</button></div>');},800);return false;}
+function finishWithdraw(btn,amt){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Sending…';setTimeout(()=>{modalBody(successHTML('Withdrawal sent',amt+' is on its way (mock). The transfer appears in activity with its receipt.','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));prependActivity('Withdrew '+amt,'Sent to an external wallet. Receipt available.','deposit');},1000);}
+
+/* ═══════════ PROPOSE PAYMENT ═══════════ */
+function openPayment(){
+  openModal('Propose a payment','Your agents check it against the rules before anyone votes.',`
+  <form onsubmit="return reviewPayment(event)">
+    <div class="mfield"><label>Who gets paid?</label><input class="input" id="payTo" placeholder="Name, .eth, or wallet address" required></div>
+    <div class="mrow2"><div class="mfield"><label>Asset</label><select class="input"><option>USDC</option><option>ETH</option></select></div>
+    <div class="mfield"><label>Amount</label><input class="input" id="payAmount" type="number" min="1" value="6000" oninput="paymentCheck()" required></div></div>
+    <div class="mfield"><label>What is it for?</label><textarea class="input" id="payReason" placeholder="e.g. Q3 grants — six community projects">Q3 community grants</textarea></div>
+    <div class="notebox" id="payCheck"></div>
+    <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit">Review →</button></div>
+  </form>`);
+  paymentCheck();
+}
+function paymentCheck(){const a=parseFloat(document.getElementById('payAmount').value)||0;const el=document.getElementById('payCheck');if(!el)return;
+  if(a>5000)el.innerHTML='<b>Needs a community vote</b> (over $5,000). Available is $71,230, so the reserve stays untouched if it passes.';
+  else if(a>0)el.innerHTML='<b>Can be scheduled by a founder</b> (under $5,000), still checked by the Guardrail before it moves.';
+  else el.innerHTML='Enter an amount to see which path this payment takes.';}
+function reviewPayment(e){e.preventDefault();const to=document.getElementById('payTo').value||'Recipient';const amt=parseFloat(document.getElementById('payAmount').value)||0;const reason=document.getElementById('payReason').value||'Payment';
+  modalBody(`<p class="small muted" style="margin-top:0;line-height:1.6">Check the details. Nothing moves until the required path completes.</p>
+  <div class="kv"><span>Pay</span><b>${fmt(amt)} USDC</b></div><div class="kv"><span>To</span><b>${to}</b></div><div class="kv"><span>For</span><b>${reason}</b></div><div class="kv"><span>Path</span><b>${amt>5000?'Community vote → agents pay':'Founder schedule → Guardrail check → pay'}</b></div>
+  <div style="margin-top:12px"><div class="checkline"><span class="ck">✓</span><span><b>Reserve rule:</b> stays at 35% after this payment.</span></div><div class="checkline"><span class="ck">✓</span><span><b>Available:</b> $71,230 covers it without touching investments.</span></div></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="openPayment()">Back</button><button class="btn btn-dark" id="payConfirm" onclick="confirmPayment(this,${amt})">${amt>5000?'Publish for a vote':'Schedule payment'}</button></div>`);return false;}
+function confirmPayment(btn,amt){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Signing…';
+  setTimeout(()=>{if(amt>5000){insertDecision(document.getElementById('payTo')?('Payment — '+fmt(amt)):'Payment','Payment · proposed by you','Awaiting votes. Created from Propose a payment (mock).');modalBody(successHTML('Published for a vote','Members have 5 days. If it passes, your agents schedule the payment and report back in the same thread.','<button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="closeModal();go(\'decisions\')">View decision</button>'));}
+  else modalBody(successHTML('Payment scheduled','The Guardrail will re-check the rules at send time. It appears in activity when it lands (mock).','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},1100);}
+
+/* ═══════════ NETWORK / TREASURY / ACCOUNT / SEARCH / NOTIFICATIONS ═══════════ */
+const NETWORKS=[['Base','Low fees · Aave & Compound earning'],['Ethereum','Deepest liquidity · higher gas'],['Solana','Fast · Jito & Kamino staking'],['Robinhood','Stock tokens · earning via bridge'],['Arc','New · USDC-native (testnet)']];
+function openNetwork(){
+  openModal('Switch network','Treasuries live on one network. Switching shows treasuries on that network.',NETWORKS.map(n=>`<button class="listbtn" onclick="selectNetwork('${n[0]}')"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${n[0]===state.network?'var(--green)':'#D6CFBE'};flex:none"></span><span><h4>${n[0]}</h4><p>${n[1]}</p></span>${n[0]===state.network?'<span class="r status green">Current</span>':''}</button>`).join(''));
+}
+function selectNetwork(name){state.network=name;document.getElementById('networkLabel').textContent=name;document.getElementById('sideTreasurySub').textContent=name+' · nave.finance/'+state.slug+' ⌄';closeModal();toast('Network: '+name+' (mock). Treasury list filtered.');}
+const TREASURIES=[['Atlas Community Treasury','Base','atlas','Atlas','$284,920 · 128 members'],['Harbor Creators Fund','Base','harbor-creators-fund','Harbor','$42,180 · draft preview'],['Northwind Protocol','Solana','northwind','Northwind','$1.2M · 46 members']];
+function openTreasurySwitcher(){
+  openModal('Your treasuries','Switch context, or start a new one.',TREASURIES.map(t=>`<button class="listbtn" onclick="selectTreasury('${t[0]}','${t[1]}','${t[2]}','${t[3]}')"><span><h4>${t[0]}</h4><p>${t[1]} · nave.finance/${t[2]}</p></span><span class="r small muted">${t[4]}</span></button>`).join('')+'<div class="mactions"><button class="btn btn-dark" onclick="closeModal();go(\'create\')">+ New treasury</button></div>');
+}
+function selectTreasury(name,network,slug,short){state.treasury=name;state.slug=slug;state.treasuryShort=short;state.network=network;
+  document.getElementById('sideTreasuryName').textContent=name;document.getElementById('sideTreasurySub').textContent=network+' · nave.finance/'+slug+' ⌄';
+  document.getElementById('crumbTreasury').textContent=short;document.getElementById('networkLabel').textContent=network;closeModal();go('overview');toast('Now viewing '+name+' (mock).');}
+function openAccount(){
+  if(!state.connected){openModal('Connect wallet','Mock wallet connection — no real wallet opens.',successHTML('Connect (mock)','Choose a wallet in the real app. Here, one click reconnects the demo identity.','<button class="btn btn-dark" onclick="connectWallet()">Connect you.eth</button>'));return;}
+  openModal('you.eth','Founder wallet · connected on '+state.network,`
+  <div class="addrbox"><code>0x7a3F…F42c9D</code><button class="btn" onclick="copyText('0x7a3FF42c9D',this)">Copy</button></div>
+  <div class="kv" style="margin-top:10px"><span>Role in Atlas</span><b>Founder · guardian</b></div>
+  <div class="kv"><span>Can do</span><b>Propose, vote, freeze instantly</b></div>
+  <div class="kv"><span>Session</span><b>Connected for this demo</b></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal();go('settings')">Settings</button><button class="btn" onclick="copyText('0x7a3FF42c9D',this)">Copy address</button><button class="btn" style="color:#B42318;border-color:#E5A49E" onclick="disconnectWallet()">Disconnect</button></div>`);
+}
+function disconnectWallet(){state.connected=false;document.getElementById('sideAccount').innerHTML='Not connected<br><span style="color:var(--brass);font-size:11px">Connect wallet</span>';modalBody(successHTML('Disconnected','Demo identity disconnected. Nothing on-chain happened.','<button class="btn btn-dark" onclick="connectWallet()">Reconnect</button>'));}
+function connectWallet(){state.connected=true;document.getElementById('sideAccount').innerHTML='you.eth<br><span style="color:var(--faint);font-size:11px">Founder · connected</span>';closeModal();toast('Wallet connected (mock).');}
+function openNotifications(){
+  openModal('Notifications','Only things that need you — nothing noisy.',`
+  <button class="listbtn" onclick="closeModal();go('decisions')"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--brass);flex:none"></span><span><h4>Decision closes in 2 days</h4><p>Community grants, $18,000 — you haven't voted yet.</p></span><span class="r tiny muted">2h</span></button>
+  <button class="listbtn" onclick="closeModal();go('agents')"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);flex:none"></span><span><h4>Guardrail blocked a move</h4><p>It would have broken the reserve rule. No money moved.</p></span><span class="r tiny muted">Tue</span></button>
+  <button class="listbtn" onclick="closeModal();go('reports')"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:#D6CFBE;flex:none"></span><span><h4>September report is ready</h4><p>+$5,940 earned. View or export it.</p></span><span class="r tiny muted">Oct 1</span></button>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="markAllRead()">Mark all read</button></div>`);
+}
+function markAllRead(){const b=document.getElementById('notifBadge');if(b)b.style.display='none';closeModal();toast('All caught up.');}
+function openSearch(){
+  openModal('Search','Jump to a page, action, asset, or decision.',`
+  <div class="mfield"><input class="input" id="searchInput" placeholder="Try “report”, “aave”, “freeze”…" oninput="filterSearch(this.value)"></div>
+  <div id="searchList">
+    ${[['Go to Money & assets',"go('money')"],['Go to Agents',"go('agents')"],['Go to Decisions',"go('decisions')"],['Go to Rules',"go('rules')"],['Go to Reports',"go('reports')"],['Go to Settings',"go('settings')"],['Add funds','openAddFunds()'],['Propose a payment','openPayment()'],['Start a decision','openDecisionForm()'],['Invite members','openInvite()'],['Aave — earning place',"openVenue('Aave')"],['September report',"openReport('September')"],['Emergency freeze','openFreeze()']].map(x=>`<button class="listbtn search-item" data-q="${x[0].toLowerCase()}" onclick="closeModal();${x[1]}"><span><h4>${x[0]}</h4></span><span class="r muted">→</span></button>`).join('')}
+  </div>`);
+  setTimeout(()=>{const i=document.getElementById('searchInput');if(i)i.focus();},80);
+}
+function filterSearch(q){q=q.toLowerCase();document.querySelectorAll('.search-item').forEach(el=>{el.style.display=el.dataset.q.includes(q)?'flex':'none';});}
+
+/* ═══════════ ACTIVITY / REPORTS ═══════════ */
+const ACTIVITY={
+ earn:{t:'Earned $212 from lending',w:'Today · 2 min ago',b:'The Investor noticed Aave USDC rates at 4.8% and collected accrued earnings back into the treasury. No principal moved.',checks:['Reserve stays at 35% (floor 30%)','Aave is an approved place','Under the $1,000 no-vote collection threshold'],receipt:'0xMOCK…EARN212'},
+ deposit:{t:'alex.eth deposited $2,500',w:'Today · 1 hr ago',b:'A member deposit landed in Available. It is not earnings — it is new principal, and the report separates the two.',checks:['Sender is a known member','Asset USDC is accepted','Reserve ratio improved slightly'],receipt:'0xMOCK…DEP2500'},
+ reserve:{t:'Reserve dipped, then recovered',w:'Yesterday',b:'ETH price movement briefly pushed the reserve toward 32%. The Watcher paused new investments for 3 hours. When prices recovered, the pause lifted on its own. No money moved and no vote was needed.',checks:['Watcher acted within Rule 06 monitoring powers','No capital moved during the pause','Event written to the diary automatically'],receipt:'0xMOCK…WATCH04'},
+ move:{t:'Investor moved $4,200 to Aave',w:'Today · 2 min ago',b:'Idle USDC above the reserve was placed into Aave lending after rates rose. The Guardrail approved only after re-checking every rule.',checks:['Reserve 35% after the move (floor 30%)','Aave share 38% (cap 40%)','Total deployed 64% (cap 65%)'],receipt:'0xMOCK…MOVE4200'},
+ blocked:{t:'Guardrail blocked a $22,000 move',w:'Tuesday',b:'The proposed move would have taken the reserve to 28%, below the 30% floor. The Guardrail refused to sign, the move was cancelled before any money moved, and the Investor was notified.',checks:['Rule 01 would have broken — blocked','No signature from the Guardrail','Attempt permanently recorded'],receipt:'0xMOCK…BLOCK22K'}};
+function openActivityDetail(key){const a=ACTIVITY[key]||ACTIVITY.earn;
+  openModal(a.t,a.w,`<p class="small muted" style="line-height:1.7;margin-top:0">${a.b}</p>
+  <div class="label" style="margin:16px 0 4px">Rules checked</div>${a.checks.map(c=>'<div class="checkline"><span class="ck">✓</span><span>'+c+'</span></div>').join('')}
+  <div class="kv" style="margin-top:12px"><span>Receipt (mock)</span><b style="font-family:var(--mono);font-size:11.5px">${a.receipt}</b></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn" onclick="copyText('${a.receipt}',this)">Copy receipt</button><button class="btn btn-dark" onclick="toast('Mock explorer would open here.')">View explorer</button></div>`);}
+function openActivity(){
+  const rows=[['earn','Earned $212 from lending','Earnings · 2 min ago','earn'],['move','Investor moved $4,200 to Aave','Agents · 2 min ago','earn'],['deposit','alex.eth deposited $2,500','Deposits · 1 hr ago','deposit'],['reserve','Reserve dipped, then recovered','Agents · Yesterday','agent'],['blocked','Guardrail blocked a $22,000 move','Agents · Tuesday','agent'],['earn','Earned $186 from Compound','Earnings · Monday','earn'],['deposit','maria.eth deposited $1,000','Deposits · Sunday','deposit'],['report','September report generated','Reports · Oct 1','report']];
+  openModal('All activity','Every entry has a receipt. Filter by kind.',`
+  <div class="chips2"><button class="active" onclick="filterActivity('all',this)">All</button><button onclick="filterActivity('earn',this)">Earnings</button><button onclick="filterActivity('deposit',this)">Deposits</button><button onclick="filterActivity('agent',this)">Agents</button><button onclick="filterActivity('report',this)">Reports</button></div>
+  <div>${rows.map(r=>`<button class="listbtn act-row" data-kind="${r[3]}" onclick="openActivityDetail('${r[0]==='report'?'reserve':r[0]}')"><span><h4>${r[1]}</h4><p>${r[2]}</p></span><span class="r muted">→</span></button>`).join('')}</div>`,true);
+}
+function filterActivity(kind,btn){btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.act-row').forEach(r=>{r.style.display=(kind==='all'||r.dataset.kind===kind)?'flex':'none';});}
+const REPORTS={October:{earned:'$1,284 so far',start:'$278,410',end:'$284,920',actions:'41 agent actions · 1 decision open'},September:{earned:'$5,940',start:'$262,900',end:'$278,410',actions:'52 agent actions · 3 decisions carried out'},August:{earned:'$5,112',start:'$248,300',end:'$262,900',actions:'47 agent actions · 2 decisions carried out'},July:{earned:'$4,860',start:'$96,200',end:'$248,300',actions:'44 agent actions · treasury created Jul 8'}};
+function openReport(month){const r=REPORTS[month]||REPORTS.September;
+  openModal(month+' statement','Atlas Community Treasury · mock statement',`
+  <div class="kv"><span>Opening balance</span><b>${r.start}</b></div><div class="kv"><span>Earned</span><b style="color:var(--green)">${r.earned}</b></div><div class="kv"><span>Closing balance</span><b>${r.end}</b></div><div class="kv"><span>Activity</span><b>${r.actions}</b></div><div class="kv"><span>Fees</span><b>15% of earnings only · principal never charged</b></div>
+  <div class="notebox" style="margin-top:14px">Deposits and earnings are always shown separately, so growth is never confused with new money in.</div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="downloadReport('${month}')">Download statement</button></div>`);}
+function downloadReport(label){
+  const text='NAVE — MOCK STATEMENT\\n'+label+'\\nAtlas Community Treasury\\n\\nAll figures illustrative. Generated client-side by demo.html; no backend involved.';
+  const url=URL.createObjectURL(new Blob([text],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download='nave-statement-'+String(label).replace(/\\s+/g,'-').toLowerCase()+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);toast('Statement downloaded (mock .txt).');}
+
+/* ═══════════ ASSETS / VENUES ═══════════ */
+const ASSETS={USDC:{name:'USDC · USD Coin',bal:'208,122 USDC',val:'$208,122 · 73%',job:'Reserve + lending. The stable core: part sits safe, part lends on Aave and Compound.'},ETH:{name:'ETH · Ethereum',bal:'18.42 ETH',val:'$51,340 · 18%',job:'Staked to secure Ethereum. Back in about a day when unstaked.'},NAVE:{name:'NAVE · Nave Shares',bal:'12,500 NAVE',val:'$18,940 · 7%',job:'Held. The protocol token — no role in this treasury’s day-to-day unless a decision says so.'},SOL:{name:'SOL · Solana',bal:'31.8 SOL',val:'$6,518 · 2%',job:'Held from a bridged deposit. Not currently placed.'}};
+function openAsset(sym){const a=ASSETS[sym];if(!a)return;
+  openModal(a.name,'Holding detail (mock)',`<div class="kv"><span>Balance</span><b>${a.bal}</b></div><div class="kv"><span>Value · share</span><b>${a.val}</b></div><p class="small muted" style="line-height:1.7">${a.job}</p>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn" onclick="closeModal();openAddFunds()">Add funds</button><button class="btn btn-dark" onclick="closeModal();go('money')">See in Money</button></div>`);}
+const VENUES={'Aave':{what:'Lends USDC to borrowers',amt:'$108,400 · 38%',rate:'4.8%/yr',earned:'$7,214',exit:'Instantly',risk:'Largest approved venue. Capped at 40% by Rule 03.'},'Compound':{what:'Lends USDC, second venue',amt:'$42,600 · 15%',rate:'4.5%/yr',earned:'$2,908',exit:'Instantly',risk:'Exists so no single lending venue holds everything.'},'ETH staking':{what:'Stakes ETH to secure Ethereum',amt:'$32,400 · 18% (as ETH)',rate:'6.2%/yr',earned:'$4,120',exit:'About a day',risk:'ETH price moves affect the dollar value; the stake itself is with a major operator.'}};
+function openVenue(name){const v=VENUES[name];if(!v)return;
+  openModal(name,v.what,`<div class="kv"><span>Placed</span><b>${v.amt}</b></div><div class="kv"><span>Rate</span><b style="color:var(--green)">${v.rate}</b></div><div class="kv"><span>Earned so far</span><b>${v.earned}</b></div><div class="kv"><span>Get it back</span><b>${v.exit}</b></div>
+  <p class="small muted" style="line-height:1.7">${v.risk}</p>
+  <div id="moveForm" style="display:none"><form onsubmit="return submitMove(event,'${name}')"><div class="mrow2"><div class="mfield"><label>Direction</label><select class="input"><option>Move in (from Available)</option><option>Withdraw to Available</option></select></div><div class="mfield"><label>Amount</label><input class="input" type="number" min="1" value="1000" required></div></div><div class="mactions"><button class="btn btn-dark" type="submit" id="moveBtn">Confirm move</button></div></form></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="document.getElementById('moveForm').style.display='block'">Move money</button></div>`);}
+function submitMove(e,name){e.preventDefault();const b=document.getElementById('moveBtn');b.disabled=true;b.innerHTML='<span class="spinner"></span> Moving…';
+  setTimeout(()=>{modalBody(successHTML('Move complete','Your placement with '+name+' was updated (mock). The Guardrail checked Rules 01–03 first.','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},1000);return false;}
+function refreshHoldings(){const b=document.getElementById('refreshBtn');const s=document.getElementById('refreshStamp');b.textContent='Updating…';b.disabled=true;
+  setTimeout(()=>{b.textContent='Refresh';b.disabled=false;const d=new Date();s.textContent='Updated '+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});toast('Balances refreshed (mock read — no transaction).');},900);}
+
+/* ═══════════ AGENTS FLOWS ═══════════ */
+function setAgentsUI(on,label){state.agentsOn=on;const s=document.getElementById('agentSwitch');if(s)s.classList.toggle('on',on);document.getElementById('agentState').textContent=label;}
+function requestToggleAgents(){if(state.frozen){openResumeAgents();return;} if(state.agentsOn)openPauseAgents(); else openResumeAgents();}
+function openPauseAgents(){
+  openModal('Pause the team?','Instant, no vote needed. Any founder or guardian can do this.',`
+  <div class="checkline"><span class="ck">•</span><span>Agents stop signing and moving money immediately.</span></div>
+  <div class="checkline"><span class="ck">•</span><span>The Watcher keeps monitoring and can still freeze.</span></div>
+  <div class="checkline"><span class="ck">•</span><span>Restarting later requires a community vote.</span></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Keep them running</button><button class="btn btn-dark" id="pauseBtn2" onclick="confirmPause(this)">Pause the team</button></div>`);
+}
+function confirmPause(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Pausing…';setTimeout(()=>{setAgentsUI(false,'Paused');modalBody(successHTML('Team paused','No money will move until a vote restarts the agents. Monitoring continues.','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},900);}
+function openResumeAgents(){
+  openModal(state.frozen?'Restart after a freeze':'Restart the team','Restarting always takes a community vote — pausing never does.',`
+  <p class="small muted" style="line-height:1.7;margin-top:0">This starts a decision: “Resume the four agents under the current rules.” If it passes, a founder activates the result and the team reconnects.</p>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Not now</button><button class="btn btn-dark" onclick="startResumeVote(this)">Start the vote</button></div>`);
+}
+function startResumeVote(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Publishing…';setTimeout(()=>{insertDecision('Resume the four agents','Team · proposed by you','Voting open. Created from the Agents page (mock).');modalBody(successHTML('Vote started','Find it under Decisions. The team stays '+(state.frozen?'frozen':'paused')+' until it passes and a founder activates it.','<button class="btn btn-dark" onclick="closeModal();go(\'decisions\')">View decision</button>'));},900);}
+function openFreeze(){
+  openModal('Emergency freeze?','The strongest stop. Use it if something looks wrong.',`
+  <div class="checkline"><span class="ck" style="color:#B42318">!</span><span><b>All money movement halts instantly</b> — payments, investments, withdrawals.</span></div>
+  <div class="checkline"><span class="ck">•</span><span>Monitoring continues; the Watcher can still act to protect.</span></div>
+  <div class="checkline"><span class="ck">•</span><span>Restarting requires a community vote, then founder activation.</span></div>
+  <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;margin-top:14px;cursor:pointer"><input type="checkbox" id="freezeCheck" onchange="document.getElementById('freezeBtn').disabled=!this.checked" style="margin-top:3px"> I understand this freezes the whole treasury immediately.</label>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn" id="freezeBtn" disabled style="background:#B42318;color:#fff;border-color:#B42318" onclick="confirmFreeze(this)">Freeze treasury</button></div>`);
+}
+function confirmFreeze(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Freezing…';setTimeout(()=>{state.frozen=true;setAgentsUI(false,'Frozen');document.getElementById('frozenBanner').classList.add('show');modalBody(successHTML('Treasury frozen','Everything is halted (mock). This state is shown on every page until a vote restarts the team.','<button class="btn btn-dark" onclick="closeModal();go(\'agents\')">Done</button>'));},1000);}
+const DIARY={investor:{t:'Investor — moved $4,200 to Aave',b:'“Aave USDC rose to 4.8% while $4,200 sat idle above the reserve. I placed it there; Compound remains as the second venue.”',meta:[['Decision','Approve · 94% confident'],['Checked by','Guardrail · 6/6 rules passed'],['Signatures','Coordinator → Investor → Guardrail (3 of 3)'],['Receipt','0xMOCK…MOVE4200']]},
+guardrail:{t:'Guardrail — blocked a $22,000 move',b:'“This move would take the reserve to 28%, below the 30% floor in Rule 01. I will not sign. No money moved; I notified the Investor and logged this attempt.”',meta:[['Decision','Refuse to sign'],['Rule invoked','01 — keep at least 30% safe'],['Money moved','None'],['Receipt','0xMOCK…BLOCK22K']]},
+coordinator:{t:'Coordinator — grants payment scheduled',b:'“Decision #14 passed with 84% in favour. I prepared the $6,000 payment for Friday and handed it to the Investor and Guardrail for their checks and signatures.”',meta:[['Decision','Plan created'],['Linked to','Decision #14 — design bounties'],['Signatures','3 of 3 collected'],['Receipt','0xMOCK…GRANT06']]}};
+function openDiary(key){const d=DIARY[key];openModal(d.t,'Agent diary · plain English first, proof below',`<p class="small" style="line-height:1.7;margin-top:0">${d.b}</p>${d.meta.map(m=>'<div class="kv"><span>'+m[0]+'</span><b>'+m[1]+'</b></div>').join('')}<div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn" onclick="copyText('${d.meta[3][1]}',this)">Copy receipt</button></div>`);}
+
+/* ═══════════ DECISIONS FLOWS ═══════════ */
+let lastDecisionTitle='Your new decision';
+function insertDecision(title,meta,desc){
+  lastDecisionTitle=title;const host=document.getElementById('newDecisions');if(!host)return;
+  const row=document.createElement('div');row.className='row clickable';row.onclick=()=>openDecision('dynamic');
+  row.innerHTML='<div><h3></h3><p></p><div class="meter"><i style="width:4%"></i></div><p class="tiny" style="margin-top:6px">Just published · voting open (mock)</p></div><span class="status amber">New</span>';
+  row.querySelector('h3').textContent=title;row.querySelector('p').textContent=(meta||'')+(desc?' — '+desc:'');host.prepend(row);
+  const badge=document.getElementById('decisionBadge');if(badge){badge.textContent=String((parseInt(badge.textContent)||1)+1);}
+}
+function openDecisionForm(){
+  openModal('Start a decision','Plain templates. Members see what it costs and what happens if it passes.',`
+  <form onsubmit="return submitDecision(event)">
+    <div class="mfield"><label>Type</label><select class="input" id="dType" onchange="decisionType()"><option value="payment">Payment — send money</option><option value="rule">Rule change</option><option value="general">General — anything else</option></select></div>
+    <div class="mfield"><label>Title</label><input class="input" id="dTitle" placeholder="e.g. Fund the winter meetup series" required></div>
+    <div class="mfield" id="dAmountWrap"><label>Amount (USDC)</label><input class="input" id="dAmount" type="number" min="1" value="3000"></div>
+    <div class="mfield"><label>Why? (shown to every voter)</label><textarea class="input" id="dDesc" placeholder="What it funds, what happens if it passes, what happens if it doesn't."></textarea></div>
+    <div class="mfield"><label>Voting closes in</label><select class="input" id="dDays"><option>3 days</option><option selected>5 days</option><option>7 days</option></select></div>
+    <div class="notebox" id="dPreview">A simple majority of votes cast decides. If it passes, your agents carry it out and report back here.</div>
+    <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="dBtn">Publish decision</button></div>
+  </form>`);
+}
+function decisionType(){const t=document.getElementById('dType').value;document.getElementById('dAmountWrap').style.display=t==='payment'?'block':'none';
+  document.getElementById('dPreview').textContent=t==='rule'?'Rule changes preview as a sentence before publishing. The Guardrail enforces the new rule only after it passes and a founder activates it.':'A simple majority of votes cast decides. If it passes, your agents carry it out and report back here.';}
+function submitDecision(e){e.preventDefault();const title=document.getElementById('dTitle').value.trim();const type=document.getElementById('dType').value;const amt=document.getElementById('dAmount').value;
+  const btn=document.getElementById('dBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Publishing…';
+  setTimeout(()=>{insertDecision(title,(type==='payment'?'Payment · '+fmt(parseFloat(amt)||0):type==='rule'?'Rule change':'General')+' · proposed by you','Voting closes in '+document.getElementById('dDays').value+'.');
+    modalBody(successHTML('Decision published','Members can now vote. You’ll find it at the top of Decisions, and voters get a quiet notification.','<button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="closeModal();go(\'decisions\')">View decision</button>'));},1000);return false;}
+const DECISIONS={grants:{title:'Fund the Q3 community grants program — $18,000',status:'Voting · closes in 2 days',desc:'Pays six community projects chosen by the grants committee. Comes from Available ($71,230), so the reserve stays untouched. If it passes, the Coordinator schedules payments within 48 hours and reports in this thread.',pct:'61% voted · 78 of 128 · mostly in favour',open:true},
+limit:{title:'Raise the spending limit from 65% to 70%',status:'Voting · closes in 5 days',desc:'A rule change by maria.eth. Agents could put up to 70% to work instead of 65%. The reserve floor (Rule 01) stays at 30%, so the cushion rule still governs.',pct:'34% voted · 44 of 128',open:true},
+bounties:{title:'Fund design bounties — $6,000',status:'Passed · being carried out',desc:'Passed with 84% in favour. The Coordinator scheduled the payment, the Guardrail checked it, and it lands Friday. This thread updates when it does.',pct:'84% in favour · closed last week',open:false},
+lisbon:{title:'Sponsor the Lisbon hackathon — $10,000',status:'Closed Sep 28 · did not pass',desc:'Reached 41% in favour — short of a majority. No money moved. The proposer can revise and publish a new version.',pct:'41% in favour · 96 of 128 voted',open:false},
+dynamic:{title:'Your new decision',status:'Voting · just published',desc:'This decision was created in this demo. In the real app every member sees the same title, reasoning, cost, and deadline.',pct:'Just published · 1 vote (yours, as proposer)',open:true}};
+function openDecision(id){const d=DECISIONS[id]||DECISIONS.dynamic;if(id==='dynamic')d.title=lastDecisionTitle;
+  openModal(d.title,d.status,`
+  <p class="small muted" style="line-height:1.7;margin-top:0">${d.desc}</p>
+  <div class="meter"><i style="width:${id==='grants'?'61':id==='limit'?'34':id==='bounties'?'84':'12'}%"></i></div><p class="tiny muted" id="modalVoteMeta">${d.pct}</p>
+  ${d.open?'<div style="display:flex;gap:8px;margin:14px 0 4px"><button class="btn btn-dark" onclick="modalVote(this,\'in favour\')">Vote in favour</button><button class="btn" onclick="modalVote(this,\'against\')">Vote against</button></div>':''}
+  <div class="label" style="margin:18px 0 2px">Progress</div>
+  <div class="timeline"><div class="tl done"><span class="tdot"></span>Proposed and published</div><div class="tl ${d.open?'now':'done'}"><span class="tdot"></span>${d.open?'Voting open':'Voting closed'}</div><div class="tl ${id==='bounties'?'now':''}"><span class="tdot"></span>${id==='bounties'?'Agents carrying it out':'If passed, agents carry it out and report here'}</div></div>
+  <div class="label" style="margin:16px 0 2px">Discussion</div>
+  <div id="commentList">
+    <div class="comment"><span class="av">MA</span><div><h5>maria.eth</h5><p>The grants committee published the shortlist — all six projects shipped something last quarter.</p></div></div>
+    <div class="comment"><span class="av">AL</span><div><h5>alex.eth</h5><p>Supportive. Can we see per-project amounts before Friday if it passes?</p></div></div>
+  </div>
+  <form onsubmit="return addComment(event)" style="margin-top:12px"><div class="mfield"><label>Add to the discussion</label><input class="input" id="commentInput" placeholder="Ask, clarify, or state your position…"></div><div class="mactions"><button class="btn" type="submit">Post comment</button></div></form>
+  `,true);}
+function modalVote(btn,how){const m=document.getElementById('modalVoteMeta');if(m)m.textContent='You voted '+how+' · changeable until voting closes (mock).';btn.parentElement.innerHTML='<span class="small" style="color:var(--green);font-weight:600">✓ You voted '+how+'</span>';toast('Vote recorded (mock).');}
+function addComment(e){e.preventDefault();const inp=document.getElementById('commentInput');const v=inp.value.trim();if(!v)return false;
+  const d=document.createElement('div');d.className='comment';d.innerHTML='<span class="av">YO</span><div><h5>you.eth</h5><p></p></div>';d.querySelector('p').textContent=v;document.getElementById('commentList').appendChild(d);inp.value='';toast('Comment posted (mock).');return false;}
+
+/* ═══════════ RULES FLOWS ═══════════ */
+const RULES={1:['Keep at least 30% safe','Currently 35%','So bills and surprises are always covered, even if markets fall. Agents pause new investments automatically if this is threatened.','Set at creation · tightened by vote in August'],2:['Put at most 65% to work','Currently 64%','The rest always stays within reach, so the treasury never has to sell at a bad moment to pay for something.','Set at creation'],3:['Never more than 40% in one place','Highest today: Aave at 38%','Spreads risk so no single venue, hack, or freeze can hurt the treasury too much.','Set at creation'],4:['Approved places only','Aave · Compound · ETH staking','Agents physically cannot send money anywhere else. Adding a place requires a vote and a founder activation.','ETH staking added by vote in September'],5:['Rebalance weekly, above $1,000 only','Last rebalance: Monday','Prevents fiddling with tiny balances and burning fees on noise.','Set at creation'],6:['Freeze instantly, restart by vote','Ready · never used','Any founder or guardian can halt everything in one action. Restarting needs the community — no back doors.','Set at creation']};
+function openRule(n){const r=RULES[n];
+  openModal('Rule 0'+n+' — '+r[0],r[1],`<p class="small muted" style="line-height:1.7;margin-top:0">${r[2]}</p><div class="kv"><span>History</span><b>${r[3]}</b></div><div class="kv"><span>Enforced by</span><b>The Guardrail, on every move</b></div>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="openRuleChange(${n})">Suggest a change</button></div>`);}
+function openRuleChange(preselect){
+  openModal('Suggest a rule change','It becomes a decision. Nothing changes unless the vote passes.',`
+  <form onsubmit="return submitRuleChange(event)">
+    <div class="mfield"><label>Rule</label><select class="input" id="rcRule" onchange="rulePreview()">${Object.keys(RULES).map(k=>'<option value="'+k+'"'+(String(preselect)===k?' selected':'')+'>0'+k+' — '+RULES[k][0]+'</option>').join('')}</select></div>
+    <div class="mfield"><label>New value (%)</label><input class="input" id="rcValue" type="number" min="1" max="95" value="35" oninput="rulePreview()"><div class="hint">For Rules 04–06 the value is ignored — describe the change in your reason.</div></div>
+    <div class="mfield"><label>Why? (shown to voters)</label><textarea class="input" id="rcReason" placeholder="What improves, and what risk changes?"></textarea></div>
+    <div class="notebox" id="rcPreview"></div>
+    <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="rcBtn">Publish as a decision</button></div>
+  </form>`);
+  rulePreview();
+}
+function rulePreview(){const k=document.getElementById('rcRule').value;const v=document.getElementById('rcValue').value||'—';const el=document.getElementById('rcPreview');if(!el)return;
+  const names={1:'Keep at least <b>'+v+'%</b> in safe, stable funds.',2:'Put at most <b>'+v+'%</b> to work earning.',3:'Never more than <b>'+v+'%</b> in any single place.',4:'Change the approved places list (describe in your reason).',5:'Rebalance on a new cadence (describe in your reason).',6:'Change who can freeze / restart (describe in your reason).'};
+  el.innerHTML='Voters will see: “'+names[k]+'”';}
+function submitRuleChange(e){e.preventDefault();const k=document.getElementById('rcRule').value;const btn=document.getElementById('rcBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Publishing…';
+  setTimeout(()=>{insertDecision('Rule 0'+k+' change — '+RULES[k][0],'Rule change · proposed by you','Voting open. Created from Rules (mock).');modalBody(successHTML('Published as a decision','If it passes, a founder activates it and the Guardrail follows the new wording from that moment.','<button class="btn btn-dark" onclick="closeModal();go(\'decisions\')">View decision</button>'));},1000);return false;}
+function openRuleHistory(){
+  openModal('Rule history','Every version, and the vote that made it.',`
+  <div class="timeline">
+    <div class="tl done"><span class="tdot"></span><span><b>Jul 8</b> — Treasury created with the Balanced rulebook (Rules 01–06).</span></div>
+    <div class="tl done"><span class="tdot"></span><span><b>Aug 14</b> — Rule 01 tightened 25% → 30%. Passed 71%.</span></div>
+    <div class="tl done"><span class="tdot"></span><span><b>Sep 3</b> — ETH staking added to Rule 04. Passed 83%.</span></div>
+    <div class="tl now"><span class="tdot"></span><span><b>Today</b> — No changes pending. The Guardrail enforces the version above.</span></div>
+  </div><div class="mactions"><button class="btn btn-dark" onclick="closeModal()">Done</button></div>`);
+}
+
+/* ═══════════ INVITE / MEMBERS ═══════════ */
+let inviteCount=0;
+function openInvite(){
+  inviteCount=0;
+  openModal('Invite members','Members can propose and vote. Guardians can also freeze. Invites are mock emails/links.',`
+  <form onsubmit="return sendInvites(event)">
+    <div class="mrow2"><div class="mfield"><label>Address, .eth, or email</label><input class="input" id="inviteInput" placeholder="friend.eth"></div>
+    <div class="mfield"><label>Role</label><select class="input" id="inviteRole"><option>Member — propose & vote</option><option>Guardian — freeze & vote</option><option>Viewer — read only</option></select></div></div>
+    <button type="button" class="textlink" onclick="addInvite()">+ Add another</button>
+    <div id="inviteList" style="margin-top:10px"></div>
+    <div class="mactions"><button type="button" class="btn btn-quiet" onclick="closeModal()">Cancel</button><button class="btn btn-dark" type="submit" id="inviteBtn">Send invites</button></div>
+  </form>`);
+}
+function addInvite(){const inp=document.getElementById('inviteInput');const v=inp.value.trim();if(!v){inp.focus();inp.classList.add('invalid');return;}
+  inp.classList.remove('invalid');inviteCount++;const role=document.getElementById('inviteRole').value.split(' — ')[0];
+  const d=document.createElement('div');d.className='checkline';d.innerHTML='<span class="ck">✓</span><span style="flex:1"></span><button type="button" class="textlink" onclick="this.parentElement.remove();inviteCount--">Remove</button>';
+  d.querySelector('span[style]').textContent=v+' · '+role;document.getElementById('inviteList').appendChild(d);inp.value='';inp.focus();}
+function sendInvites(e){e.preventDefault();const pending=document.getElementById('inviteInput').value.trim();if(pending)addInvite();if(inviteCount===0){toast('Add at least one person first.');return false;}
+  const btn=document.getElementById('inviteBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Sending…';
+  setTimeout(()=>{modalBody(successHTML(inviteCount+' invite'+(inviteCount>1?'s':'')+' sent','They’ll get a link to view the treasury and connect their wallet (mock). Roles can be changed later in Settings.','<button class="btn btn-dark" onclick="closeModal()">Done</button>'));},900);return false;}
+let pendingRemoveRow=null;
+function confirmRemoveMember(btn,name){pendingRemoveRow=btn.closest('.row');
+  openModal('Remove '+name+'?','This is recorded and shown in activity. Guardian removal would need a decision instead.',`
+  <p class="small muted" style="line-height:1.7;margin-top:0">${name} will immediately lose propose and vote access in this mock. In the real app, founder removal is impossible and guardian removal goes to a vote.</p>
+  <div class="mactions"><button class="btn btn-quiet" onclick="closeModal()">Keep member</button><button class="btn" style="background:#B42318;color:#fff;border-color:#B42318" onclick="doRemoveMember()">Remove</button></div>`);}
+function doRemoveMember(){if(pendingRemoveRow)pendingRemoveRow.remove();pendingRemoveRow=null;closeModal();toast('Member removed (mock).');}
+
+/* ═══════════ REPORTS / BRIDGE / SETTINGS HELPERS ═══════════ */
+function bridgeTab(tab){document.getElementById('btabBridge').classList.toggle('active',tab==='bridge');document.getElementById('btabStake').classList.toggle('active',tab==='stake');
+  document.getElementById('bridgePane').style.display=tab==='bridge'?'block':'none';document.getElementById('stakePane').style.display=tab==='stake'?'block':'none';}
+function swapBridge(){const f=document.getElementById('brFrom'),t=document.getElementById('brTo');const v=f.value;f.value=t.value;t.value=v;bridgeQuote();}
+function bridgeQuote(){const a=parseFloat(document.getElementById('brAmount').value)||0;const to=document.getElementById('brTo').value;const recv=Math.max(0,a*0.998);
+  document.getElementById('brQuote').innerHTML='You receive ≈ <b>'+recv.toLocaleString()+' USDC</b> on '+to+' · fee '+(a*0.002).toFixed(2)+' · arrives in ~4 minutes (mock quote)';}
+function submitBridge(e){e.preventDefault();const b=document.getElementById('bridgeBtn');b.disabled=true;b.innerHTML='<span class="spinner"></span> Bridging…';
+  setTimeout(()=>{document.getElementById('bridgeResult').innerHTML='<div class="successbox" style="border-top:1px solid var(--line-soft);margin-top:16px"><div class="tick">✓</div><h4>Bridge started</h4><p>Your mock transfer is on its way and will appear in activity when it lands.</p></div>';b.textContent='Bridge again';b.disabled=false;},1200);return false;}
+function stakeQuote(){const a=parseFloat(document.getElementById('stAmount').value)||0;const isEth=document.getElementById('stAsset').value.includes('ETH');const r=isEth?a*0.062:a*0.071;const sym=isEth?'ETH':'SOL';
+  document.getElementById('stQuote').innerHTML='Estimated earnings: <b>≈ '+r.toFixed(3)+' '+sym+' / year</b>. Withdrawable in about a day. Your agents keep watching it like any other placement.';}
+function submitStake(e){e.preventDefault();const b=document.getElementById('stakeBtn');b.disabled=true;b.innerHTML='<span class="spinner"></span> Staking…';
+  setTimeout(()=>{document.getElementById('stakeResult').innerHTML='<div class="successbox" style="border-top:1px solid var(--line-soft);margin-top:16px"><div class="tick">✓</div><h4>Staked</h4><p>Mock stake placed. It shows under Money with the other earning places.</p></div>';b.textContent='Stake more';b.disabled=false;},1200);return false;}
+function saveProfile(e){e.preventDefault();const n=document.getElementById('setName').value.trim();if(n){document.getElementById('sideTreasuryName').textContent=n;}
+  const s=document.getElementById('profileSaved');s.style.display='inline';setTimeout(()=>s.style.display='none',2500);toast('Profile saved (mock).');return false;}
+
+/* ═══════════ CREATE WIZARD EXTRAS ═══════════ */
+let treasuryType='Creators & fans',govMode='people',tokenGovMode='existing';
+function updateReviewType(){document.getElementById('rType').textContent=treasuryType+' · '+(govMode==='token'?'Token holders vote':'People vote');}
+function syncType(t){treasuryType=t;updateReviewType();}
+function syncGov(m){govMode=m;document.getElementById('tokenFields').style.display=m==='token'?'block':'none';updateReviewType();}
+function tokenMode(m){tokenGovMode=m;document.getElementById('tokExisting').classList.toggle('active',m==='existing');document.getElementById('tokNew').classList.toggle('active',m==='new');
+  document.getElementById('tokenExisting').style.display=m==='existing'?'block':'none';document.getElementById('tokenNew').style.display=m==='new'?'block':'none';}
+function syncName(){const inp=document.getElementById('tname');const name=inp.value.trim();
+  const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  document.getElementById('slugHint').textContent=name?('Its home will be nave.finance/'+slug):'Its home will be nave.finance/…';
+  const chk=document.getElementById('nameCheck');chk.style.display=name.length>=3?'block':'none';
+  document.getElementById('nameErr').style.display='none';inp.classList.remove('invalid');
+  document.getElementById('rName').textContent=name||'Harbor Creators Fund';document.getElementById('rSlug').textContent='nave.finance/'+(slug||'harbor-creators-fund');}
+function validateStep1(){
+  const inp=document.getElementById('tname');
+  if(!inp.value.trim()){inp.classList.add('invalid');document.getElementById('nameErr').style.display='block';inp.focus();window.scrollTo({top:0,behavior:'smooth'});return;}
+  if(govMode==='token'&&tokenGovMode==='existing'){const a=document.getElementById('tokenAddr');if(!a.value.trim()){a.classList.add('invalid');document.getElementById('tokenHint').innerHTML='<span style="color:#B42318">Paste the token contract, or switch to “Create a token”.</span>';a.focus();return;}a.classList.remove('invalid');}
+  if(govMode==='token'&&tokenGovMode==='new'){const s=document.getElementById('tokenSymbol');if(!s.value.trim()){s.classList.add('invalid');s.focus();return;}s.classList.remove('invalid');}
+  wiz(2);
+}
+(function(){const h=(location.hash||'').replace('#','');if(TITLES[h]&&h!=='overview')go(h);})();
+</script>
+</body>
+</html>
