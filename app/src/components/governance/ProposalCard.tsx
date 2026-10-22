@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Buffer } from 'buffer';
 import { findVenue, packSolanaAllocation } from '../../../supabase/functions/_shared/strategyCatalog.ts';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';

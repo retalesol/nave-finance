@@ -6,6 +6,7 @@
 // pulls the 2.5%-on-top fee and resolves it on Solana (burn / staking /
 // protocol) — the app just sends the one lock tx.
 
+import { Buffer } from 'buffer';
 import { PublicKey, TransactionInstruction, SystemProgram } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { sha256 } from '@noble/hashes/sha256';

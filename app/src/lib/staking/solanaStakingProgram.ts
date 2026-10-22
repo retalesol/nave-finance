@@ -3,6 +3,7 @@
 // StakePool + UserStake accounts (no generated IDL dependency). Mirrors the
 // on-chain program in contracts/solana/programs/nave_staking.
 
+import { Buffer } from 'buffer';
 import { PublicKey, TransactionInstruction, SystemProgram, SYSVAR_RENT_PUBKEY, type Connection } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { sha256 } from '@noble/hashes/sha256';

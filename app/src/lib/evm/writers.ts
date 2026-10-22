@@ -9,6 +9,7 @@
 // tuples below are reconciled against the REAL Foundry ABIs (synced via
 // `npm run sync-abi`). Keep them in lockstep with src/abi/*.json.
 
+import { Buffer } from 'buffer';
 import type { Abi, Address } from 'viem';
 import { decodeAbiParameters, encodeAbiParameters, zeroAddress } from 'viem';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, NaveGovernorAbi, NaveExecutionAbi, NaveDaoStakeAbi, Erc20Abi } from './contracts';

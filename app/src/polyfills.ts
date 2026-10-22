@@ -1,5 +1,9 @@
 import { Buffer } from 'buffer';
 
-window.Buffer = Buffer;
+globalThis.Buffer = Buffer;
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+}
 
+export { Buffer };
 export default {};

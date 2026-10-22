@@ -20,6 +20,7 @@
 // Frontend-used builders (deposits, proposals, voting, guardian config, constitution,
 // emergency pause/freeze, token ops, etc.) remain in `transactionBuilders.ts`.
 
+import { Buffer } from 'buffer';
 import BN from 'bn.js';
 import {
   PublicKey,

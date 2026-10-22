@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Buffer } from 'buffer';
 import { PublicKey } from '@solana/web3.js';
 import { formatUnits } from 'viem';
 import {

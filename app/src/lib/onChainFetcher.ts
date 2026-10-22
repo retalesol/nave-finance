@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { Connection, PublicKey, type AccountInfo } from '@solana/web3.js';
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 import { AccountLayout as SplTokenAccountLayout } from '@solana/spl-token';
