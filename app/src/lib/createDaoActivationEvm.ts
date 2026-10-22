@@ -272,7 +272,7 @@ export async function runEvmActivation(
  * `toggleAgents` reverts until someone pays its gas. On testnets the founder
  * sends a small stipend. Arc's stipend is 18-decimal native USDC.
  */
-async function fundExecutiveGas(chainId: EvmChainId, executive: Address): Promise<void> {
+export async function fundExecutiveGas(chainId: EvmChainId, executive: Address): Promise<void> {
   if (!isEvmTestnet(chainId)) return;
   const floor = chainId === 5042002 ? parseEther('0.02') : parseEther('0.001');
   const balance = await getBalance(wagmiConfig, { address: executive, chainId });

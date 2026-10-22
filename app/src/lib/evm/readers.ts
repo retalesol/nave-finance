@@ -556,19 +556,6 @@ interface EvmAssetInfoTuple {
   decimals?: number;
 }
 
-interface EvmAgentDetailsTuple {
-  0: Address;
-  1: boolean;
-  2: boolean;
-  3: number;
-  4: boolean;
-  authority?: Address;
-  active?: boolean;
-  nullified?: boolean;
-  status?: number;
-  operational?: boolean;
-}
-
 export interface EvmRegisteredAsset {
   address: Address;
   registered: boolean;
@@ -984,24 +971,23 @@ export async function fetchAgentSetEvm(
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'agentsEnabled' })),
     safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'reviewWindowSecs' })),
     ...EVM_AGENT_ROLES.map((_, role) =>
-      safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'agentDetails', args: [role] })),
+      // `agent(role)` is the on-chain getter. There is no `agentDetails`.
+      // A missing read used to mark every role Revoked.
+      safeRead(() => readContract(wagmiConfig, { ...t, functionName: 'agent', args: [role] })),
     ),
   ]);
 
   const agents: AgentStatusInfo[] = agentReads.map((raw, i) => {
-    const tuple = (raw as unknown as EvmAgentDetailsTuple | null) ?? null;
-    const authority = tuple ? ((tuple.authority ?? tuple[0]) as string) : '';
-    const active = tuple ? Boolean(tuple.active ?? tuple[1]) : false;
-    const nullified = tuple ? Boolean(tuple.nullified ?? tuple[2]) : false;
-    const status = tuple ? Number(tuple.status ?? tuple[3]) as AgentStatus : AgentStatus.Revoked;
-    const operational = tuple ? Boolean(tuple.operational ?? tuple[4]) : false;
+    const tuple = (raw as unknown as { authority?: string; operational?: boolean; 0?: string; 1?: boolean } | null) ?? null;
+    const authority = tuple ? String(tuple.authority ?? tuple[0] ?? '') : '';
+    const operational = tuple ? Boolean(tuple.operational ?? tuple[1]) : false;
     return {
       role: EVM_AGENT_ROLES[i],
       pubkey: authority,
       active: operational,
-      nullified,
+      nullified: false,
       canSign: operational,
-      status: active && !nullified ? status : AgentStatus.Revoked,
+      status: operational ? AgentStatus.Active : AgentStatus.Paused,
       actionsCount: 0,
       lastActionAt: 0,
     };

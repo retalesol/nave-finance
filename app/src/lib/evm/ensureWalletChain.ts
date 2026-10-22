@@ -38,24 +38,30 @@ async function providerChainId(provider: EthProvider | null): Promise<number | n
  * connection record and can say Sepolia while MetaMask is still on Arc.
  */
 async function readConnectorChainId(): Promise<number | null> {
+  // The provider's eth_chainId is the network the next transaction will hit.
+  // connector.getChainId() can stay on the chain wagmi last recorded after a
+  // switch that the wallet never finished, and a factory address from another
+  // chain then reverts Unauthorized (0x82b42900).
   const connector = getAccount(wagmiConfig).connector;
+  if (connector && typeof connector.getProvider === 'function') {
+    try {
+      const provider = await connector.getProvider() as EthProvider | undefined;
+      const id = await providerChainId(provider ?? null);
+      if (id != null) return id;
+    } catch {
+      // Fall through.
+    }
+  }
+  const injected = await providerChainId(ethereumProvider());
+  if (injected != null) return injected;
   if (connector) {
     try {
       return await connector.getChainId();
     } catch {
-      // Fall through to the injected provider.
-    }
-    if (typeof connector.getProvider === 'function') {
-      try {
-        const provider = await connector.getProvider() as EthProvider | undefined;
-        const id = await providerChainId(provider ?? null);
-        if (id != null) return id;
-      } catch {
-        // Fall through.
-      }
+      // No live chain id.
     }
   }
-  return providerChainId(ethereumProvider());
+  return null;
 }
 
 /** Make wagmi's connection record match the chain the connector is actually on. */

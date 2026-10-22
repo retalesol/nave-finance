@@ -45,6 +45,10 @@ export function walletRpcHint(chainId: EvmChainId): string | undefined {
  */
 export function explainEvmSendError(err: unknown, chainId: EvmChainId): string | null {
   const text = errorText(err);
+  if (/0x82b42900/.test(text)) {
+    const name = WAGMI_CHAIN_BY_ID[chainId]?.name ?? `chain ${chainId}`;
+    return `The treasury factory rejected this transaction (unauthorized). Your wallet must be on ${name} before you sign — on another network that same address is a different contract.`;
+  }
   if (/already pending/i.test(text)) {
     return 'A request is already open in your wallet. Approve or reject it, then try again.';
   }

@@ -11,8 +11,6 @@
 //! window between the transfer and the next revaluation.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke_signed;
-use anchor_lang::solana_program::system_instruction;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use sha2::{Digest, Sha256};
 
@@ -125,13 +123,16 @@ pub fn execute_governance_transfer_native_sol_handler(
         NaveError::InsufficientVaultBalance
     );
 
-    let bump = [ctx.accounts.vault_authority.bump];
-    let seeds: &[&[u8]] = &[VAULT_AUTHORITY_SEED, dao_key.as_ref(), &bump];
-    invoke_signed(
-        &system_instruction::transfer(&va_ai.key(), &recipient_ai.key(), amount),
-        &[va_ai.clone(), recipient_ai.clone(), ctx.accounts.system_program.to_account_info()],
-        &[seeds],
-    )?;
+    // vault_authority is a nave_core account, not a system account. A system
+    // transfer from it fails in the runtime with InvalidArgument. Move lamports
+    // directly, the same way the token-mint fee leaves this PDA.
+    **va_ai.try_borrow_mut_lamports()? = va_lamports
+        .checked_sub(amount)
+        .ok_or(NaveError::MathOverflow)?;
+    **recipient_ai.try_borrow_mut_lamports()? = recipient_ai
+        .lamports()
+        .checked_add(amount)
+        .ok_or(NaveError::MathOverflow)?;
 
     // Invalidate the NAV so deploy/strategy caps are re-checked against a fresh
     // revaluation rather than the now-stale (pre-transfer) figure.

@@ -22,6 +22,13 @@ test('a nameless-chain resource error tells the user which RPC to set', () => {
   assert.match(message ?? '', /https:\/\/rpc\.testnet\.arc\.io/);
 });
 
+test('an unauthorized factory revert names the network the wallet must be on', () => {
+  const err = new Error('The contract function "createDao" reverted with the following signature: 0x82b42900');
+  const message = explainEvmSendError(err, 84532);
+  assert.match(message ?? '', /Base Sepolia/);
+  assert.match(message ?? '', /unauthorized/i);
+});
+
 test('an already-pending wallet request is not described as a dead RPC', () => {
   const err = {
     shortMessage: 'Requested resource not available.',

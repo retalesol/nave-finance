@@ -5,7 +5,8 @@ import { PublicKey, Transaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { getAssociatedTokenAddressSync, NATIVE_MINT } from '@solana/spl-token';
 import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
-import { parseUnits } from 'viem';
+import { parseUnits, type Address } from 'viem';
+import { readContract } from '@wagmi/core';
 import Fi from '@/components/Fi';
 import ProposalStatusStepper from '@/components/governance/ProposalStatusStepper';
 import ProposalPayloadSummary from '@/components/governance/ProposalPayloadSummary';
@@ -18,6 +19,10 @@ import { useTreasuryAssets } from '@/hooks/useTreasuryAssets';
 import { isSelectableTreasuryMint } from '@/lib/treasuryAssetEligibility';
 import { isTreasuryOpsFamily } from '@/lib/chain/types';
 import { fetchDaoContracts, fetchExecutionRequestsEvm } from '@/lib/evm/readers';
+import { NaveTreasuryAbi } from '@/lib/evm/contracts';
+import { wagmiConfig } from '@/lib/evm/wagmi';
+import { fundExecutiveGas } from '@/lib/createDaoActivationEvm';
+import { ensureWalletOnChain } from '@/lib/evm/ensureWalletChain';
 import {
   buildApproveErc20Evm,
   buildCastVoteEvm,
@@ -483,6 +488,17 @@ export default function ProposalCard({
       setEnableError(null);
       setEnableMsg(null);
       try {
+        await ensureWalletOnChain(evmChainId);
+        const agent = await readContract(wagmiConfig, {
+          address: daoAddress as Address,
+          abi: NaveTreasuryAbi,
+          functionName: 'agent',
+          args: [0],
+          chainId: evmChainId,
+        });
+        const executive = (Array.isArray(agent) ? agent[0] : (agent as { authority: Address }).authority) as Address;
+        await fundExecutiveGas(evmChainId, executive);
+        // First enable is the Executive key calling toggleAgents(true).
         const { data, error } = await setAgentsEnabledViaProxyEvm(
           daoAddress,
           evmAddress,
@@ -490,17 +506,6 @@ export default function ProposalCard({
           true,
           evmChainId,
           chainFamily,
-          {
-            signGuardianAction: signTypedDataAsync
-              ? (typed) =>
-                  signTypedDataAsync({
-                    domain: typed.domain,
-                    types: typed.types,
-                    primaryType: typed.primaryType,
-                    message: typed.message,
-                  })
-              : undefined,
-          },
         );
         if (error || !data?.success) {
           setEnableError(error || data?.error || 'Failed to enable agents on-chain.');
