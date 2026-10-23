@@ -51,6 +51,24 @@ async function safeRead<T>(fn: () => Promise<T>): Promise<T | null> {
 }
 
 /**
+ * Wait for a mined receipt on the app's public RPC, not the wallet's saved
+ * endpoint. Arc wallets often still have the retired host, which never
+ * answers eth_getTransactionReceipt, so the deploy modal sat on Sign 1 or
+ * Sign 2 after the transaction was already on-chain.
+ * Replacement checks pull the whole block and stall on rate-limited RPCs.
+ */
+export async function waitForEvmReceipt(chainId: EvmChainId, hash: `0x${string}`) {
+  assertSupportedChain(chainId);
+  return publicClientForChain(chainId).waitForTransactionReceipt({
+    hash,
+    confirmations: 1,
+    checkReplacement: false,
+    pollingInterval: 2_000,
+    timeout: 90_000,
+  });
+}
+
+/**
  * Public client pinned to `chainId` (never the wallet's currently-connected
  * chain). Prefer the wagmi-configured transport; fall back to a one-off client
  * on the env RPC so Base/Robinhood stake balances cannot cross-wire.
@@ -243,16 +261,13 @@ export async function fetchBootstrapUsedEvm(chainId: EvmChainId, daoAddress: str
 }
 
 /**
- * Resolve the NaveDAOFactory address for a chain. First checks the env-var
- * configured address (EVM_FACTORY_ADDRESSES from programConfig); when that is
- * absent (e.g. dev server restarted before env was updated, or factory address
- * not yet in `.env.local`), falls back to reading `NaveProtocol.factory()`
- * on-chain — so the factory is always discoverable as long as the protocol
- * singleton address is configured.
+ * Resolve the NaveDAOFactory address for a chain. Testnet addresses are pinned
+ * in programConfig (hosted env overrides are ignored — they previously pointed
+ * at factories that revert Unauthorized). When that pin is absent, read
+ * `NaveProtocol.factory()` on-chain.
  */
 export async function fetchFactoryAddressEvm(chainId: EvmChainId): Promise<Address | null> {
   assertSupportedChain(chainId);
-  // Fast path: env var already has it
   const fromEnv = getFactoryAddress(chainId);
   if (fromEnv) return fromEnv;
   // Fallback: read factory() from the protocol singleton so the address is

@@ -15,7 +15,7 @@
 // landed but the wallet rejected setPolicyParameters) must skip the step(s)
 // that already landed on-chain, or it will double-submit them.
 
-import { getBalance, readContract, sendTransaction, waitForTransactionReceipt } from '@wagmi/core';
+import { getBalance, readContract, sendTransaction } from '@wagmi/core';
 import { parseEther, type Address } from 'viem';
 import { constitutionCapsBps, findVenue, strategyChainForEvmId } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
@@ -26,7 +26,7 @@ import {
   type EvmBuildResult,
   type EvmConstitutionAdapter,
 } from './evm/writers';
-import { fetchConstitutionEvm } from './evm/readers';
+import { fetchConstitutionEvm, waitForEvmReceipt } from './evm/readers';
 import { NaveTreasuryAbi } from './evm/contracts';
 import { toAddress } from './evm/addresses';
 import { wagmiConfig } from './evm/wagmi';
@@ -283,7 +283,7 @@ export async function fundExecutiveGas(chainId: EvmChainId, executive: Address):
     value: floor - balance.value,
     chainId,
   });
-  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId });
+  const receipt = await waitForEvmReceipt(chainId, hash);
   if (receipt.status !== 'success') {
     throw new Error(`Funding the executive agent with ${symbol} for gas failed.`);
   }

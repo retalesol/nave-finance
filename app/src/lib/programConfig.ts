@@ -755,42 +755,48 @@ export const EVM_PROTOCOL_REVENUE_WALLET: string | undefined = optionalEnvString
   'VITE_EVM_PROTOCOL_REVENUE_WALLET',
 );
 
-// ── Devnet / testnet fallback addresses ───────────────────────────────────────
-// Matches contracts/evm deployments/11155111.json and deployments/84532.json.
-// Env vars always take precedence.
-const TESTNET_PROTOCOL_FALLBACKS: Partial<Record<EvmChainId, string>> = {
+// ── Devnet / testnet deployment addresses ─────────────────────────────────────
+// Pinned to the stacks whose NaveProtocol.factory() matches and whose
+// createDao succeeds (contracts/evm/deployments/11155111.json, 84532.json,
+// robinhood testnet, arc/testnet/5042002.json).
+//
+// Hosted VITE_EVM_SEPOLIA_* / VITE_EVM_BASE_SEPOLIA_* values are intentionally
+// ignored. Production had drifted to Sepolia factory 0xd2eA… and Base Sepolia
+// factory 0x712a…, neither of which is the protocol's factory, and both revert
+// Unauthorized on createDao. Mainnet addresses stay env-only.
+const TESTNET_PROTOCOL_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   11155111: '0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1',
   84532: '0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6',
   46630: '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
   5042002: '0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255',
 };
-const TESTNET_FACTORY_FALLBACKS: Partial<Record<EvmChainId, string>> = {
+const TESTNET_FACTORY_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   11155111: '0x4F01c9616A48F14009EC083Ff4bb6e47EdDE0890',
   84532: '0xF53dE95ae1Fed92FFd9C9305E1716FD48EFcB776',
   46630: '0x303cE551De723cad43e1575C4D981C0E2b662b7F',
   5042002: '0xa7bd919a5249DD1Da6E02a6716D2Db2B2e0A99f0',
 };
 
-/** Per-chain NaveProtocol singleton addresses. Env var overrides the fallback. */
+/** Per-chain NaveProtocol singleton addresses. Mainnet is env-only; testnet is pinned. */
 export const EVM_PROTOCOL_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   1:        optionalEnvString('VITE_EVM_ETHEREUM_PROTOCOL_ADDRESS'),
   8453:     optionalEnvString('VITE_EVM_BASE_PROTOCOL_ADDRESS'),
   4663:     optionalEnvString('VITE_EVM_ROBINHOOD_PROTOCOL_ADDRESS'),
-  11155111: optionalEnvString('VITE_EVM_SEPOLIA_PROTOCOL_ADDRESS')   ?? TESTNET_PROTOCOL_FALLBACKS[11155111],
-  84532:    optionalEnvString('VITE_EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[84532],
-  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[46630],
-  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_PROTOCOL_ADDRESS') ?? TESTNET_PROTOCOL_FALLBACKS[5042002],
+  11155111: TESTNET_PROTOCOL_ADDRESSES[11155111],
+  84532:    TESTNET_PROTOCOL_ADDRESSES[84532],
+  46630:    TESTNET_PROTOCOL_ADDRESSES[46630],
+  5042002: TESTNET_PROTOCOL_ADDRESSES[5042002],
 };
 
-/** Per-chain NaveDAOFactory singleton addresses. Env var overrides the fallback. */
+/** Per-chain NaveDAOFactory singleton addresses. Mainnet is env-only; testnet is pinned. */
 export const EVM_FACTORY_ADDRESSES: Partial<Record<EvmChainId, string>> = {
   1:        optionalEnvString('VITE_EVM_ETHEREUM_FACTORY_ADDRESS'),
   8453:     optionalEnvString('VITE_EVM_BASE_FACTORY_ADDRESS'),
   4663:     optionalEnvString('VITE_EVM_ROBINHOOD_FACTORY_ADDRESS'),
-  11155111: optionalEnvString('VITE_EVM_SEPOLIA_FACTORY_ADDRESS')   ?? TESTNET_FACTORY_FALLBACKS[11155111],
-  84532:    optionalEnvString('VITE_EVM_BASE_SEPOLIA_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[84532],
-  46630:    optionalEnvString('VITE_EVM_ROBINHOOD_TESTNET_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[46630],
-  5042002: optionalEnvString('VITE_EVM_ARC_TESTNET_FACTORY_ADDRESS') ?? TESTNET_FACTORY_FALLBACKS[5042002],
+  11155111: TESTNET_FACTORY_ADDRESSES[11155111],
+  84532:    TESTNET_FACTORY_ADDRESSES[84532],
+  46630:    TESTNET_FACTORY_ADDRESSES[46630],
+  5042002: TESTNET_FACTORY_ADDRESSES[5042002],
 };
 
 // EVM adapter type/status re-exports (see strategyReadiness.ts for the source

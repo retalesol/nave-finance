@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import { Transaction, type Connection } from '@solana/web3.js';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { writeContract, waitForTransactionReceipt, getAccount } from '@wagmi/core';
+import { writeContract, getAccount } from '@wagmi/core';
 import { toast } from '../hooks/use-toast';
 import { USE_MOCKS, SOLANA_NETWORK, SOLANA_RPC_URL } from '../lib/programConfig';
 import type { TransactionBuildResult } from '../lib/transactionBuilders';
 import { wagmiConfig } from '../lib/evm/wagmi';
 import { ensureWalletOnChain, offerWalletChain } from '../lib/evm/ensureWalletChain';
-import { publicClientForChain } from '../lib/evm/readers';
+import { publicClientForChain, waitForEvmReceipt } from '../lib/evm/readers';
 import { explainEvmSendError } from '../lib/evm/walletRpcError';
 import { type EvmBuildResult } from '../lib/evm/writers';
 import { useChain } from './useChain';
@@ -823,7 +823,7 @@ export function useSendTransaction() {
           // FN-H5: viem resolves (does not throw) once a transaction is mined,
           // even when it reverted on-chain — check the receipt status explicitly
           // so a reverted deposit/vote/activation isn't reported as a success.
-          const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: req.chainId });
+          const receipt = await waitForEvmReceipt(req.chainId, hash);
           if (receipt.status !== 'success') {
             throw new Error('Transaction reverted on-chain');
           }

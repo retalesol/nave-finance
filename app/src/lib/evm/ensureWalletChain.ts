@@ -20,15 +20,43 @@ export function chainNameForId(chainId: number): string {
   return WAGMI_CHAIN_BY_ID[chainId as EvmChainId]?.name ?? `chain ${chainId}`;
 }
 
+/** eth_chainId should be instant. A dead wallet RPC (Arc's retired host) never answers. */
+const WALLET_CHAIN_ID_TIMEOUT_MS = 8_000;
+/** A real switch prompt can sit while the founder approves it. */
+const WALLET_SWITCH_TIMEOUT_MS = 45_000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('wallet-rpc-timeout')), ms);
+    work.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        window.clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+function isWalletRpcTimeout(err: unknown): boolean {
+  return err instanceof Error && err.message === 'wallet-rpc-timeout';
+}
+
 async function providerChainId(provider: EthProvider | null): Promise<number | null> {
   if (!provider) return null;
   try {
-    const hex = await provider.request({ method: 'eth_chainId' });
+    const hex = await withTimeout(
+      provider.request({ method: 'eth_chainId' }),
+      WALLET_CHAIN_ID_TIMEOUT_MS,
+    );
     if (typeof hex === 'string' && /^0x[0-9a-fA-F]+$/.test(hex)) {
       return Number.parseInt(hex, 16);
     }
   } catch {
-    // Provider locked or busy.
+    // Provider locked, busy, or its saved RPC never answered.
   }
   return null;
 }
@@ -108,7 +136,7 @@ export async function offerWalletChain(chainId: EvmChainId): Promise<void> {
   // wallets that call them get EIP-1474 -32002 "Requested resource not available".
   const rpc = walletRpcHint(chainId) ?? chain.rpcUrls.default.http[0];
   try {
-    await provider.request({
+    await withTimeout(provider.request({
       method: 'wallet_addEthereumChain',
       params: [{
         chainId: numberToHex(chainId),
@@ -119,7 +147,7 @@ export async function offerWalletChain(chainId: EvmChainId): Promise<void> {
           ? [chain.blockExplorers.default.url]
           : undefined,
       }],
-    });
+    }), WALLET_SWITCH_TIMEOUT_MS);
   } catch (err) {
     const kind = classifyChainSwitchError(err);
     if (kind === 'rejected') throw new Error(`Adding ${name} was declined in your wallet.`);
@@ -128,7 +156,15 @@ export async function offerWalletChain(chainId: EvmChainId): Promise<void> {
 }
 
 export async function ensureWalletOnChain(chainId: EvmChainId): Promise<void> {
-  if ((await readConnectorChainId()) === chainId) {
+  const live = await readConnectorChainId();
+  if (live === chainId) {
+    syncWagmiChain(chainId);
+    return;
+  }
+  // eth_chainId timed out, but the connector already recorded this chain
+  // (the usual case right after a mined transaction when the wallet's saved
+  // RPC host does not resolve). Don't open another switch that will also hang.
+  if (live == null && getAccount(wagmiConfig).chainId === chainId) {
     syncWagmiChain(chainId);
     return;
   }
@@ -158,8 +194,13 @@ async function performSwitch(chainId: EvmChainId): Promise<void> {
   const name = chainNameForId(chainId);
   const started = await readConnectorChainId();
   try {
-    await switchChain(wagmiConfig, { chainId });
+    await withTimeout(switchChain(wagmiConfig, { chainId }), WALLET_SWITCH_TIMEOUT_MS);
   } catch (err) {
+    if (isWalletRpcTimeout(err)) {
+      throw new Error(
+        `Switch to ${name} did not respond. In your wallet, set the ${name} RPC to ${walletRpcHint(chainId) ?? 'the public RPC'}, then try again.`,
+      );
+    }
     const kind = classifyChainSwitchError(err);
     if (kind === 'rejected') {
       throw new Error(`Switch to ${name} was declined in your wallet.`);
@@ -181,13 +222,21 @@ async function performSwitch(chainId: EvmChainId): Promise<void> {
 
   const deadline = Date.now() + 8_000;
   let live = await readConnectorChainId();
-  while (live !== chainId && Date.now() < deadline) {
+  while (live !== chainId && live != null && Date.now() < deadline) {
     await new Promise((resolve) => window.setTimeout(resolve, 200));
     live = await readConnectorChainId();
   }
+  if (live == null && getAccount(wagmiConfig).chainId === chainId) {
+    syncWagmiChain(chainId);
+    return;
+  }
   if (live !== chainId) {
-    const where = live != null ? chainNameForId(live) : 'another network';
-    throw new Error(`Your wallet is still on ${where}. Switch to ${name} before continuing.`);
+    if (live == null) {
+      throw new Error(
+        `Could not read the network from your wallet. Set the ${name} RPC to ${walletRpcHint(chainId) ?? 'the public RPC'}, then try again.`,
+      );
+    }
+    throw new Error(`Your wallet is still on ${chainNameForId(live)}. Switch to ${name} before continuing.`);
   }
   syncWagmiChain(chainId);
 }
@@ -213,11 +262,16 @@ async function requestWalletChain(provider: EthProvider | null, chainId: EvmChai
   }
   const rpc = walletRpcHint(chainId) ?? chain.rpcUrls.default.http[0];
   try {
-    await provider.request({
+    await withTimeout(provider.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: numberToHex(chainId) }],
-    });
+    }), WALLET_SWITCH_TIMEOUT_MS);
   } catch (err) {
+    if (isWalletRpcTimeout(err)) {
+      throw new Error(
+        `Switch to ${name} did not respond. In your wallet, set the ${name} RPC to ${rpc ?? 'the public RPC'}, then try again.`,
+      );
+    }
     const kind = classifyChainSwitchError(err);
     if (kind === 'rejected') throw new Error(`Switch to ${name} was declined in your wallet.`);
     if (kind === 'pending') {
@@ -229,7 +283,7 @@ async function requestWalletChain(provider: EthProvider | null, chainId: EvmChai
       throw new Error(`Could not switch your wallet to ${name}. Approve the network change in your wallet and try again.`);
     }
     try {
-      await provider.request({
+      await withTimeout(provider.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: numberToHex(chainId),
@@ -240,8 +294,11 @@ async function requestWalletChain(provider: EthProvider | null, chainId: EvmChai
             ? [chain.blockExplorers.default.url]
             : undefined,
         }],
-      });
+      }), WALLET_SWITCH_TIMEOUT_MS);
     } catch (addErr) {
+      if (isWalletRpcTimeout(addErr)) {
+        throw new Error(`Adding ${name} did not respond. Add it in your wallet, then try again.`);
+      }
       const addKind = classifyChainSwitchError(addErr);
       if (addKind === 'rejected') throw new Error(`Adding ${name} was declined in your wallet.`);
       if (addKind === 'pending') {

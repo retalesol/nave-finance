@@ -14,9 +14,10 @@ import {
 } from '@solana/spl-token';
 import { useAccount, useSignMessage } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { getTransactionReceipt, readContract } from '@wagmi/core';
+import { readContract } from '@wagmi/core';
 import { decodeEventLog, parseEther, parseUnits, type Address } from 'viem';
 import { wagmiConfig } from '../lib/evm/wagmi';
+import { publicClientForChain } from '../lib/evm/readers';
 import Fi from '../components/Fi';
 import TreasuryDeployModal, { type DeployStep, type DeployStepStatus } from '../components/TreasuryDeployModal';
 import ConstitutionStep, {
@@ -403,13 +404,13 @@ export default function CreateDAO() {
       const outcome = await tx.sendEvm(build, { successLabel: 'Treasury deployed', quietMock: true, quietToast: true });
 
       if (outcome.status === 'success') {
-        completeDeployStep('create');
+        patchDeployStep('create', 'running', 'Waiting for the network to confirm the treasury…');
         // 3. Recover the treasury address from the DaoCreated event so we can
         //    rebind agent keys, persist chain metadata, and register off-chain
         //    DAO metadata. The indexer also records the trio from the same event.
         let treasury: Address | null = null;
         if (outcome.txHash) {
-          const receipt = await getTransactionReceipt(wagmiConfig, { hash: outcome.txHash as `0x${string}`, chainId });
+          const receipt = await publicClientForChain(chainId).getTransactionReceipt({ hash: outcome.txHash as `0x${string}` });
           for (const log of receipt.logs) {
             try {
               const decoded = decodeEventLog({ abi: NaveDAOFactoryAbi, data: log.data, topics: log.topics });
@@ -453,6 +454,7 @@ export default function CreateDAO() {
         };
 
         currentSubStep = 'bind-keys';
+        patchDeployStep('create', 'running', 'Saving agent keys. Approve the signature in your wallet.');
         await ensureWalletOnChain(chainId);
         const bindMsg = `nave-evm-keybind|${daoRef}|${treasury.toLowerCase()}|${chainId}|${Date.now()}`;
         const bindSig = await signEvmMessage({ message: bindMsg });
@@ -485,7 +487,7 @@ export default function CreateDAO() {
           if (tokenOutcome.status !== 'success' || !tokenOutcome.txHash) {
             throw new Error(tokenOutcome.error || 'Treasury deployed, but governance token registration failed.');
           }
-          const tokenReceipt = await getTransactionReceipt(wagmiConfig, { hash: tokenOutcome.txHash as `0x${string}`, chainId });
+          const tokenReceipt = await publicClientForChain(chainId).getTransactionReceipt({ hash: tokenOutcome.txHash as `0x${string}` });
           for (const log of tokenReceipt.logs) {
             try {
               const decoded = decodeEventLog({ abi: NaveTreasuryAbi, data: log.data, topics: log.topics });
@@ -563,6 +565,7 @@ export default function CreateDAO() {
         //    register-dao verifies an EIP-191 personal_sign over a fresh single-use
         //    `nave-register-dao|…` challenge (built inside registerDao).
         currentSubStep = 'register-metadata';
+        patchDeployStep('create', 'running', 'Saving the treasury profile. Approve the signature in your wallet.');
         const { error: registerError } = await registerDao({
           dao_address: treasury,
           creator_wallet: founder,
@@ -1304,7 +1307,7 @@ export default function CreateDAO() {
         if (tokenOutcome.status !== 'success' || !tokenOutcome.txHash) {
           throw new Error(tokenOutcome.error || 'Governance token registration failed.');
         }
-        const tokenReceipt = await getTransactionReceipt(wagmiConfig, { hash: tokenOutcome.txHash as `0x${string}`, chainId });
+        const tokenReceipt = await publicClientForChain(chainId).getTransactionReceipt({ hash: tokenOutcome.txHash as `0x${string}` });
         for (const log of tokenReceipt.logs) {
           try {
             const decoded = decodeEventLog({ abi: NaveTreasuryAbi, data: log.data, topics: log.topics });

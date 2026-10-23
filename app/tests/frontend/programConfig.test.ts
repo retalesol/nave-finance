@@ -18,6 +18,8 @@ import {
   MANAGEMENT_FEE_BPS_FROZEN,
   PERFORMANCE_FEE_BPS,
   FROZEN_PERFORMANCE_FEE_BPS,
+  EVM_FACTORY_ADDRESSES,
+  EVM_PROTOCOL_ADDRESSES,
 } from '../../src/lib/programConfig';
 
 test('config constants: 2.5% fee split 1% / 1% / 0.5%, 6-decimal NAVE, bridge enabled', () => {
@@ -94,4 +96,13 @@ test('treasury fees: no management fee, 15% of realized yield, frozen matches', 
   assert.equal(MANAGEMENT_FEE_BPS_FROZEN, 0);
   assert.equal(PERFORMANCE_FEE_BPS, 1500);
   assert.equal(FROZEN_PERFORMANCE_FEE_BPS, 1500);
+});
+
+test('testnet DAO stacks stay on the factories that accept createDao', () => {
+  assert.equal(EVM_PROTOCOL_ADDRESSES[11155111], '0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1');
+  assert.equal(EVM_FACTORY_ADDRESSES[11155111], '0x4F01c9616A48F14009EC083Ff4bb6e47EdDE0890');
+  assert.equal(EVM_PROTOCOL_ADDRESSES[84532], '0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6');
+  assert.equal(EVM_FACTORY_ADDRESSES[84532], '0xF53dE95ae1Fed92FFd9C9305E1716FD48EFcB776');
+  assert.equal(EVM_FACTORY_ADDRESSES[46630], '0x303cE551De723cad43e1575C4D981C0E2b662b7F');
+  assert.equal(EVM_FACTORY_ADDRESSES[5042002], '0xa7bd919a5249DD1Da6E02a6716D2Db2B2e0A99f0');
 });

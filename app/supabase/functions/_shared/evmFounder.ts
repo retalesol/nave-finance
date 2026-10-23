@@ -144,11 +144,17 @@ export function hasEvmRpc(chainId: number): boolean {
   return evmRpcUrlFor(chainId) !== null;
 }
 
-/** Configured NaveProtocol address (lowercased) for `chainId` (env or testnet fallback), or null when unset. */
+/**
+ * NaveProtocol address (lowercased) for `chainId`.
+ * Testnet stacks are pinned to `fallbackProtocolAddress`. A hosted
+ * `EVM_SEPOLIA_PROTOCOL_ADDRESS` / `EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS` once
+ * pointed at retired protocols, so bind rejected treasuries created on the
+ * live factory. Mainnet stays env-only.
+ */
 export function evmProtocolAddressFor(chainId: number): string | null {
   const cfg = EVM_RPC_CONFIG[chainId];
   if (!cfg) return null;
-  const raw = Deno.env.get(cfg.protocolEnv)?.trim() || cfg.fallbackProtocolAddress;
+  const raw = (cfg.fallbackProtocolAddress ?? Deno.env.get(cfg.protocolEnv)?.trim());
   if (!raw || !/^0x[0-9a-fA-F]{40}$/.test(raw)) return null;
   return raw.toLowerCase();
 }
