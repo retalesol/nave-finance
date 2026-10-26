@@ -151,6 +151,10 @@ const VITE_ENV = {
   VITE_PAY_SOLANA_USDC_MINT: import.meta.env.VITE_PAY_SOLANA_USDC_MINT,
   VITE_PAY_EVM_ROUTERS: import.meta.env.VITE_PAY_EVM_ROUTERS,
   VITE_PAY_EVM_USDC: import.meta.env.VITE_PAY_EVM_USDC,
+
+  // Publishable key only. Secret, webhook, and the server copy of this key
+  // live in Supabase, never in Vite.
+  VITE_MOONPAY_PUBLISHABLE_KEY: import.meta.env.VITE_MOONPAY_PUBLISHABLE_KEY ?? '',
 } as const satisfies Record<string, unknown>;
 
 export type ViteEnvKey = keyof typeof VITE_ENV;

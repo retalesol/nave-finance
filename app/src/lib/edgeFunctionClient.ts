@@ -1283,3 +1283,23 @@ export async function askForAnotherCheck(input: {
     asset: 'asset',
   });
 }
+
+export interface MoonPaySignResponse {
+  signature: string;
+}
+
+/**
+ * HMAC-sign a MoonPay widget URL. `chainId` is the EVM chain id, or null on
+ * Solana. The edge function returns the raw base64 signature.
+ */
+export async function signMoonPayUrl(
+  url: string,
+  daoAddress: string,
+  chainId: number | null,
+): Promise<{ data: MoonPaySignResponse | null; error: string | null }> {
+  return callEdgeFunction<MoonPaySignResponse>('moonpay-sign', {
+    url,
+    daoAddress,
+    chainId,
+  });
+}

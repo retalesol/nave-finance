@@ -114,3 +114,12 @@ verify_jwt = false
 # Operator console. Password and session are checked inside the function.
 # The anon key is not authorization. No user JWT.
 verify_jwt = false
+
+[functions.moonpay-sign]
+# Browser-reachable. Anon-key bearer, same header as the other browser POSTs.
+# The handler only signs a MoonPay buy URL locked to that treasury.
+verify_jwt = false
+
+[functions.moonpay-webhook]
+# MoonPay posts without a Supabase JWT. Auth is Moonpay-Signature-V2.
+verify_jwt = false

@@ -198,6 +198,41 @@ function toUiAmount(amount: bigint, decimals: number): number {
   return Number(formatUnits(amount, decimals));
 }
 
+/** Allowlist fallback row. Stablecoins are priced at $1. */
+function allowlistedBalanceRow(
+  asset: EvmAllowedAsset,
+  balance: bigint,
+  treasury: string,
+): TreasuryAssetRow {
+  const uiBalance = toUiAmount(balance, asset.decimals);
+  const priceUsd = asset.assetClass === 'stablecoin' ? 1 : null;
+  const valueUsd = priceUsd != null ? uiBalance * priceUsd : 0;
+  const assetKind = evmAssetKind(asset);
+  return {
+    mint: asset.address,
+    decimals: asset.decimals,
+    pythFeedHex: '0'.repeat(64),
+    isStablecoin: asset.assetClass === 'stablecoin',
+    assetKind,
+    enabled: true,
+    deposited: 0,
+    deployedCapital: 0,
+    lastValuedUsd: Math.round(valueUsd * 1_000_000),
+    lastValuedAt: 0,
+    vaultBalanceBaseUnits: 0,
+    assetVault: treasury,
+    symbol: asset.symbol,
+    name: asset.name,
+    assetKindLabel: ASSET_KIND_LABEL[assetKind] ?? 'Other',
+    priceUsd,
+    priceSource: priceUsd != null ? 'Stablecoin parity' : 'Unpriced',
+    uiBalance,
+    valueUsd,
+    allocationPct: 0,
+    onChainRegistered: false,
+  };
+}
+
 interface TreasuryAssetsData {
   assets: TreasuryAssetRow[];
   onchainNavUsd: number | null;
@@ -281,7 +316,8 @@ async function fetchTreasuryAssetsData(
 
         // Backwards-compatible fallback for older test deployments that do not
         // expose getRegisteredAssets yet: detect non-zero allowlisted balances.
-        if (rows.length === 0) {
+        const registeredRowsPresent = rows.length > 0;
+        if (!registeredRowsPresent) {
           const balances = await Promise.all(
             allowed.map(async (asset) => {
               try {
@@ -302,36 +338,37 @@ async function fetchTreasuryAssetsData(
             .map((asset, idx) => {
               const balance = balances[idx] ?? 0n;
               if (balance <= 0n) return null;
-              const uiBalance = toUiAmount(balance, asset.decimals);
-              const priceUsd = asset.assetClass === 'stablecoin' ? 1 : null;
-              const valueUsd = priceUsd != null ? uiBalance * priceUsd : 0;
-              const assetKind = evmAssetKind(asset);
-              const row: TreasuryAssetRow = {
-                mint: asset.address,
-                decimals: asset.decimals,
-                pythFeedHex: '0'.repeat(64),
-                isStablecoin: asset.assetClass === 'stablecoin',
-                assetKind,
-                enabled: true,
-                deposited: 0,
-                deployedCapital: 0,
-                lastValuedUsd: Math.round(valueUsd * 1_000_000),
-                lastValuedAt: 0,
-                vaultBalanceBaseUnits: 0,
-                assetVault: daoAddress,
-                symbol: asset.symbol,
-                name: asset.name,
-                assetKindLabel: ASSET_KIND_LABEL[assetKind] ?? 'Other',
-                priceUsd,
-                priceSource: priceUsd != null ? 'Stablecoin parity' : 'Unpriced',
-                uiBalance,
-                valueUsd,
-                allocationPct: 0,
-                onChainRegistered: false,
-              };
-              return row;
+              return allowlistedBalanceRow(asset, balance, daoAddress);
             })
             .filter((row): row is TreasuryAssetRow => row !== null);
+        }
+
+        // A raw ERC-20 transfer (MoonPay) does not register the token. When
+        // other assets are already registered, still count allowlisted USDC
+        // held by the treasury. Skip it when that address is already a row.
+        // The empty-registry path above already scanned every allowlisted token.
+        if (registeredRowsPresent) {
+          const usdc = allowed.find((asset) => asset.symbol.toUpperCase() === 'USDC');
+          const alreadyListed = usdc != null && rows.some(
+            (row) => row.mint.toLowerCase() === usdc.address.toLowerCase(),
+          );
+          if (usdc && !alreadyListed) {
+            let balance = 0n;
+            try {
+              balance = await readContract(wagmiConfig, {
+                address: usdc.address as Address,
+                abi: Erc20Abi,
+                functionName: 'balanceOf',
+                args: [daoAddress as Address],
+                chainId,
+              }) as bigint;
+            } catch {
+              balance = 0n;
+            }
+            if (balance > 0n) {
+              rows.push(allowlistedBalanceRow(usdc, balance, daoAddress));
+            }
+          }
         }
 
         const wrappedNative = allowed.find((asset) => asset.symbol.toUpperCase() === 'WETH');

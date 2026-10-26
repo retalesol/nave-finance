@@ -10,6 +10,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 import Fi from './Fi';
+import { MoonPayBuyPanel } from './MoonPayBuyPanel';
 import NaveModal from './NaveModal';
 import { useSendTransaction } from '../hooks/useSendTransaction';
 import { useChain } from '../hooks/useChain';
@@ -296,7 +297,7 @@ export function TreasuryDepositBanner({
   );
 }
 
-type DepositTab = 'wallet' | 'address';
+type DepositTab = 'wallet' | 'address' | 'buy';
 
 /**
  * Shared deposit flow — QR-first modal used by Dashboard and Assets.
@@ -605,7 +606,7 @@ export function DepositFlowModal({
     <NaveModal
       open
       title={modalTitle}
-      subtitle="Deposit from your connected wallet, or send tokens to the treasury address."
+      subtitle="Deposit from your connected wallet, buy with a card, or send tokens to the treasury address."
       icon="arrow-down-to-bracket"
       onClose={onClose}
       maxWidth={480}
@@ -624,7 +625,8 @@ export function DepositFlowModal({
         >
           {([
             { id: 'address' as const, label: 'Receive' },
-            { id: 'wallet' as const, label: 'From Wallet' },
+            { id: 'wallet' as const, label: 'Wallet' },
+            { id: 'buy' as const, label: 'Buy' },
           ]).map((t) => {
             const active = tab === t.id;
             return (
@@ -908,6 +910,10 @@ export function DepositFlowModal({
               </button>
             </div>
           </div>
+        )}
+
+        {tab === 'buy' && (
+          <MoonPayBuyPanel daoAddress={daoAddress} />
         )}
       </div>
     </NaveModal>
