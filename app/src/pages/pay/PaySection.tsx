@@ -307,7 +307,11 @@ export default function PaySection() {
   return <PayHome snapshot={booksQuery.data} treasuryGroupId={treasuryGroupId as string} />;
   })();
 
-  return page;
+  return (
+    <div key={pathKey(location.pathname)} className="nave-route">
+      {page}
+    </div>
+  );
 }
 
 function PayFrame({

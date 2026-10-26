@@ -1,67 +1,31 @@
-import { motion, AnimatePresence, type Variants } from 'framer-motion';
+import type { Variants } from 'framer-motion';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { isPayAppPath } from '../lib/pay/paths';
 
 // Cubic-bezier easings typed as 4-tuples so framer-motion's `Easing` type
 // accepts them (a bare array widens to `number[]`, which is not assignable).
 const EASE_STANDARD: [number, number, number, number] = [0.4, 0, 0.2, 1];
 const EASE_IN: [number, number, number, number] = [0.4, 0, 1, 1];
 
-/**
- * Wraps page content with a Framer Motion enter/exit transition.
- *
- * - Calm rise on enter (6px upward over 0.35s, matching demo.html `@keyframes rise`)
- * - Clean fade-out on exit
- * - Keyed by pathname so transitions fire on every route change
- */
-const PAGE_VARIANTS: Variants = {
-  initial: {
-    opacity: 0,
-    y: 6,
-  },
-  animate: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.35,
-      ease: EASE_STANDARD,
-    },
-  },
-  exit: {
-    opacity: 0,
-    y: -3,
-    transition: {
-      duration: 0.14,
-      ease: EASE_IN,
-    },
-  },
-};
-
 interface PageTransitionProps {
-  children: React.ReactNode;
-  /** Set to true for routes inside NaveLayout (prevents layout shift) */
+  children: ReactNode;
+  /** Kept so existing call sites compile. The shell no longer shifts around the page. */
   layoutChild?: boolean;
 }
 
-export function PageTransition({ children, layoutChild }: PageTransitionProps) {
-  const location = useLocation();
-
-  if (location.pathname === '/') {
-    return <>{children}</>;
-  }
-
+/**
+ * One fade for the incoming page. The previous page is not held on screen,
+ * and Nave Pay keeps a single shell so moving between books does not remount it.
+ */
+export function PageTransition({ children }: PageTransitionProps) {
+  const { pathname } = useLocation();
+  if (pathname === '/') return <>{children}</>;
+  const key = isPayAppPath(pathname) ? 'pay' : pathname;
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        variants={PAGE_VARIANTS}
-        initial="initial"
-        animate="animate"
-        exit="exit"
-        style={layoutChild ? { minHeight: '100%' } : undefined}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <div key={key} className="nave-route">
+      {children}
+    </div>
   );
 }
 
@@ -76,22 +40,19 @@ export const staggerContainer: Variants = {
   initial: {},
   animate: {
     transition: {
-      staggerChildren: 0.04,
-      delayChildren: 0.04,
+      staggerChildren: 0,
+      delayChildren: 0,
     },
   },
 };
 
-/** Stagger child — used on each child inside a stagger container */
+/** Child of a stagger container. Sections arrive with the page, not after it. */
 export const staggerChild: Variants = {
-  initial: { opacity: 0, y: 6 },
+  initial: { opacity: 1, y: 0 },
   animate: {
     opacity: 1,
     y: 0,
-    transition: {
-      duration: 0.3,
-      ease: EASE_STANDARD,
-    },
+    transition: { duration: 0 },
   },
 };
 

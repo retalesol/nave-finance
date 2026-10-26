@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
@@ -33,6 +33,7 @@ import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { getDaoPublicUrl } from '../lib/daoSlug';
 import { PAY_NAV, PAY_NAV_ADVANCED, PAY_NAV_PRIMARY, payNavLabel } from '../lib/pay/nav';
 import { isPayAppPath } from '../lib/pay/paths';
+import { prefetchAppRoute } from '../lib/routePrefetch';
 
 interface NaveLayoutProps {
   children: React.ReactNode;
@@ -133,6 +134,11 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const [payMoreOpen, setPayMoreOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const { daoAddress, setDaoAddress, isMockMode } = useDaoContext();
   const { dao, loading: daoLoading } = useDaoRegistry(daoAddress);
@@ -486,6 +492,8 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
                 to={path}
                 state={state}
                 onClick={() => setSidebarOpen(false)}
+                onPointerEnter={() => prefetchAppRoute(path)}
+                onPointerDown={() => prefetchAppRoute(path)}
                 className={`navitem no-underline${active ? ' active' : ''}`}
                 data-onboarding-id={onboardingId}
                 style={{
@@ -829,8 +837,10 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
 
         {/* Page content */}
         <main
+          ref={mainRef}
           className="flex-1 overflow-y-auto"
           style={{
+            scrollBehavior: 'auto',
             backgroundColor: '#FAF8F3',
             paddingBottom: isMobile ? 'calc(76px + env(safe-area-inset-bottom, 0px))' : undefined,
           }}
@@ -869,6 +879,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               <Link
                 key={path}
                 to={path}
+                onPointerDown={() => prefetchAppRoute(path)}
                 className="flex flex-col items-center justify-center gap-0.5 no-underline rounded-[8px] transition-colors"
                 style={{
                   padding: '5px 9px',

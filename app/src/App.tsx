@@ -1,4 +1,4 @@
-import { useMemo, lazy, Suspense } from 'react';
+import { useEffect, useMemo, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
@@ -18,14 +18,25 @@ import WalletGate from './components/WalletGate';
 import { isPayAppPath } from './lib/pay/paths';
 import NaveWalletModal from './components/NaveWalletModal';
 import ErrorBoundary from './components/ErrorBoundary';
+import { PageSkeleton } from './components/NaveSkeletons';
 import { PageTransition } from './components/PageTransition';
+import { prefetchAppRoutes } from './lib/routePrefetch';
 import { DaoProvider } from './hooks/useDaoContext';
 import { ChainProvider } from './hooks/useChain';
 import { SOLANA_RPC_URL } from './lib/programConfig';
 import { wagmiConfig } from './lib/evm/wagmi';
 
-// Shared React Query client for the EVM (wagmi) data layer.
-const queryClient = new QueryClient();
+// Shared React Query client. A short fresh window keeps a page you just left
+// from refetching and flashing its skeleton on the way back.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 20_000,
+      gcTime: 5 * 60_000,
+      retry: 1,
+    },
+  },
+});
 
 /* ── Lazy-loaded pages (route-level code splitting) ──── */
 const Index = lazy(() => import('./pages/Index'));
@@ -50,30 +61,22 @@ const PublicInvoice = lazy(() => import('./pages/pay/PublicInvoice'));
 const CompassPage = lazy(() => import('./pages/compass/CompassPage'));
 
 /* ── Loading fallback ──────────────────────────────────── */
-function PageLoader() {
+function PageLoader({ contained = false }: { contained?: boolean }) {
+  if (contained) return <PageSkeleton />;
   return (
     <div
       className="flex items-center justify-center"
-      style={{ minHeight: '100vh', backgroundColor: 'hsl(var(--background))' }}
+      style={{ minHeight: '40vh', backgroundColor: 'hsl(var(--background))' }}
     >
-      <div className="text-center">
-        <div
-          className="mx-auto mb-4 h-8 w-8 rounded-full border-2 animate-spin"
-          style={{
-            borderColor: 'hsl(var(--border))',
-            borderTopColor: 'hsl(var(--foreground))',
-          }}
-        />
-        <p
-          style={{
-            fontSize: '13px',
-            color: 'hsl(var(--muted-foreground))',
-            fontFamily: 'var(--font-body)',
-          }}
-        >
-          Loading…
-        </p>
-      </div>
+      <p
+        style={{
+          fontSize: '13px',
+          color: 'hsl(var(--muted-foreground))',
+          fontFamily: 'var(--font-body)',
+        }}
+      >
+        Loading…
+      </p>
     </div>
   );
 }
@@ -113,6 +116,18 @@ function LegacyRedirect({ to }: { to: string }) {
 
 function AppRoutes() {
   const location = useLocation();
+  useEffect(() => {
+    const warm = () => prefetchAppRoutes([
+      '/overview', '/money', '/agents', '/decisions', '/rules', '/settings', '/pay', '/bridge', '/stake',
+    ]);
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const id = idle(() => warm(), { timeout: 1500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = window.setTimeout(warm, 300);
+    return () => window.clearTimeout(timer);
+  }, []);
   const isAppRoute =
     isPayAppPath(location.pathname) ||
     APP_ROUTES.some(r => location.pathname.startsWith(r));
@@ -121,8 +136,8 @@ function AppRoutes() {
     return (
       <WalletGate>
         <NaveLayout>
-            <Suspense fallback={<PageLoader />}>
-              <PageTransition layoutChild>
+            <PageTransition layoutChild>
+              <Suspense fallback={<PageLoader contained />}>
                 <Routes location={location}>
                   <Route path="/overview" element={<Dashboard />} />
                   <Route path="/dashboard" element={<LegacyRedirect to="/overview" />} />
@@ -144,20 +159,19 @@ function AppRoutes() {
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/team" element={<LegacyRedirect to="/settings" />} />
                   <Route path="/tokens" element={<Tokens />} />
-                  <Route path="/pay" element={<PaySection />} />
                   <Route path="/pay/*" element={<PaySection />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </PageTransition>
-            </Suspense>
+              </Suspense>
+            </PageTransition>
           </NaveLayout>
       </WalletGate>
     );
   }
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <PageTransition>
+    <PageTransition>
+      <Suspense fallback={<PageLoader />}>
         <Routes location={location}>
           <Route path="/" element={<Index />} />
           <Route path="/treasuries" element={<TreasuryLobby />} />
@@ -169,10 +183,10 @@ function AppRoutes() {
           <Route path="/simulation" element={<Simulation />} />
           <Route path="/pay/i/:token" element={<PublicInvoice />} />
           <Route path="/compass" element={<CompassPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </PageTransition>
-    </Suspense>
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+      </Suspense>
+    </PageTransition>
   );
 }
 

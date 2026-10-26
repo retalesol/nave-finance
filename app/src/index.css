@@ -483,8 +483,23 @@
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes nave-route-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.nave-route {
+  animation: nave-route-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nave-route .animate-fade-in,
+.nave-route .animate-slide-up,
+.nave-route .animate-slide-right {
+  animation: none;
 }
 
 @keyframes slide-in-right {
@@ -544,7 +559,7 @@
   to   { opacity: 1; transform: translateX(0); }
 }
 
-.animate-fade-in     { animation: fade-in var(--duration-slow) var(--ease-ui) both; }
+.animate-fade-in     { animation: fade-in var(--duration-base) var(--ease-ui) both; }
 .animate-slide-up    { animation: slide-in-up var(--duration-slow) var(--ease-ui) both; }
 .animate-slide-right { animation: slide-in-right var(--duration-slow) var(--ease-ui) both; }
 
@@ -1598,6 +1613,13 @@ input[type='range']::-moz-range-thumb {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nave-route,
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-slide-right,
+  .nave-shimmer {
+    animation: none !important;
+  }
   .home .hero-h1,
   .home .hero-sub,
   .home .hero-cta,
