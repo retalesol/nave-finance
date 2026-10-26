@@ -15,6 +15,7 @@ import { describeWalletError, setWalletConnectionError } from './lib/walletError
 
 import NaveLayout from './components/NaveLayout';
 import WalletGate from './components/WalletGate';
+import { isPayAppPath } from './lib/pay/paths';
 import NaveWalletModal from './components/NaveWalletModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PageTransition } from './components/PageTransition';
@@ -44,6 +45,8 @@ const DaoSlugPage = lazy(() => import('./pages/DaoSlugPage'));
 const DocsIndex = lazy(() => import('./pages/DocsIndex'));
 const DocsPage = lazy(() => import('./pages/DocsPage'));
 const Simulation = lazy(() => import('./pages/Simulation'));
+const PaySection = lazy(() => import('./pages/pay/PaySection'));
+const PublicInvoice = lazy(() => import('./pages/pay/PublicInvoice'));
 
 /* ── Loading fallback ──────────────────────────────────── */
 function PageLoader() {
@@ -109,7 +112,9 @@ function LegacyRedirect({ to }: { to: string }) {
 
 function AppRoutes() {
   const location = useLocation();
-  const isAppRoute = APP_ROUTES.some(r => location.pathname.startsWith(r));
+  const isAppRoute =
+    isPayAppPath(location.pathname) ||
+    APP_ROUTES.some(r => location.pathname.startsWith(r));
 
   if (isAppRoute) {
     return (
@@ -138,6 +143,8 @@ function AppRoutes() {
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/team" element={<LegacyRedirect to="/settings" />} />
                   <Route path="/tokens" element={<Tokens />} />
+                  <Route path="/pay" element={<PaySection />} />
+                  <Route path="/pay/*" element={<PaySection />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </PageTransition>
@@ -159,6 +166,7 @@ function AppRoutes() {
           <Route path="/docs" element={<DocsIndex />} />
           <Route path="/docs/:slug" element={<DocsPage />} />
           <Route path="/simulation" element={<Simulation />} />
+          <Route path="/pay/i/:token" element={<PublicInvoice />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </PageTransition>

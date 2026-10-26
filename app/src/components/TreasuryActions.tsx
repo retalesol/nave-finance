@@ -197,6 +197,20 @@ function ModalHeader({
   );
 }
 
+export interface PayProposalDraft {
+  proposalIndex: number;
+  recipient: string;
+  amount: string;
+  reason: string;
+}
+
+function withBillMemo(text: string, billId?: string): string {
+  if (!billId) return text;
+  const tag = `bill:${billId}`;
+  if (text.includes(tag)) return text;
+  return `${text} ${tag}`.trim();
+}
+
 /* ── Propose a payment — build a Transfer proposal from the treasury ── */
 export function CreateTransactionModal({
   daoAddress,
@@ -206,6 +220,11 @@ export function CreateTransactionModal({
   assets,
   nfts = [],
   initialNftMint,
+  initialRecipient,
+  initialAmount,
+  initialReason,
+  billId,
+  preferredSymbol,
   onClose,
   onCreated,
 }: {
@@ -216,8 +235,14 @@ export function CreateTransactionModal({
   assets: TreasuryAssetRow[];
   nfts?: TreasuryNft[];
   initialNftMint?: string | null;
+  initialRecipient?: string;
+  initialAmount?: string;
+  initialReason?: string;
+  /** Kept on the proposal description so the bill id stays in the memo. */
+  billId?: string;
+  preferredSymbol?: string;
   onClose: () => void;
-  onCreated?: () => void;
+  onCreated?: (draft?: PayProposalDraft) => void;
 }) {
   const { publicKey } = useWallet();
   const { chainKind, evmChainId } = useChain();
@@ -229,9 +254,9 @@ export function CreateTransactionModal({
   const [mode, setMode] = useState<'token' | 'nft'>(
     initialNftMint && hasNfts ? 'nft' : 'token',
   );
-  const [recipient, setRecipient] = useState('');
-  const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('');
+  const [recipient, setRecipient] = useState(initialRecipient ?? '');
+  const [amount, setAmount] = useState(initialAmount ?? '');
+  const [reason, setReason] = useState(initialReason ?? '');
   const [assetMint, setAssetMint] = useState('');
   const [nftMint, setNftMint] = useState(initialNftMint ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -276,10 +301,13 @@ export function CreateTransactionModal({
   const canSubmit = mode === 'token' ? canSubmitToken : canSubmitNft;
 
   useEffect(() => {
-    if (transferableAssets.length && !transferableAssets.some((a) => a.mint === assetMint)) {
-      setAssetMint(transferableAssets[0].mint);
-    }
-  }, [transferableAssets, assetMint]);
+    if (!transferableAssets.length) return;
+    if (transferableAssets.some((asset) => asset.mint === assetMint)) return;
+    const preferred = preferredSymbol
+      ? transferableAssets.find((asset) => asset.symbol.toLowerCase() === preferredSymbol.toLowerCase())
+      : undefined;
+    setAssetMint((preferred ?? transferableAssets[0]).mint);
+  }, [transferableAssets, assetMint, preferredSymbol]);
 
   useEffect(() => {
     if (registeredNfts.length && !registeredNfts.some((n) => n.mint === nftMint)) {
@@ -466,10 +494,19 @@ export function CreateTransactionModal({
         ? `${trimmedReason.slice(0, 48)} — ${amount} ${selectedAsset.symbol}`
         : `Send ${amount} ${selectedAsset.symbol}`
       : 'Payment proposal';
-    const proposalDescription = selectedAsset
-      ? trimmedReason ||
-        `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`
-      : trimmedReason;
+    const proposalDescription = withBillMemo(
+      selectedAsset
+        ? trimmedReason ||
+          `Transfer ${amount} ${selectedAsset.symbol} from the treasury to ${recipient.trim()}`
+        : trimmedReason,
+      billId,
+    );
+    const drafted: PayProposalDraft = {
+      proposalIndex: proposalCount,
+      recipient: recipient.trim(),
+      amount: amount.trim(),
+      reason: trimmedReason,
+    };
 
     // ── EVM: create a Transfer governance proposal on the governor ──────────
     if (chainKind === 'evm') {
@@ -537,7 +574,7 @@ export function CreateTransactionModal({
               );
             }
           }
-          onCreated?.();
+          onCreated?.(drafted);
           onClose();
         } else {
           setError(outcome.error || 'Failed to create payment proposal.');
@@ -617,12 +654,12 @@ export function CreateTransactionModal({
       );
 
       const outcome = await tx.send([result], { successLabel: 'Payment proposal created' });
-      if (outcome.status === 'success' || outcome.status === 'mock') {
-        onCreated?.();
-        onClose();
-      } else {
-        setError(outcome.error || 'Failed to create payment proposal.');
-      }
+        if (outcome.status === 'success' || outcome.status === 'mock') {
+          onCreated?.(drafted);
+          onClose();
+        } else {
+          setError(outcome.error || 'Failed to create payment proposal.');
+        }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create payment proposal.');
     } finally {
@@ -659,7 +696,9 @@ export function CreateTransactionModal({
       <div style={panel} role="dialog" aria-modal="true" aria-label="Propose a payment">
         <ModalHeader
           title="Propose a payment"
-          subtitle="Your agents check it against the rules before anyone votes."
+          subtitle={billId
+            ? 'This proposes a treasury payment for a Nave Pay bill. It does not send the funds.'
+            : 'Your agents check it against the rules before anyone votes.'}
           onClose={onClose}
         />
         <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>

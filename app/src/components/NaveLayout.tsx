@@ -7,7 +7,6 @@ import { useConnectModal } from '@rainbow-me/rainbowkit';
 import NaveModal from './NaveModal';
 import Fi from './Fi';
 import NotificationFeed from './NotificationFeed';
-import RobinhoodTreasuryNotice from './RobinhoodTreasuryNotice';
 import { DepositFundsModal } from './DepositFlow';
 
 import { useDaoContext } from '../hooks/useDaoContext';
@@ -32,6 +31,8 @@ import {
 import { activeEvmChainId, SOLANA_NETWORK } from '../lib/programConfig';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { getDaoPublicUrl } from '../lib/daoSlug';
+import { PAY_NAV, PAY_NAV_ADVANCED, PAY_NAV_PRIMARY, payNavLabel } from '../lib/pay/nav';
+import { isPayAppPath } from '../lib/pay/paths';
 
 interface NaveLayoutProps {
   children: React.ReactNode;
@@ -121,6 +122,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const isMobile = useIsMobile();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [productModalOpen, setProductModalOpen] = useState(false);
   const [pendingChainFamily, setPendingChainFamily] = useState<ChainFamily | null>(null);
   const [treasuryModalOpen, setTreasuryModalOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
@@ -128,6 +130,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [depositModalOpen, setDepositModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [payMoreOpen, setPayMoreOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,9 +155,19 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const daoName = dao?.name || (daoLoading ? 'Loading...' : 'Select a treasury');
   const daoShortName = dao?.name ? shortDaoName(dao.name) : '';
   const isTokenGov = dao?.governanceType === 'token';
-  const navItems = NAV.filter((item) => !item.tokenGovOnly || isTokenGov);
-  const activeNavPath = navPathForActiveState(location.pathname);
-  const activeNavLabel = NAV.find((item) => !item.state && item.path === activeNavPath)?.label ?? 'Overview';
+  const inPay = isPayAppPath(location.pathname);
+  const payAdvancedOpen = payMoreOpen || PAY_NAV_ADVANCED.some((item) => (
+    location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+  ));
+  const navItems = inPay
+    ? (payAdvancedOpen ? PAY_NAV : PAY_NAV_PRIMARY)
+    : NAV.filter((item) => !item.tokenGovOnly || isTokenGov);
+  const activeNavPath = inPay
+    ? (location.pathname.length > 1 ? location.pathname.replace(/\/+$/, '') : location.pathname)
+    : navPathForActiveState(location.pathname);
+  const activeNavLabel = inPay
+    ? payNavLabel(location.pathname)
+    : NAV.find((item) => !item.state && item.path === activeNavPath)?.label ?? 'Overview';
 
   const agentsActive = dao ? !dao.frozen && (dao.agentsEnabled ?? true) : true;
   const agentsFrozen = dao?.frozen ?? false;
@@ -275,6 +288,16 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
     setAccountModalOpen(false);
   }
 
+  function chooseProduct(next: 'nave' | 'pay') {
+    setProductModalOpen(false);
+    setSidebarOpen(false);
+    if (next === 'pay') {
+      if (!inPay) navigate('/pay');
+      return;
+    }
+    if (inPay) navigate('/overview');
+  }
+
   function handleAddFundsClick() {
     if (daoAddress) {
       setDepositModalOpen(true);
@@ -285,6 +308,8 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
 
   const searchCommands = useMemo(
     () => [
+      { label: 'Open Nave', keywords: 'nave treasury overview home', run: () => navigate('/overview') },
+      { label: 'Open Nave Pay', keywords: 'pay books invoices nave pay', run: () => navigate('/pay') },
       { label: 'Go to Overview', keywords: 'overview dashboard home balance', run: () => navigate('/overview') },
       { label: 'Go to Money & assets', keywords: 'money assets holdings aave compound venues', run: () => navigate('/money') },
       { label: 'Go to Agents', keywords: 'agents coordinator investor guardrail watcher diary freeze', run: () => navigate('/agents') },
@@ -357,12 +382,16 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           padding: '22px 18px',
         }}
       >
-        {/* Brand (.brand) */}
+        {/* Brand — product menu. Tile stays; the word is the active product. */}
         <div className="flex items-center justify-between" style={{ marginBottom: '28px' }}>
-          <Link
-            to="/"
-            className="no-underline flex items-center"
-            style={{ gap: '8px', textDecoration: 'none' }}
+          <button
+            type="button"
+            onClick={() => setProductModalOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={productModalOpen}
+            title="Switch product"
+            className="flex items-center bg-transparent border-0 p-0 cursor-pointer min-w-0"
+            style={{ gap: '8px' }}
           >
             <i
               style={{
@@ -386,14 +415,18 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               style={{
                 fontFamily: 'var(--font-display)',
                 fontWeight: 400,
-                fontSize: '19px',
+                fontSize: '18px',
                 color: '#111827',
                 letterSpacing: '-0.02em',
+                whiteSpace: 'nowrap',
               }}
             >
-              Nave
+              {inPay ? 'Nave Pay' : 'Nave'}
             </b>
-          </Link>
+            <span style={{ color: '#6B7280', fontSize: '12px', flexShrink: 0 }} aria-hidden>
+              ⌄
+            </span>
+          </button>
           <button
             type="button"
             className="lg:hidden p-1 rounded"
@@ -441,7 +474,9 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           className="main flex flex-col overflow-y-auto"
           style={{ gap: '2px' }}
         >
-          {navItems.map(({ label, path, onboardingId, state }) => {
+          {navItems.map((item) => {
+            const { label, path, onboardingId } = item;
+            const state = 'state' in item ? item.state : undefined;
             const active = !state && activeNavPath === path;
             const isAgentsItem = path === '/agents';
             const isDecisionsItem = path === '/decisions';
@@ -526,6 +561,28 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
             );
           })}
 
+          {inPay && (
+            <button
+              type="button"
+              onClick={() => setPayMoreOpen((open) => !open)}
+              className="navitem bg-transparent border-0 cursor-pointer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                textAlign: 'left',
+                marginTop: '8px',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                color: '#6B7280',
+              }}
+            >
+              {payAdvancedOpen ? 'Fewer books' : 'More books'}
+            </button>
+          )}
+
+          {!inPay && (
           <button
             type="button"
             onClick={() => {
@@ -559,6 +616,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           >
             + New treasury
           </button>
+          )}
         </nav>
 
         {/* Sidebar Footer (.side-foot) */}
@@ -648,10 +706,24 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
             >
               <Fi icon="bars" style={{ fontSize: '16px' }} />
             </button>
-            <span className="crumb truncate" style={{ fontSize: '13px', color: '#9CA3AF' }}>
-              <b style={{ color: '#111827', fontWeight: 600 }}>{activeNavLabel}</b>
-              {daoShortName ? ` · ${daoShortName}` : ''}
-            </span>
+            {inPay ? (
+              <span className="crumb truncate" style={{ fontSize: '13px', color: '#9CA3AF' }}>
+                <Link to="/overview" style={{ color: '#9CA3AF', textDecoration: 'none' }}>Home</Link>
+                <span> &gt; </span>
+                <Link to="/pay" style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}>Nave Pay</Link>
+                {activeNavLabel !== 'Home' ? (
+                  <>
+                    <span> &gt; </span>
+                    <b style={{ color: '#111827', fontWeight: 600 }}>{activeNavLabel}</b>
+                  </>
+                ) : null}
+              </span>
+            ) : (
+              <span className="crumb truncate" style={{ fontSize: '13px', color: '#9CA3AF' }}>
+                <b style={{ color: '#111827', fontWeight: 600 }}>{activeNavLabel}</b>
+                {daoShortName ? ` · ${daoShortName}` : ''}
+              </span>
+            )}
           </div>
 
           <div
@@ -773,11 +845,6 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
                   }
             }
           >
-            {chainFamily === 'robinhood' && (
-              <div className="mb-4">
-                <RobinhoodTreasuryNotice />
-              </div>
-            )}
             {children}
           </div>
         </main>
@@ -815,6 +882,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               </Link>
             );
           })}
+          {!inPay && (
           <Link
             to="/create-dao"
             className="flex flex-col items-center justify-center gap-0.5 no-underline rounded-[8px] transition-colors"
@@ -829,8 +897,69 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
             <Fi icon="plus" style={{ fontSize: '13px', color: 'inherit' }} />
             <span>New</span>
           </Link>
+          )}
         </nav>
       )}
+
+      {/* ── Product menu (logo) ───────────────────────────────── */}
+      <NaveModal
+        open={productModalOpen}
+        title="Switch product"
+        subtitle="Nave is the treasury. Nave Pay is invoices and books for this treasury."
+        onClose={() => setProductModalOpen(false)}
+        maxWidth={520}
+      >
+        <div style={{ padding: '18px 22px 22px' }}>
+          {([
+            {
+              id: 'nave' as const,
+              label: 'Nave',
+              description: 'Treasury',
+              current: !inPay,
+            },
+            {
+              id: 'pay' as const,
+              label: 'Nave Pay',
+              description: 'Invoices and books',
+              current: inPay,
+            },
+          ]).map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => chooseProduct(product.id)}
+              className="w-full text-left flex items-center gap-3 group"
+              style={{
+                padding: '12px 4px',
+                borderBottom: '1px solid #EFEAE0',
+              }}
+            >
+              <div className="flex-1 min-w-0">
+                <div
+                  className="group-hover:text-brass transition-colors"
+                  style={{ fontSize: '14px', fontWeight: 500, color: '#111827' }}
+                >
+                  {product.label}
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#6B7280', marginTop: '2px' }}>
+                  {product.description}
+                </div>
+              </div>
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  fontSize: '12px',
+                  fontWeight: product.current ? 600 : 400,
+                  color: product.current ? '#2F7D4F' : '#6B7280',
+                  flexShrink: 0,
+                }}
+              >
+                {product.current ? 'Current' : 'Open →'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </NaveModal>
 
       {/* ── Treasury Switcher Modal ───────────────────────────── */}
       <NaveModal
@@ -910,7 +1039,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
                       setDaoAddress(item.daoOnchainAddress);
                       setTreasuryModalOpen(false);
                       setSidebarOpen(false);
-                      navigate('/overview', { state: { treasuryAddress: item.daoOnchainAddress } });
+                      navigate(inPay ? '/pay' : '/overview', { state: { treasuryAddress: item.daoOnchainAddress } });
                     }}
                     className="w-full text-left flex items-center gap-3 transition-colors group"
                     style={{

@@ -145,6 +145,12 @@ const VITE_ENV = {
   VITE_EVM_ARC_TESTNET_AAVE_ADAPTER_ADDRESS: import.meta.env.VITE_EVM_ARC_TESTNET_AAVE_ADAPTER_ADDRESS,
   VITE_EVM_ARC_TESTNET_COMPOUND_ADAPTER_ADDRESS: import.meta.env.VITE_EVM_ARC_TESTNET_COMPOUND_ADAPTER_ADDRESS,
   VITE_EVM_ARC_TESTNET_BALANCER_ADAPTER_ADDRESS: import.meta.env.VITE_EVM_ARC_TESTNET_BALANCER_ADAPTER_ADDRESS,
+
+  // Optional Nave Pay payment addresses. Empty means invoices show the
+  // canonical treasury address. A missing router is not a forwarder.
+  VITE_PAY_SOLANA_USDC_MINT: import.meta.env.VITE_PAY_SOLANA_USDC_MINT,
+  VITE_PAY_EVM_ROUTERS: import.meta.env.VITE_PAY_EVM_ROUTERS,
+  VITE_PAY_EVM_USDC: import.meta.env.VITE_PAY_EVM_USDC,
 } as const satisfies Record<string, unknown>;
 
 export type ViteEnvKey = keyof typeof VITE_ENV;

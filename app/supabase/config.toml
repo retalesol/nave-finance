@@ -97,3 +97,15 @@ verify_jwt = false
 [functions.founder-metadata]
 # Browser-reachable. Founder wallet challenge; service role writes logos, token images, and hidden assets.
 verify_jwt = false
+
+[functions.pay-book-settlement]
+# Service-role settlement writer. Callers send X-Indexer-Secret. No user JWT.
+verify_jwt = false
+
+[functions.pay-mercury]
+# Browser-reachable Mercury read-only sync. Wallet header plus service-role token storage. GET only.
+verify_jwt = false
+
+[functions.pay-claim]
+# Public invoice and subscription checkout. Verifies the USDC transfer, then books it.
+verify_jwt = false
