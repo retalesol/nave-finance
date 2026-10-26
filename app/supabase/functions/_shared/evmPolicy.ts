@@ -78,6 +78,13 @@ const TREASURY_POLICY_ABI = [
   },
   {
     type: "function",
+    name: "linkedTreasury",
+    stateMutability: "view",
+    inputs: [{ name: "destChainId", type: "uint256" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
     name: "position",
     stateMutability: "view",
     inputs: [{ name: "adapter", type: "address" }],
@@ -393,6 +400,28 @@ export async function readEvmHeldAssets(
   } catch (e) {
     console.error("[evmPolicy] held asset read failed", dao, chainId, e instanceof Error ? e.message : e);
     return null;
+  }
+}
+
+/** True when this treasury has linked its own address on `destChainId`. */
+export async function readEvmSameAddressLink(
+  chainId: number,
+  dao: string,
+  destChainId: number,
+): Promise<boolean> {
+  const treasury = asAddress(dao);
+  const client = clientFor(chainId);
+  if (!treasury || !client || !destChainId) return false;
+  try {
+    const linked = await client.readContract({
+      address: treasury,
+      abi: TREASURY_POLICY_ABI,
+      functionName: "linkedTreasury",
+      args: [BigInt(destChainId)],
+    });
+    return String(linked).toLowerCase() === treasury.toLowerCase();
+  } catch {
+    return false;
   }
 }
 

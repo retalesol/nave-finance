@@ -52,7 +52,7 @@ function pickChain(rpc: string, chains: ChainModule) {
   return chains.testnetBradbury;
 }
 
-/** Prefer the SDK name. genlayer-js 1.1.8 has no name for status 14, which Bradbury returns while a leader is still working. */
+/** Prefer the SDK name. An unnamed numeric status stays as its code. */
 function receiptLabel(name: unknown, code: unknown): string {
   if (typeof name === "string" && name.trim()) return name;
   if (typeof code === "number" && Number.isFinite(code)) return String(code);
@@ -82,8 +82,8 @@ export async function createGenLayerSession(): Promise<GenLayerSession | null> {
   const halt = address(envGet("NAVE_GENLAYER_HALT_ADDRESS"));
   if (!rpc || !key || !charter || !venue || !halt) return null;
 
-  const sdk = await import("npm:genlayer-js@1.1.8");
-  const chains = await import("npm:genlayer-js@1.1.8/chains") as ChainModule;
+  const sdk = await import("npm:genlayer-js@2.0.0-rc.2");
+  const chains = await import("npm:genlayer-js@2.0.0-rc.2/chains") as ChainModule;
   const account = sdk.createAccount(key);
   const client = sdk.createClient({
     chain: pickChain(rpc, chains),
@@ -91,6 +91,23 @@ export async function createGenLayerSession(): Promise<GenLayerSession | null> {
     endpoint: rpc,
   });
   const addresses: Record<ReviewKind, `0x${string}`> = { charter, venue, halt };
+  // Phase 2 rejects a zero fee. This is the distribution that deployed the
+  // three contracts. The SDK quotes feeValue from FeeManager. The contract
+  // still receives user value 0.
+  const fees = {
+    distribution: {
+      leaderTimeunitsAllocation: 100n,
+      validatorTimeunitsAllocation: 200n,
+      appealRounds: 0n,
+      executionBudgetPerRound: 25000000000000000n,
+      executionConsumed: 0n,
+      totalMessageFees: 0n,
+      rotations: [3n],
+      maxPriceGenPerTimeUnit: 2n,
+      storageFeeMaxGasPrice: 300000000n,
+      receiptFeeMaxGasPrice: 300000000n,
+    },
+  };
 
   return {
     async read(kind, functionName, args) {
@@ -107,6 +124,7 @@ export async function createGenLayerSession(): Promise<GenLayerSession | null> {
         functionName,
         args,
         value: 0n,
+        fees,
       });
       const id = txIdOf(tx);
       if (!id) throw new Error("GenLayer did not return a transaction id");

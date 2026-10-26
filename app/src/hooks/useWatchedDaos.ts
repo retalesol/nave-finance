@@ -6,9 +6,20 @@ import {
   type DaoRegistryRow,
 } from '../lib/supabaseClient';
 import { watchDaoWithAccessGate, type DaoAccessMessageSigner } from '../lib/edgeFunctionClient';
-import { isEvmChainId } from '../lib/chain/types';
+import { evmTarget, isEvmAddress, isEvmChainId } from '../lib/chain/types';
 import { useChain } from './useChain';
-import { daoOnchainAddressEquals, normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
+import { recallDaoChainId } from '../lib/chain/daoChainMemory';
+import {
+  daoOnchainAddressEquals,
+  normalizeDaoOnchainAddressForQuery,
+  normalizeWalletAddress,
+} from '../lib/chain/daoOnchainAddress';
+
+export interface TreasuryChainChip {
+  chainId: number | null;
+  daoOnchainAddress: string;
+  label: string;
+}
 
 export interface WatchedDao {
   daoOnchainAddress: string;
@@ -21,6 +32,9 @@ export interface WatchedDao {
   logoUrl: string;
   governanceType: string;
   chainId: number | null;
+  treasuryGroupId: string | null;
+  /** One entry per activated chain. Present even when chain_id was missing. */
+  chains: TreasuryChainChip[];
 }
 
 interface UseWatchedDaosResult {
@@ -56,6 +70,81 @@ function setLocalWatchedDaos(addresses: string[], walletAddress: string | null) 
   localStorage.setItem(getLocalStorageKey(walletAddress), JSON.stringify(addresses));
 }
 
+function chipLabel(chainId: number | null, address: string): string {
+  if (typeof chainId === 'number' && isEvmChainId(chainId)) return evmTarget(chainId).label;
+  if (isEvmAddress(address)) return 'EVM';
+  return 'Solana';
+}
+
+function resolveChainId(address: string, registryChain: number | null | undefined): number | null {
+  if (typeof registryChain === 'number' && isEvmChainId(registryChain)) return registryChain;
+  if (isEvmAddress(address)) return recallDaoChainId(address);
+  return null;
+}
+
+function rowToWatched(reg: DaoRegistryRow | undefined | null, address: string, label = '', addedAt = ''): WatchedDao {
+  const chainId = resolveChainId(address, reg?.chain_id);
+  const daoOnchainAddress = normalizeDaoOnchainAddressForQuery(address) || address;
+  return {
+    daoOnchainAddress,
+    label,
+    addedAt,
+    name: reg?.name || 'Unknown DAO',
+    slug: reg?.slug ?? null,
+    description: reg?.description || '',
+    logoUrl: reg?.logo_url || '',
+    governanceType: reg?.governance_type || 'wallet',
+    chainId,
+    treasuryGroupId: reg?.treasury_group_id ?? null,
+    chains: [{
+      chainId,
+      daoOnchainAddress,
+      label: chipLabel(chainId, daoOnchainAddress),
+    }],
+  };
+}
+
+function groupKey(dao: WatchedDao): string {
+  if (dao.treasuryGroupId) return `g:${dao.treasuryGroupId}`;
+  if (dao.slug) return `s:${dao.slug}`;
+  return `a:${normalizeDaoOnchainAddressForQuery(dao.daoOnchainAddress)}`;
+}
+
+/** One card per treasury group, with a chip for every chain row we found. */
+export function groupWatchedDaos(rows: WatchedDao[]): WatchedDao[] {
+  const groups = new Map<string, WatchedDao>();
+  for (const row of rows) {
+    const key = groupKey(row);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, { ...row, chains: [...row.chains] });
+      continue;
+    }
+    for (const chip of row.chains) {
+      const seen = existing.chains.some(
+        (c) => c.chainId === chip.chainId && daoOnchainAddressEquals(c.daoOnchainAddress, chip.daoOnchainAddress),
+      );
+      if (!seen) existing.chains.push(chip);
+    }
+    if (!existing.slug && row.slug) existing.slug = row.slug;
+    if (existing.name === 'Unknown DAO' && row.name !== 'Unknown DAO') existing.name = row.name;
+  }
+  return [...groups.values()];
+}
+
+async function registryRowsFor(addresses: string[]): Promise<DaoRegistryRow[]> {
+  if (addresses.length === 0) return [];
+  const { data } = await supabase.from('dao_registry').select('*').in('dao_onchain_address', addresses);
+  return (data as DaoRegistryRow[] | null) ?? [];
+}
+
+async function siblingRows(groupIds: string[]): Promise<DaoRegistryRow[]> {
+  if (groupIds.length === 0) return [];
+  const { data, error } = await supabase.from('dao_registry').select('*').in('treasury_group_id', groupIds);
+  if (error || !data) return [];
+  return data as DaoRegistryRow[];
+}
+
 /**
  * @param walletAddress  Connected wallet for the active chain (null when disconnected).
  * @param signWatchMessage  Signer used ONLY inside `watchDao` (explicit user
@@ -70,6 +159,7 @@ export function useWatchedDaos(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { rememberDaoChain } = useChain();
+  const wallet = normalizeWalletAddress(walletAddress);
 
   const rememberRegistryChain = useCallback((reg: DaoRegistryRow | undefined | null) => {
     if (reg && typeof reg.chain_id === 'number' && isEvmChainId(reg.chain_id)) {
@@ -78,38 +168,21 @@ export function useWatchedDaos(
   }, [rememberDaoChain]);
 
   // Keep the Supabase wallet header in sync so wallet-scoped RLS resolves.
+  // EVM addresses are lowercased; Solana stays base58.
   useEffect(() => {
-    setSupabaseWalletAddress(walletAddress);
-  }, [walletAddress]);
+    setSupabaseWalletAddress(wallet);
+  }, [wallet]);
 
   const fetchData = useCallback(async () => {
-    if (!walletAddress) {
-      // Fall back to global localStorage when no wallet connected
+    if (!wallet) {
       const localAddresses = getLocalWatchedDaos(null);
       if (localAddresses.length > 0) {
-        const { data: registries } = await supabase
-          .from('dao_registry')
-          .select('*')
-          .in('dao_onchain_address', localAddresses);
-
-        const watchedDaos: WatchedDao[] = localAddresses.map((addr) => {
-          const reg = (registries as DaoRegistryRow[] | null)?.find(
-            (r) => daoOnchainAddressEquals(r.dao_onchain_address, addr),
-          );
+        const registries = await registryRowsFor(localAddresses);
+        const watchedDaos = groupWatchedDaos(localAddresses.map((addr) => {
+          const reg = registries.find((r) => daoOnchainAddressEquals(r.dao_onchain_address, addr));
           rememberRegistryChain(reg);
-          return {
-            daoOnchainAddress: addr,
-            label: '',
-            addedAt: '',
-            name: reg?.name || 'Unknown DAO',
-            slug: reg?.slug ?? null,
-            description: reg?.description || '',
-            logoUrl: reg?.logo_url || '',
-            governanceType: reg?.governance_type || 'wallet',
-            chainId: reg?.chain_id ?? null,
-          };
-        });
-
+          return rowToWatched(reg, addr);
+        }));
         setDaos(watchedDaos);
       } else {
         setDaos([]);
@@ -121,40 +194,22 @@ export function useWatchedDaos(
     setLoading(true);
     setError(null);
 
-    // Immediately show cached data for this wallet while Supabase fetches
-    const cachedAddresses = getLocalWatchedDaos(walletAddress);
+    const cachedAddresses = getLocalWatchedDaos(wallet);
     if (cachedAddresses.length > 0) {
-      const { data: cachedRegs } = await supabase
-        .from('dao_registry')
-        .select('*')
-        .in('dao_onchain_address', cachedAddresses);
-      const cachedDaos: WatchedDao[] = cachedAddresses.map((addr) => {
-        const reg = (cachedRegs as DaoRegistryRow[] | null)?.find(
-          (r) => daoOnchainAddressEquals(r.dao_onchain_address, addr),
-        );
+      const cachedRegs = await registryRowsFor(cachedAddresses);
+      setDaos(groupWatchedDaos(cachedAddresses.map((addr) => {
+        const reg = cachedRegs.find((r) => daoOnchainAddressEquals(r.dao_onchain_address, addr));
         rememberRegistryChain(reg);
-        return {
-          daoOnchainAddress: addr,
-          label: '',
-          addedAt: '',
-          name: reg?.name || 'Unknown DAO',
-          slug: reg?.slug ?? null,
-          description: reg?.description || '',
-          logoUrl: reg?.logo_url || '',
-          governanceType: reg?.governance_type || 'wallet',
-          chainId: reg?.chain_id ?? null,
-        };
-      });
-      setDaos(cachedDaos);
+        return rowToWatched(reg, addr);
+      })));
       setLoading(false);
     }
 
     try {
-      // Fetch from Supabase for authoritative, up-to-date list
       const { data: watched, error: watchError } = await supabase
         .from('watched_daos')
         .select('*')
-        .eq('wallet_address', walletAddress)
+        .eq('wallet_address', wallet)
         .order('added_at', { ascending: false });
 
       if (watchError) {
@@ -166,44 +221,65 @@ export function useWatchedDaos(
       const watchedRows = (watched as WatchedDaoRow[]) || [];
       const daoAddresses = watchedRows.map((w) => normalizeDaoOnchainAddressForQuery(w.dao_onchain_address));
 
-      // Fetch DAO metadata
-      let registries: DaoRegistryRow[] = [];
-      if (daoAddresses.length > 0) {
-        const { data: regData } = await supabase
-          .from('dao_registry')
-          .select('*')
-          .in('dao_onchain_address', daoAddresses);
-        registries = (regData as DaoRegistryRow[]) || [];
+      const { data: founded } = await supabase
+        .from('dao_registry')
+        .select('*')
+        .eq('creator_wallet', wallet);
+
+      let registries = await registryRowsFor(daoAddresses);
+      const founderRows = (founded as DaoRegistryRow[] | null) ?? [];
+      registries = [...registries, ...founderRows];
+
+      const groupIds = [...new Set(registries.map((r) => r.treasury_group_id).filter((id): id is string => !!id))];
+      registries = [...registries, ...await siblingRows(groupIds)];
+
+      for (const reg of registries) rememberRegistryChain(reg);
+
+      const byAddress = new Map<string, DaoRegistryRow[]>();
+      for (const reg of registries) {
+        const key = normalizeDaoOnchainAddressForQuery(reg.dao_onchain_address);
+        const list = byAddress.get(key) ?? [];
+        list.push(reg);
+        byAddress.set(key, list);
       }
 
-      const result: WatchedDao[] = watchedRows.map((w) => {
-        const reg = registries.find(
-          (r) => daoOnchainAddressEquals(r.dao_onchain_address, w.dao_onchain_address),
-        );
-        rememberRegistryChain(reg);
-        return {
-          daoOnchainAddress: w.dao_onchain_address,
-          label: w.label,
-          addedAt: w.added_at,
-          name: reg?.name || 'Unknown DAO',
-          slug: reg?.slug ?? null,
-          description: reg?.description || '',
-          logoUrl: reg?.logo_url || '',
-          governanceType: reg?.governance_type || 'wallet',
-          chainId: reg?.chain_id ?? null,
-        };
-      });
+      const flat: WatchedDao[] = [];
+      const pushReg = (reg: DaoRegistryRow, label = '', addedAt = '') => {
+        flat.push(rowToWatched(reg, reg.dao_onchain_address, label, addedAt));
+      };
 
-      setDaos(result);
+      if (watchedRows.length === 0 && founderRows.length === 0) {
+        setDaos([]);
+        setLocalWatchedDaos([], wallet);
+        return;
+      }
 
-      // Sync to wallet-scoped localStorage as backup
-      setLocalWatchedDaos(daoAddresses, walletAddress);
+      for (const w of watchedRows) {
+        const key = normalizeDaoOnchainAddressForQuery(w.dao_onchain_address);
+        const regs = byAddress.get(key);
+        if (regs && regs.length > 0) {
+          for (const reg of regs) pushReg(reg, w.label, w.added_at);
+        } else {
+          flat.push(rowToWatched(null, w.dao_onchain_address, w.label, w.added_at));
+        }
+      }
+      for (const reg of founderRows) pushReg(reg);
+      for (const reg of registries) {
+        if (reg.treasury_group_id && groupIds.includes(reg.treasury_group_id)) pushReg(reg);
+      }
+
+      const grouped = groupWatchedDaos(flat);
+      setDaos(grouped);
+      setLocalWatchedDaos(
+        grouped.flatMap((g) => g.chains.map((c) => c.daoOnchainAddress)),
+        wallet,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch watched DAOs');
     } finally {
       setLoading(false);
     }
-  }, [walletAddress, rememberRegistryChain]);
+  }, [wallet, rememberRegistryChain]);
 
   useEffect(() => {
     fetchData();
@@ -212,54 +288,54 @@ export function useWatchedDaos(
   const watchDao = useCallback(
     async (daoAddress: string, label = '') => {
       const daoKey = normalizeDaoOnchainAddressForQuery(daoAddress) || daoAddress.trim();
-      if (walletAddress && signWatchMessage) {
-        // One wallet prompt per explicit watch action (signed single-use challenge).
+      if (wallet && signWatchMessage) {
         const { data, error: watchError } = await watchDaoWithAccessGate(
           daoKey,
-          walletAddress,
+          wallet,
           label,
           signWatchMessage,
         );
         if (watchError || !data?.allowed) {
           throw new Error(watchError || 'Access denied for this DAO.');
         }
-      } else if (walletAddress) {
-        // Wallet cannot sign messages: keep the watch local-only (non-fatal).
+      } else if (wallet) {
         console.warn('[useWatchedDaos] wallet cannot sign; watch-dao sync skipped (local only).');
       }
 
-      // Also persist to wallet-scoped localStorage
-      const local = getLocalWatchedDaos(walletAddress);
+      const local = getLocalWatchedDaos(wallet);
       if (!local.some((a) => daoOnchainAddressEquals(a, daoKey))) {
-        setLocalWatchedDaos([...local, daoKey], walletAddress);
+        setLocalWatchedDaos([...local, daoKey], wallet);
       }
 
       await fetchData();
     },
-    [walletAddress, signWatchMessage, fetchData],
+    [wallet, signWatchMessage, fetchData],
   );
 
   const unwatchDao = useCallback(
     async (daoAddress: string) => {
       const daoKey = normalizeDaoOnchainAddressForQuery(daoAddress) || daoAddress.trim();
-      if (walletAddress) {
+      if (wallet) {
         await supabase
           .from('watched_daos')
           .delete()
-          .eq('wallet_address', walletAddress)
+          .eq('wallet_address', wallet)
           .eq('dao_onchain_address', daoKey);
       }
 
-      const local = getLocalWatchedDaos(walletAddress);
-      setLocalWatchedDaos(local.filter((a) => !daoOnchainAddressEquals(a, daoKey)), walletAddress);
+      const local = getLocalWatchedDaos(wallet);
+      setLocalWatchedDaos(local.filter((a) => !daoOnchainAddressEquals(a, daoKey)), wallet);
 
       await fetchData();
     },
-    [walletAddress, fetchData],
+    [wallet, fetchData],
   );
 
   const isWatching = useCallback(
-    (daoAddress: string) => daos.some((d) => daoOnchainAddressEquals(d.daoOnchainAddress, daoAddress)),
+    (daoAddress: string) => daos.some((d) =>
+      daoOnchainAddressEquals(d.daoOnchainAddress, daoAddress)
+      || d.chains.some((c) => daoOnchainAddressEquals(c.daoOnchainAddress, daoAddress)),
+    ),
     [daos],
   );
 

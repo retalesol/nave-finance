@@ -123,8 +123,6 @@ contract DeployAdapters is Script {
         console2.log("AaveV3Adapter    ", out.aave);
         console2.log("CompoundV3Adapter", out.compound);
         console2.log("BalancerAdapter  ", out.balancer);
-
-        _writeArtifact(chainId, protocol, out);
     }
 
     /// Write deployments/adapters-<chainId>.json for the cutover orchestrator and

@@ -11,11 +11,177 @@
 
 import { Buffer } from 'buffer';
 import type { Abi, Address } from 'viem';
-import { decodeAbiParameters, encodeAbiParameters, zeroAddress } from 'viem';
+import { decodeAbiParameters, encodeAbiParameters, parseEther, zeroAddress } from 'viem';
+import { readContract } from '@wagmi/core';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, NaveGovernorAbi, NaveExecutionAbi, NaveDaoStakeAbi, Erc20Abi } from './contracts';
+import { publicClientForChain } from './readers';
 import { getFactoryAddress, toAddress, assertSupportedChain } from './addresses';
 import { isEvmTestnet, type EvmChainId } from '../chain/types';
 import { isConfiguredEvmAdapterAddress } from '../programConfig';
+import { wagmiConfig } from './wagmi';
+
+/** 0.001 ETH activation fee. Gas is extra. Arc pays the USDC equivalent. */
+export const ACTIVATION_FEE_WEI = parseEther('0.001');
+/** Arc Testnet ERC-20 USDC (6 decimals). Not the 18-decimal native gas token. */
+export const ARC_TESTNET_USDC = '0x3600000000000000000000000000000000000000' as Address;
+/**
+ * Documented Arc testnet ETH price when the on-chain oracle has no fresh
+ * WETH price: $2,500.00 per ETH, in micro-USD. 0.001 ETH = 2_500_000 USDC.
+ */
+export const ARC_TESTNET_ETH_USD_MICRO = 2_500_000_000n;
+
+const CROSS_CHAIN_FACTORY_ABI = [
+  {
+    type: 'function',
+    name: 'crossChainSalt',
+    stateMutability: 'pure',
+    inputs: [
+      { name: 'founder', type: 'address' },
+      { name: 'slug', type: 'string' },
+    ],
+    outputs: [{ name: '', type: 'bytes32' }],
+  },
+  {
+    type: 'function',
+    name: 'predictCrossChainAddresses',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'founder', type: 'address' },
+      { name: 'slug', type: 'string' },
+    ],
+    outputs: [
+      { name: 'treasury', type: 'address' },
+      { name: 'governor', type: 'address' },
+      { name: 'execution', type: 'address' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'predictCrossChainAddresses',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'founder', type: 'address' },
+      { name: 'slug', type: 'string' },
+      { name: 'treasuryImpl', type: 'address' },
+      { name: 'governorImpl', type: 'address' },
+      { name: 'executionImpl', type: 'address' },
+    ],
+    outputs: [
+      { name: 'treasury', type: 'address' },
+      { name: 'governor', type: 'address' },
+      { name: 'execution', type: 'address' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'activationFeeQuote',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'nativeWei', type: 'uint256' },
+      { name: 'arcUsdcAmount', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'createCrossChainDao',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'name', type: 'string' },
+          { name: 'privacyMode', type: 'uint8' },
+          { name: 'guardianWallets', type: 'address[]' },
+          { name: 'guardianThreshold', type: 'uint8' },
+          { name: 'agentAuthorities', type: 'address[4]' },
+          { name: 'managementFeeBps', type: 'uint16' },
+          { name: 'performanceFeeBps', type: 'uint16' },
+          { name: 'frozenManagementFeeBps', type: 'uint16' },
+          { name: 'frozenPerformanceFeeBps', type: 'uint16' },
+          { name: 'protocolRevenueWallet', type: 'address' },
+          { name: 'quorumBps', type: 'uint16' },
+          { name: 'governanceType', type: 'uint8' },
+        ],
+      },
+      { name: 'slug', type: 'string' },
+    ],
+    outputs: [
+      { name: 'daoId', type: 'uint256' },
+      { name: 'treasury', type: 'address' },
+      { name: 'governor', type: 'address' },
+      { name: 'execution', type: 'address' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'activateDao',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'name', type: 'string' },
+          { name: 'privacyMode', type: 'uint8' },
+          { name: 'guardianWallets', type: 'address[]' },
+          { name: 'guardianThreshold', type: 'uint8' },
+          { name: 'agentAuthorities', type: 'address[4]' },
+          { name: 'managementFeeBps', type: 'uint16' },
+          { name: 'performanceFeeBps', type: 'uint16' },
+          { name: 'frozenManagementFeeBps', type: 'uint16' },
+          { name: 'frozenPerformanceFeeBps', type: 'uint16' },
+          { name: 'protocolRevenueWallet', type: 'address' },
+          { name: 'quorumBps', type: 'uint16' },
+          { name: 'governanceType', type: 'uint8' },
+        ],
+      },
+      { name: 'slug', type: 'string' },
+    ],
+    outputs: [
+      { name: 'daoId', type: 'uint256' },
+      { name: 'treasury', type: 'address' },
+      { name: 'governor', type: 'address' },
+      { name: 'execution', type: 'address' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'activateDao',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'name', type: 'string' },
+          { name: 'privacyMode', type: 'uint8' },
+          { name: 'guardianWallets', type: 'address[]' },
+          { name: 'guardianThreshold', type: 'uint8' },
+          { name: 'agentAuthorities', type: 'address[4]' },
+          { name: 'managementFeeBps', type: 'uint16' },
+          { name: 'performanceFeeBps', type: 'uint16' },
+          { name: 'frozenManagementFeeBps', type: 'uint16' },
+          { name: 'frozenPerformanceFeeBps', type: 'uint16' },
+          { name: 'protocolRevenueWallet', type: 'address' },
+          { name: 'quorumBps', type: 'uint16' },
+          { name: 'governanceType', type: 'uint8' },
+        ],
+      },
+      { name: 'slug', type: 'string' },
+      { name: 'treasuryImpl', type: 'address' },
+      { name: 'governorImpl', type: 'address' },
+      { name: 'executionImpl', type: 'address' },
+    ],
+    outputs: [
+      { name: 'daoId', type: 'uint256' },
+      { name: 'treasury', type: 'address' },
+      { name: 'governor', type: 'address' },
+      { name: 'execution', type: 'address' },
+    ],
+  },
+] as const satisfies Abi;
 
 /** A single EVM contract write the dispatcher can submit via wagmi. */
 export interface EvmTxRequest {
@@ -130,6 +296,133 @@ export function buildCreateDaoEvm(
       value: formationFeeWei,
     },
   };
+}
+
+/** True when this factory deploys new treasuries with the founder+slug salt. */
+export async function factorySupportsCrossChain(chainId: EvmChainId, factory: Address): Promise<boolean> {
+  try {
+    await readContract(wagmiConfig, {
+      address: factory,
+      abi: CROSS_CHAIN_FACTORY_ABI,
+      functionName: 'crossChainSalt',
+      args: [zeroAddress, 'nave'],
+      chainId,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Home-chain create for a new same-address treasury. */
+export function buildCreateCrossChainDaoEvm(
+  chainId: EvmChainId,
+  params: EvmCreateDaoParams,
+  slug: string,
+  valueWei: bigint,
+  factoryAddress?: Address,
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  const factory = factoryAddress ?? getFactoryAddress(chainId);
+  if (!factory) return notConfigured('NaveDAOFactory');
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: factory,
+      abi: CROSS_CHAIN_FACTORY_ABI,
+      functionName: 'createCrossChainDao',
+      args: [params, slug],
+      value: valueWei,
+    },
+  };
+}
+
+/**
+ * Activate an existing founder+slug treasury on another chain.
+ * `valueWei` is 0.001 ETH on chains that pay the fee in ETH, and 0 on Arc
+ * (the USDC fee is transferred separately).
+ */
+export function buildActivateDaoEvm(
+  chainId: EvmChainId,
+  params: EvmCreateDaoParams,
+  slug: string,
+  valueWei: bigint,
+  factoryAddress: Address,
+  impls?: CrossChainImpls,
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: factoryAddress,
+      abi: CROSS_CHAIN_FACTORY_ABI,
+      functionName: 'activateDao',
+      args: impls
+        ? [params, slug, impls.treasury, impls.governor, impls.execution]
+        : [params, slug],
+      value: valueWei,
+    },
+  };
+}
+
+/** ERC-1967 implementation slot. The proxy constructor writes the implementation here. */
+export const ERC1967_IMPLEMENTATION_SLOT =
+  '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
+
+export interface CrossChainImpls {
+  treasury: Address;
+  governor: Address;
+  execution: Address;
+}
+
+function addressFromSlot(slot: string | undefined | null): Address | null {
+  if (!slot || slot === '0x') return null;
+  const body = slot.startsWith('0x') ? slot.slice(2) : slot;
+  if (body.length < 40) return null;
+  return toAddress(`0x${body.slice(-40)}`);
+}
+
+/** Implementations embedded in the home proxies. Same-address activate must reuse them. */
+export async function readHomeCreationImpls(
+  chainId: EvmChainId,
+  treasury: Address,
+): Promise<CrossChainImpls | null> {
+  const client = publicClientForChain(chainId);
+  const [governor, execution] = await Promise.all([
+    client.readContract({ address: treasury, abi: NaveTreasuryAbi, functionName: 'governor' }),
+    client.readContract({ address: treasury, abi: NaveTreasuryAbi, functionName: 'execution' }),
+  ]) as [Address, Address];
+  const [treasurySlot, governorSlot, executionSlot] = await Promise.all([
+    client.getStorageAt({ address: treasury, slot: ERC1967_IMPLEMENTATION_SLOT }),
+    client.getStorageAt({ address: governor, slot: ERC1967_IMPLEMENTATION_SLOT }),
+    client.getStorageAt({ address: execution, slot: ERC1967_IMPLEMENTATION_SLOT }),
+  ]);
+  const treasuryImpl = addressFromSlot(treasurySlot);
+  const governorImpl = addressFromSlot(governorSlot);
+  const executionImpl = addressFromSlot(executionSlot);
+  if (!treasuryImpl || !governorImpl || !executionImpl) return null;
+  return { treasury: treasuryImpl, governor: governorImpl, execution: executionImpl };
+}
+
+export async function readActivationFeeQuote(
+  chainId: EvmChainId,
+  factory: Address,
+): Promise<{ nativeWei: bigint; arcUsdcAmount: bigint }> {
+  if (chainId !== 5042002) return { nativeWei: ACTIVATION_FEE_WEI, arcUsdcAmount: 0n };
+  try {
+    const quoted = await readContract(wagmiConfig, {
+      address: factory,
+      abi: CROSS_CHAIN_FACTORY_ABI,
+      functionName: 'activationFeeQuote',
+      chainId,
+    });
+    const [nativeWei, arcUsdcAmount] = quoted as readonly [bigint, bigint];
+    return { nativeWei, arcUsdcAmount };
+  } catch {
+    return { nativeWei: 0n, arcUsdcAmount: (ACTIVATION_FEE_WEI * ARC_TESTNET_ETH_USD_MICRO) / 10n ** 18n };
+  }
 }
 
 // ─── Treasury ──────────────────────────────────────────────────────────────────
@@ -768,6 +1061,57 @@ export function decodeEvmSwitchVotingPayload(bytes: Uint8Array | number[] | stri
   return {
     governanceType: Number(governanceType),
     votingToken: votingToken as `0x${string}`,
+  };
+}
+
+/** Founder schedules a new four-role agent set. Testnet delay is 60 seconds. */
+export function buildUpdateAgentSetEvm(
+  chainId: EvmChainId,
+  treasury: string,
+  authorities: readonly [string, string, string, string],
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  const treasuryAddr = toAddress(treasury);
+  if (!treasuryAddr) return notConfigured('NaveTreasury');
+  const addrs: Address[] = [];
+  for (const authority of authorities) {
+    const addr = toAddress(authority);
+    if (!addr) return { request: null, error: `Invalid agent address: ${authority}` };
+    addrs.push(addr);
+  }
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: treasuryAddr,
+      abi: NaveTreasuryAbi,
+      functionName: 'updateAgentSet',
+      args: [addrs as [Address, Address, Address, Address]],
+    },
+  };
+}
+
+/** Permissionless once the queued agent rotation delay has elapsed. */
+export function buildApplyAgentRotationEvm(
+  chainId: EvmChainId,
+  treasury: string,
+  role: number,
+): EvmBuildResult {
+  assertSupportedChain(chainId);
+  const treasuryAddr = toAddress(treasury);
+  if (!treasuryAddr) return notConfigured('NaveTreasury');
+  if (!Number.isInteger(role) || role < 0 || role > 3) {
+    return { request: null, error: `Invalid agent role slot: ${role}` };
+  }
+  return {
+    request: {
+      kind: 'evm',
+      chainId,
+      address: treasuryAddr,
+      abi: NaveTreasuryAbi,
+      functionName: 'applyAgentRotation',
+      args: [role],
+    },
   };
 }
 

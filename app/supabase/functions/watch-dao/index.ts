@@ -172,11 +172,12 @@ Deno.serve(async (req: Request) => {
     });
     if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
 
-    const { data: dao, error: daoError } = await supabase
+    const { data: daoRows, error: daoError } = await supabase
       .from("dao_registry")
       .select("dao_onchain_address, governance_type, privacy_enabled, creator_wallet, voting_token_mint, chain, chain_id")
       .eq("dao_onchain_address", daoAddress)
-      .maybeSingle();
+      .limit(1);
+    const dao = daoRows?.[0];
     if (daoError || !dao) {
       return jsonResponse({ error: "DAO not found" }, 404);
     }

@@ -3,8 +3,8 @@ use chainlink_solana::v2::read_feed_v2;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 use crate::constants::{
-    chainlink_program, chainlink_sol_usd, pyth_receiver_program, wsol_mint, PYTH_MAX_CONFIDENCE_BPS,
-    PYTH_MAX_PRICE_AGE_SECS,
+    chainlink_program, chainlink_sol_usd, pyth_receiver_program, wsol_mint,
+    PYTH_MAX_CONFIDENCE_BPS, PYTH_MAX_PRICE_AGE_SECS,
 };
 use crate::errors::NaveError;
 
@@ -33,7 +33,10 @@ pub fn confidence_within_bounds(price: i64, conf: u64) -> bool {
 /// [`confidence_within_bounds`]). Surfaces the existing `StaleOracle` error so
 /// callers treat an unusable-confidence price exactly like an unusable-age one.
 pub fn require_confidence(price: i64, conf: u64) -> Result<()> {
-    require!(confidence_within_bounds(price, conf), NaveError::StaleOracle);
+    require!(
+        confidence_within_bounds(price, conf),
+        NaveError::StaleOracle
+    );
     Ok(())
 }
 
@@ -52,8 +55,7 @@ pub fn nonstable_micro_usd(
 ) -> Result<u64> {
     if *mint == wsol_mint::ID {
         require!(
-            price_ai.key() == chainlink_sol_usd::FEED
-                && price_ai.owner == &chainlink_program::ID,
+            price_ai.key() == chainlink_sol_usd::FEED && price_ai.owner == &chainlink_program::ID,
             NaveError::InvalidOracleAccount
         );
         let data = price_ai.try_borrow_data()?;
@@ -152,7 +154,9 @@ fn pow10_u128(exp: u32) -> Result<u128> {
     // 10^38 is the largest power of ten that fits in u128; reject anything that
     // could overflow rather than silently saturating.
     require!(exp <= 38, NaveError::MathOverflow);
-    10u128.checked_pow(exp).ok_or(error!(NaveError::MathOverflow))
+    10u128
+        .checked_pow(exp)
+        .ok_or(error!(NaveError::MathOverflow))
 }
 
 #[cfg(test)]

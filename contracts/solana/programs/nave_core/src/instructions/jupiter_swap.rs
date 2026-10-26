@@ -84,7 +84,8 @@ pub fn jupiter_swap_handler<'info>(
         const BPS: u128 = 10_000;
         let tolerance_bps = BPS.saturating_sub(ctx.accounts.constitution.max_slippage_bps as u128);
         let in_usd = value_stable(amount_in, ctx.accounts.asset_config_in.decimals)? as u128;
-        let min_out_usd = value_stable(min_amount_out, ctx.accounts.asset_config_out.decimals)? as u128;
+        let min_out_usd =
+            value_stable(min_amount_out, ctx.accounts.asset_config_out.decimals)? as u128;
         let floor_usd = in_usd
             .checked_mul(tolerance_bps)
             .ok_or(NaveError::MathOverflow)?
@@ -98,7 +99,10 @@ pub fn jupiter_swap_handler<'info>(
             .ok_or(NaveError::MathOverflow)?
             .checked_div(BPS)
             .ok_or(NaveError::MathOverflow)?;
-        require!(min_amount_out as u128 >= quote_floor, NaveError::MaxSlippageExceeded);
+        require!(
+            min_amount_out as u128 >= quote_floor,
+            NaveError::MaxSlippageExceeded
+        );
     }
 
     // 3. Bind the token accounts to the treasury accounting records and confirm
@@ -221,13 +225,20 @@ pub fn jupiter_swap_handler<'info>(
     ctx.accounts.destination_token_account.reload()?;
     let post_src = ctx.accounts.source_token_account.amount;
     let post_dst = ctx.accounts.destination_token_account.amount;
-    let actual_in = pre_src.checked_sub(post_src).ok_or(NaveError::MathOverflow)?;
-    let actual_out = post_dst.checked_sub(pre_dst).ok_or(NaveError::MathOverflow)?;
+    let actual_in = pre_src
+        .checked_sub(post_src)
+        .ok_or(NaveError::MathOverflow)?;
+    let actual_out = post_dst
+        .checked_sub(pre_dst)
+        .ok_or(NaveError::MathOverflow)?;
 
     // 7. Security bounds: the route may not consume more than the authorized
     //    input, and must deliver at least the slippage-protected minimum output.
     require!(actual_in <= amount_in, NaveError::SwapInputExceeded);
-    require!(actual_out >= min_amount_out, NaveError::SwapSlippageExceeded);
+    require!(
+        actual_out >= min_amount_out,
+        NaveError::SwapSlippageExceeded
+    );
 
     // 8. Stablecoin reserve guardrail. If we sold a stablecoin and the DAO has a
     //    reserve floor configured, the idle stablecoin remaining (post_src) must
@@ -244,8 +255,7 @@ pub fn jupiter_swap_handler<'info>(
             .ok_or(NaveError::MathOverflow)?
             .checked_div(BPS)
             .ok_or(NaveError::MathOverflow)?;
-        let idle_after_usd =
-            value_stable(post_src, ctx.accounts.asset_config_in.decimals)? as u128;
+        let idle_after_usd = value_stable(post_src, ctx.accounts.asset_config_in.decimals)? as u128;
         require!(
             idle_after_usd >= reserve_required_usd,
             NaveError::StablecoinReserveBreached
@@ -432,7 +442,12 @@ mod route_containment_tests {
         let f = fx();
         let data = legacy_token_account(f.va);
         assert!(is_disallowed_vault_token_account(
-            &f.other, &anchor_spl::token::ID, &data, &f.va, &f.src, &f.dst
+            &f.other,
+            &anchor_spl::token::ID,
+            &data,
+            &f.va,
+            &f.src,
+            &f.dst
         ));
     }
 
@@ -443,11 +458,21 @@ mod route_containment_tests {
         let f = fx();
         let base = token_2022_base_account(f.va);
         assert!(is_disallowed_vault_token_account(
-            &f.other, &anchor_spl::token_2022::ID, &base, &f.va, &f.src, &f.dst
+            &f.other,
+            &anchor_spl::token_2022::ID,
+            &base,
+            &f.va,
+            &f.src,
+            &f.dst
         ));
         let extended = token_2022_extended_account(f.va);
         assert!(is_disallowed_vault_token_account(
-            &f.other, &anchor_spl::token_2022::ID, &extended, &f.va, &f.src, &f.dst
+            &f.other,
+            &anchor_spl::token_2022::ID,
+            &extended,
+            &f.va,
+            &f.src,
+            &f.dst
         ));
     }
 
@@ -457,7 +482,10 @@ mod route_containment_tests {
         for (program, data) in [
             (anchor_spl::token::ID, legacy_token_account(f.va)),
             (anchor_spl::token_2022::ID, token_2022_base_account(f.va)),
-            (anchor_spl::token_2022::ID, token_2022_extended_account(f.va)),
+            (
+                anchor_spl::token_2022::ID,
+                token_2022_extended_account(f.va),
+            ),
         ] {
             assert!(!is_disallowed_vault_token_account(
                 &f.src, &program, &data, &f.va, &f.src, &f.dst

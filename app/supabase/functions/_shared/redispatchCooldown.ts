@@ -42,10 +42,31 @@ export function isStuckRow(last: LastLogRow | undefined | null): boolean {
  *   `refreshRetrySecs`).
  * - a Halted request whose last answer was not clear_halt: the full cooldown,
  *   so an idle monitor is not re-asked every tick.
- * - a failed or errored row (refused execute, failed model call): `refreshRetrySecs`.
+ * - a failed or errored row whose message is a missing or inactive agent key:
+ *   the full cooldown. A missing key is not a refresh retry.
+ * - any other failed or errored row (refused execute, failed model call):
+ *   `refreshRetrySecs`.
  * - anything else (e.g. `continue` completed on an InReview request): 0, so a
  *   request that is ready to execute is never starved.
  */
+
+const KEY_MISS_PATTERNS = [
+  /agent key not found/i,
+  /key[-\s]+not[-\s]+found/i,
+  /not found or inactive/i,
+  /inactive[-\s]+key/i,
+  /key is inactive/i,
+  /no active (encrypted_)?(agent|evm)[_ ]?key/i,
+  /missing agent key/i,
+];
+
+/** True when a logged failure is a missing or inactive agent key. */
+export function isKeyMissFailure(errorMessage: string): boolean {
+  const text = errorMessage.trim();
+  if (!text) return false;
+  return KEY_MISS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function redispatchWaitSecs(args: {
   last: LastLogRow | undefined | null;
   requestStatus: string;
@@ -67,7 +88,7 @@ export function redispatchWaitSecs(args: {
   ) {
     window = cooldown;
   } else if (last.status === "failed" || last.status === "error") {
-    window = Math.min(cooldown, refresh);
+    window = isKeyMissFailure(last.error_message ?? "") ? cooldown : Math.min(cooldown, refresh);
   }
   if (window <= 0) return 0;
 

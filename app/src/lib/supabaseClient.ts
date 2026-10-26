@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './programConfig';
+import { normalizeWalletAddress } from './chain/daoOnchainAddress';
 
 // The connected wallet address is attached to every Supabase request as the
 // `x-wallet-address` header so wallet-scoped RLS policies (e.g. watched_daos)
@@ -10,7 +11,7 @@ let currentWalletAddress: string | null = null;
 
 /** Update the wallet header used for subsequent Supabase requests. */
 export function setSupabaseWalletAddress(address: string | null): void {
-  currentWalletAddress = address;
+  currentWalletAddress = normalizeWalletAddress(address);
 }
 
 const walletHeaderFetch: typeof fetch = (input, init) => {
@@ -69,6 +70,8 @@ export interface DaoRegistryRow {
   chain?: string | null;
   /** EVM numeric chain id (1/8453/11155111/84532); null for Solana / legacy rows. */
   chain_id?: number | null;
+  /** Shared by every chain deployment of one treasury name. */
+  treasury_group_id?: string | null;
 }
 
 export interface WatchedDaoRow {

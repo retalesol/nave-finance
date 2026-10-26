@@ -270,4 +270,16 @@ library NaveErrors {
     error InvalidImplRole();
     /// DAO proxies are already on the requested implementations.
     error AlreadyOnLatestImpl();
+
+    // ── Same-address activation + outbound relayer fee ────────────────────
+    /// Slug must match the app's normalized form: 3–32 chars, starting with
+    /// a lowercase letter, then lowercase letters, digits, or hyphens.
+    error InvalidSlug();
+    /// This founder and slug already have a treasury on this chain.
+    error DaoAlreadyActivated();
+    /// activateDao was not paid 0.001 ETH, or the Arc USDC equivalent.
+    error InsufficientActivationFee();
+    /// The treasury's native balance cannot cover the 0.0005 ETH relayer fee
+    /// (on Arc, the native USDC value of 0.0005 ETH).
+    error InsufficientNativeForRelayerFee();
 }

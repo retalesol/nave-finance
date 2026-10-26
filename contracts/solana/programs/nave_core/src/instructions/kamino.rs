@@ -9,10 +9,10 @@ use crate::constants::{
     POSITION_TOKEN_SEED, STRATEGY_ESCROW_SEED, STRATEGY_POSITION_SEED, VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
-use crate::state::{
-    AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority,
+use crate::state::{AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority};
+use crate::utils::{
+    require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused,
 };
-use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused};
 
 /// klend protocol id this module operates on.
 const KAMINO_PROTOCOL_ID: &[u8] = b"kamino";
@@ -125,7 +125,10 @@ pub fn kamino_deposit_handler<'info>(
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == KAMINO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == KAMINO_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
     require!(
         sp.ext_market != Pubkey::default() && sp.ext_reserve != Pubkey::default(),
@@ -135,7 +138,10 @@ pub fn kamino_deposit_handler<'info>(
         sp.ext_market == ctx.accounts.lending_market.key(),
         NaveError::ExternalTargetMismatch
     );
-    require!(sp.ext_reserve == ctx.accounts.reserve.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_reserve == ctx.accounts.reserve.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.position_token_account.key(),
         NaveError::InvalidPositionTokenAccount
@@ -220,13 +226,19 @@ pub fn kamino_withdraw_handler<'info>(
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == KAMINO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == KAMINO_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
     require!(
         sp.ext_market == ctx.accounts.lending_market.key(),
         NaveError::ExternalTargetMismatch
     );
-    require!(sp.ext_reserve == ctx.accounts.reserve.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_reserve == ctx.accounts.reserve.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.position_token_account.key(),
         NaveError::InvalidPositionTokenAccount

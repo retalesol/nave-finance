@@ -17,8 +17,19 @@
 
 export const POLICY_ENGINE_VERSION = "1.0.0";
 
-/** Matches the curated allowlist (`allowedAssets.ts`). Legacy feeds that say `"sol"` are normalized to `"sol-like"`. */
+/**
+ * Matches the curated allowlist (`allowedAssets.ts`). Legacy feeds that say
+ * `"sol"` are normalized to `"sol-like"`. The `yield_opportunities` check also
+ * still accepts the legacy `"sol"` label on rows already stored.
+ */
 export type AssetClass = "stablecoin" | "sol-like" | "blue-chip" | "lp" | "other";
+
+/** Values the yield_opportunities.asset_class check accepts. */
+export const PERSISTED_ASSET_CLASSES = ["stablecoin", "sol", "sol-like", "blue-chip", "lp", "other"] as const;
+export type PersistedAssetClass = (typeof PERSISTED_ASSET_CLASSES)[number];
+
+/** 6–12% is a label on a live rate. It does not drop venues outside the band. */
+export type YieldBand = "in-band" | "below-band" | "above-band";
 
 /** A scored yield opportunity on an approved protocol. */
 export interface YieldOpportunity {
@@ -65,6 +76,41 @@ export interface YieldOpportunity {
   liquid: boolean;
   /** Free-form source label (e.g. "kamino:usdc-reserve"). */
   source?: string;
+  /** Display name. Scoring uses protocolId. */
+  label?: string;
+  /**
+   * Catalog chain whose stored rate applies. Cross-chain Ethereum venues on a
+   * Base, Robinhood, or Arc treasury use `"ethereum"`.
+   */
+  rateChain?: "solana" | "ethereum" | "base" | "robinhood" | "arc";
+  /** Catalog venue id when it differs from protocolId. */
+  rateVenueId?: string;
+  /**
+   * False when apyBps is not a pool read and not a documented testnet static
+   * rate. Callers must not present that apyBps as a market rate.
+   */
+  apyRead?: boolean;
+  /** Venue APY before bridge drag. Set only when apyRead is not false. */
+  venueApyBps?: number;
+  /** Venue APY minus bridge cost spread over a 30-day hold. */
+  netApyBps?: number;
+  bridgeRequired?: boolean;
+  /** One-way bridge cost in bps of principal, before 30-day annualization. */
+  bridgeOneWayCostBps?: number;
+  bridgeCostKind?: "estimate" | "live";
+  /** Named estimate or live quote id, for example `estimate:cctp-standard-gas-15bps`. */
+  bridgeCostSource?: string;
+  bridgeLabel?: string;
+  /**
+   * False when a bridged venue must stay visible but must not become a deploy.
+   * Unset means a same-chain venue the scanner already accepted.
+   */
+  executable?: boolean;
+  executionLabel?: string;
+  yieldBand?: YieldBand;
+  /** Chain the venue itself lives on (1 or 11155111 for Ethereum-family rows). */
+  venueChainId?: number;
+  venueChainLabel?: string;
 }
 
 /** Per-protocol allocation cap (bps of NAV) from the constitution. */
@@ -358,6 +404,17 @@ export function evaluatePolicy(input: PolicyInputs): PolicyRecommendation {
   const ranked = rankOpportunities(input.opportunities);
 
   for (const opp of ranked) {
+    // Bridged venues stay in the opportunity list for display. They are not
+    // deploys until the treasury is linked on the venue chain and the outbound
+    // bridge flag is on. An unread mainnet rate is not a deploy either.
+    if (opp.executable === false) {
+      rejected.push({ ...slim(opp), reason: "not_executable" });
+      continue;
+    }
+    if (opp.apyRead === false) {
+      rejected.push({ ...slim(opp), reason: "rate_not_read" });
+      continue;
+    }
     const cap = approvedById.get(opp.programId);
     if (!cap) {
       rejected.push({ ...slim(opp), reason: "protocol_not_approved" });

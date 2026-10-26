@@ -316,7 +316,7 @@ function CreateTokenModal({ daoAddress, founder, onClose, onDone }: CreateTokenM
             evmChainId,
             daoAddress,
             name.trim(),
-            symbol.trim().toUpperCase().slice(0, 11),
+            symbol.trim().toUpperCase().slice(0, 8),
             evmDecimals,
             initialSupply,
             daoAddress,
@@ -822,7 +822,7 @@ export default function Tokens() {
         daoAddress,
         token.mint,
         newName.trim(),
-        newSymbol.trim().toUpperCase().slice(0, 11),
+        newSymbol.trim().toUpperCase().slice(0, 8),
       );
       const out = await tx.sendEvm(r, { successLabel: 'Metadata updated' });
       if (out.status === 'success' || out.status === 'mock') { refetch(); return true; }

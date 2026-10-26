@@ -226,7 +226,7 @@ When on, a signing role needs a finished charter pass whose action hash matches 
 
 **Enable when:** `NAVE_GENLAYER_CHARTER_ADDRESS` points at a deployed `CharterAdjudicator`, and the same check has been exercised across all five supported testnet chains (`solana`, `ethereum` `11155111`, `base` `84532`, `robinhood` `46630`, and `arc` `5042002`).
 
-**Current status:** Off (`NAVE_GENLAYER_GATE=false`). Bradbury serves CharterAdjudicator `0x8F935d913e507A1C8869bcD81803Fef289F1F2B0`, VenueWatch `0xc27B9E337Cc0c277818210c9563A8E5536b2ACe6`, and HaltAppeal `0x7e302d6EbFBCfdf53F8d41F21ffE24401de1B6A4`. All five testnet chains (`solana`, `11155111`, `84532`, `46630`, `5042002`) have been verified end-to-end with live charter and venue reviews on Bradbury. The three gates stay off by default unless explicitly set to `true`. A finalized review does not turn a gate on, and a finished pass does not authorize a transfer.
+**Current status:** Off (`NAVE_GENLAYER_GATE=false`). Bradbury Phase 2 is chain id 4221 at `https://rpc.testnet-chain.genlayer.com` (genesis `0x17d89764d4f4f963158fc4c5e8f2cb670c2837740b35f37081c12860c3df97e4`). CharterAdjudicator `0xa893D572dAA073569e5C30BDB151165071d0AdaB`, VenueWatch `0x020ac4d4940D87579BAC0b888A47fe3Aae106334`, and HaltAppeal `0xCD1345c5DD1Fb61ce70794633ff0Fdb9A69f124D` are deployed there. Each deployment is accepted with `FINISHED_WITH_RETURN`. The three gates stay off. A finalized review does not turn a gate on, and a finished pass does not authorize a transfer.
 
 ### `NAVE_GENLAYER_VENUE_GATE` (default: `false`)
 **Classification: (A) App-only gate**

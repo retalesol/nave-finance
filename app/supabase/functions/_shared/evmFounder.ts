@@ -58,7 +58,7 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_SEPOLIA_RPC_URL",
     fallbackUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     protocolEnv: "EVM_SEPOLIA_PROTOCOL_ADDRESS",
-    fallbackProtocolAddress: "0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1",
+    fallbackProtocolAddress: "0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8",
   },
   8453: { chain: base, rpcEnv: "EVM_BASE_RPC_URL", protocolEnv: "EVM_BASE_PROTOCOL_ADDRESS" },
   84532: {
@@ -66,7 +66,7 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_BASE_SEPOLIA_RPC_URL",
     fallbackUrl: "https://sepolia.base.org",
     protocolEnv: "EVM_BASE_SEPOLIA_PROTOCOL_ADDRESS",
-    fallbackProtocolAddress: "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6",
+    fallbackProtocolAddress: "0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8",
   },
   4663: {
     chain: robinhood,
@@ -78,14 +78,14 @@ export const EVM_RPC_CONFIG: Record<
     rpcEnv: "EVM_ROBINHOOD_TESTNET_RPC_URL",
     fallbackUrl: "https://rpc.testnet.chain.robinhood.com",
     protocolEnv: "EVM_ROBINHOOD_TESTNET_PROTOCOL_ADDRESS",
-    fallbackProtocolAddress: "0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093",
+    fallbackProtocolAddress: "0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8",
   },
   5042002: {
     chain: arcTestnet,
     rpcEnv: "EVM_ARC_TESTNET_RPC_URL",
     fallbackUrl: "https://rpc.testnet.arc.io",
     protocolEnv: "EVM_ARC_TESTNET_PROTOCOL_ADDRESS",
-    fallbackProtocolAddress: "0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255",
+    fallbackProtocolAddress: "0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8",
   },
 };
 
@@ -189,11 +189,25 @@ export type EvmTreasuryMembership =
   | { ok: false; reason: "rpc_unavailable" | "protocol_unconfigured" | "read_failed" | "protocol_mismatch" | "not_registered" };
 
 /**
- * Verify `treasury` is a genuine NaveTreasury clone of the configured protocol
- * on `chainId`: `treasury.protocol()` must equal the operator-configured
- * NaveProtocol address AND `NaveProtocol.isNaveTreasury(treasury)` must be true.
- * Both checks are anchored to the configured protocol address so a look-alike
- * contract that points at an attacker-controlled "protocol" cannot pass.
+ * Earlier testnet stacks that still hold live treasuries. A treasury is
+ * accepted when it points at the current protocol or one of these, and that
+ * protocol has registered it. An attacker-controlled protocol is not in the set.
+ */
+const RETIRED_PROTOCOL_ADDRESSES: Record<number, readonly string[]> = {
+  84532: ["0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6"],
+  5042002: ["0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255"],
+};
+
+function acceptedProtocolAddresses(chainId: number): string[] {
+  const current = evmProtocolAddressFor(chainId);
+  const retired = RETIRED_PROTOCOL_ADDRESSES[chainId] ?? [];
+  return [...(current ? [current] : []), ...retired].map((address) => address.toLowerCase());
+}
+
+/**
+ * Verify `treasury` is a genuine NaveTreasury clone on `chainId`.
+ * `treasury.protocol()` must be the current NaveProtocol or a retired stack
+ * we still operate, and that protocol's `isNaveTreasury(treasury)` must be true.
  */
 export async function verifyEvmTreasuryMembership(
   chainId: number,
@@ -202,8 +216,8 @@ export async function verifyEvmTreasuryMembership(
   const cfg = EVM_RPC_CONFIG[chainId];
   const rpcUrl = evmRpcUrlFor(chainId);
   if (!cfg || !rpcUrl) return { ok: false, reason: "rpc_unavailable" };
-  const protocol = evmProtocolAddressFor(chainId);
-  if (!protocol) return { ok: false, reason: "protocol_unconfigured" };
+  const accepted = acceptedProtocolAddresses(chainId);
+  if (accepted.length === 0) return { ok: false, reason: "protocol_unconfigured" };
   try {
     const client = createPublicClient({ chain: cfg.chain, transport: http(rpcUrl) });
     const reported = (await client.readContract({
@@ -211,11 +225,11 @@ export async function verifyEvmTreasuryMembership(
       abi: NAVE_TREASURY_FOUNDER_ABI,
       functionName: "protocol",
     })) as string;
-    if (typeof reported !== "string" || reported.toLowerCase() !== protocol) {
+    if (typeof reported !== "string" || !accepted.includes(reported.toLowerCase())) {
       return { ok: false, reason: "protocol_mismatch" };
     }
     const registered = (await client.readContract({
-      address: protocol as `0x${string}`,
+      address: reported as `0x${string}`,
       abi: NAVE_PROTOCOL_REGISTRY_ABI,
       functionName: "isNaveTreasury",
       args: [treasury as `0x${string}`],

@@ -7,6 +7,7 @@ import { fetchDaoRegistryEvm } from '../lib/evm/readers';
 import { isProgramConfigured } from '../lib/programConfig';
 import { chainKindFromAddress, isEvmChainId, type EvmChainId } from '../lib/chain/types';
 import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
+import { recallDaoChainId } from '../lib/chain/daoChainMemory';
 import { useChain } from './useChain';
 import type { DaoRegistry, GovernanceType } from '../lib/onChainTypes';
 import { isMockDaoAddress, MOCK_DAO_DATA } from '../lib/mockData';
@@ -27,6 +28,8 @@ export interface DaoData {
   daoOnchainAddress: string;
   /** dao_registry.chain_id. Null for Solana rows and for rows that never stored one. */
   chainId: number | null;
+  /** Shared by every chain deployment of this treasury. Books tenant key. */
+  treasuryGroupId: string | null;
 
   // On-chain (when available)
   frozen: boolean;
@@ -52,18 +55,22 @@ async function fetchDaoData(
   rememberDaoChain: (daoAddress: string, chainId: EvmChainId) => void,
 ): Promise<DaoData> {
   const daoKey = normalizeDaoOnchainAddressForQuery(daoAddress);
-  // Fetch off-chain metadata from Supabase
-  const { data: offChain, error: dbError } = await supabase
+  const { data: offChainRows, error: dbError } = await supabase
     .from('dao_registry')
     .select('*')
-    .eq('dao_onchain_address', daoKey)
-    .maybeSingle();
+    .eq('dao_onchain_address', daoKey);
 
   if (dbError) {
     throw new Error(dbError.message);
   }
 
-  const row = offChain as DaoRegistryRow | null;
+  const rows = (offChainRows as DaoRegistryRow[] | null) ?? [];
+  const remembered = recallDaoChainId(daoAddress);
+  const row =
+    rows.find((candidate) => remembered != null && candidate.chain_id === remembered) ??
+    rows.find((candidate) => evmChainId != null && candidate.chain_id === evmChainId) ??
+    rows[0] ??
+    null;
 
   // Fetch on-chain data if programs are configured. Fetch the registry
   // account DIRECTLY by its address (daoAddress IS the registry PDA), which
@@ -116,6 +123,7 @@ async function fetchDaoData(
     createdAt: row?.created_at || '',
     daoOnchainAddress: daoAddress,
     chainId: typeof row?.chain_id === 'number' ? row.chain_id : null,
+    treasuryGroupId: row?.treasury_group_id ?? null,
     frozen: onChainData?.frozen || false,
     proposalCount: onChainData?.proposalCount || 0,
     archivedProposalCount: onChainData?.archivedProposalCount || 0,

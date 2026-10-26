@@ -343,6 +343,18 @@ export async function withSenderLock<T>(
 }
 
 /**
+ * Some testnet RPCs reject `eth_estimateGas` when the sender cannot pay the
+ * fee, before the contract is ever simulated. A freshly rotated agent EOA has
+ * a zero balance, so the estimate must be retried after a top-up.
+ */
+export const ESTIMATE_PREFUNDS_WEI = parseEther('0.005');
+
+export function isInsufficientNativeBalance(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('exceeds the balance') || normalized.includes('insufficient funds');
+}
+
+/**
  * New agent EOAs are created with a zero balance. Fund the broadcaster from the
  * ops wallet before the first toggle, or agent start fails as soon as the
  * treasury exists. No-op when the balance already covers `requiredWei`.
@@ -443,20 +455,40 @@ async function broadcastCall(params: {
   const wallet = createWalletClient({ account, chain: cfg.chain, transport });
 
   return withSenderLock(chainId, account.address, async () => {
+    const estimateGas = () => publicClient.estimateContractGas({
+      address: target,
+      abi: abi as never,
+      functionName: functionName as never,
+      args: args as never,
+      account,
+      ...(value !== undefined ? { value } : {}),
+    });
     let gas: bigint;
     try {
-      gas = await publicClient.estimateContractGas({
-        address: target,
-        abi: abi as never,
-        functionName: functionName as never,
-        args: args as never,
-        account,
-        ...(value !== undefined ? { value } : {}),
-      });
+      gas = await estimateGas();
     } catch (err) {
-      throw new Error(
-        `Gas estimation failed for ${functionName} on ${target} (chain ${chainId}) — call would revert: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const reason = err instanceof Error ? err.message : String(err);
+      if (!isInsufficientNativeBalance(reason)) {
+        throw new Error(
+          `Gas estimation failed for ${functionName} on ${target} (chain ${chainId}) — call would revert: ${reason}`,
+        );
+      }
+      await fundCustodiedSender({
+        chainId,
+        chain: cfg.chain,
+        transport,
+        publicClient,
+        address: account.address,
+        requiredWei: ESTIMATE_PREFUNDS_WEI + (value ?? 0n),
+      });
+      try {
+        gas = await estimateGas();
+      } catch (retryErr) {
+        const retryReason = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        throw new Error(
+          `Gas estimation failed for ${functionName} on ${target} (chain ${chainId}) — call would revert: ${retryReason}`,
+        );
+      }
     }
     const gasCap = maxGasLimit();
     if (gas > gasCap) {

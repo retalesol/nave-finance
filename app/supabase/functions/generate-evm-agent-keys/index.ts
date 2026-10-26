@@ -40,7 +40,7 @@ import { type BoundWrappedDek, type DekBinding, unwrapDekBound, wrapDekBound } f
 const AGENT_ROLES = ["executive", "financial", "oversight", "operational"] as const;
 
 interface GeneratePayload {
-  action?: "generate" | "bind";
+  action?: "generate" | "bind" | "replace";
   // Client-chosen unguessable reference for the soon-to-be-created DAO.
   dao_ref: string;
   // Founder wallet (0x EVM address) — proven via EIP-191 personal_sign below.
@@ -107,11 +107,17 @@ Deno.serve(async (req: Request) => {
   const action = body.action ?? "generate";
   const { dao_ref, message, creator_signature } = body;
   let founder = body.founder;
-  if (!dao_ref || !founder || !message || !creator_signature) {
-    return jsonResponse({ error: "Missing dao_ref, founder, message, or creator_signature" }, 400);
-  }
-  if (!REF_RE.test(dao_ref)) {
-    return jsonResponse({ error: "dao_ref must be 8-64 url-safe chars" }, 400);
+  if (action === "replace") {
+    if (!body.treasury || !founder || !message || !creator_signature) {
+      return jsonResponse({ error: "Missing treasury, founder, message, or creator_signature" }, 400);
+    }
+  } else {
+    if (!dao_ref || !founder || !message || !creator_signature) {
+      return jsonResponse({ error: "Missing dao_ref, founder, message, or creator_signature" }, 400);
+    }
+    if (!REF_RE.test(dao_ref)) {
+      return jsonResponse({ error: "dao_ref must be 8-64 url-safe chars" }, 400);
+    }
   }
 
   // ── Chain (EVM only) ──
@@ -147,6 +153,100 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const chainId = chainSel.chain_id;
   const chainKind = chainSel.chain;
+
+  // ── REPLACE: mint a new agent set for an existing treasury ──
+  // Expected challenge: nave-evm-keyreplace|<treasury>|<chain_id>|<ts>
+  // Retires the four agent roles only. The on-chain guardian wallet stays;
+  // the founder still has to call updateAgentSet with the new agent addresses.
+  if (action === "replace") {
+    let treasury: string;
+    try {
+      treasury = normalizeEvmAddress(body.treasury ?? "");
+    } catch (e) {
+      return jsonResponse({ error: e instanceof Error ? e.message : "Invalid treasury address" }, 400);
+    }
+    if (
+      parts.length !== 4 || parts[0] !== "nave-evm-keyreplace" ||
+      parts[1]?.toLowerCase() !== treasury || Number(parts[2]) !== chainId
+    ) {
+      return jsonResponse({ error: "Malformed replace challenge message" }, 400);
+    }
+    if (!hasEvmRpc(chainId)) {
+      return jsonResponse(
+        { error: `Service not configured: ${EVM_RPC_CONFIG[chainId]?.rpcEnv ?? "EVM RPC"} required for replace verification` },
+        500,
+      );
+    }
+    const onChainFounder = await readEvmTreasuryFounder(chainId, treasury);
+    if (onChainFounder === null) {
+      return jsonResponse({ error: "Could not verify DAO founder on-chain (EVM)" }, 502);
+    }
+    if (onChainFounder !== founder) {
+      return jsonResponse({ error: "Signer is not the on-chain treasury founder" }, 403);
+    }
+    const consumed = await consumeChallenge(supabase, {
+      wallet: founder,
+      chain: replayChainLabel(chainKind, chainId),
+      verified,
+      daoAddress: treasury,
+    });
+    if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
+
+    const { error: retireError } = await supabase
+      .from("encrypted_evm_keys")
+      .update({ is_active: false })
+      .eq("dao_onchain_address", treasury)
+      .eq("chain_id", chainId)
+      .eq("is_active", true)
+      .in("signer_role", [...AGENT_ROLES]);
+    if (retireError) {
+      console.error("evm key replace retire failed:", retireError);
+      return jsonResponse({ error: "Failed to retire the current agent keys" }, 500);
+    }
+
+    const rows: Array<Record<string, unknown>> = [];
+    const agents: Record<string, { address: string }> = {};
+    for (const role of AGENT_ROLES) {
+      const privKey = generatePrivateKey();
+      const account = privateKeyToAccount(privKey);
+      const address = account.address.toLowerCase();
+      const { ciphertext, iv, tag, dek } = await encryptKey(new TextEncoder().encode(privKey));
+      const wrapped = await wrapDekBound("evm", dek, keyBinding(treasury, role, null, chainId));
+      rows.push({
+        dao_onchain_address: treasury,
+        chain: chainKind,
+        chain_id: chainId,
+        signer_role: role,
+        guardian_index: null,
+        evm_address: address,
+        encrypted_private_key: ciphertext,
+        encryption_iv: iv,
+        encryption_tag: tag,
+        wrapped_dek: wrapped.wrapped_dek,
+        dek_wrap_iv: wrapped.dek_wrap_iv,
+        dek_wrap_tag: wrapped.dek_wrap_tag,
+        dek_wrap_version: wrapped.dek_wrap_version,
+        dek_kek_ref: wrapped.dek_kek_ref,
+        created_by_wallet: founder,
+        is_active: true,
+      });
+      agents[role] = { address };
+    }
+    const { error: insErr } = await supabase.from("encrypted_evm_keys").insert(rows);
+    if (insErr) {
+      console.error("Failed to store replacement EVM agent keys:", insErr);
+      return jsonResponse({ error: "Failed to store replacement agent keys" }, 500);
+    }
+    return jsonResponse({
+      success: true,
+      dao_address: treasury,
+      chain: chainKind,
+      chain_id: chainId,
+      agents,
+      regenerated: true,
+      warning: "New agent keys are stored. Submit updateAgentSet with these four addresses, then applyAgentRotation after the delay.",
+    });
+  }
 
   // ── BIND: rebind pending rows to the real treasury address ──
   if (action === "bind") {

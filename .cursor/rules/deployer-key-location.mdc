@@ -1,0 +1,16 @@
+---
+description: Where the Nave testnet deployer key lives. Read this before any forge broadcast or upgrade.
+alwaysApply: true
+---
+
+# Testnet deployer key location
+
+The funded EVM testnet deployer key is already on disk. An empty `$PRIVATE_KEY` does not mean it is missing.
+
+- File: `contracts/evm/.env.testnet.local`
+- Variable: `EVM_DEPLOY_PRIVATE_KEY`
+- Same file also holds `EVM_TESTING_KEY_1`, `EVM_TESTING_KEY_2`, `EVM_TESTING_KEY_3`, and the Sepolia, Base Sepolia, Robinhood testnet, and Arc testnet RPC URLs.
+
+`contracts/evm/.env` has RPC URL names only. Foundry loads that file by default and does not load `.env.testnet.local`. Source `.env.testnet.local` before `forge script --broadcast`, and pass `--private-key "$EVM_DEPLOY_PRIVATE_KEY"`.
+
+Never print, log, or commit the key value. Confirmed in chat [Public beta readiness analysis](d579f0a1-2984-4218-bb76-b5fa697babc9).

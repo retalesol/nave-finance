@@ -83,6 +83,10 @@ interface RequestPayload {
   // the function. Returning it on every DAO creation is a standing exfiltration
   // risk, so it is gated behind this explicit, logged flag.
   break_glass?: boolean;
+  // Founder-only, and only after the DAO exists on-chain. Retires the active
+  // rows for the requested roles and mints a new set under the current master
+  // KEK. The caller must then rotate those pubkeys on-chain.
+  replace?: boolean;
 }
 
 const AGENT_ROLES = [
@@ -236,6 +240,25 @@ Deno.serve(async (req: Request) => {
       daoAddress: dao_address,
     });
     if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
+
+    if (body.replace) {
+      if (!founder) {
+        return jsonResponse(
+          { error: "replace is only available after the DAO exists on-chain" },
+          400,
+        );
+      }
+      const { error: retireError } = await supabase
+        .from("encrypted_agent_keys")
+        .update({ is_active: false, rotated_at: new Date().toISOString() })
+        .eq("dao_onchain_address", dao_address)
+        .eq("is_active", true)
+        .in("agent_role", requestedRoles);
+      if (retireError) {
+        console.error("Failed to retire agent keys:", retireError);
+        return jsonResponse({ error: "Failed to retire the current agent keys" }, 500);
+      }
+    }
 
     // ── Check if keys already exist for this DAO ─────────────────────────
     const { data: existing } = await supabase

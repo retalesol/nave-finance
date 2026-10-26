@@ -413,3 +413,18 @@ pub struct DaoRestored {
     pub restaked_amount: u64,
     pub restored_at: i64,
 }
+
+/// An invoice payment address was settled into the treasury.
+///
+/// `asset` is the default pubkey for native SOL and the SPL mint otherwise.
+/// `payer` is the co-signer on the settle instruction when one is present, and
+/// the default pubkey when a crank settles a transfer whose sender is not in
+/// this instruction.
+#[event]
+pub struct InvoiceSettled {
+    pub dao: Pubkey,
+    pub invoice_id: [u8; 32],
+    pub asset: Pubkey,
+    pub amount: u64,
+    pub payer: Pubkey,
+}

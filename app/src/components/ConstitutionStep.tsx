@@ -8,6 +8,7 @@
 import { useMemo } from 'react';
 import PolicySlider from './PolicySlider';
 import { SummaryLine } from './calm';
+import EthereumFamilyYieldList from './EthereumFamilyYieldList';
 import {
   getSolanaStrategyStatuses,
   getEvmAdapterStatuses,
@@ -68,6 +69,16 @@ export interface ConstitutionStepProps {
   offeredPresets?: readonly RiskPreset[];
   /** When true, includes the minimum balance to rebalance (USD) input inside Customise the numbers. */
   showAgentThreshold?: boolean;
+  /**
+   * Chain whose Ethereum yield list is shown. Defaults to `evmChainId`.
+   * The Rules page passes the treasury's chain so a Robinhood treasury still
+   * shows Sepolia venues when the wallet is on another network.
+   */
+  yieldHomeChainId?: number | null;
+  /** Sister treasury on Ethereum (or Sepolia, on testnet) is activated. */
+  linkedEthereumTreasury?: boolean;
+  /** Outbound capital-bridge flag. Off unless the deployment turned it on. */
+  outboundBridgeEnabled?: boolean;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -194,7 +205,9 @@ function formatApy(apy: number): string {
   return `${apy.toFixed(apy >= 10 ? 1 : 2)}%`;
 }
 
-export const REBALANCE_OPTIONS = ['Hourly', 'Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Manual'];
+/** Hourly is below the on-chain minimum of one day, so the form does not offer it. */
+export const REBALANCE_OPTIONS = ['Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Manual'];
+export const MIN_REBALANCE_FREQUENCY_SECS = 86_400;
 
 export const DEFAULT_SOLANA_PROTOCOLS: Record<string, boolean> = {
   kamino:   true,
@@ -253,15 +266,20 @@ export function formatConstitutionBps(bps: number): string {
 
 /** Convert a rebalance-freq label to seconds for on-chain set_policy_parameters. */
 export function rebalanceFreqToSecs(freq: string): number {
+  let secs: number;
   switch (freq) {
-    case 'Hourly':    return 3_600;
-    case 'Daily':     return 86_400;
-    case 'Weekly':    return 604_800;
-    case 'Bi-weekly': return 1_209_600;
-    case 'Monthly':   return 2_592_000;
+    case 'Hourly':    secs = 3_600; break;
+    case 'Daily':     secs = 86_400; break;
+    case 'Weekly':    secs = 604_800; break;
+    case 'Bi-weekly': secs = 1_209_600; break;
+    case 'Monthly':   secs = 2_592_000; break;
     case 'Manual':    return 0;
-    default:          return 30 * 86_400;
+    default:          secs = 30 * 86_400; break;
   }
+  // A saved "Hourly" choice, or any cadence under a day, is raised to the
+  // on-chain minimum instead of reverting setPolicyParameters.
+  if (secs > 0 && secs < MIN_REBALANCE_FREQUENCY_SECS) return MIN_REBALANCE_FREQUENCY_SECS;
+  return secs;
 }
 
 /** Convert a rebalance-secs value back to a human-readable label. */
@@ -332,10 +350,13 @@ export function SimResult({ policy }: { policy: PolicyState }) {
 
 // ── Read-only summary card ─────────────────────────────────────────────────────
 
-function ConstitutionSummary({ policy, chain, evmChainId }: {
+function ConstitutionSummary({ policy, chain, evmChainId, yieldHomeChainId, linkedEthereumTreasury, outboundBridgeEnabled }: {
   policy: PolicyState;
   chain: 'solana' | 'evm';
   evmChainId?: EvmChainId;
+  yieldHomeChainId?: number | null;
+  linkedEthereumTreasury?: boolean;
+  outboundBridgeEnabled?: boolean;
 }) {
   const evmAdapterStatuses = useMemo(
     () => (chain === 'evm' && evmChainId ? getEvmAdapterStatuses(evmChainId) : []),
@@ -384,6 +405,13 @@ function ConstitutionSummary({ policy, chain, evmChainId }: {
           <b style={{ fontWeight: 500, color: 'hsl(var(--foreground))' }}>{value}</b>
         </div>
       ))}
+      {chain === 'evm' && (
+        <EthereumFamilyYieldList
+          homeChainId={yieldHomeChainId ?? evmChainId}
+          linkedEthereumTreasury={linkedEthereumTreasury}
+          outboundBridgeEnabled={outboundBridgeEnabled}
+        />
+      )}
     </div>
   );
 }
@@ -397,6 +425,9 @@ export default function ConstitutionStep({
   evmChainId,
   readOnly = false,
   showAgentThreshold = false,
+  yieldHomeChainId,
+  linkedEthereumTreasury = false,
+  outboundBridgeEnabled = false,
 }: ConstitutionStepProps) {
   const evmAdapterStatuses = useMemo(
     () => (chain === 'evm' && evmChainId ? getEvmAdapterStatuses(evmChainId) : []),
@@ -418,7 +449,16 @@ export default function ConstitutionStep({
   const { rates } = useStrategyRates(readOnly ? null : strategyChain);
 
   if (readOnly) {
-    return <ConstitutionSummary policy={policy} chain={chain} evmChainId={evmChainId} />;
+    return (
+      <ConstitutionSummary
+        policy={policy}
+        chain={chain}
+        evmChainId={evmChainId}
+        yieldHomeChainId={yieldHomeChainId}
+        linkedEthereumTreasury={linkedEthereumTreasury}
+        outboundBridgeEnabled={outboundBridgeEnabled}
+      />
+    );
   }
 
   function applyPreset(preset: RiskPreset) {
@@ -542,6 +582,14 @@ export default function ConstitutionStep({
       <SummaryLine className="my-2">
         “Keep at least <em>{policy.minStablecoin}%</em> safe, put at most <em>{policy.maxDeployment}%</em> to work, never more than <em>{policy.maxLending}%</em> in one place — only in places we&apos;ve approved.”
       </SummaryLine>
+
+      {chain === 'evm' && (
+        <EthereumFamilyYieldList
+          homeChainId={yieldHomeChainId ?? evmChainId}
+          linkedEthereumTreasury={linkedEthereumTreasury}
+          outboundBridgeEnabled={outboundBridgeEnabled}
+        />
+      )}
 
       {/* Expandable Customise the numbers disclosure matching demo #wiz2 */}
       <details

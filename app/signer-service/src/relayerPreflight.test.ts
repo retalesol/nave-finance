@@ -7,6 +7,7 @@ import {
   SYNC_POSITION_VALUE_MIN_GAS,
   computeRelayerGasLimit,
   expectedRequestPayloadHash,
+  isInsufficientNativeBalance,
   relayEvmAgentAction,
   rpcUrlFor,
   withSenderLock,
@@ -225,6 +226,15 @@ test('computeRelayerGasLimit: applies 30% buffer, 200k floor on syncPositionValu
   // Capped at gasCap
   assert.equal(computeRelayerGasLimit(2_500_000n, 'execute', 3_000_000n), 3_000_000n);
   assert.equal(computeRelayerGasLimit(90_000n, 'syncPositionValue', 150_000n), 150_000n);
+});
+
+test('isInsufficientNativeBalance: matches the RPC fee rejection and ignores contract reverts', () => {
+  assert.equal(
+    isInsufficientNativeBalance('The total cost (gas * gas fee + value) of executing this transaction exceeds the balance of the account.'),
+    true,
+  );
+  assert.equal(isInsufficientNativeBalance('insufficient funds for gas * price + value'), true);
+  assert.equal(isInsufficientNativeBalance('execution reverted: NotAuthorizedAgent()'), false);
 });
 
 test('withSenderLock: serializes concurrent calls for the same (chainId, address)', async () => {

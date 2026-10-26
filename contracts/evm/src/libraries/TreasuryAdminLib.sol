@@ -18,6 +18,7 @@ import {NaveTokenDeployer} from "../NaveTokenDeployer.sol";
 import {NaveDaoToken} from "../NaveDaoToken.sol";
 import {TreasuryValuationLib} from "./TreasuryValuationLib.sol";
 import {TreasuryStrategyLib} from "./TreasuryStrategyLib.sol";
+import {ProtocolFeeLib} from "./ProtocolFeeLib.sol";
 
 /// @title TreasuryAdminLib
 /// @notice External (DELEGATECALL-linked) library holding the bulkier
@@ -788,6 +789,39 @@ library TreasuryAdminLib {
         if (idx == 0) revert NaveErrors.TokenNotInRegistry();
         if (tokens[idx - 1].authorityRevoked) revert NaveErrors.AuthorityAlreadyRevoked();
         NaveDaoToken(mint).mint(to, amount);
+    }
+
+    /// Send the outbound relayer fee to `protocol.relayer()`. No-op when the
+    /// owner has not stored a relayer yet (existing suites and already-deployed
+    /// protocols). Once set, a treasury that cannot cover the fee reverts with
+    /// {NaveErrors.InsufficientNativeForRelayerFee}.
+    ///
+    /// Non-Arc: 0.0005 ETH. Raw native is used first. Inbound ETH is wrapped on
+    /// receive, so a shortfall is unwrapped from WETH. The treasury sets a
+    /// transient flag before this call so that unwrap does not immediately
+    /// re-wrap. Arc: the 18-decimal native USDC value of 0.0005 ETH.
+    function pullOutboundRelayerFee(INaveProtocol protocol, IOracle oracle) external {
+        address payee = protocol.relayer();
+        if (payee == address(0)) return;
+        uint256 due;
+        if (ProtocolFeeLib.isArc(block.chainid)) {
+            due = ProtocolFeeLib.ethToArcNative(
+                oracle, protocol.wrappedNative(), protocol.ethUsdFeedId(), NaveConstants.OUTBOUND_RELAYER_FEE_WEI
+            );
+        } else {
+            due = NaveConstants.OUTBOUND_RELAYER_FEE_WEI;
+            if (address(this).balance < due) {
+                address weth = protocol.wrappedNative();
+                uint256 short = due - address(this).balance;
+                if (weth == address(0) || IERC20(weth).balanceOf(address(this)) < short) {
+                    revert NaveErrors.InsufficientNativeForRelayerFee();
+                }
+                IWETH(weth).withdraw(short);
+            }
+        }
+        if (address(this).balance < due) revert NaveErrors.InsufficientNativeForRelayerFee();
+        (bool ok,) = payee.call{value: due}("");
+        if (!ok) revert NaveErrors.InsufficientNativeForRelayerFee();
     }
 
     function validateBps(uint16 management, uint16 performance) internal pure {

@@ -9,7 +9,8 @@ import { formatDaoSlugLabel, getDaoPublicPath } from '../lib/daoSlug';
 import { getAgentSetPDA } from '../lib/pdaDerivation';
 import { getNavePrograms } from '../lib/naveProgram';
 import { SOLANA_NETWORK } from '../lib/programConfig';
-import { daoNetworkLabel, evmExplorerUrl, solanaExplorerUrl } from '../lib/chain/types';
+import { daoNetworkLabel, evmExplorerUrl, isEvmChainId, solanaExplorerUrl } from '../lib/chain/types';
+import ActivateTreasuryChains from '../components/ActivateTreasuryChains';
 
 interface SuccessState {
   daoAddress: string;
@@ -292,6 +293,16 @@ export default function DaoCreated() {
               <strong>Multi-guardian treasury:</strong> Your guardian set must vote to approve the first deployment ({state.guardianThreshold}-of-{state.guardianCount} required).
             </span>
           </Notice>
+        )}
+
+        {isEvm && state.chainId && isEvmChainId(state.chainId) && state.slug && (
+          <ActivateTreasuryChains
+            homeChainId={state.chainId}
+            treasury={state.daoAddress}
+            slug={state.slug}
+            name={state.name}
+            description={state.description}
+          />
         )}
 
         {/* CTAs */}

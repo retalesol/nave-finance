@@ -9,7 +9,10 @@ use crate::constants::{
 };
 use crate::errors::NaveError;
 use crate::state::{AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority};
-use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_founder, require_not_paused};
+use crate::utils::{
+    require_agent_authority, require_agents_enabled, require_dao_active, require_founder,
+    require_not_paused,
+};
 
 /// MarginFi protocol id this module operates on.
 const MARGINFI_PROTOCOL_ID: &[u8] = b"marginfi";
@@ -181,14 +184,23 @@ pub fn marginfi_deposit_handler(ctx: Context<MarginfiDeposit>, amount: u64) -> R
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
     require!(
         sp.ext_market != Pubkey::default() && sp.ext_reserve != Pubkey::default(),
         NaveError::PositionTargetsUnset
     );
-    require!(sp.ext_market == ctx.accounts.marginfi_group.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.bank.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.marginfi_group.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.bank.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.marginfi_account.key(),
         NaveError::InvalidPositionTokenAccount
@@ -266,10 +278,19 @@ pub fn marginfi_withdraw_handler<'info>(
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == MARGINFI_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
-    require!(sp.ext_market == ctx.accounts.marginfi_group.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.bank.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.marginfi_group.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.bank.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.marginfi_account.key(),
         NaveError::InvalidPositionTokenAccount
@@ -309,7 +330,9 @@ pub fn marginfi_withdraw_handler<'info>(
         ctx.accounts.vault_authority.to_account_info(),
         ctx.accounts.bank.to_account_info(),
         ctx.accounts.strategy_escrow.to_account_info(),
-        ctx.accounts.bank_liquidity_vault_authority.to_account_info(),
+        ctx.accounts
+            .bank_liquidity_vault_authority
+            .to_account_info(),
         ctx.accounts.bank_liquidity_vault.to_account_info(),
         ctx.accounts.token_program.to_account_info(),
     ];
@@ -321,7 +344,11 @@ pub fn marginfi_withdraw_handler<'info>(
         infos.push(acc.clone());
     }
 
-    let ix = Instruction { program_id: marginfi_program::ID, accounts: metas, data };
+    let ix = Instruction {
+        program_id: marginfi_program::ID,
+        accounts: metas,
+        data,
+    };
     invoke_signed(&ix, &infos, signer)?;
     Ok(())
 }

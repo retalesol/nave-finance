@@ -116,6 +116,8 @@ library NaveAddressRegistry {
     address internal constant BASE_SEPOLIA_AAVE_USDC = 0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f;
     address internal constant BASE_SEPOLIA_AAVE_V3_POOL = 0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27;
     address internal constant BASE_SEPOLIA_WETH = 0x4200000000000000000000000000000000000006;
+    /// Pyth Core on Base Sepolia. Not the Nave oracle proxy.
+    address internal constant BASE_SEPOLIA_PYTH = 0xA2aa501b19aff244D90cc15a4Cf739D2725B5729;
     address internal constant BASE_SEPOLIA_AAVE_V3_ADAPTER = 0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093;
     address internal constant BASE_SEPOLIA_AAVE_V3_ADAPTER_GEN1 = 0x33D19799EBac88FFDc4e5BF61c199c71963470A6;
 
@@ -231,6 +233,7 @@ library NaveAddressRegistry {
     /// Robinhood Pyth Pro is a different interface and is intentionally not returned.
     function pyth(uint256 chainId) internal pure returns (address) {
         if (chainId == ARC_TESTNET) return ARC_TESTNET_PYTH;
+        if (chainId == BASE_SEPOLIA) return BASE_SEPOLIA_PYTH;
         return address(0);
     }
 

@@ -35,13 +35,15 @@ import {
   SOLANA_SUB_STEP_LABELS,
   ZERO_EVM_ADDRESS,
   StepIndicator,
+  evmTokenSymbol,
+  fitsOnchainName,
 } from '../components/create-dao/CreateDaoHelpers';
 import Step1 from '../components/create-dao/Step1';
 import SeedReviewStep from '../components/create-dao/SeedReviewStep';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useChain } from '../hooks/useChain';
 import { useSendTransaction } from '../hooks/useSendTransaction';
-import { buildCreateDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTokenEvm, type EvmCreateDaoParams } from '../lib/evm/writers';
+import { buildCreateDaoEvm, buildCreateCrossChainDaoEvm, buildRegisterDaoTokenEvm, buildRegisterExternalDaoTokenEvm, factorySupportsCrossChain, type EvmCreateDaoParams } from '../lib/evm/writers';
 import { NaveDAOFactoryAbi, NaveTreasuryAbi, Erc20Abi } from '../lib/evm/contracts';
 import { fetchFormationFeeEvm, fetchFactoryAddressEvm } from '../lib/evm/readers';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
@@ -256,7 +258,7 @@ export default function CreateDAO() {
           return false;
         }
       }
-      if (!config.name.trim()) return false;
+      if (!fitsOnchainName(config.name)) return false;
       if (!config.slug.trim() || !slugReady) return false;
       if (!config.governanceType) return false;
       if (config.governanceType === 'token' && !config.tokenMode) return false;
@@ -273,7 +275,7 @@ export default function CreateDAO() {
           return false;
         }
       }
-      if (config.governanceType === 'token' && config.tokenMode === 'new' && !config.newTokenName.trim()) return false;
+      if (config.governanceType === 'token' && config.tokenMode === 'new' && !fitsOnchainName(config.newTokenName)) return false;
     }
     if (step === 1) {
       // At least one protocol must be approved
@@ -400,7 +402,10 @@ export default function CreateDAO() {
             ? parseEther(String(seedNum))
             : 0n;
       const totalValue = formationFeeWei + seedWei;
-      const build = buildCreateDaoEvm(chainId, params, totalValue, resolvedFactory);
+      const sameAddressFactory = await factorySupportsCrossChain(chainId, resolvedFactory);
+      const build = sameAddressFactory
+        ? buildCreateCrossChainDaoEvm(chainId, params, config.slug, totalValue, resolvedFactory)
+        : buildCreateDaoEvm(chainId, params, totalValue, resolvedFactory);
       const outcome = await tx.sendEvm(build, { successLabel: 'Treasury deployed', quietMock: true, quietToast: true });
 
       if (outcome.status === 'success') {
@@ -476,7 +481,7 @@ export default function CreateDAO() {
               chainId,
               treasury,
               config.newTokenName.trim(),
-              config.newTokenName.trim().toUpperCase().slice(0, 11),
+              evmTokenSymbol(config.newTokenName),
               evmDecimals,
               initialSupply,
               treasury,
@@ -514,7 +519,7 @@ export default function CreateDAO() {
             /* default 18 */
           }
           const tokenName = config.name.trim() || 'Governance Token';
-          const tokenSymbol = tokenName.toUpperCase().slice(0, 11) || 'GOV';
+          const tokenSymbol = evmTokenSymbol(tokenName);
           const regOutcome = await tx.sendEvm(
             buildRegisterExternalDaoTokenEvm(
               chainId,
@@ -1298,7 +1303,7 @@ export default function CreateDAO() {
           buildRegisterDaoTokenEvm(
             chainId, treasury,
             record.newTokenName.trim(),
-            record.newTokenName.trim().toUpperCase().slice(0, 11),
+            evmTokenSymbol(record.newTokenName),
             evmDecimals, initialSupply, treasury,
             parseEther(String(TOKEN_MINT_FEE_ETH)),
           ),
@@ -1328,7 +1333,7 @@ export default function CreateDAO() {
           }));
         } catch { /* default 18 */ }
         const tokenName = record.name.trim() || 'Governance Token';
-        const tokenSymbol = tokenName.toUpperCase().slice(0, 11) || 'GOV';
+        const tokenSymbol = evmTokenSymbol(tokenName);
         const regOutcome = await tx.sendEvm(
           buildRegisterExternalDaoTokenEvm(chainId, treasury, votingTokenMint, tokenName, tokenSymbol, tokenDecimals),
           { successLabel: 'Governance token registered' },
@@ -1697,7 +1702,10 @@ export default function CreateDAO() {
             Create a treasury
           </h1>
           <p style={{ fontSize: '14.5px', color: 'hsl(var(--muted-foreground))', margin: 0, maxWidth: '520px' }}>
-            About two minutes. No token required, no protocol fee — just network gas. Every choice can be changed later, by vote.
+            About two minutes. No token required, no protocol fee on the home chain — just network gas. Every choice can be changed later, by vote.
+            {config.chain !== 'solana' && (
+              <> Activating this same address on another chain sends 0.001 ETH plus gas to protocol revenue. On Arc that fee is the USDC equivalent of 0.001 ETH.</>
+            )}
           </p>
         </div>
 

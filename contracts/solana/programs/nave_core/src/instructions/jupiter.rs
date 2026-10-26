@@ -83,14 +83,23 @@ pub fn jupiter_deposit_handler(ctx: Context<JupiterDeposit>, amount: u64) -> Res
     require_fresh_nav_and_threshold(&ctx.accounts.constitution, &ctx.accounts.treasury_vault)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == JUPITER_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == JUPITER_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
     require!(
         sp.ext_market != Pubkey::default() && sp.ext_reserve != Pubkey::default(),
         NaveError::PositionTargetsUnset
     );
-    require!(sp.ext_market == ctx.accounts.lending.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.vault.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.lending.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.vault.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         ctx.accounts.jupiter_lending_program.key() == jupiter_lending_program::ID,
         NaveError::InvalidExternalProgram
@@ -130,7 +139,10 @@ pub fn jupiter_deposit_handler(ctx: Context<JupiterDeposit>, amount: u64) -> Res
             AccountMeta::new(ctx.accounts.lending.key(), false),
             AccountMeta::new(ctx.accounts.f_token_mint.key(), false),
             AccountMeta::new(ctx.accounts.supply_token_reserves_liquidity.key(), false),
-            AccountMeta::new(ctx.accounts.lending_supply_position_on_liquidity.key(), false),
+            AccountMeta::new(
+                ctx.accounts.lending_supply_position_on_liquidity.key(),
+                false,
+            ),
             AccountMeta::new_readonly(ctx.accounts.rate_model.key(), false),
             AccountMeta::new(ctx.accounts.vault.key(), false),
             AccountMeta::new(ctx.accounts.liquidity.key(), false),
@@ -152,8 +164,12 @@ pub fn jupiter_deposit_handler(ctx: Context<JupiterDeposit>, amount: u64) -> Res
             ctx.accounts.lending_admin.to_account_info(),
             ctx.accounts.lending.to_account_info(),
             ctx.accounts.f_token_mint.to_account_info(),
-            ctx.accounts.supply_token_reserves_liquidity.to_account_info(),
-            ctx.accounts.lending_supply_position_on_liquidity.to_account_info(),
+            ctx.accounts
+                .supply_token_reserves_liquidity
+                .to_account_info(),
+            ctx.accounts
+                .lending_supply_position_on_liquidity
+                .to_account_info(),
             ctx.accounts.rate_model.to_account_info(),
             ctx.accounts.vault.to_account_info(),
             ctx.accounts.liquidity.to_account_info(),
@@ -185,10 +201,19 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == JUPITER_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == JUPITER_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
-    require!(sp.ext_market == ctx.accounts.lending.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.vault.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.lending.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.vault.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         ctx.accounts.jupiter_lending_program.key() == jupiter_lending_program::ID,
         NaveError::InvalidExternalProgram
@@ -214,7 +239,10 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
             AccountMeta::new_readonly(ctx.accounts.mint.key(), false),
             AccountMeta::new(ctx.accounts.f_token_mint.key(), false),
             AccountMeta::new(ctx.accounts.supply_token_reserves_liquidity.key(), false),
-            AccountMeta::new(ctx.accounts.lending_supply_position_on_liquidity.key(), false),
+            AccountMeta::new(
+                ctx.accounts.lending_supply_position_on_liquidity.key(),
+                false,
+            ),
             AccountMeta::new_readonly(ctx.accounts.rate_model.key(), false),
             AccountMeta::new(ctx.accounts.vault.key(), false),
             AccountMeta::new(ctx.accounts.claim_account.key(), false),
@@ -237,8 +265,12 @@ pub fn jupiter_withdraw_handler(ctx: Context<JupiterWithdraw>, amount: u64) -> R
             ctx.accounts.lending.to_account_info(),
             ctx.accounts.mint.to_account_info(),
             ctx.accounts.f_token_mint.to_account_info(),
-            ctx.accounts.supply_token_reserves_liquidity.to_account_info(),
-            ctx.accounts.lending_supply_position_on_liquidity.to_account_info(),
+            ctx.accounts
+                .supply_token_reserves_liquidity
+                .to_account_info(),
+            ctx.accounts
+                .lending_supply_position_on_liquidity
+                .to_account_info(),
             ctx.accounts.rate_model.to_account_info(),
             ctx.accounts.vault.to_account_info(),
             ctx.accounts.claim_account.to_account_info(),

@@ -56,7 +56,8 @@ pub struct AgentSet {
 }
 
 impl AgentSet {
-    pub const LEN: usize = 8 + 1 + 32 + (AGENT_COUNT * (1 + 32 + 1 + 1 + 1)) + 1 + (AGENT_COUNT * (32 + 8));
+    pub const LEN: usize =
+        8 + 1 + 32 + (AGENT_COUNT * (1 + 32 + 1 + 1 + 1)) + 1 + (AGENT_COUNT * (32 + 8));
 
     pub fn get_agent(&self, role: AgentRole) -> &AgentSlot {
         &self.agents[role as usize]

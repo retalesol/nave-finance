@@ -8,11 +8,10 @@ import Fi from '../components/Fi';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import WalletNetworkMenu from '../components/WalletNetworkMenu';
-import RobinhoodTreasuryNotice from '../components/RobinhoodTreasuryNotice';
 import { Section, Notice } from '../components/calm';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS, chainFamilyLabel, evmTarget, isEvmAddress, isEvmChainId } from '../lib/chain/types';
-import { useWatchedDaos } from '../hooks/useWatchedDaos';
+import { useWatchedDaos, type TreasuryChainChip, type WatchedDao } from '../hooks/useWatchedDaos';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { signMessage as signEvmMessage } from '@wagmi/core';
 import { formatDaoSlugLabel, getDaoPublicUrl, parseJoinInput, resolveDaoBySlug } from '../lib/daoSlug';
@@ -58,19 +57,15 @@ export default function TreasuryLobby() {
       : undefined;
   const { daos: watchedDaos, loading: watchLoading, watchDao, unwatchDao } = useWatchedDaos(walletAddr, accessSigner);
 
-  const networkDaos = useMemo(
-    () =>
-      watchedDaos.filter((d) => {
-        if (typeof d.chainId === 'number' && isEvmChainId(d.chainId)) {
-          return evmTarget(d.chainId).family === target.family;
-        }
-        if (!isEvmAddress(d.daoOnchainAddress)) {
-          return target.kind === 'solana';
-        }
-        return false;
-      }),
-    [watchedDaos, target.family, target.kind],
-  );
+  const networkDaos = useMemo(() => {
+    return watchedDaos.filter((d) => {
+      const evm = d.chains.some((c) => isEvmAddress(c.daoOnchainAddress));
+      const solana = d.chains.some((c) => !isEvmAddress(c.daoOnchainAddress));
+      // Every EVM treasury group stays visible on any EVM network. A missing
+      // chain id still counts as EVM when the address is 0x…, so it is not dropped.
+      return target.kind === 'solana' ? solana : evm;
+    });
+  }, [watchedDaos, target.kind]);
 
   const networkLabel = chainFamilyLabel(target.family);
 
@@ -162,15 +157,18 @@ export default function TreasuryLobby() {
     }
   }
 
-  async function handleRemove(daoAddress: string) {
-    if (confirmRemove !== daoAddress) {
-      setConfirmRemove(daoAddress);
+  async function handleRemove(dao: WatchedDao) {
+    const key = dao.treasuryGroupId || dao.slug || dao.daoOnchainAddress;
+    if (confirmRemove !== key) {
+      setConfirmRemove(key);
       return;
     }
     setConfirmRemove(null);
-    setRemovingDao(daoAddress);
+    setRemovingDao(key);
     try {
-      await unwatchDao(daoAddress);
+      for (const chain of dao.chains) {
+        await unwatchDao(chain.daoOnchainAddress);
+      }
     } finally {
       setRemovingDao(null);
     }
@@ -186,7 +184,6 @@ export default function TreasuryLobby() {
         <Header />
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="w-full max-w-md text-center">
-            {target.family === 'robinhood' && <RobinhoodTreasuryNotice />}
             <div className="nave-label" style={{ marginBottom: '10px' }}>Treasuries</div>
             <h1
               style={{
@@ -250,8 +247,6 @@ export default function TreasuryLobby() {
       <Header />
 
       <div className="flex-1 max-w-[680px] mx-auto w-full px-4 sm:px-6 pt-10 pb-20">
-        {target.family === 'robinhood' && <RobinhoodTreasuryNotice />}
-
         {/* Heading */}
         <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
           <div>
@@ -307,29 +302,32 @@ export default function TreasuryLobby() {
         ) : networkDaos.length > 0 ? (
           <div className="mb-8" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             {networkDaos.map(t => {
-              const isRemoving = removingDao === t.daoOnchainAddress;
-              const isPendingConfirm = confirmRemove === t.daoOnchainAddress;
+              const groupKey = t.treasuryGroupId || t.slug || t.daoOnchainAddress;
+              const primary = preferredChain(t, target.family, target.kind);
+              const isRemoving = removingDao === groupKey;
+              const isPendingConfirm = confirmRemove === groupKey;
               const shareUrl = t.slug ? getDaoPublicUrl(t.slug) : null;
-              const shareLabel = t.slug ? formatDaoSlugLabel(t.slug) : `${t.daoOnchainAddress.slice(0, 6)}…${t.daoOnchainAddress.slice(-4)}`;
-              function openWatchedDao() {
-                if (typeof t.chainId === 'number' && isEvmChainId(t.chainId)) {
-                  rememberDaoChain(t.daoOnchainAddress, t.chainId);
+              const shareLabel = t.slug ? formatDaoSlugLabel(t.slug) : `${primary.daoOnchainAddress.slice(0, 6)}…${primary.daoOnchainAddress.slice(-4)}`;
+              function openChain(chain: TreasuryChainChip) {
+                if (typeof chain.chainId === 'number' && isEvmChainId(chain.chainId)) {
+                  rememberDaoChain(chain.daoOnchainAddress, chain.chainId);
                 }
-                navigate('/overview', { state: { treasuryAddress: t.daoOnchainAddress } });
+                navigate('/overview', { state: { treasuryAddress: chain.daoOnchainAddress } });
               }
               return (
                 <DaoCard
-                  key={t.daoOnchainAddress}
+                  key={t.treasuryGroupId || t.slug || primary.daoOnchainAddress}
                   name={t.name}
                   governanceType={t.governanceType}
-                  chainLabel={chainBadgeLabel(t.chainId, t.daoOnchainAddress)}
+                  chains={t.chains}
                   shareUrl={shareUrl}
                   shareLabel={shareLabel}
                   isRemoving={isRemoving}
                   isPendingConfirm={isPendingConfirm}
-                  onOpen={openWatchedDao}
-                  onRemove={() => handleRemove(t.daoOnchainAddress)}
-                  onMouseLeave={() => { if (confirmRemove === t.daoOnchainAddress) setConfirmRemove(null); }}
+                  onOpen={() => openChain(primary)}
+                  onOpenChain={openChain}
+                  onRemove={() => { void handleRemove(t); }}
+                  onMouseLeave={() => { if (confirmRemove === groupKey) setConfirmRemove(null); }}
                 />
               );
             })}
@@ -338,11 +336,11 @@ export default function TreasuryLobby() {
           <div className="mb-8">
             <NaveEmptyState
               icon="landmark"
-              title={`No ${networkLabel} treasuries`}
+              title={isEvm ? 'No EVM treasuries' : `No ${networkLabel} treasuries`}
               description={
-                DEMO_TREASURY_NAV_ENABLED
-                  ? `This wallet has no treasuries on ${networkLabel} yet. Create one, join by name/address, switch networks, or explore a demo.`
-                  : `This wallet has no treasuries on ${networkLabel} yet. Create one, join by name/address, or switch networks in the header.`
+                isEvm
+                  ? 'This wallet has no EVM treasuries yet. Create one, or join by name or address. Treasuries you already activated stay on this list on every EVM network.'
+                  : `This wallet has no treasuries on ${networkLabel} yet. Create one, join by name or address, or switch networks in the header.`
               }
               action={{ label: 'Create Treasury', icon: 'plus', onClick: () => navigate('/create-dao') }}
             />
@@ -410,27 +408,43 @@ export default function TreasuryLobby() {
   );
 }
 
+function preferredChain(dao: WatchedDao, family: string, kind: string): TreasuryChainChip {
+  if (kind === 'evm') {
+    const match = dao.chains.find(
+      (c) => typeof c.chainId === 'number' && isEvmChainId(c.chainId) && evmTarget(c.chainId).family === family,
+    );
+    if (match) return match;
+  }
+  return dao.chains[0] ?? {
+    chainId: dao.chainId,
+    daoOnchainAddress: dao.daoOnchainAddress,
+    label: chainBadgeLabel(dao.chainId, dao.daoOnchainAddress),
+  };
+}
+
 /* ── DAO row ────────────────────────────────────────────── */
 function DaoCard({
   name,
   governanceType,
-  chainLabel,
+  chains,
   shareUrl,
   shareLabel,
   isRemoving,
   isPendingConfirm,
   onOpen,
+  onOpenChain,
   onRemove,
   onMouseLeave,
 }: {
   name: string;
   governanceType: string;
-  chainLabel: string;
+  chains: TreasuryChainChip[];
   shareUrl: string | null;
   shareLabel: string;
   isRemoving: boolean;
   isPendingConfirm: boolean;
   onOpen: () => void;
+  onOpenChain: (chain: TreasuryChainChip) => void;
   onRemove: () => void;
   onMouseLeave: () => void;
 }) {
@@ -459,23 +473,33 @@ function DaoCard({
       }}
       onMouseLeave={onMouseLeave}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={isRemoving}
-        className="flex-1 min-w-0 text-left group"
-      >
-        <div
-          className="group-hover:text-brass transition-colors truncate"
-          style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))', lineHeight: 1.4 }}
+      <div className="flex-1 min-w-0 text-left group">
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={isRemoving}
+          className="group-hover:text-brass transition-colors truncate text-left"
+          style={{ fontSize: '14px', fontWeight: 500, color: 'hsl(var(--foreground))', lineHeight: 1.4, display: 'block', width: '100%' }}
         >
           {name}
-        </div>
+        </button>
         <div
           className="flex items-center gap-2 flex-wrap mt-0.5"
           style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
         >
-          <span>{chainLabel}</span>
+          <span className="flex items-center gap-1 flex-wrap">
+            {chains.map((chain) => (
+              <button
+                key={`${chain.chainId ?? 'x'}-${chain.daoOnchainAddress}`}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenChain(chain); }}
+                className="px-2 py-0.5 rounded-full border"
+                style={{ fontSize: '11px', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', backgroundColor: '#ffffff' }}
+              >
+                {chain.label}
+              </button>
+            ))}
+          </span>
           <span>·</span>
           <span>{govLabel}</span>
           <span>·</span>
@@ -483,7 +507,7 @@ function DaoCard({
             {shareUrl ? shareUrl.replace(/^https?:\/\//, '') : shareLabel}
           </span>
         </div>
-      </button>
+      </div>
 
       <div className="flex items-center gap-3 ml-auto flex-shrink-0 pt-0.5">
         {shareUrl && (

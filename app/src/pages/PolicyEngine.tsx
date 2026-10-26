@@ -18,6 +18,7 @@ import ConstitutionStep, {
   secsToRebalanceFreq,
   tierBoundedCaps,
 } from '../components/ConstitutionStep';
+import EthereumFamilyYieldList from '../components/EthereumFamilyYieldList';
 import { useDaoContext } from '../hooks/useDaoContext';
 import { useConstitution } from '../hooks/useConstitution';
 import { useDaoRegistry } from '../hooks/useDaoRegistry';
@@ -33,6 +34,9 @@ import {
   SYSTEM_CONFIDENCE_THRESHOLD,
 } from '../lib/programConfig';
 import { isMockDaoAddress } from '../lib/mockData';
+import { isEvmChainId, recommendedSisterChainId } from '../lib/chain/types';
+import { fetchLinkedTreasuryEvm } from '../lib/evm/readers';
+import { seesEthereumFamilyYield } from '../../supabase/functions/_shared/ethereumFamilyYield.ts';
 import {
   encodeConstitutionPayload,
   type ConstitutionPayloadProtocol,
@@ -51,6 +55,22 @@ export default function PolicyEngine() {
   const treasuryBalance = useTreasuryBalance(daoAddress);
   const { chainKind, evmChainId } = useChain();
   const isMock = isMockDaoAddress(daoAddress);
+  const treasuryChainId = dao?.chainId ?? (chainKind === 'evm' ? evmChainId ?? null : null);
+  const [linkedEthereumTreasury, setLinkedEthereumTreasury] = useState(false);
+  const outboundBridgeEnabled = import.meta.env.VITE_NAVE_BRIDGE_OUTBOUND_ENABLED === 'true';
+
+  useEffect(() => {
+    if (treasuryChainId == null || !isEvmChainId(treasuryChainId) || !seesEthereumFamilyYield(treasuryChainId) || !daoAddress) {
+      setLinkedEthereumTreasury(false);
+      return;
+    }
+    let cancelled = false;
+    const dest = recommendedSisterChainId(treasuryChainId);
+    void fetchLinkedTreasuryEvm(treasuryChainId, daoAddress, dest)
+      .then((addr) => { if (!cancelled) setLinkedEthereumTreasury(!!addr); })
+      .catch(() => { if (!cancelled) setLinkedEthereumTreasury(false); });
+    return () => { cancelled = true; };
+  }, [treasuryChainId, daoAddress]);
 
   // Membership: only treasury members may propose a constitution change. The
   // proposal tx is signed by this wallet, which is the on-chain membership proof.
@@ -308,6 +328,9 @@ export default function PolicyEngine() {
         <ConstitutionReadout
           constitution={constitution}
           chainKind={chainKind === 'evm' ? 'evm' : 'solana'}
+          homeChainId={treasuryChainId}
+          linkedEthereumTreasury={linkedEthereumTreasury}
+          outboundBridgeEnabled={outboundBridgeEnabled}
           onAmend={() => setAmending(true)}
         />
       ) : (
@@ -321,7 +344,10 @@ export default function PolicyEngine() {
             setPolicy={setPolicy}
             chain={chainKind === 'evm' ? 'evm' : 'solana'}
             evmChainId={evmChainId ?? undefined}
+            yieldHomeChainId={treasuryChainId}
             showAgentThreshold
+            linkedEthereumTreasury={linkedEthereumTreasury}
+            outboundBridgeEnabled={outboundBridgeEnabled}
           />
 
           {/* Empty-treasury guard */}
@@ -386,10 +412,16 @@ function venueName(protocolId: string, chainKind: 'solana' | 'evm'): string {
 function ConstitutionReadout({
   constitution,
   chainKind,
+  homeChainId,
+  linkedEthereumTreasury,
+  outboundBridgeEnabled = false,
   onAmend,
 }: {
   constitution: ReturnType<typeof useConstitution>['constitution'];
   chainKind: 'solana' | 'evm';
+  homeChainId: number | null;
+  linkedEthereumTreasury: boolean;
+  outboundBridgeEnabled?: boolean;
   onAmend: () => void;
 }) {
   const [selectedRuleNo, setSelectedRuleNo] = useState<string | null>(null);
@@ -578,6 +610,14 @@ function ConstitutionReadout({
             </div>
           </div>
         </NaveModal>
+      )}
+
+      {chainKind === 'evm' && (
+        <EthereumFamilyYieldList
+          homeChainId={homeChainId}
+          linkedEthereumTreasury={linkedEthereumTreasury}
+          outboundBridgeEnabled={outboundBridgeEnabled}
+        />
       )}
 
       <p

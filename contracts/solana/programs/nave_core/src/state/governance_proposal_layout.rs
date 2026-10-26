@@ -50,6 +50,7 @@ impl GovernanceProposalLayout {
             crate::errors::NaveError::InvalidGovernanceProposal
         );
         let mut slice: &[u8] = &data[8..];
-        Self::deserialize(&mut slice).map_err(|_| error!(crate::errors::NaveError::InvalidGovernanceProposal))
+        Self::deserialize(&mut slice)
+            .map_err(|_| error!(crate::errors::NaveError::InvalidGovernanceProposal))
     }
 }

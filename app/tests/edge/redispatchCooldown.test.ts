@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  isKeyMissFailure,
   redispatchWaitSecs,
   waitsOnlyForRefresh,
   REDISPATCH_COOLDOWN_SECS,
@@ -50,6 +51,25 @@ test("a failed execute waits the refresh retry only", () => {
 
 test("a failed model call waits the refresh retry", () => {
   assert.equal(wait({ status: "error", error_message: "429", created_at: ago(30) }), 570);
+});
+
+test("a key-not-found failure waits the full cooldown, not the refresh retry", () => {
+  const last = {
+    status: "failed",
+    error_message: "Agent key not found or inactive",
+    created_at: ago(100),
+  };
+  assert.equal(isKeyMissFailure(last.error_message), true);
+  assert.equal(waitsOnlyForRefresh(last.error_message), false);
+  assert.equal(wait(last), 21600 - 100);
+  assert.equal(wait({ ...last, created_at: ago(700) }), 21600 - 700);
+  assert.equal(wait({ status: "failed", error_message: "Agent key not found", created_at: ago(60) }), 21600 - 60);
+});
+
+test("an inactive-key failure waits the full cooldown", () => {
+  assert.equal(wait({ status: "error", error_message: "inactive key", created_at: ago(30) }), 21600 - 30);
+  assert.equal(wait({ status: "failed", error_message: "inactive-key", created_at: ago(30) }), 21600 - 30);
+  assert.equal(isKeyMissFailure("payload_hash_equality: expected payload hash unknown"), false);
 });
 
 test("a ready InReview request is not starved by a completed continue", () => {

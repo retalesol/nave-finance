@@ -19,10 +19,7 @@ pub fn require_agents_enabled(agent_set: &AgentSet) -> Result<()> {
 }
 
 pub fn validate_dao_ownership(account_dao: &Pubkey, dao_registry: &Pubkey) -> Result<()> {
-    require!(
-        account_dao == dao_registry,
-        NaveError::DaoOwnershipMismatch
-    );
+    require!(account_dao == dao_registry, NaveError::DaoOwnershipMismatch);
     Ok(())
 }
 
@@ -36,8 +33,14 @@ pub fn require_founder(signer: &Pubkey, dao_registry: &DaoRegistry) -> Result<()
     Ok(())
 }
 
-pub fn require_guardian(signer: &Pubkey, guardian_config: &crate::state::GuardianConfig) -> Result<()> {
-    require!(guardian_config.is_guardian(signer), NaveError::GuardianNotFound);
+pub fn require_guardian(
+    signer: &Pubkey,
+    guardian_config: &crate::state::GuardianConfig,
+) -> Result<()> {
+    require!(
+        guardian_config.is_guardian(signer),
+        NaveError::GuardianNotFound
+    );
     Ok(())
 }
 
@@ -106,7 +109,10 @@ pub fn agent_keys_with(
     agent_set: &AgentSet,
     slot: usize,
     new_key: Pubkey,
-) -> ([Pubkey; crate::constants::AGENT_COUNT], [bool; crate::constants::AGENT_COUNT]) {
+) -> (
+    [Pubkey; crate::constants::AGENT_COUNT],
+    [bool; crate::constants::AGENT_COUNT],
+) {
     let mut keys = [Pubkey::default(); crate::constants::AGENT_COUNT];
     let mut skip = [false; crate::constants::AGENT_COUNT];
     for (i, a) in agent_set.agents.iter().enumerate() {
@@ -118,7 +124,10 @@ pub fn agent_keys_with(
 }
 
 pub fn copy_fixed_bytes<const N: usize>(dest: &mut [u8; N], src: &[u8]) -> Result<usize> {
-    require!(!src.is_empty() && src.len() <= N, NaveError::InvalidNameLength);
+    require!(
+        !src.is_empty() && src.len() <= N,
+        NaveError::InvalidNameLength
+    );
     dest.fill(0);
     dest[..src.len()].copy_from_slice(src);
     Ok(src.len())

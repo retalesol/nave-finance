@@ -191,16 +191,21 @@ function checkYield(chain: SmokeChain) {
   }
   const chainId = chain === "robinhood" ? 46630 : 5042002;
   const scored = scoreEvmTestnetOpportunities([{ protocolId: "cctp", programId: "" }], chain, chainId);
-  const source = scored[0]?.source ?? "";
-  if (scored.length !== 1 || !source.startsWith("testnet-rate:cctp-to-sepolia-aave-v3")) {
-    fail(chain, `expected a CCTP-to-Sepolia Aave V3 testnet rate, got ${source || "nothing"}`);
+  const cctp = scored.find((row) => (row.source ?? "").startsWith("testnet-rate:cctp-to-sepolia-aave-v3"));
+  if (!cctp) {
+    fail(chain, `expected a CCTP-to-Sepolia Aave V3 testnet rate, got ${scored.map((row) => row.source).join(", ") || "nothing"}`);
     return;
   }
-  if (chain === "robinhood" && scored[0].mint) {
+  const sepoliaAave = scored.find((row) => row.bridgeRequired === true && row.protocolId === "aave-v3-usdc" && row.venueChainId === 11155111);
+  if (!sepoliaAave) {
+    fail(chain, "expected a bridge-required Sepolia Aave opportunity");
+    return;
+  }
+  if (chain === "robinhood" && cctp.mint) {
     fail(chain, "Robinhood score invented a USDC address");
     return;
   }
-  if (chain === "arc" && scored[0].mint?.toLowerCase() !== "0x3600000000000000000000000000000000000000") {
+  if (chain === "arc" && cctp.mint?.toLowerCase() !== "0x3600000000000000000000000000000000000000") {
     fail(chain, "Arc score did not use the published USDC address");
     return;
   }

@@ -1,4 +1,4 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# { "Depends": "py-genlayer:babwp9t37jw9g4j2bccgn14g6x7x9s1f7dsmh7emvz735pz4zxa0" }
 """HaltAppeal is a second check: keep a pause, or say it can be lifted.
 
 Lifting here does not move funds, does not shorten the review window, and does
@@ -7,7 +7,8 @@ keep_pause or lift_pause plus one sentence. It does not hold treasury tokens,
 and it does not accept a prewritten decision as evidence.
 """
 
-from genlayer import *
+import genlayer as gl
+from genlayer.storage import TreeMap, allow as allow_storage
 from dataclasses import dataclass
 
 ERROR_EXPECTED = "[EXPECTED]"
@@ -53,13 +54,23 @@ def _reject_value():
         raise gl.vm.UserError(ERROR_EXPECTED + " This contract does not hold treasury tokens")
 
 
+def _vm_text(err):
+    data = getattr(err, "data", None)
+    if isinstance(data, str):
+        return data
+    message = getattr(err, "message", None)
+    if isinstance(message, str):
+        return message
+    return ""
+
+
 def _handle_leader_error(leaders_res, leader_fn):
-    leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
+    leader_msg = _vm_text(leaders_res)
     try:
         leader_fn()
         return False
     except gl.vm.UserError as err:
-        validator_msg = err.message if hasattr(err, "message") else str(err)
+        validator_msg = _vm_text(err)
         if validator_msg.startswith(ERROR_EXPECTED) or validator_msg.startswith(ERROR_EXTERNAL):
             return validator_msg == leader_msg
         if validator_msg.startswith(ERROR_TRANSIENT) and leader_msg.startswith(ERROR_TRANSIENT):
@@ -227,7 +238,7 @@ def _score_close(left, right):
     return diff <= SCORE_TOLERANCE
 
 
-class HaltAppeal(gl.Contract):
+class HaltAppeal(gl.contract.Contract):
     """Second check for one paused move. The treasury chain still holds the funds."""
 
     appeals: TreeMap[str, HaltRecord]
@@ -262,7 +273,7 @@ class HaltAppeal(gl.Contract):
                 return False
             return _score_close(data.get("score"), mine["score"])
 
-        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        return gl.vm.run_nondet(leader_fn, validator_fn)
 
     def _view(self, record):
         return {

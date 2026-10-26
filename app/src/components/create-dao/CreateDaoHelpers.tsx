@@ -25,6 +25,26 @@ export interface DAOConfig {
   newTokenSupply: string;
 }
 
+/** On-chain DAO and token names are measured in UTF-8 bytes, capped at 32. */
+export const MAX_ONCHAIN_NAME_BYTES = 32;
+/** `NaveTreasury.registerDaoToken` rejects a symbol longer than this. */
+export const MAX_TOKEN_SYMBOL_LEN = 8;
+
+export function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+export function fitsOnchainName(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && utf8ByteLength(trimmed) <= MAX_ONCHAIN_NAME_BYTES;
+}
+
+/** Symbol written at EVM token registration. Longer names are cut to 8 characters. */
+export function evmTokenSymbol(name: string): string {
+  const symbol = name.trim().toUpperCase().slice(0, MAX_TOKEN_SYMBOL_LEN);
+  return symbol.length > 0 ? symbol : 'DAO';
+}
+
 export const DEFAULT_CONFIG: DAOConfig = {
   chain: 'solana',
   name: '',
@@ -242,12 +262,14 @@ export function TextInput({
   placeholder,
   mono = false,
   type = 'text',
+  maxLength,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   mono?: boolean;
   type?: string;
+  maxLength?: number;
 }) {
   return (
     <input
@@ -255,6 +277,7 @@ export function TextInput({
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
+      maxLength={maxLength}
       className="w-full rounded-[10px] border outline-none transition-colors"
       style={{
         padding: '11px 13px',

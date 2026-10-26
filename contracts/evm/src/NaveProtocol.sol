@@ -67,6 +67,9 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     mapping(address => uint256) public adapterApprovalEffectiveAt;
     /// Venue risk tier per adapter (0 = unset, read as Tier 1). See {riskTierOf}.
     mapping(address => uint8) public adapterRiskTier;
+    /// Hot key that receives the 0.0005 ETH outbound relayer fee. Not a caller
+    /// argument. Zero until {setRelayer}. Appended — do not reorder.
+    address public relayer;
 
     event Paused(bool paused);
     event FormationFeeUpdated(uint256 fee);
@@ -86,6 +89,7 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     event AdapterApprovalQueued(address indexed adapter, uint256 effectiveAt);
     event RemoteTreasurySet(uint256 indexed chainId, address indexed treasury, bool registered);
     event AdapterRiskTierSet(address indexed adapter, uint8 tier);
+    event RelayerUpdated(address indexed previousRelayer, address indexed relayer);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -162,6 +166,13 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
         wrappedNative = token;
         ethUsdFeedId = feedId;
         emit WrappedNativeUpdated(token, feedId);
+    }
+
+    /// Protocol relayer. Outbound treasury fees pay this address and no other.
+    function setRelayer(address relayer_) external onlyOwner {
+        if (relayer_ == address(0)) revert NaveErrors.ZeroAddress();
+        emit RelayerUpdated(relayer, relayer_);
+        relayer = relayer_;
     }
 
     function setFactory(address factory_) external onlyOwner {
@@ -325,6 +336,6 @@ contract NaveProtocol is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     receive() external payable {}
 
     /// Was 40; slots consumed by `isApprovedAdapter`, `_remoteTreasury`,
-    /// `adapterApprovalEffectiveAt`, `adapterRiskTier`.
-    uint256[36] private __gap;
+    /// `adapterApprovalEffectiveAt`, `adapterRiskTier`, and `relayer`.
+    uint256[35] private __gap;
 }

@@ -100,7 +100,7 @@ export async function checkDaoSlugAvailability(slug: string): Promise<SlugAvaila
     .from('dao_registry')
     .select('dao_onchain_address')
     .eq('slug', slug)
-    .maybeSingle();
+    .limit(1);
 
   if (error) {
     console.warn('Slug availability check failed:', error.message);
@@ -110,7 +110,7 @@ export async function checkDaoSlugAvailability(slug: string): Promise<SlugAvaila
     };
   }
 
-  if (data) {
+  if (data && data.length > 0) {
     return { available: false, error: `${formatDaoSlugLabel(slug)} is already taken` };
   }
 
@@ -122,7 +122,7 @@ export async function isDaoSlugAvailable(slug: string): Promise<boolean> {
   return result.available;
 }
 
-export async function resolveDaoBySlug(slug: string): Promise<DaoRegistryRow | null> {
+export async function resolveDaoBySlug(slug: string, chainId?: number | null): Promise<DaoRegistryRow | null> {
   const normalized = normalizeDaoSlug(slug);
   const validation = validateDaoSlug(normalized);
   if (!validation.valid) return null;
@@ -130,9 +130,13 @@ export async function resolveDaoBySlug(slug: string): Promise<DaoRegistryRow | n
   const { data, error } = await supabase
     .from('dao_registry')
     .select('*')
-    .eq('slug', normalized)
-    .maybeSingle();
+    .eq('slug', normalized);
 
-  if (error || !data) return null;
-  return data as DaoRegistryRow;
+  if (error || !data || data.length === 0) return null;
+  const rows = data as DaoRegistryRow[];
+  if (typeof chainId === 'number') {
+    const match = rows.find((row) => row.chain_id === chainId);
+    if (match) return match;
+  }
+  return rows[0];
 }

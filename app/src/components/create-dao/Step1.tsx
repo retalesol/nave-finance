@@ -14,6 +14,8 @@ import {
   type TokenMode,
   Field,
   TextInput,
+  fitsOnchainName,
+  MAX_ONCHAIN_NAME_BYTES,
 } from './CreateDaoHelpers';
 
 const PURPOSE_OPTIONS = [
@@ -118,6 +120,7 @@ export default function Step1({
             setConfig(patch);
           }}
           placeholder="e.g. Solana Builders Collective"
+          maxLength={MAX_ONCHAIN_NAME_BYTES}
           className="w-full rounded-[10px] border outline-none transition-colors"
           style={{
             padding: '11px 13px',
@@ -130,6 +133,11 @@ export default function Step1({
           onFocus={e => (e.currentTarget.style.borderColor = 'hsl(var(--foreground))')}
           onBlur={e => (e.currentTarget.style.borderColor = 'hsl(var(--border))')}
         />
+        {config.name.trim().length > 0 && !fitsOnchainName(config.name) && (
+          <p style={{ fontSize: '12px', color: 'hsl(var(--destructive))', margin: '6px 0 0' }}>
+            Name must be {MAX_ONCHAIN_NAME_BYTES} bytes or fewer.
+          </p>
+        )}
 
         {/* Compact inline URL preview + editable slug (keeps placeholder="nave" accessible) */}
         <div className="flex items-center gap-2 flex-wrap mt-2" style={{ fontSize: '12.5px' }}>
@@ -333,6 +341,7 @@ export default function Step1({
                     onChange={v => setConfig({ newTokenName: v })}
                     placeholder="e.g. HBR"
                     mono
+                    maxLength={MAX_ONCHAIN_NAME_BYTES}
                   />
                 </div>
                 <div>

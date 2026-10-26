@@ -2,8 +2,8 @@
  * Nave scheduler/worker.
  *
  * Replaces curl-based ops with a long-running process that periodically:
- *   1. Triggers the agent-orchestrator in poll mode to advance any eligible
- *      execution requests (approvals, post-review execute_strategy, halts).
+ *   1. Safety-sweeps indexed open execution requests every 15 minutes, and wakes
+ *      at each open request's reviewEnd (approvals, post-review execute, halts).
  *   2. Triggers snapshot-treasury to refresh treasury NAV snapshots.
  *   3. Proactively replenishes agent wallets using a 3-tier hysteresis model
  *      funded from the protocol ops/revenue wallet (the on-chain 15% yield-fee
@@ -20,7 +20,7 @@
  *   SUPABASE_URL                  Supabase project URL (required)
  *   SUPABASE_SERVICE_ROLE_KEY     Service-role key for edge auth (required)
  *   NAVE_AGENT_SECRET             Orchestrator caller secret (required)
- *   NAVE_INDEXER_SECRET           snapshot-treasury caller secret (required)
+ *   NAVE_INDEXER_SECRET           snapshot-treasury caller secret (optional; snapshots skip when unset)
  *   NAVE_SIGNER_URL               Signer service base URL (required for replenishment)
  *   NAVE_SIGNER_SECRET            Signer service auth secret (required for replenishment)
  *   NAVE_OPS_WALLET_SECRET        Protocol operations keypair (base64 or comma-separated
@@ -41,10 +41,14 @@
  *                                 proposal loop is skipped if unset). NOTE: the
  *                                 proposal-creator itself is observe-only unless
  *                                 NAVE_AUTOPROPOSE_ENABLED=true on that function.
- *   ORCHESTRATOR_INTERVAL_MS      Poll cadence (default 60000)
+ *   ORCHESTRATOR_INTERVAL_MS      Safety sweep of indexed open requests
+ *                                 (default 900000 = 15m). Not a full-registry scan.
+ *   REVIEW_WAKE_REFRESH_MS        How often indexed oversight rows are read to
+ *                                 arm a timer at reviewEnd (default 15000).
+ *                                 Does not call the orchestrator by itself.
  *   SNAPSHOT_INTERVAL_MS          Snapshot cadence (default 900000 = 15m)
- *   POLICY_INTERVAL_MS            Policy-eval cadence (default 600000 = 10m)
- *   PROPOSAL_INTERVAL_MS          Proposal-creator cadence (default 600000 = 10m)
+ *   POLICY_INTERVAL_MS            Policy-eval cadence (default 3600000 = 60m)
+ *   PROPOSAL_INTERVAL_MS          Proposal-creator cadence (default 3600000 = 60m)
  *   REPLENISH_INTERVAL_MS         Agent wallet replenishment cadence
  *                                 (default 21600000 = 6h)
  *   STAKING_MIRROR_INTERVAL_MS    Staking global-parity mirror cadence
@@ -60,6 +64,23 @@ import { replenishEvmAgentWallets } from './evmRelayer.js';
 import { readStakingMirrorConfig, runStakingMirror } from './stakingMirror.js';
 import { readBridgeWatcherConfig, runBridgeWatcher } from './bridgeWatcher.js';
 import { reconcileStakeClaimWraps, runStakeClaimAccrualTick } from './stakeClaims.js';
+import { runRelayerSweep } from './relayerSweep.js';
+import { readInvoiceSettleConfig } from './invoiceSettlePlan.js';
+import { runInvoiceSettleLoop } from './invoiceSettle.js';
+import {
+  DEFAULT_ORCHESTRATOR_SWEEP_MS,
+  DEFAULT_POLICY_INTERVAL_MS,
+  DEFAULT_PROPOSAL_INTERVAL_MS,
+  DEFAULT_REVIEW_WAKE_REFRESH_MS,
+  DEFAULT_SNAPSHOT_INTERVAL_MS,
+} from './workerCadence.js';
+import {
+  reviewWakeDelayMs,
+  reviewWakesFromIndexedRows,
+  shouldScheduleReviewWake,
+  type IndexedActivityRow,
+  type ReviewWake,
+} from './pollDiscovery.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -73,10 +94,11 @@ const POLICY_SECRET = process.env.NAVE_POLICY_SECRET;
 // NAVE_AUTOPROPOSE_ENABLED=true. Both must be set for autonomous proposing.
 const PROPOSER_SECRET = process.env.NAVE_PROPOSER_SECRET;
 
-const ORCHESTRATOR_INTERVAL_MS = Number(process.env.ORCHESTRATOR_INTERVAL_MS ?? 60_000);
-const SNAPSHOT_INTERVAL_MS = Number(process.env.SNAPSHOT_INTERVAL_MS ?? 900_000);
-const POLICY_INTERVAL_MS = Number(process.env.POLICY_INTERVAL_MS ?? 600_000);
-const PROPOSAL_INTERVAL_MS = Number(process.env.PROPOSAL_INTERVAL_MS ?? 600_000);
+const ORCHESTRATOR_INTERVAL_MS = Number(process.env.ORCHESTRATOR_INTERVAL_MS ?? DEFAULT_ORCHESTRATOR_SWEEP_MS);
+const REVIEW_WAKE_REFRESH_MS = Number(process.env.REVIEW_WAKE_REFRESH_MS ?? DEFAULT_REVIEW_WAKE_REFRESH_MS);
+const SNAPSHOT_INTERVAL_MS = Number(process.env.SNAPSHOT_INTERVAL_MS ?? DEFAULT_SNAPSHOT_INTERVAL_MS);
+const POLICY_INTERVAL_MS = Number(process.env.POLICY_INTERVAL_MS ?? DEFAULT_POLICY_INTERVAL_MS);
+const PROPOSAL_INTERVAL_MS = Number(process.env.PROPOSAL_INTERVAL_MS ?? DEFAULT_PROPOSAL_INTERVAL_MS);
 // Adaptive agent wallet replenishment: every 6 hours by default.
 const REPLENISH_INTERVAL_MS = Number(process.env.REPLENISH_INTERVAL_MS ?? 6 * 60 * 60 * 1000);
 // Staking global-parity mirror (stakingMirror.ts): splits the bridge's 1%
@@ -99,7 +121,7 @@ function requireEnv(name: string, value: string | undefined): string {
 const supabaseUrl = requireEnv('SUPABASE_URL', SUPABASE_URL);
 const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
 const agentSecret = requireEnv('NAVE_AGENT_SECRET', AGENT_SECRET);
-const indexerSecret = requireEnv('NAVE_INDEXER_SECRET', INDEXER_SECRET);
+const indexerSecret = INDEXER_SECRET ?? '';
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -139,7 +161,7 @@ async function releaseDbLease(lockKey: string): Promise<void> {
   } catch { /* lease will expire on its own */ }
 }
 
-async function callEdge(fn: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<void> {
+async function callEdge(fn: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<string | null> {
   const url = `${supabaseUrl}/functions/v1/${fn}`;
   try {
     const resp = await fetch(url, {
@@ -154,19 +176,80 @@ async function callEdge(fn: string, body: unknown, extraHeaders: Record<string, 
     const text = await resp.text();
     if (!resp.ok) {
       console.error(`[worker] ${fn} -> HTTP ${resp.status}: ${text}`);
-    } else {
-      console.log(`[worker] ${fn} ok: ${text.slice(0, 300)}`);
+      return null;
     }
+    console.log(`[worker] ${fn} ok: ${text.slice(0, 300)}`);
+    return text;
   } catch (err) {
     console.error(`[worker] ${fn} request failed:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
-async function pollOrchestrator(): Promise<void> {
-  await callEdge('agent-orchestrator', { mode: 'poll' }, { 'X-Agent-Secret': agentSecret });
+const armedReviewWakes = new Set<string>();
+
+function scheduleReviewWakes(wakes: ReviewWake[]): void {
+  const now = Date.now();
+  let armed = 0;
+  for (const wake of wakes) {
+    const decision = shouldScheduleReviewWake(wake.review_end, now);
+    if (decision === 'skip') continue;
+    // One poll per DAO at this reviewEnd. Indexed rows key the request by index;
+    // the sweep keys it by the execution-request address. Both must collapse.
+    const dao = wake.dao_address.startsWith('0x') || wake.dao_address.startsWith('0X')
+      ? wake.dao_address.toLowerCase()
+      : wake.dao_address;
+    const key = `${dao}:${wake.review_end}`;
+    if (armedReviewWakes.has(key)) continue;
+    armedReviewWakes.add(key);
+    const delay = decision === 'fire_now' ? 0 : reviewWakeDelayMs(wake.review_end, now);
+    setTimeout(() => {
+      void runReviewEndPoll(wake.dao_address);
+    }, delay);
+    armed++;
+  }
+  if (armed > 0) {
+    console.log(`[worker] armed ${armed} review-end wake(s)`);
+  }
+}
+
+async function pollOrchestrator(extra: Record<string, unknown> = {}): Promise<void> {
+  const text = await callEdge(
+    'agent-orchestrator',
+    { mode: 'poll', reason: 'sweep', wake_owner: 'caller', ...extra },
+    { 'X-Agent-Secret': agentSecret },
+  );
+  if (!text) return;
+  try {
+    const parsed = JSON.parse(text) as { review_wakes?: ReviewWake[] };
+    if (Array.isArray(parsed.review_wakes)) scheduleReviewWakes(parsed.review_wakes);
+  } catch {
+    // Non-JSON success bodies are already logged by callEdge.
+  }
+}
+
+/**
+ * Read indexed OversightApproved rows and arm a timer at each reviewEnd that
+ * falls inside the safety-sweep horizon. No orchestrator call and no treasury RPC.
+ */
+async function refreshReviewWakes(): Promise<void> {
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('dao_onchain_address, event_type, raw_data, created_at')
+    .in('event_type', ['OversightApprovedEvent', 'OversightApproved'])
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) {
+    console.warn(`[worker] review-wake refresh failed: ${error.message}`);
+    return;
+  }
+  scheduleReviewWakes(reviewWakesFromIndexedRows((data ?? []) as IndexedActivityRow[], Date.now()));
 }
 
 async function runSnapshot(): Promise<void> {
+  if (!indexerSecret) return;
   await callEdge('snapshot-treasury', { indexer_secret: indexerSecret });
 }
 
@@ -231,6 +314,12 @@ const DEFAULT_EVM_TESTNET_CHAIN_IDS: Record<string, number> = {
 };
 
 async function runReplenishAgentWallets(): Promise<void> {
+  try {
+    await runRelayerSweep();
+  } catch (err) {
+    console.error('[worker] relayer sweep failed:', err instanceof Error ? err.message : err);
+  }
+
   const hasSolanaOps = Boolean(process.env.NAVE_OPS_WALLET_SECRET);
   const hasEvmOps = Boolean(process.env.NAVE_EVM_OPS_PRIVATE_KEY || process.env.EVM_OPS_PRIVATE_KEY);
   if (!hasSolanaOps && !hasEvmOps) {
@@ -406,7 +495,7 @@ async function runBridgeWatcherTick(): Promise<void> {
 }
 
 // Guard against overlapping runs if a cycle takes longer than its interval.
-const running = { orchestrator: false, snapshot: false, policy: false, proposal: false, replenish: false, stakingMirror: false, bridgeWatcher: false, stakeClaimAccrual: false };
+const running = { orchestrator: false, snapshot: false, policy: false, proposal: false, replenish: false, stakingMirror: false, bridgeWatcher: false, stakeClaimAccrual: false, reviewWake: false, relayerSweep: false, invoiceSettle: false };
 
 async function safe(label: keyof typeof running, fn: () => Promise<void>): Promise<void> {
   if (running[label]) {
@@ -452,7 +541,7 @@ async function safeLeased(
 const opsConfigured = !!process.env.NAVE_OPS_WALLET_SECRET;
 
 console.log(
-  `[worker] starting. orchestrator every ${ORCHESTRATOR_INTERVAL_MS}ms, snapshot every ${SNAPSHOT_INTERVAL_MS}ms` +
+  `[worker] starting. orchestrator safety sweep every ${ORCHESTRATOR_INTERVAL_MS}ms, review-end refresh every ${REVIEW_WAKE_REFRESH_MS}ms, snapshot every ${SNAPSHOT_INTERVAL_MS}ms` +
     (POLICY_SECRET ? `, policy-eval every ${POLICY_INTERVAL_MS}ms` : `. policy-eval disabled (NAVE_POLICY_SECRET unset)`) +
     (PROPOSER_SECRET ? `, proposal-creator every ${PROPOSAL_INTERVAL_MS}ms` : `. proposal-creator disabled (NAVE_PROPOSER_SECRET unset)`) +
     (opsConfigured ? `, wallet replenishment (hysteresis: refill ≤0.10→0.25 SOL) every ${REPLENISH_INTERVAL_MS}ms` : `. wallet replenishment disabled (NAVE_OPS_WALLET_SECRET unset)`) +
@@ -466,7 +555,27 @@ console.log(
 // replicas polling concurrently can double-drive the same DAO — it runs under
 // the cross-replica DB lease like the other side-effecting loops.
 const ORCHESTRATOR_LEASE_TTL_S = Math.ceil((ORCHESTRATOR_INTERVAL_MS * 2) / 1000);
-void safeLeased('orchestrator', ORCHESTRATOR_LEASE_TTL_S, pollOrchestrator);
+
+/** One poll at reviewEnd. Retries briefly if this replica's sweep still holds the lease. */
+async function runReviewEndPoll(dao: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (running.orchestrator) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      continue;
+    }
+    let ran = false;
+    await safeLeased('orchestrator', ORCHESTRATOR_LEASE_TTL_S, async () => {
+      ran = true;
+      await pollOrchestrator({ dao_address: dao, reason: 'review_end' });
+    });
+    if (ran) return;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  console.warn(`[worker] review-end wake for ${dao} skipped; orchestrator lease busy`);
+}
+
+void safeLeased('orchestrator', ORCHESTRATOR_LEASE_TTL_S, () => pollOrchestrator());
+void safe('reviewWake', refreshReviewWakes);
 void safe('snapshot', runSnapshot);
 void safe('policy', runPolicyEval);
 void safe('proposal', runProposalCreator);
@@ -482,7 +591,8 @@ void safeLeased('stakingMirror', STAKING_MIRROR_LEASE_TTL_S, runStakingMirrorTic
 void safeLeased('bridgeWatcher', BRIDGE_WATCHER_LEASE_TTL_S, runBridgeWatcherTick);
 void safeLeased('stakeClaimAccrual', STAKING_MIRROR_LEASE_TTL_S, runStakeClaimAccrual);
 
-setInterval(() => void safeLeased('orchestrator', ORCHESTRATOR_LEASE_TTL_S, pollOrchestrator), ORCHESTRATOR_INTERVAL_MS);
+setInterval(() => void safeLeased('orchestrator', ORCHESTRATOR_LEASE_TTL_S, () => pollOrchestrator()), ORCHESTRATOR_INTERVAL_MS);
+setInterval(() => void safe('reviewWake', refreshReviewWakes), REVIEW_WAKE_REFRESH_MS);
 setInterval(() => void safe('snapshot', runSnapshot), SNAPSHOT_INTERVAL_MS);
 setInterval(() => void safe('policy', runPolicyEval), POLICY_INTERVAL_MS);
 setInterval(() => void safe('proposal', runProposalCreator), PROPOSAL_INTERVAL_MS);
@@ -490,3 +600,25 @@ setInterval(() => void safeLeased('replenish', REPLENISH_LEASE_TTL_S, runRepleni
 setInterval(() => void safeLeased('stakingMirror', STAKING_MIRROR_LEASE_TTL_S, runStakingMirrorTick), STAKING_MIRROR_INTERVAL_MS)
 setInterval(() => void safeLeased('bridgeWatcher', BRIDGE_WATCHER_LEASE_TTL_S, runBridgeWatcherTick), BRIDGE_WATCHER_INTERVAL_MS);
 setInterval(() => void safeLeased('stakeClaimAccrual', STAKING_MIRROR_LEASE_TTL_S, runStakeClaimAccrual), STAKING_MIRROR_INTERVAL_MS);
+
+const RELAYER_SWEEP_INTERVAL_MS = Number(process.env.RELAYER_SWEEP_INTERVAL_MS ?? 15 * 60 * 1000);
+const RELAYER_SWEEP_LEASE_TTL_S = Math.ceil((RELAYER_SWEEP_INTERVAL_MS * 2) / 1000);
+void safeLeased('relayerSweep', RELAYER_SWEEP_LEASE_TTL_S, runRelayerSweep);
+setInterval(() => void safeLeased('relayerSweep', RELAYER_SWEEP_LEASE_TTL_S, runRelayerSweep), RELAYER_SWEEP_INTERVAL_MS);
+
+const INVOICE_SETTLE_INTERVAL_MS = Number(process.env.NAVE_PAY_SETTLE_INTERVAL_MS ?? 10 * 60 * 1000);
+const INVOICE_SETTLE_LEASE_TTL_S = Math.ceil((INVOICE_SETTLE_INTERVAL_MS * 2) / 1000);
+
+async function runInvoiceSettleTick(): Promise<void> {
+  if (!readInvoiceSettleConfig(process.env)) return;
+  await safeLeased('invoiceSettle', INVOICE_SETTLE_LEASE_TTL_S, async () => {
+    const result = await runInvoiceSettleLoop();
+    console.log(`[worker] invoice settle planned=${result.planned} settled=${result.settled} booked=${result.booked}`);
+  });
+}
+
+if (!readInvoiceSettleConfig(process.env)) {
+  console.log('[worker] invoice settle disabled (no NAVE_PAY_SOLANA_PROGRAM_ID or NAVE_PAY_ROUTERS).');
+}
+void runInvoiceSettleTick();
+setInterval(() => void runInvoiceSettleTick(), INVOICE_SETTLE_INTERVAL_MS);

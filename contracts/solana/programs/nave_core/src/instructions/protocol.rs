@@ -98,13 +98,18 @@ fn load_and_validate_switch_voting_proposal(
         prop.status == gov_proposal_type::STATUS_PASSED,
         NaveError::SwitchVotingSystemProposalInvalid
     );
-    require!(prop.finalized_at > 0, NaveError::SwitchVotingSystemProposalInvalid);
+    require!(
+        prop.finalized_at > 0,
+        NaveError::SwitchVotingSystemProposalInvalid
+    );
     Ok(prop)
 }
 
 /// Decode + hash-verify the target governance configuration bound to a
 /// validated `SwitchVotingSystem` proposal's payload.
-fn parse_switch_voting_payload(prop: &GovernanceProposalLayout) -> Result<SwitchVotingSystemParams> {
+fn parse_switch_voting_payload(
+    prop: &GovernanceProposalLayout,
+) -> Result<SwitchVotingSystemParams> {
     let plen = prop.payload_len as usize;
     require!(
         plen == SWITCH_VOTING_PAYLOAD_LEN,
@@ -167,8 +172,8 @@ pub fn switch_voting_system_handler(ctx: Context<SwitchVotingSystem>) -> Result<
     )?;
     let params = parse_switch_voting_payload(&prop)?;
 
-    let gov_type = GovernanceType::from_u8(params.governance_type)
-        .ok_or(NaveError::InvalidGovernanceType)?;
+    let gov_type =
+        GovernanceType::from_u8(params.governance_type).ok_or(NaveError::InvalidGovernanceType)?;
 
     match gov_type {
         GovernanceType::Token => {

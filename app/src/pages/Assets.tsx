@@ -233,13 +233,11 @@ function EarningPlaceModal({
     setBusy(true);
     try {
       if (isMockMode || direction === 'deposit' || chainKind !== 'evm') {
-        await new Promise((r) => setTimeout(r, 650));
-        setDoneMsg(
-          direction === 'withdraw'
-            ? `Withdrew $${num.toLocaleString()} from ${meta.place} back to Available. The Guardrail checked Rules 01–03 first.`
-            : `Your placement with ${meta.place} was queued. The Guardrail checks Rules 01–03 before moving funds.`,
+        setErr(
+          direction === 'deposit' || chainKind !== 'evm'
+            ? 'Placing or withdrawing here has to be a real transaction. Propose it under Decisions.'
+            : 'Demo mode does not send a transaction.',
         );
-        onUpdated();
         return;
       }
 

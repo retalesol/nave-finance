@@ -51,6 +51,10 @@ pub const ASSET_VAULT_SEED: &[u8] = b"asset_vault";
 pub const NFT_VAULT_RECORD_SEED: &[u8] = b"nft_vault_record";
 /// Per-(dao, nft_mint) holding token account PDA (owned by vault_authority).
 pub const NFT_VAULT_SEED: &[u8] = b"nft_vault";
+/// Per-(dao, invoice_id) payment address. Program-owned; `dao` is the DAO
+/// registry account pubkey and `invoice_id` is a 32-byte id. Native SOL sits
+/// on this account. SPL for the invoice sits in its associated token account.
+pub const INVOICE_VAULT_SEED: &[u8] = b"invoice_vault";
 /// Per-(dao, protocol_id, mint) receipt-token account PDA (cTokens / poolSOL).
 pub const POSITION_TOKEN_SEED: &[u8] = b"position_token";
 /// Per-dao system-owned PDA used as the native-SOL funding signer for SPL

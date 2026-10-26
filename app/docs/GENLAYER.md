@@ -211,7 +211,7 @@ Ask for another check calls `open_appeal` with the pause reason. It does not fli
 
 ## Networks and custody
 
-Public GenLayer networks in the current docs are Studionet, localnet, Asimov, and Bradbury (chain id 4221). That set has no GenLayer mainnet. No production treasury depends on Bradbury for custody. Bradbury can host a review. The assets stay on the treasury chain.
+Public GenLayer networks in the current docs are Studionet, localnet, Asimov, and Bradbury. Bradbury Phase 2 keeps chain id 4221 and uses `https://rpc.testnet-chain.genlayer.com`. The WebSocket is `wss://rpc.testnet-chain.genlayer.com` and needs a Conduit API key. The working explorer is `https://scan.bradbury.genlayer.com/`. Phase 1 (`https://rpc-bradbury.genlayer.com`) is a different genesis, so its contract addresses are not on Phase 2. That set has no GenLayer mainnet. No production treasury depends on Bradbury for custody. Bradbury can host a review. The assets stay on the treasury chain.
 
 The contracts reject a non-zero GenLayer payment. They store no token balance.
 
@@ -240,4 +240,4 @@ genvm-lint check contracts/genlayer/halt_appeal.py
 pytest contracts/genlayer/tests/direct -v
 ```
 
-Each contract pins runner `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6`. Do not replace that pin with `test`, `latest`, or an unversioned runner.
+Each contract pins runner `py-genlayer:babwp9t37jw9g4j2bccgn14g6x7x9s1f7dsmh7emvz735pz4zxa0`, the Phase 2 executor hash. Do not replace that pin with `test`, `latest`, or an unversioned runner.

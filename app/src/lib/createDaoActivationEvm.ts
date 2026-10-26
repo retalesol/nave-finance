@@ -16,7 +16,7 @@
 // that already landed on-chain, or it will double-submit them.
 
 import { getBalance, readContract, sendTransaction } from '@wagmi/core';
-import { parseEther, type Address } from 'viem';
+import { getAddress, parseEther, type Address } from 'viem';
 import { constitutionCapsBps, findVenue, strategyChainForEvmId } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
 import {
@@ -27,8 +27,8 @@ import {
   type EvmConstitutionAdapter,
 } from './evm/writers';
 import { fetchConstitutionEvm, waitForEvmReceipt } from './evm/readers';
-import { NaveTreasuryAbi } from './evm/contracts';
-import { toAddress } from './evm/addresses';
+import { NaveProtocolAbi, NaveTreasuryAbi } from './evm/contracts';
+import { getProtocolAddress, toAddress } from './evm/addresses';
 import { wagmiConfig } from './evm/wagmi';
 import { evmNativeGasSymbol, isEvmTestnet, type EvmChainId } from './chain/types';
 import { getEvmAdapterAddress, SYSTEM_CONFIDENCE_THRESHOLD } from './programConfig';
@@ -128,6 +128,47 @@ async function agentsAreEnabledEvm(chainId: EvmChainId, daoAddress: string): Pro
 }
 
 /**
+ * Drop adapters the protocol has not approved, and keep one entry per address.
+ * An unapproved address reverts `updateConstitution` after the treasury exists.
+ * Two wizard ids can share one contract (Robinhood Aave and Morpho); listing
+ * that address twice would count its cap twice.
+ */
+export async function keepProtocolApprovedAdapters(
+  chainId: EvmChainId,
+  adapters: EvmConstitutionAdapter[],
+): Promise<EvmConstitutionAdapter[]> {
+  const protocol = getProtocolAddress(chainId);
+  const seen = new Set<string>();
+  const kept: EvmConstitutionAdapter[] = [];
+  for (const entry of adapters) {
+    let adapter: Address;
+    try {
+      adapter = getAddress(entry.adapter);
+    } catch {
+      continue;
+    }
+    const key = adapter.toLowerCase();
+    if (seen.has(key)) continue;
+    if (!protocol) continue;
+    try {
+      const approved = await readContract(wagmiConfig, {
+        address: protocol,
+        abi: NaveProtocolAbi,
+        functionName: 'isApprovedAdapter',
+        args: [adapter],
+        chainId,
+      });
+      if (!approved) continue;
+    } catch {
+      continue;
+    }
+    seen.add(key);
+    kept.push({ ...entry, adapter });
+  }
+  return kept;
+}
+
+/**
  * Run EVM post-creation activation (Tx 2 + agent-enable).
  * Returns `{ ok: true }` when all critical steps succeed; agent-enable failures
  * are non-fatal and reported in `agentError`.
@@ -160,7 +201,7 @@ export async function runEvmActivation(
     enabledIds.map((id) => ({ id, tier: (strategyChain && findVenue(strategyChain, id)?.tier) || 1 })),
     maxAllocationBps / 100,
   );
-  const adapters: EvmConstitutionAdapter[] = enabledIds.flatMap((protocolId) => {
+  const requested: EvmConstitutionAdapter[] = enabledIds.flatMap((protocolId) => {
     const addr = getEvmAdapterAddress(chainId, protocolId as Parameters<typeof getEvmAdapterAddress>[1]);
     if (!addr) return [];
     return [{
@@ -170,6 +211,7 @@ export async function runEvmActivation(
       protocolId,
     }];
   });
+  const adapters = await keepProtocolApprovedAdapters(chainId, requested);
 
   // agentThresholdUsd is micro-USD, the same unit as currentNav. A missing
   // seed must not write 0, which disables the gate. Arc seeds are denominated

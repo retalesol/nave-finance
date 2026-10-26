@@ -765,16 +765,19 @@ export const EVM_PROTOCOL_REVENUE_WALLET: string | undefined = optionalEnvString
 // factory 0x712a…, neither of which is the protocol's factory, and both revert
 // Unauthorized on createDao. Mainnet addresses stay env-only.
 const TESTNET_PROTOCOL_ADDRESSES: Partial<Record<EvmChainId, string>> = {
-  11155111: '0x8D6dFa14Ac28077E3C746C10Fb40C0C424f848D1',
-  84532: '0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6',
-  46630: '0xcA99d4A75A41C3aff5F3Fc2c2Dfd241129B1e093',
-  5042002: '0x3334fBe32eEe1F9f34C047d90762b3030B5Fe255',
+  // One CREATE2 stack on Sepolia, Base Sepolia, Robinhood Testnet, and Arc.
+  // Arc's block gas limit is 30M. Each implementation deploy is about 2–6M
+  // gas when the transaction gas limit is set under that cap.
+  11155111: '0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8',
+  84532: '0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8',
+  46630: '0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8',
+  5042002: '0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8',
 };
 const TESTNET_FACTORY_ADDRESSES: Partial<Record<EvmChainId, string>> = {
-  11155111: '0x4F01c9616A48F14009EC083Ff4bb6e47EdDE0890',
-  84532: '0xF53dE95ae1Fed92FFd9C9305E1716FD48EFcB776',
-  46630: '0x303cE551De723cad43e1575C4D981C0E2b662b7F',
-  5042002: '0xa7bd919a5249DD1Da6E02a6716D2Db2B2e0A99f0',
+  11155111: '0x4a15eB156b54403Fd0e58DfFe4F20aB6C35099dA',
+  84532: '0x4a15eB156b54403Fd0e58DfFe4F20aB6C35099dA',
+  46630: '0x4a15eB156b54403Fd0e58DfFe4F20aB6C35099dA',
+  5042002: '0x4a15eB156b54403Fd0e58DfFe4F20aB6C35099dA',
 };
 
 /** Per-chain NaveProtocol singleton addresses. Mainnet is env-only; testnet is pinned. */

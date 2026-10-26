@@ -22,6 +22,12 @@ import {
   type StrategyRate,
 } from "./strategyCatalog.ts";
 import { fromStrategyRateRow } from "./apySource.ts";
+import {
+  ethereumFamilyOpportunities,
+  netOfBridgeApyBps,
+  yieldBandFor,
+  type EthereumFamilyScoreOptions,
+} from "./ethereumFamilyYield.ts";
 
 interface ApprovedRef {
   protocolId: string;
@@ -107,19 +113,52 @@ async function fromBuiltin(approved: ApprovedRef[]): Promise<YieldOpportunity[]>
   return out;
 }
 
-/** Pool-scanner classes plus the legacy `"sol"` label, normalized onto policy's AssetClass. */
+/**
+ * Pool-scanner classes plus the legacy `"sol"` label, normalized onto policy's
+ * AssetClass. `sol-like`, `blue-chip`, and `lp` stay themselves so the widened
+ * yield_opportunities check accepts them. Do not fold `sol-like` into `sol`
+ * or `other`. Legacy feeds that say `sol` (Jito) become `sol-like`.
+ * `stablecoin` stays `stablecoin`.
+ */
 export function toPolicyAssetClass(value: unknown): AssetClass {
-  if (value === "sol") return "sol-like";
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (raw === "sol") return "sol-like";
   if (
-    value === "stablecoin" ||
-    value === "sol-like" ||
-    value === "blue-chip" ||
-    value === "lp" ||
-    value === "other"
+    raw === "stablecoin" ||
+    raw === "sol-like" ||
+    raw === "blue-chip" ||
+    raw === "lp" ||
+    raw === "other"
   ) {
-    return value;
+    return raw;
   }
   return "other";
+}
+
+function isEtherBlueChip(protocolId: string, symbol: string): boolean {
+  if (symbol === "weth" || symbol === "wsteth") return true;
+  return protocolId === "weth"
+    || protocolId === "wsteth"
+    || protocolId === "aave-v3-weth"
+    || protocolId === "robinhood-weth-vault";
+}
+
+/**
+ * Asset class written to yield_opportunities. Jito is sol-like. WETH and
+ * wstETH are blue-chip. Stablecoins stay stablecoin. The result is always a
+ * value the widened check allows, and sol-like is never rewritten to a
+ * rejected label.
+ */
+export function persistedAssetClass(input: {
+  assetClass?: unknown;
+  symbol?: string | null;
+  protocolId?: string | null;
+}): AssetClass {
+  const protocol = (input.protocolId ?? "").trim().toLowerCase();
+  const symbol = (input.symbol ?? "").trim().toLowerCase();
+  if (protocol === "jito" || protocol === "jitosol") return "sol-like";
+  if (isEtherBlueChip(protocol, symbol)) return "blue-chip";
+  return toPolicyAssetClass(input.assetClass);
 }
 
 function sanitize(raw: unknown, approved: ApprovedRef[]): YieldOpportunity[] {
@@ -166,7 +205,7 @@ const STALE_BASE_SEPOLIA_AAVE = new Set([
   "0x536e2eb2f96fe419a893cdbe39e41e44326e60da",
   "0x9fe38d5fe9804c07823b36b4ab16a0e5a7118ebf",
 ]);
-const CURRENT_BASE_SEPOLIA_PROTOCOL = "0xF37271a4A120eD904543bbE648D2f64Fa27b3bC6";
+const CURRENT_BASE_SEPOLIA_PROTOCOL = "0x6C07BC6A22d2D18E232D546Ab06B6F49115834C8";
 export const SEPOLIA_AAVE_V3_ADAPTER = "0xFfFDfc7DEfbfaF64c232897452Aa6E6F92809426";
 export const SEPOLIA_AAVE_V3_ADAPTER_GEN2 = "0xA9183aB50EB70f5F271faB81E50b61a5B11b0a4B";
 export const SEPOLIA_COMPOUND_V3_ADAPTER = "0x845d8310A861A95Ed1644643D1BAe086944B1AA0";
@@ -233,19 +272,35 @@ function testnetRate(partial: Omit<YieldOpportunity, "source"> & { source: strin
   return partial;
 }
 
+/** Base, Robinhood, and Arc mainnet ids. They receive Ethereum venues, not testnet rates. */
+const EVM_MAINNET_YIELD_HOME: Record<string, number> = {
+  base: 8453,
+  robinhood: 4663,
+  arc: 5042,
+};
+
 /**
  * Static testnet rates for the venues this testing environment can name.
- * There is no live EVM pool scan. Mainnet chain ids stay empty.
- * Base Sepolia Aave uses the adapter on the current protocol. A stale adapter
- * address stays unavailable. Robinhood has no published USDC address.
+ * There is no live EVM pool scan. Base Sepolia Aave uses the adapter on the
+ * current protocol. A stale adapter address stays unavailable.
+ *
+ * Base, Robinhood, and Arc (testnet and mainnet) also receive the Ethereum
+ * family list. Testnet uses Sepolia and may keep static rates. Mainnet does
+ * not copy those static rates onto pools that were not read.
  */
 export function scoreEvmTestnetOpportunities(
   approved: ApprovedRef[],
   chain: string,
   chainId?: number | null,
+  options?: EthereumFamilyScoreOptions,
 ): YieldOpportunity[] {
   const family = chain.toLowerCase();
   const expectedId = EVM_TESTNET_CHAIN_ID[family as keyof typeof EVM_TESTNET_CHAIN_ID];
+  const mainnetHomeId = EVM_MAINNET_YIELD_HOME[family];
+  const isMainnetHome = mainnetHomeId != null && chainId === mainnetHomeId;
+  if (isMainnetHome) {
+    return ethereumFamilyOpportunities(chainId as number, options);
+  }
   if (expectedId == null || chainId !== expectedId) {
     console.info(
       `[yieldSources] static testnet rates apply only to chain ids 11155111, 84532, 46630, and 5042002; chain=${family} chainId=${chainId ?? "unset"}`,
@@ -369,6 +424,9 @@ export function scoreEvmTestnetOpportunities(
       }));
     }
   }
+  if (family === "base" || family === "robinhood" || family === "arc") {
+    out.push(...ethereumFamilyOpportunities(chainId, options));
+  }
   return out;
 }
 
@@ -389,10 +447,11 @@ export async function scanYieldOpportunities(
   sourceUrl?: string,
   chain?: string,
   chainId?: number | null,
+  scoreOptions?: EthereumFamilyScoreOptions,
 ): Promise<YieldOpportunity[]> {
   const family = (chain ?? "solana").toLowerCase();
   if (family === "base" || family === "robinhood" || family === "ethereum" || family === "arc") {
-    return scoreEvmTestnetOpportunities(approved, family, chainId);
+    return scoreEvmTestnetOpportunities(approved, family, chainId, scoreOptions);
   }
   const url = sourceUrl ?? (typeof Deno !== "undefined" ? Deno.env.get("NAVE_YIELD_SOURCE_URL") : undefined);
   if (url) {
@@ -474,21 +533,41 @@ export function applyLiveRates<T extends YieldOpportunity>(
   rates: StrategyRate[],
 ): T[] {
   const family = chain.toLowerCase();
-  const strategyChain: StrategyChain | null = family === "solana" ? "solana" : strategyChainForEvmId(chainId ?? null);
-  if (!strategyChain) return opportunities;
-  const byVenue = new Map(rates.filter((r) => r.chain === strategyChain).map((r) => [r.venueId, r]));
+  const defaultChain: StrategyChain | null = family === "solana" ? "solana" : strategyChainForEvmId(chainId ?? null);
+  if (!defaultChain && opportunities.every((o) => !o.rateChain)) return opportunities;
+  const byVenue = new Map(rates.map((r) => [`${r.chain}:${r.venueId}`, r]));
   const testnet = chainId != null && [11155111, 84532, 46630, 5042002].includes(chainId);
   const out = opportunities.map((o) => {
     if (o.liquid === false && o.riskScore >= 100) return o;
-    const venue = findVenue(strategyChain, canonicalProtocolId(o.protocolId));
-    const rate = venue ? byVenue.get(venue.id) : undefined;
+    const rateChain = o.rateChain ?? defaultChain;
+    if (!rateChain) return o;
+    const venueId = o.rateVenueId ?? canonicalProtocolId(o.protocolId);
+    const venue = findVenue(rateChain, venueId);
+    const rate = byVenue.get(`${rateChain}:${venueId}`);
     if (!venue || !rate || rate.baseApy == null) return o;
     const apy = effectiveApy(rate, venue.fallbackApy);
+    const grossBps = Math.round(apy * 100);
+    const nextSource = `${testnet ? "mainnet-reference-rate" : "live-rate"}:${rate.source}`;
+    if (o.bridgeRequired && o.bridgeOneWayCostBps != null) {
+      const net = netOfBridgeApyBps(grossBps, o.bridgeOneWayCostBps);
+      const execToken = o.executable ? "executable" : "not-executable";
+      return {
+        ...o,
+        venueApyBps: grossBps,
+        netApyBps: net,
+        apyBps: net,
+        apyRead: true,
+        yieldBand: yieldBandFor(net),
+        tvlUsd: rate.tvlUsd ?? o.tvlUsd,
+        source: `${nextSource}:bridge-required:${o.bridgeCostSource ?? ""}:${execToken}`,
+      };
+    }
     return {
       ...o,
-      apyBps: Math.round(apy * 100),
+      apyBps: grossBps,
+      apyRead: true,
       tvlUsd: rate.tvlUsd ?? o.tvlUsd,
-      source: `${testnet ? "mainnet-reference-rate" : "live-rate"}:${rate.source}`,
+      source: nextSource,
     };
   });
   return out.sort((a, b) => b.apyBps - a.apyBps);

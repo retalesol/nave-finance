@@ -40,8 +40,8 @@ export interface SyncedReview {
   receipt_status: string;
 }
 
-// genlayer-js@1.1.8 writeContract accepts leaderOnly and consensusMaxRotations.
-// It does not accept a leader time budget, so a timed-out receipt is submitted again.
+// genlayer-js 2.0.0-rc.2 writeContract sends the Phase 2 fee from genlayerClient.
+// A timed-out receipt is submitted again.
 const CHARTER_SUBMIT_EXTRA_ATTEMPTS = 2;
 const REFRESH_LIMIT = 12;
 
@@ -51,7 +51,7 @@ function receiptToken(value: string): string {
 
 /**
  * A finished receipt can still have missed its vote. These are the decided
- * statuses in genlayer-js 1.1.8, except LEADER_TIMEOUT, which is retried on
+ * statuses in genlayer-js 2.0.0-rc.2, except LEADER_TIMEOUT, which is retried on
  * its own. VALIDATORS_TIMEOUT is also always retried by receiptNeedsRetry.
  * READY_TO_FINALIZE and the appeal states are still in flight.
  * Status 14 is not in that SDK; Bradbury returns it while the leader is

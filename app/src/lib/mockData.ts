@@ -520,6 +520,7 @@ export const MOCK_DAO_DATA: DaoData = {
   createdAt: daysAgo(45),
   daoOnchainAddress: MOCK_DAO_ADDRESS,
   chainId: null,
+  treasuryGroupId: null,
   frozen: false,
   proposalCount: 7,
   archivedProposalCount: 0,

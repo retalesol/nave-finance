@@ -38,3 +38,4 @@ evm-deploy-wallet.json
 supabase/.temp/
 *.log
 .specstory/
+.vercel

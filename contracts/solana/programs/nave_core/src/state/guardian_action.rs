@@ -47,8 +47,14 @@ impl GuardianAction {
     }
 
     pub fn record_signature(&mut self, index: usize) -> Result<()> {
-        require!(index < self.wallet_count as usize, crate::errors::NaveError::GuardianNotFound);
-        require!(!self.has_signed(index), crate::errors::NaveError::DuplicateGuardianSignature);
+        require!(
+            index < self.wallet_count as usize,
+            crate::errors::NaveError::GuardianNotFound
+        );
+        require!(
+            !self.has_signed(index),
+            crate::errors::NaveError::DuplicateGuardianSignature
+        );
         self.signed_mask |= 1u16 << index;
         self.signature_count = self.signature_count.saturating_add(1);
         Ok(())

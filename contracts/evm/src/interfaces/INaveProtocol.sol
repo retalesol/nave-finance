@@ -10,6 +10,9 @@ interface INaveProtocol {
     /// last-resort force-unfreeze authority.
     function owner() external view returns (address);
     function protocolTreasury() external view returns (address);
+    /// Hot key that receives the outbound relayer fee. Stored on the protocol,
+    /// never taken from a caller argument. Zero until the owner sets it.
+    function relayer() external view returns (address);
     function paused() external view returns (bool);
     function formationFee() external view returns (uint256);
     /// Portion of `formationFee` seeded into a new DAO treasury at creation.

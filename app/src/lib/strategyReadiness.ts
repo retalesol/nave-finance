@@ -104,7 +104,10 @@ function getRawEvmAdapterAddress(chainId: EvmChainId, protocolId: EvmAdapterProt
   const fallback = (
     EVM_TESTNET_ADAPTER_FALLBACKS as Record<number, Partial<Record<string, string>>>
   )[chainId]?.[protocolId];
-  const address = configured ?? fallback;
+  // Testnet pins win over hosted env. Those env values have pointed at adapters
+  // bound to an older protocol, which the new factory will not accept.
+  const testnetPinned = chainId === 11155111 || chainId === 84532 || chainId === 46630 || chainId === 5042002;
+  const address = (testnetPinned ? fallback : undefined) ?? configured ?? fallback;
   if (!address || /^0x0{40}$/i.test(address)) return null;
   return address;
 }

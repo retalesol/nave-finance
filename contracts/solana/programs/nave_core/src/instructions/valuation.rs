@@ -1,5 +1,3 @@
-use anchor_lang::prelude::*;
-use anchor_spl::token::TokenAccount;
 use crate::constants::{
     AgentRole, AGENT_SET_SEED, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED, TREASURY_VAULT_SEED,
 };
@@ -9,6 +7,8 @@ use crate::state::{
     TreasuryVault,
 };
 use crate::utils::{nonstable_micro_usd, value_stable};
+use anchor_lang::prelude::*;
+use anchor_spl::token::TokenAccount;
 
 /// Recompute the portfolio's USD NAV from every registered asset and reseed the
 /// performance high-water-mark. `remaining_accounts` holds one 4-account group
@@ -72,7 +72,10 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
         let price_ai = &group[3];
 
         require!(cfg_ai.owner == &crate::ID, NaveError::InvalidOracleAccount);
-        require!(asset_ai.owner == &crate::ID, NaveError::InvalidOracleAccount);
+        require!(
+            asset_ai.owner == &crate::ID,
+            NaveError::InvalidOracleAccount
+        );
         require!(
             !seen_assets.contains(&asset_ai.key()),
             NaveError::InvalidAssetKind
@@ -90,7 +93,10 @@ pub fn revalue_treasury_handler(ctx: Context<RevalueTreasury>) -> Result<()> {
         require!(cfg.dao == dao_key, NaveError::DaoOwnershipMismatch);
         require!(asset.dao == dao_key, NaveError::DaoOwnershipMismatch);
         require!(cfg.mint == asset.mint, NaveError::MintMismatch);
-        require!(vault_ai.key() == asset.token_account, NaveError::InvalidVaultTokenAccount);
+        require!(
+            vault_ai.key() == asset.token_account,
+            NaveError::InvalidVaultTokenAccount
+        );
         require!(cfg.enabled, NaveError::AssetNotEnabled);
         seen_mints.push(asset.mint);
 
@@ -204,7 +210,9 @@ fn marked_position_value(positions: &[PositionMark], mint: &Pubkey, deployed: u6
     let mut principal: u64 = 0;
     let mut value: u64 = 0;
     for p in positions.iter().filter(|p| p.mint == *mint) {
-        principal = principal.checked_add(p.deposited).ok_or(NaveError::MathOverflow)?;
+        principal = principal
+            .checked_add(p.deposited)
+            .ok_or(NaveError::MathOverflow)?;
         value = value.checked_add(p.value).ok_or(NaveError::MathOverflow)?;
     }
     require!(principal >= deployed, NaveError::InvalidAssetKind);

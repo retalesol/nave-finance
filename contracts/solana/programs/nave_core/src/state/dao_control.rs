@@ -44,12 +44,17 @@ impl DaoControl {
         if info.data_is_empty() {
             return Ok(None);
         }
-        require!(info.owner == &crate::ID, crate::errors::NaveError::Unauthorized);
+        require!(
+            info.owner == &crate::ID,
+            crate::errors::NaveError::Unauthorized
+        );
         let data = info.try_borrow_data()?;
         Ok(Some(DaoControl::try_deserialize(&mut &data[..])?))
     }
 
     pub fn is_guardian_locked(info: &AccountInfo) -> Result<bool> {
-        Ok(Self::load(info)?.map(|c| c.guardian_locked).unwrap_or(false))
+        Ok(Self::load(info)?
+            .map(|c| c.guardian_locked)
+            .unwrap_or(false))
     }
 }

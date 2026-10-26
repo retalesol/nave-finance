@@ -15,7 +15,9 @@ use crate::constants::{
 };
 use crate::errors::NaveError;
 use crate::state::{AgentSet, DaoRegistry, NaveGlobalConfig, StrategyPosition, VaultAuthority};
-use crate::utils::{require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused};
+use crate::utils::{
+    require_agent_authority, require_agents_enabled, require_dao_active, require_not_paused,
+};
 
 /// jito protocol id this module operates on.
 const JITO_PROTOCOL_ID: &[u8] = b"jito";
@@ -39,14 +41,23 @@ pub fn jito_deposit_handler(ctx: Context<JitoDeposit>, amount: u64) -> Result<()
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == JITO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == JITO_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
     require!(
         sp.ext_market != Pubkey::default() && sp.ext_reserve != Pubkey::default(),
         NaveError::PositionTargetsUnset
     );
-    require!(sp.ext_market == ctx.accounts.stake_pool.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.reserve_stake.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.stake_pool.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.reserve_stake.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.position_token_account.key(),
         NaveError::InvalidPositionTokenAccount
@@ -164,10 +175,19 @@ pub fn jito_withdraw_handler(ctx: Context<JitoWithdraw>, pool_tokens: u64) -> Re
     require_agents_enabled(&ctx.accounts.agent_set)?;
 
     let sp = &ctx.accounts.strategy_position;
-    require!(sp.protocol_id_slice() == JITO_PROTOCOL_ID, NaveError::ProtocolNotApproved);
+    require!(
+        sp.protocol_id_slice() == JITO_PROTOCOL_ID,
+        NaveError::ProtocolNotApproved
+    );
     require!(sp.mint == ctx.accounts.mint.key(), NaveError::MintMismatch);
-    require!(sp.ext_market == ctx.accounts.stake_pool.key(), NaveError::ExternalTargetMismatch);
-    require!(sp.ext_reserve == ctx.accounts.reserve_stake.key(), NaveError::ExternalTargetMismatch);
+    require!(
+        sp.ext_market == ctx.accounts.stake_pool.key(),
+        NaveError::ExternalTargetMismatch
+    );
+    require!(
+        sp.ext_reserve == ctx.accounts.reserve_stake.key(),
+        NaveError::ExternalTargetMismatch
+    );
     require!(
         sp.position_token_account == ctx.accounts.position_token_account.key(),
         NaveError::InvalidPositionTokenAccount

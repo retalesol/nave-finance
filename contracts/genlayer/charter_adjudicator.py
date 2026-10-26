@@ -1,4 +1,4 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# { "Depends": "py-genlayer:babwp9t37jw9g4j2bccgn14g6x7x9s1f7dsmh7emvz735pz4zxa0" }
 """CharterAdjudicator judges one proposed treasury move from public evidence.
 
 The app owns the screens, the signer, and the review window. This contract owns
@@ -7,7 +7,8 @@ not hold treasury tokens and it does not accept an assistant paragraph as the
 decision. Solana, Ethereum, Base, Robinhood, and Arc are inputs on this same contract.
 """
 
-from genlayer import *
+import genlayer as gl
+from genlayer.storage import DynArray, TreeMap, allow as allow_storage
 from dataclasses import dataclass
 import hashlib
 import json
@@ -69,13 +70,23 @@ def _reject_value():
 		raise gl.vm.UserError(ERROR_EXPECTED + " This contract does not hold treasury tokens")
 
 
+def _vm_text(err):
+	data = getattr(err, "data", None)
+	if isinstance(data, str):
+		return data
+	message = getattr(err, "message", None)
+	if isinstance(message, str):
+		return message
+	return ""
+
+
 def _handle_leader_error(leaders_res, leader_fn):
-	leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
+	leader_msg = _vm_text(leaders_res)
 	try:
 		leader_fn()
 		return False
 	except gl.vm.UserError as err:
-		validator_msg = err.message if hasattr(err, "message") else str(err)
+		validator_msg = _vm_text(err)
 		if validator_msg.startswith(ERROR_EXPECTED) or validator_msg.startswith(ERROR_EXTERNAL):
 			return validator_msg == leader_msg
 		if validator_msg.startswith(ERROR_TRANSIENT) and leader_msg.startswith(ERROR_TRANSIENT):
@@ -427,7 +438,7 @@ def _read_evidence_page(url):
 	return _canonical_public_evidence(data)
 
 
-class CharterAdjudicator(gl.Contract):
+class CharterAdjudicator(gl.contract.Contract):
 	"""One chain-agnostic check: does this move fit the snapshot and the mandate?"""
 
 	cases: TreeMap[str, CharterCase]
@@ -446,7 +457,7 @@ class CharterAdjudicator(gl.Contract):
 				return False
 			return leaders_res.calldata == leader_fn()
 
-		return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+		return gl.vm.run_nondet(leader_fn, validator_fn)
 
 	def _judge(self, mandate_text, venue, amount, asset, constitution, det_rules):
 		snapshot = json.dumps(_constitution_canon(constitution), sort_keys=True)
@@ -490,7 +501,7 @@ class CharterAdjudicator(gl.Contract):
 				return False
 			return _score_close(data.get("score"), mine["score"])
 
-		return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+		return gl.vm.run_nondet(leader_fn, validator_fn)
 
 	def _view(self, record):
 		ids = []

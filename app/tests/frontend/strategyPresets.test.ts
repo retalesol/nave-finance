@@ -4,9 +4,11 @@ import {
   PRESET_DEFAULTS,
   RISK_PRESETS,
   approvalsForPreset,
+  rebalanceFreqToSecs,
   strategyChainFor,
   tierBoundedCaps,
 } from '../../src/components/ConstitutionStep';
+import { evmTokenSymbol, fitsOnchainName } from '../../src/components/create-dao/CreateDaoHelpers';
 
 test('yield6 is a preset with a valid capital split', () => {
   assert.ok(RISK_PRESETS.some((p) => p.id === 'yield6'));
@@ -33,6 +35,19 @@ test('presets approve dollar venues by tier and leave others alone', () => {
   assert.equal(approvalsForPreset('yield6', 'ethereum', {}, []).aave, undefined);
   // Custom leaves approvals untouched.
   assert.equal(approvalsForPreset('custom', 'ethereum', current, selectable), current);
+});
+
+test('rebalance under a day is raised to the on-chain minimum and symbols fit', () => {
+  assert.equal(rebalanceFreqToSecs('Hourly'), 86_400);
+  assert.equal(rebalanceFreqToSecs('Daily'), 86_400);
+  assert.equal(rebalanceFreqToSecs('Weekly'), 604_800);
+  assert.equal(rebalanceFreqToSecs('Manual'), 0);
+  assert.equal(evmTokenSymbol('Governance Token'), 'GOVERNAN');
+  assert.equal(evmTokenSymbol('HBR'), 'HBR');
+  assert.equal(evmTokenSymbol('   '), 'DAO');
+  assert.equal(fitsOnchainName('a'.repeat(32)), true);
+  assert.equal(fitsOnchainName('a'.repeat(33)), false);
+  assert.equal(fitsOnchainName(''), false);
 });
 
 test('tier-bounded caps keep Tier 3 inside 15% in total', () => {

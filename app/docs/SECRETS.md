@@ -38,8 +38,10 @@ server-side secret provisioned in the relevant runtime's secret store.
 | `NAVE_GENLAYER_GATE` | `false` | Charter fail-closed for signing roles. A finished pass does not authorize a transfer. See `docs/GENLAYER.md`. |
 | `NAVE_GENLAYER_VENUE_GATE` | `false` | A finished venue `stop` withholds a new deploy. |
 | `NAVE_GENLAYER_HALT_GATE` | `false` | A finished `keep_pause` blocks clear. `lift_pause` does not sign. |
-| `NAVE_GENLAYER_RPC_URL` | unset | GenLayer RPC. Not a secret, but required with the signer key and the three contract addresses before any review is written. |
-| `NAVE_GENLAYER_CHARTER_ADDRESS` / `NAVE_GENLAYER_VENUE_ADDRESS` / `NAVE_GENLAYER_HALT_ADDRESS` | unset | Deployed contract addresses. Public. A missing address means the dispatcher skips the submit and writes no row. |
+| `NAVE_GENLAYER_RPC_URL` | `https://rpc.testnet-chain.genlayer.com` | GenLayer Phase 2 RPC. Not a secret. Required with the signer key and the three contract addresses before any review is written. |
+| `NAVE_GENLAYER_CHARTER_ADDRESS` | `0xa893D572dAA073569e5C30BDB151165071d0AdaB` | CharterAdjudicator on Bradbury Phase 2. |
+| `NAVE_GENLAYER_VENUE_ADDRESS` | `0x020ac4d4940D87579BAC0b888A47fe3Aae106334` | VenueWatch on Bradbury Phase 2. |
+| `NAVE_GENLAYER_HALT_ADDRESS` | `0xCD1345c5DD1Fb61ce70794633ff0Fdb9A69f124D` | HaltAppeal on Bradbury Phase 2. A missing address means the dispatcher skips the submit and writes no row. |
 
 > The `planner` proposer key is a real signing key held by the signer service.
 > It can ONLY create Strategy proposals; it has no approval/execution authority.

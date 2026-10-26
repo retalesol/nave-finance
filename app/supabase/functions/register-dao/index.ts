@@ -260,14 +260,37 @@ Deno.serve(async (req: Request) => {
     });
     if (!consumed.ok) return jsonResponse({ error: consumed.error }, consumed.status);
 
-    const { data: slugOwner } = await supabase
+    const { data: slugRows, error: slugLookupError } = await supabase
       .from("dao_registry")
-      .select("dao_onchain_address")
-      .eq("slug", slug)
-      .maybeSingle();
+      .select("dao_onchain_address, chain_id, treasury_group_id, creator_wallet")
+      .eq("slug", slug);
 
-    if (slugOwner && slugOwner.dao_onchain_address !== dao_address) {
-      return jsonResponse({ error: "That DAO name is already taken" }, 409);
+    if (slugLookupError) {
+      console.error("Failed to look up slug:", slugLookupError);
+      return jsonResponse({ error: "Failed to register DAO" }, 500);
+    }
+
+    const sameChain = (row: { dao_onchain_address: string; chain_id: number | null }) =>
+      row.dao_onchain_address === dao_address &&
+      (evm ? Number(row.chain_id) === selector.chain_id : row.chain_id == null);
+
+    let treasuryGroupId: string;
+    if (!slugRows || slugRows.length === 0) {
+      treasuryGroupId = crypto.randomUUID();
+    } else {
+      const groupIds = new Set(slugRows.map((row) => row.treasury_group_id).filter(Boolean));
+      if (groupIds.size !== 1) {
+        return jsonResponse({ error: "That DAO name is already taken" }, 409);
+      }
+      const founderMatches = slugRows.every((row) => {
+        const existing = String(row.creator_wallet ?? "");
+        return evm ? existing.toLowerCase() === creator_wallet : existing === creator_wallet;
+      });
+      const updatingThisDeployment = slugRows.some((row) => sameChain(row));
+      if (!founderMatches && !updatingThisDeployment) {
+        return jsonResponse({ error: "That DAO name is already taken" }, 409);
+      }
+      treasuryGroupId = [...groupIds][0] as string;
     }
 
     // deno-lint-ignore no-explicit-any
@@ -278,6 +301,7 @@ Deno.serve(async (req: Request) => {
       network: registryNetworkFor(selector, body.network, isMainnetCluster()),
       name: name || "",
       slug,
+      treasury_group_id: treasuryGroupId,
       description: body.description ?? "",
       logo_url: body.logo_url ?? "",
       governance_type: normalizeGovernanceType(body.governance_type),
@@ -297,7 +321,7 @@ Deno.serve(async (req: Request) => {
     const { error: upsertError } = await supabase
       .from("dao_registry")
       .upsert(row, {
-        onConflict: "dao_onchain_address",
+        onConflict: "chain_id,dao_onchain_address",
         ignoreDuplicates: false,
       });
 
@@ -361,7 +385,7 @@ Deno.serve(async (req: Request) => {
       console.error("Failed to auto-watch creator DAO:", watchError);
     }
 
-    return jsonResponse({ success: true, dao_address, slug });
+    return jsonResponse({ success: true, dao_address, slug, treasury_group_id: treasuryGroupId });
   } catch (error) {
     console.error("register-dao error:", error);
     return jsonResponse(

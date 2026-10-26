@@ -244,4 +244,6 @@ pub enum NaveError {
     RiskTierCapExceeded,
     #[msg("Jupiter swaps of non-stable assets need an independent price and are disabled")]
     SwapOracleRequired,
+    #[msg("Invoice vault does not match the dao and invoice id")]
+    InvoiceVaultMismatch,
 }

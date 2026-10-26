@@ -1,4 +1,4 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# { "Depends": "py-genlayer:babwp9t37jw9g4j2bccgn14g6x7x9s1f7dsmh7emvz735pz4zxa0" }
 """VenueWatch reads a public status or incident page and stores fine, watch, or stop.
 
 Prices and yields are not evidence. The same contract covers Solana, Ethereum,
@@ -6,7 +6,8 @@ Base, Robinhood, and Arc. It does not hold treasury tokens, and it does not chan
 the allowlist on the treasury chain.
 """
 
-from genlayer import *
+import genlayer as gl
+from genlayer.storage import TreeMap, allow as allow_storage
 from dataclasses import dataclass
 
 ERROR_EXPECTED = "[EXPECTED]"
@@ -37,13 +38,23 @@ def _reject_value():
         raise gl.vm.UserError(ERROR_EXPECTED + " This contract does not hold treasury tokens")
 
 
+def _vm_text(err):
+    data = getattr(err, "data", None)
+    if isinstance(data, str):
+        return data
+    message = getattr(err, "message", None)
+    if isinstance(message, str):
+        return message
+    return ""
+
+
 def _handle_leader_error(leaders_res, leader_fn):
-    leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
+    leader_msg = _vm_text(leaders_res)
     try:
         leader_fn()
         return False
     except gl.vm.UserError as err:
-        validator_msg = err.message if hasattr(err, "message") else str(err)
+        validator_msg = _vm_text(err)
         if validator_msg.startswith(ERROR_EXPECTED) or validator_msg.startswith(ERROR_EXTERNAL):
             return validator_msg == leader_msg
         if validator_msg.startswith(ERROR_TRANSIENT) and leader_msg.startswith(ERROR_TRANSIENT):
@@ -166,7 +177,7 @@ def _read_status_page(url):
     return text
 
 
-class VenueWatch(gl.Contract):
+class VenueWatch(gl.contract.Contract):
     """Latest plain status for one venue on one chain family and network."""
 
     venues: TreeMap[str, VenueRecord]
@@ -201,7 +212,7 @@ class VenueWatch(gl.Contract):
                 return False
             return _score_close(data.get("score"), mine["score"])
 
-        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        return gl.vm.run_nondet(leader_fn, validator_fn)
 
     def _view(self, record):
         return {

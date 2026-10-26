@@ -23,8 +23,11 @@ import { useChain } from '../hooks/useChain';
 import { isTreasuryOpsFamily } from '../lib/chain/types';
 import { PublicKey } from '@solana/web3.js';
 import { useAccount, useSignMessage, useSignTypedData } from 'wagmi';
-import { clearHaltViaProxy, setAgentsEnabledViaProxyEvm, solanaAccessSigner } from '../lib/edgeFunctionClient';
+import { clearHaltViaProxy, generateAgentKeys, replaceEvmAgentKeys, setAgentsEnabledViaProxyEvm, solanaAccessSigner } from '../lib/edgeFunctionClient';
 import { buildEmergencyPauseAgents } from '../lib/transactionBuilders';
+import { buildApplyAgentRotation, buildUpdateAgentSet } from '../lib/serverTransactionBuilders';
+import { buildApplyAgentRotationEvm, buildUpdateAgentSetEvm } from '../lib/evm/writers';
+import type { EvmChainFamily } from '../lib/chain/types';
 import { getExecutionRequestPDA } from '../lib/pdaDerivation';
 
 /* ── Confirm Dialog ─────────────────────────────────────── */
@@ -810,6 +813,109 @@ export default function Agent() {
     }
   }
 
+  async function handleReassignKeys() {
+    if (!daoAddress || !isFounder || reassigning) return;
+    setReassignError('');
+    setReassignNote('');
+    setReassigning(true);
+    try {
+      if (chainKind === 'evm') {
+        if (!evmAddress || !evmChainId || !isTreasuryOpsFamily(chainFamily)) {
+          setReassignError('Connect the founder wallet on this treasury’s chain.');
+          return;
+        }
+        const treasury = daoAddress.toLowerCase();
+        const message = `nave-evm-keyreplace|${treasury}|${evmChainId}|${Date.now()}`;
+        const signature = await signMessageAsync({ message });
+        const { data, error } = await replaceEvmAgentKeys(
+          treasury,
+          evmAddress,
+          evmChainId,
+          chainFamily as EvmChainFamily,
+          message,
+          signature,
+        );
+        if (error || !data) {
+          setReassignError(error || 'Could not store the new agent keys.');
+          return;
+        }
+        const scheduled = await tx.sendEvm(
+          buildUpdateAgentSetEvm(evmChainId, treasury, [
+            data.agents.executive.address,
+            data.agents.financial.address,
+            data.agents.oversight.address,
+            data.agents.operational.address,
+          ]),
+          { successLabel: 'Agent rotation scheduled', quietToast: true },
+        );
+        if (scheduled.status !== 'success') {
+          setReassignError(scheduled.error || 'The new keys are stored, but the chain rotation was not scheduled.');
+          return;
+        }
+        setReassignNote('Rotation is scheduled. Applying it after the testnet delay.');
+        await new Promise((resolve) => setTimeout(resolve, 75_000));
+        for (const role of [0, 1, 2, 3]) {
+          const applied = await tx.sendEvm(
+            buildApplyAgentRotationEvm(evmChainId, treasury, role),
+            { successLabel: 'Agent rotation applied', quietToast: true },
+          );
+          if (applied.status !== 'success') {
+            setReassignError(applied.error || 'The rotation is stored. Apply it again once the delay has passed.');
+            return;
+          }
+        }
+        setReassignNote('New agent keys are active on this chain.');
+        agentStatus.refetch();
+        return;
+      }
+
+      if (!publicKey || !signMessage) {
+        setReassignError('Connect the Solana founder wallet.');
+        return;
+      }
+      const { data, error } = await generateAgentKeys(
+        daoAddress,
+        publicKey.toBase58(),
+        signMessage,
+        undefined,
+        { replace: true },
+      );
+      if (error || !data) {
+        setReassignError(error || 'Could not store the new agent keys.');
+        return;
+      }
+      const authorities = (['executive', 'financial', 'oversight', 'operational'] as const).map(
+        (role) => new PublicKey(data.agents[role].pubkey),
+      );
+      const scheduled = await tx.send(
+        await buildUpdateAgentSet(new PublicKey(daoAddress), publicKey, authorities),
+        { successLabel: 'Agent rotation scheduled' },
+      );
+      if (scheduled.status !== 'success') {
+        setReassignError(scheduled.error || 'The new keys are stored, but the chain rotation was not scheduled.');
+        return;
+      }
+      setReassignNote('Rotation is scheduled. Applying it after the devnet delay.');
+      await new Promise((resolve) => setTimeout(resolve, 75_000));
+      for (const role of [0, 1, 2, 3]) {
+        const applied = await tx.send(
+          await buildApplyAgentRotation(new PublicKey(daoAddress), publicKey, role),
+          { successLabel: 'Agent rotation applied' },
+        );
+        if (applied.status !== 'success') {
+          setReassignError(applied.error || 'The rotation is stored. Apply it again once the delay has passed.');
+          return;
+        }
+      }
+      setReassignNote('New agent keys are active for this treasury.');
+      agentStatus.refetch();
+    } catch (err) {
+      setReassignError(err instanceof Error ? err.message : 'Could not reassign the agent keys.');
+    } finally {
+      setReassigning(false);
+    }
+  }
+
   // Only the founder or a guardian may pause the agents or propose to enable them.
   // Mock DAOs stay interactive for the demo.
   const canManageAgents = isMock || isFounder || isGuardian;
@@ -821,6 +927,9 @@ export default function Agent() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [reassigning, setReassigning] = useState(false);
+  const [reassignNote, setReassignNote] = useState('');
+  const [reassignError, setReassignError] = useState('');
 
   // Clear any optimistic value once fresh on-chain state arrives.
   useEffect(() => {
@@ -1132,6 +1241,17 @@ export default function Agent() {
 
       {/* Notices */}
       <div className="mt-6 space-y-2">
+        {isFounder && !isMock && (
+          <Notice
+            tone="brass"
+            actionLabel={reassigning ? 'Reassigning…' : 'Reassign agent keys'}
+            onAction={reassigning ? undefined : handleReassignKeys}
+          >
+            <b style={{ fontWeight: 600 }}>Signer keys.</b>{' '}
+            {reassignError || reassignNote || 'Assign a new agent set the current signer can open, then rotate it on-chain.'}
+          </Notice>
+        )}
+
         {isFrozen && (
           <Notice
             tone="red"

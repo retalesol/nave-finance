@@ -431,6 +431,37 @@ pub mod nave_core {
         deposit_sol_handler(ctx, amount)
     }
 
+    /// Create the program-owned invoice vault at
+    /// `["invoice_vault", dao_registry, invoice_id]`. The address is derivable
+    /// before this runs. Permissionless; `payer` funds rent. No hot key.
+    pub fn init_invoice_vault(ctx: Context<InitInvoiceVault>, invoice_id: [u8; 32]) -> Result<()> {
+        init_invoice_vault_handler(ctx, invoice_id)
+    }
+
+    /// Create the SPL payment address for an invoice: the associated token
+    /// account of the invoice vault for `mint`. The mint must already be an
+    /// enabled treasury asset. Permissionless.
+    pub fn init_invoice_token_account(
+        ctx: Context<InitInvoiceTokenAccount>,
+        invoice_id: [u8; 32],
+    ) -> Result<()> {
+        init_invoice_token_account_handler(ctx, invoice_id)
+    }
+
+    /// Move native SOL from the invoice vault onto the vault authority and
+    /// apply the `deposit_sol` credit. Permissionless. Nothing above rent is a
+    /// successful no-op and does not emit.
+    pub fn settle_invoice(ctx: Context<SettleInvoice>, invoice_id: [u8; 32]) -> Result<()> {
+        settle_invoice_handler(ctx, invoice_id)
+    }
+
+    /// Move SPL from the invoice vault's token account into the asset vault
+    /// and apply the `deposit_to_asset` credit. Permissionless. An empty token
+    /// account is a successful no-op and does not emit.
+    pub fn settle_invoice_spl(ctx: Context<SettleInvoiceSpl>, invoice_id: [u8; 32]) -> Result<()> {
+        settle_invoice_spl_handler(ctx, invoice_id)
+    }
+
     pub fn set_fee_asset(ctx: Context<SetFeeAsset>) -> Result<()> {
         set_fee_asset_handler(ctx)
     }

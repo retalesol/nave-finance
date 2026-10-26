@@ -263,7 +263,7 @@ async function upsertDaoRegistry(
 
     const { error } = await supabase
       .from("dao_registry")
-      .upsert(row, { onConflict: "dao_onchain_address", ignoreDuplicates: false });
+      .upsert(row, { onConflict: "chain_id,dao_onchain_address", ignoreDuplicates: false });
 
     if (error) {
       console.error(`Failed to upsert dao_registry for ${addr}:`, error);
@@ -336,6 +336,34 @@ async function isServiceRoleBearer(bearer: string): Promise<boolean> {
  * after relevant chain events are indexed. Same auth model as signer-service worker.
  * Skips quietly when NAVE_AGENT_SECRET is not configured on the Edge runtime.
  */
+/** Constitution changes should score yield immediately, not on the next hour. */
+async function invokePolicyEvaluator(): Promise<void> {
+  const policySecret = Deno.env.get("NAVE_POLICY_SECRET");
+  if (!policySecret) {
+    console.warn("index-events: NAVE_POLICY_SECRET unset — skipping policy-evaluator");
+    return;
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceKey) return;
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/policy-evaluator`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        "X-Policy-Secret": policySecret,
+      },
+      body: JSON.stringify({}),
+    });
+    if (!resp.ok) {
+      console.error("policy-evaluator hook failed:", resp.status, (await resp.text()).slice(0, 300));
+    }
+  } catch (e) {
+    console.error("policy-evaluator hook error:", e);
+  }
+}
+
 async function invokeAgentOrchestratorPoll(): Promise<void> {
   const agentSecret = Deno.env.get("NAVE_AGENT_SECRET");
   if (!agentSecret) {
@@ -627,6 +655,12 @@ Deno.serve(async (req: Request) => {
     );
     if (orchestratorPollHint) {
       await invokeAgentOrchestratorPoll();
+    }
+    const constitutionHint = newEvents.some((e) =>
+      e.event_type === "ConstitutionUpdated" || e.event_type === "PolicyParametersUpdated"
+    );
+    if (constitutionHint) {
+      await invokePolicyEvaluator();
     }
 
     return jsonResponse({

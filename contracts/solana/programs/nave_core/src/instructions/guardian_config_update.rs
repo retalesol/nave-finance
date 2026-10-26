@@ -18,8 +18,8 @@ use crate::constants::{
 use crate::errors::NaveError;
 use crate::events::{GuardianConfigUpdated, GuardiansBootstrapped};
 use crate::state::{
-    DaoRegistry, GovernanceProposalLayout, GuardianConfig, GUARDIAN_CONFIG_LEGACY_LEN,
-    NaveGlobalConfig,
+    DaoRegistry, GovernanceProposalLayout, GuardianConfig, NaveGlobalConfig,
+    GUARDIAN_CONFIG_LEGACY_LEN,
 };
 use crate::utils::{
     require_dao_active, require_founder, require_not_paused, validate_dao_ownership,
@@ -46,7 +46,10 @@ fn validate_guardian_set(wallets: &[Pubkey], threshold: u8) -> Result<()> {
     let mut sorted = wallets.to_vec();
     sorted.sort();
     sorted.dedup();
-    require!(sorted.len() == wallets.len(), NaveError::DuplicateGuardianWallet);
+    require!(
+        sorted.len() == wallets.len(),
+        NaveError::DuplicateGuardianWallet
+    );
     Ok(())
 }
 
@@ -117,7 +120,10 @@ fn parse_permission_payload(prop: &GovernanceProposalLayout) -> Result<(Vec<Pubk
     for i in wallet_count..MAX_GUARDIAN_WALLETS {
         let start = WALLETS_START + i * 32;
         let pad = Pubkey::new_from_array(slice[start..start + 32].try_into().unwrap());
-        require!(pad == Pubkey::default(), NaveError::PermissionProposalInvalid);
+        require!(
+            pad == Pubkey::default(),
+            NaveError::PermissionProposalInvalid
+        );
     }
 
     validate_guardian_set(&wallets, threshold)?;
@@ -209,10 +215,7 @@ pub fn apply_guardian_config_from_governance_handler(
 /// `GuardianConfig::LEN`.
 pub fn resize_guardian_config_handler(ctx: Context<ResizeGuardianConfig>) -> Result<()> {
     let ai = ctx.accounts.guardian_config.to_account_info();
-    require!(
-        *ai.owner == crate::ID,
-        NaveError::DaoOwnershipMismatch
-    );
+    require!(*ai.owner == crate::ID, NaveError::DaoOwnershipMismatch);
     let current = ai.data_len();
     require!(
         current == GUARDIAN_CONFIG_LEGACY_LEN || current == GuardianConfig::LEN,

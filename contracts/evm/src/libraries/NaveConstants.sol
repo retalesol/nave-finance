@@ -160,6 +160,29 @@ library NaveConstants {
     uint256 internal constant MAX_PROPOSAL_DESCRIPTION_LEN = 512;
     uint256 internal constant MAX_PROPOSAL_PAYLOAD_LEN = 512;
 
+    // ── Same-address activation, outbound relayer fee, relayer sweep ──────
+    /// Native fee {NaveDAOFactory.activateDao} forwards to the protocol
+    /// revenue wallet. Gas is extra. Arc pays the USDC value of this amount.
+    uint256 internal constant ACTIVATION_FEE_WEI = 0.001 ether;
+    /// Native fee the treasury pays the protocol relayer on governance
+    /// transfers out and on strategy withdrawals. Deposits do not pay it.
+    uint256 internal constant OUTBOUND_RELAYER_FEE_WEI = 0.0005 ether;
+    /// The relayer sweep leaves this much native gas and sends the excess
+    /// to the protocol revenue wallet.
+    uint256 internal constant RELAYER_SWEEP_RESERVE_WEI = 0.05 ether;
+    /// Arc Testnet. Native gas is 18-decimal USDC. Arc mainnet (5042) is not
+    /// a supported Nave chain.
+    uint256 internal constant ARC_TESTNET_CHAIN_ID = 5_042_002;
+    /// Arc Testnet ERC-20 USDC (6 decimals). The activation fee on Arc is
+    /// paid in this token. It is not the 18-decimal native gas balance.
+    address internal constant ARC_TESTNET_USDC = 0x3600000000000000000000000000000000000000;
+    /// Documented Arc testnet ETH price used when the oracle has no fresh
+    /// WETH price: $2,500.00 per ETH, in micro-USD (1e6).
+    /// 0.001 ETH = $2.50 = 2_500_000 USDC (6 decimals).
+    /// 0.0005 ETH = $1.25 = 1_250_000 USDC.
+    /// 0.05 ETH = $125 = 125_000_000 USDC, or 125e18 native gas units.
+    uint256 internal constant ARC_TESTNET_ETH_USD_MICRO = 2_500_000_000;
+
     // ── Chain-dependent delays ────────────────────────────────────────────
     /// Ethereum, Base, Robinhood Chain, and Arc mainnet (unsupported, listed so
     /// an accidental deploy there still gets full delays).

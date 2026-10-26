@@ -67,7 +67,10 @@ pub fn register_asset_handler(
         (vault.asset_count as usize) < MAX_TREASURY_ASSETS,
         NaveError::TreasuryAssetsFull
     );
-    vault.asset_count = vault.asset_count.checked_add(1).ok_or(NaveError::MathOverflow)?;
+    vault.asset_count = vault
+        .asset_count
+        .checked_add(1)
+        .ok_or(NaveError::MathOverflow)?;
 
     Ok(())
 }
@@ -181,12 +184,38 @@ pub struct SetFeeAsset<'info> {
     pub fee_config: Account<'info, FeeConfig>,
 }
 
+/// Credit `TreasuryAsset.deposited` the way `deposit_to_asset` does.
+///
+/// Callers move the tokens themselves. `amount` must be non-zero; a zero
+/// credit is rejected so a settle cannot emit an empty principal bump.
+pub(crate) fn credit_asset_deposit(asset: &mut TreasuryAsset, amount: u64) -> Result<()> {
+    require!(amount > 0, NaveError::MathOverflow);
+    asset.deposited = asset
+        .deposited
+        .checked_add(amount)
+        .ok_or(NaveError::MathOverflow)?;
+    Ok(())
+}
+
+/// Apply the `deposit_sol` NAV credit: invalidate the revalue window.
+///
+/// Native SOL is not a `TreasuryAsset` balance. `revalue_treasury` prices the
+/// wSOL asset vault, so this does not increment `deposited` or `current_nav`.
+/// Clearing `last_revalued_at` is the staleness signal `deposit_sol` writes
+/// after the lamports land on the vault authority.
+pub(crate) fn credit_native_sol_deposit(treasury_vault: &mut TreasuryVault) {
+    treasury_vault.last_revalued_at = 0;
+}
+
 /// Deposit `amount` base units of a registered asset into its holding account.
 /// USD NAV is recomputed by `revalue_treasury`; this only moves tokens and bumps
 /// per-asset principal.
 pub fn deposit_to_asset_handler(ctx: Context<DepositToAsset>, amount: u64) -> Result<()> {
     require!(amount > 0, NaveError::MathOverflow);
-    require!(ctx.accounts.asset_config.enabled, NaveError::AssetNotEnabled);
+    require!(
+        ctx.accounts.asset_config.enabled,
+        NaveError::AssetNotEnabled
+    );
 
     token::transfer(
         CpiContext::new(
@@ -200,8 +229,7 @@ pub fn deposit_to_asset_handler(ctx: Context<DepositToAsset>, amount: u64) -> Re
         amount,
     )?;
 
-    let asset = &mut ctx.accounts.treasury_asset;
-    asset.deposited = asset.deposited.checked_add(amount).ok_or(NaveError::MathOverflow)?;
+    credit_asset_deposit(&mut ctx.accounts.treasury_asset, amount)?;
 
     Ok(())
 }
@@ -230,7 +258,7 @@ pub fn deposit_sol_handler(ctx: Context<DepositSol>, amount: u64) -> Result<()> 
         ],
     )?;
 
-    ctx.accounts.treasury_vault.last_revalued_at = 0;
+    credit_native_sol_deposit(&mut ctx.accounts.treasury_vault);
 
     Ok(())
 }

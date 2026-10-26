@@ -226,7 +226,11 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     }
 
     receive() external payable {
-        if (msg.value > 0) TreasuryAdminLib.wrapNativeBalance(protocolContract);
+        if (msg.value == 0 || _pullingRelayerFee) return;
+        // Arc gas is already USDC. Keep the native balance so the relayer fee
+        // can be paid; there is no WETH to wrap into.
+        if (block.chainid == NaveConstants.ARC_TESTNET_CHAIN_ID) return;
+        TreasuryAdminLib.wrapNativeBalance(protocolContract);
     }
 
     // ── NFT custody (ERC-721 / ERC-1155 receive hooks) ────────────────────
@@ -259,6 +263,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         external
         onlyGovernor
     {
+        _chargeOutboundRelayerFee();
         IERC721(collection).safeTransferFrom(address(this), recipient, tokenId);
         emit NftTransferExecuted(collection, recipient, tokenId);
     }
@@ -549,7 +554,14 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         notFrozen
         onlyFounder
     {
-        TreasuryAdminLib.validateLinkedTreasury(protocolContract, destChainId, treasury_);
+        // Same-address activation deploys this treasury on another chain. That
+        // address does not need a separate owner allowlist. Any other sister
+        // still has to be registered with the protocol.
+        if (treasury_ == address(this)) {
+            if (destChainId == 0 || destChainId == block.chainid) revert NaveErrors.InvalidChainId();
+        } else {
+            TreasuryAdminLib.validateLinkedTreasury(protocolContract, destChainId, treasury_);
+        }
         linkedTreasury[destChainId] = treasury_;
         emit LinkedTreasurySet(destChainId, treasury_);
     }
@@ -878,6 +890,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     /// `currentNav` falls so the next cap check in this block sees the outflow.
     /// {revalueTreasury} overwrites both from live balances and positions.
     function noteCapitalDeparture(address asset, uint256 amount) external onlyExecution {
+        _chargeOutboundRelayerFee();
         uint256 amountUsd = valueAssetUsd(asset, amount);
         currentNav = currentNav > amountUsd ? currentNav - amountUsd : 0;
         deployedCapital += amountUsd;
@@ -895,6 +908,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         uint256 amount,
         uint256 amountUsd
     ) external onlyExecution nonReentrant returns (uint256 perfFeeSkimmed) {
+        _chargeOutboundRelayerFee();
         _syncCanonicalFees();
         uint256 gain;
         (perfFeeSkimmed, deployedCapital, gain, totalWithdrawn) = TreasuryAdminLib.recordStrategyWithdrawal(
@@ -932,6 +946,7 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
     }
 
     function _executeTreasuryTransfer(address asset, address recipient, uint256 amount) internal {
+        _chargeOutboundRelayerFee();
         (currentNav, totalWithdrawn) = TreasuryAdminLib.executeTransfer(
             oracle, _assets, asset, recipient, amount, currentNav, totalWithdrawn
         );
@@ -962,6 +977,14 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
         }
     }
 
+    /// 0.0005 ETH from this treasury to the protocol relayer. Arc pays the
+    /// native USDC value of 0.0005 ETH. Deposits do not call this.
+    function _chargeOutboundRelayerFee() internal {
+        _pullingRelayerFee = true;
+        TreasuryAdminLib.pullOutboundRelayerFee(protocolContract, oracle);
+        _pullingRelayerFee = false;
+    }
+
     function _operational(TreasuryAdminLib.AgentSlot storage s) internal view returns (bool) {
         return s.active && !s.nullified && s.status == uint8(AgentStatus.Active)
             && s.authority != address(0);
@@ -987,8 +1010,12 @@ contract NaveTreasury is INaveTreasury, NaveInitializable, NaveUUPSBase, Reentra
 
     /// Set by a guardian DISABLE_AGENTS action; cleared only by ENABLE_AGENTS.
     bool public agentsGuardianLocked;
+    /// Set while the outbound relayer fee unwraps WETH, so {receive} does not
+    /// wrap that ETH straight back. Packed with {agentsGuardianLocked}.
+    bool private _pullingRelayerFee;
 
     /// Was 40; two slots consumed by `pendingReviewWindowSecs` +
-    /// `pendingReviewWindowEffectiveAt`, one by `agentsGuardianLocked`.
+    /// `pendingReviewWindowEffectiveAt`, one by `agentsGuardianLocked`
+    /// (the fee flag shares that slot).
     uint256[37] private __gap;
 }

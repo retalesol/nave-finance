@@ -1,18 +1,20 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, MintTo, SetAuthority, Token, TokenAccount};
 
+use crate::constants::nave_governance_program;
 use crate::constants::{
     GovernanceType, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED, MAX_TOKEN_NAME_LEN, MAX_TOKEN_REGISTRY,
-    MAX_TOKEN_SYMBOL_LEN, PROTOCOL_FEE_VAULT_SEED, TOKEN_MINT_FEE_LAMPORTS, TREASURY_VAULT_SEED,
-    TOKEN_REGISTRY_SEED, TOKEN_REVOKE_REWARD_LAMPORTS, VAULT_AUTHORITY_SEED,
+    MAX_TOKEN_SYMBOL_LEN, PROTOCOL_FEE_VAULT_SEED, TOKEN_MINT_FEE_LAMPORTS, TOKEN_REGISTRY_SEED,
+    TOKEN_REVOKE_REWARD_LAMPORTS, TREASURY_VAULT_SEED, VAULT_AUTHORITY_SEED,
 };
 use crate::errors::NaveError;
 use crate::state::{
     DaoRegistry, NaveGlobalConfig, ProtocolFeeVault, TokenRegistry, TokenSlot, TreasuryVault,
     VaultAuthority,
 };
-use crate::constants::nave_governance_program;
-use crate::utils::{copy_fixed_bytes, require_founder, require_not_paused, verify_governance_caller};
+use crate::utils::{
+    copy_fixed_bytes, require_founder, require_not_paused, verify_governance_caller,
+};
 
 pub fn register_dao_token_handler(
     ctx: Context<RegisterDaoToken>,
@@ -30,7 +32,12 @@ pub fn register_dao_token_handler(
     );
 
     let mint_key = ctx.accounts.mint.key();
-    if ctx.accounts.token_registry.find_token_index(&mint_key).is_some() {
+    if ctx
+        .accounts
+        .token_registry
+        .find_token_index(&mint_key)
+        .is_some()
+    {
         return err!(NaveError::DuplicateTokenMint);
     }
 

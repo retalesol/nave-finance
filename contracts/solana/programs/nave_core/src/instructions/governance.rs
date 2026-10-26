@@ -1,13 +1,14 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{
-    AgentRole, AgentStatus, AGENT_COUNT, AGENT_ROTATION_DELAY_SECONDS, CONSTITUTION_SEED,
-    DAO_CONTROL_SEED, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED, GUARDIAN_ACTION_CANCEL_AGENT_ROTATION,
-    GUARDIAN_ACTION_DISABLE_AGENTS, GUARDIAN_ACTION_ENABLE_AGENTS, GUARDIAN_ACTION_FREEZE,
-    GUARDIAN_ACTION_NULLIFY_AGENT, GUARDIAN_ACTION_RESTORE_AGENT, GUARDIAN_ACTION_ROTATE_AGENT_KEY,
-    GUARDIAN_ACTION_SEED, GUARDIAN_ACTION_UNFREEZE, GUARDIAN_ACTION_UPDATE_AGENT_STATUS,
-    GUARDIAN_AGENT_CHANGE_DELAY_SECS, GUARDIAN_CONFIG_SEED, AGENT_SET_SEED,
-    MAX_CONSTITUTION_PROTOCOLS, REVIEW_WINDOW_DECREASE_DELAY_SECS,
+    AgentRole, AgentStatus, AGENT_COUNT, AGENT_ROTATION_DELAY_SECONDS, AGENT_SET_SEED,
+    CONSTITUTION_SEED, DAO_CONTROL_SEED, DAO_REGISTRY_SEED, GLOBAL_CONFIG_SEED,
+    GUARDIAN_ACTION_CANCEL_AGENT_ROTATION, GUARDIAN_ACTION_DISABLE_AGENTS,
+    GUARDIAN_ACTION_ENABLE_AGENTS, GUARDIAN_ACTION_FREEZE, GUARDIAN_ACTION_NULLIFY_AGENT,
+    GUARDIAN_ACTION_RESTORE_AGENT, GUARDIAN_ACTION_ROTATE_AGENT_KEY, GUARDIAN_ACTION_SEED,
+    GUARDIAN_ACTION_UNFREEZE, GUARDIAN_ACTION_UPDATE_AGENT_STATUS,
+    GUARDIAN_AGENT_CHANGE_DELAY_SECS, GUARDIAN_CONFIG_SEED, MAX_CONSTITUTION_PROTOCOLS,
+    REVIEW_WINDOW_DECREASE_DELAY_SECS,
 };
 use crate::errors::NaveError;
 use crate::events::{
@@ -63,8 +64,14 @@ fn record_guardian_signature(
         guardian_action.wallet_count = guardian_config.wallet_count;
         guardian_action.wallets = guardian_config.wallets;
     } else {
-        require!(guardian_action.action_type == action_type, NaveError::Unauthorized);
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.action_type == action_type,
+            NaveError::Unauthorized
+        );
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
     let idx = guardian_action
         .guardian_index(&guardian_key)
@@ -244,7 +251,10 @@ pub fn set_review_window_handler(
 pub fn apply_review_window_handler(ctx: Context<ApplyReviewWindow>) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
     let control = &mut ctx.accounts.dao_control;
-    require!(control.pending_review_window_secs > 0, NaveError::NoPendingReviewWindow);
+    require!(
+        control.pending_review_window_secs > 0,
+        NaveError::NoPendingReviewWindow
+    );
     require!(
         Clock::get()?.unix_timestamp >= control.review_window_effective_at,
         NaveError::ReviewWindowChangeNotReady
@@ -581,7 +591,10 @@ pub fn apply_agent_rotation_handler(ctx: Context<ApplyAgentRotation>, role: u8) 
     let agent_set = &mut ctx.accounts.agent_set;
     let idx = agent_role as usize;
     let pending = agent_set.pending_rotations[idx];
-    require!(pending.pending_authority != Pubkey::default(), NaveError::NoPendingAgentRotation);
+    require!(
+        pending.pending_authority != Pubkey::default(),
+        NaveError::NoPendingAgentRotation
+    );
     require!(
         Clock::get()?.unix_timestamp >= pending.effective_at,
         NaveError::AgentRotationNotReady
@@ -739,7 +752,10 @@ pub fn emergency_freeze_handler(ctx: Context<EmergencyFreeze>, action_nonce: u64
             guardian_action.action_type == GUARDIAN_ACTION_FREEZE,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -762,7 +778,10 @@ pub fn emergency_freeze_handler(ctx: Context<EmergencyFreeze>, action_nonce: u64
     Ok(())
 }
 
-pub fn emergency_unfreeze_handler(ctx: Context<EmergencyUnfreeze>, action_nonce: u64) -> Result<()> {
+pub fn emergency_unfreeze_handler(
+    ctx: Context<EmergencyUnfreeze>,
+    action_nonce: u64,
+) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
     let guardian_key = ctx.accounts.guardian.key();
 
@@ -788,7 +807,10 @@ pub fn emergency_unfreeze_handler(ctx: Context<EmergencyUnfreeze>, action_nonce:
             guardian_action.action_type == GUARDIAN_ACTION_UNFREEZE,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -955,7 +977,10 @@ pub fn guardian_disable_agents_handler(
             guardian_action.action_type == GUARDIAN_ACTION_DISABLE_AGENTS,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -1010,7 +1035,10 @@ pub fn guardian_enable_agents_handler(
         let dao_registry = &mut ctx.accounts.dao_registry;
         dao_registry.agents_enabled = true;
         dao_registry.updated_at = Clock::get()?.unix_timestamp;
-        emit!(AgentsToggled { dao: dao_key, enabled: true });
+        emit!(AgentsToggled {
+            dao: dao_key,
+            enabled: true
+        });
     }
     Ok(())
 }
@@ -1324,7 +1352,10 @@ pub fn nullify_agent_handler(
             guardian_action.action_type == GUARDIAN_ACTION_NULLIFY_AGENT,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -1357,7 +1388,11 @@ pub fn nullify_agent_handler(
 
 /// Guardian M-of-N restore of a nullified slot (the same quorum that nullifies).
 /// Does NOT lift the DAO freeze; that stays with `emergency_unfreeze`.
-pub fn restore_agent_handler(ctx: Context<RestoreAgent>, role: u8, action_nonce: u64) -> Result<()> {
+pub fn restore_agent_handler(
+    ctx: Context<RestoreAgent>,
+    role: u8,
+    action_nonce: u64,
+) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
     let agent_role = AgentRole::from_u8(role).ok_or(NaveError::InvalidAgentRole)?;
     let dao_key = ctx.accounts.dao_registry.key();
@@ -1503,7 +1538,10 @@ pub fn update_agent_status_handler(
     action_nonce: u64,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
-    require!((agent_slot as usize) < AGENT_COUNT, NaveError::InvalidAgentSlot);
+    require!(
+        (agent_slot as usize) < AGENT_COUNT,
+        NaveError::InvalidAgentSlot
+    );
     require!(
         AgentStatus::from_u8(new_status).is_some(),
         NaveError::InvalidAgentStatus
@@ -1532,7 +1570,10 @@ pub fn update_agent_status_handler(
             guardian_action.action_type == GUARDIAN_ACTION_UPDATE_AGENT_STATUS,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -1593,7 +1634,10 @@ pub fn rotate_agent_key_handler(
     action_nonce: u64,
 ) -> Result<()> {
     require_not_paused(&ctx.accounts.global_config)?;
-    require!((agent_slot as usize) < AGENT_COUNT, NaveError::InvalidAgentSlot);
+    require!(
+        (agent_slot as usize) < AGENT_COUNT,
+        NaveError::InvalidAgentSlot
+    );
     require!(new_pubkey != Pubkey::default(), NaveError::Unauthorized);
 
     let guardian_key = ctx.accounts.guardian.key();
@@ -1619,7 +1663,10 @@ pub fn rotate_agent_key_handler(
             guardian_action.action_type == GUARDIAN_ACTION_ROTATE_AGENT_KEY,
             NaveError::Unauthorized
         );
-        require!(guardian_action.nonce == action_nonce, NaveError::Unauthorized);
+        require!(
+            guardian_action.nonce == action_nonce,
+            NaveError::Unauthorized
+        );
     }
 
     let idx = guardian_action
@@ -1632,7 +1679,10 @@ pub fn rotate_agent_key_handler(
         guardian_action.executed = true;
         let dao_key = ctx.accounts.dao_registry.key();
         let agent_set = &ctx.accounts.agent_set;
-        require!(!agent_set.agents[slot_idx].nullified, NaveError::AgentNullified);
+        require!(
+            !agent_set.agents[slot_idx].nullified,
+            NaveError::AgentNullified
+        );
         let (keys, skip) = agent_keys_with(agent_set, slot_idx, new_pubkey);
         require_agent_keys_distinct(
             &keys,
@@ -1676,15 +1726,22 @@ pub fn apply_guardian_agent_change_handler(
     require!(slot_idx < AGENT_COUNT, NaveError::InvalidAgentSlot);
     let dao_key = ctx.accounts.dao_registry.key();
     let change = ctx.accounts.dao_control.pending_agent_changes[slot_idx];
-    require!(change.kind != GUARDIAN_CHANGE_NONE, NaveError::NoPendingGuardianChange);
+    require!(
+        change.kind != GUARDIAN_CHANGE_NONE,
+        NaveError::NoPendingGuardianChange
+    );
     require!(
         Clock::get()?.unix_timestamp >= change.effective_at,
         NaveError::GuardianChangeNotReady
     );
-    ctx.accounts.dao_control.pending_agent_changes[slot_idx] = PendingGuardianAgentChange::default();
+    ctx.accounts.dao_control.pending_agent_changes[slot_idx] =
+        PendingGuardianAgentChange::default();
 
     let agent_set = &mut ctx.accounts.agent_set;
-    require!(!agent_set.agents[slot_idx].nullified, NaveError::AgentNullified);
+    require!(
+        !agent_set.agents[slot_idx].nullified,
+        NaveError::AgentNullified
+    );
     let now = Clock::get()?.unix_timestamp;
     if change.kind == GUARDIAN_CHANGE_ROTATE_KEY {
         let (keys, skip) = agent_keys_with(agent_set, slot_idx, change.new_authority);
@@ -2010,7 +2067,10 @@ mod risk_tier_tests {
 
     #[test]
     fn legacy_entries_read_as_tier_one() {
-        let e = ProtocolEntry { max_allocation_bps: 5_000, ..ProtocolEntry::default() };
+        let e = ProtocolEntry {
+            max_allocation_bps: 5_000,
+            ..ProtocolEntry::default()
+        };
         assert_eq!(e.risk_tier(), 1);
         assert_eq!(e.allocation_bps(), 5_000);
     }

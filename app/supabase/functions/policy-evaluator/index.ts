@@ -29,6 +29,7 @@ import {
   isEvmPolicyChain,
   readEvmConstitution,
   readEvmHeldAssets,
+  readEvmSameAddressLink,
   readEvmStrategyPositions,
   readEvmTreasuryVault,
 } from "../_shared/evmPolicy.ts";
@@ -38,9 +39,11 @@ import { bindDeployActions, type HeldAsset } from "../_shared/policyAssets.ts";
 import {
   applyLiveRates,
   loadStrategyRates,
+  persistedAssetClass,
   scanYieldOpportunities,
   withholdStoppedVenues,
 } from "../_shared/yieldSources.ts";
+import { ethereumVenueChainId } from "../_shared/ethereumFamilyYield.ts";
 import { fetchVenueWatches } from "../_shared/genlayerStore.ts";
 import { NAVE_GENLAYER_VENUE_GATE, readGenlayerFlag } from "../_shared/genlayerCharter.ts";
 import {
@@ -234,12 +237,23 @@ Deno.serve(async (req: Request) => {
       }
       const held: HeldAsset[] = evmHeld ?? await solanaHeldAssets(rpcUrl, daoAddr, solanaMints);
 
+      const outboundBridgeEnabled =
+        (Deno.env.get("NAVE_BRIDGE_OUTBOUND_ENABLED") ?? "false").toLowerCase() === "true";
+      const homeChainId = typeof dao.chain_id === "number" ? dao.chain_id : null;
+      const venueChainId = homeChainId == null ? null : ethereumVenueChainId(homeChainId);
+      const linkedEthereumTreasury = evmChain && homeChainId != null && venueChainId != null
+        ? await readEvmSameAddressLink(homeChainId, daoAddr, venueChainId)
+        : false;
       const scanned = applyLiveRates(
         await scanYieldOpportunities(
           approvedProtocols.map((p) => ({ protocolId: p.protocolId, programId: p.programId })),
           undefined,
           dao.chain ?? undefined,
-          typeof dao.chain_id === "number" ? dao.chain_id : null,
+          homeChainId,
+          {
+            outboundBridgeEnabled,
+            linkedEthereumTreasury,
+          },
         ),
         dao.chain ?? "solana",
         typeof dao.chain_id === "number" ? dao.chain_id : null,
@@ -299,7 +313,11 @@ Deno.serve(async (req: Request) => {
           program_id: o.programId,
           apy_bps: o.apyBps,
           risk_score: o.riskScore,
-          asset_class: o.assetClass,
+          asset_class: persistedAssetClass({
+            assetClass: o.assetClass,
+            symbol: o.symbol,
+            protocolId: o.protocolId,
+          }),
           liquid: o.liquid,
           score: scoreOpportunity(o),
           source: o.source ?? "",

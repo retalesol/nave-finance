@@ -25,7 +25,9 @@ use crate::state::{
     AssetConfig, DaoRegistry, GovernanceProposalLayout, NaveGlobalConfig, NftVaultRecord,
     TreasuryAsset, TreasuryVault, VaultAuthority,
 };
-use crate::utils::{require_dao_active, require_not_paused, transfer_escrow_to_account, verify_governance_caller};
+use crate::utils::{
+    require_dao_active, require_not_paused, transfer_escrow_to_account, verify_governance_caller,
+};
 
 /// `nave_governance::constants::ProposalType::Transfer`
 const PROPOSAL_TYPE_TRANSFER: u8 = 8;
@@ -59,7 +61,10 @@ fn load_and_validate_proposal(
         prop.status == PROPOSAL_STATUS_PASSED,
         NaveError::TransferProposalPayloadInvalid
     );
-    require!(prop.finalized_at > 0, NaveError::TransferProposalPayloadInvalid);
+    require!(
+        prop.finalized_at > 0,
+        NaveError::TransferProposalPayloadInvalid
+    );
     Ok(prop)
 }
 
@@ -73,7 +78,10 @@ fn parse_transfer_payload(prop: &GovernanceProposalLayout) -> Result<(Pubkey, Pu
     let recipient = Pubkey::new_from_array(slice[0..32].try_into().unwrap());
     let mint = Pubkey::new_from_array(slice[32..64].try_into().unwrap());
     let amount = u64::from_le_bytes(slice[64..72].try_into().unwrap());
-    require!(recipient != Pubkey::default(), NaveError::TransferProposalPayloadInvalid);
+    require!(
+        recipient != Pubkey::default(),
+        NaveError::TransferProposalPayloadInvalid
+    );
     require!(amount > 0, NaveError::TransferProposalPayloadInvalid);
     require!(
         hash_transfer_payload(slice) == prop.payload_hash,
@@ -98,7 +106,10 @@ pub fn execute_governance_transfer_native_sol_handler(
         &ctx.accounts.dao_registry.key(),
     )?;
     let (recipient, mint, amount) = parse_transfer_payload(&prop)?;
-    require!(mint == Pubkey::default(), NaveError::TransferProposalPayloadInvalid);
+    require!(
+        mint == Pubkey::default(),
+        NaveError::TransferProposalPayloadInvalid
+    );
     // SOL-C1: `recipient` above is decoded from the proposal's bound payload;
     // without also binding it to the actual `recipient` account being paid,
     // a malicious executor could pass a different (unapproved) recipient
@@ -148,7 +159,9 @@ pub fn execute_governance_transfer_native_sol_handler(
     Ok(())
 }
 
-pub fn execute_governance_transfer_spl_handler(ctx: Context<ExecuteGovernanceTransferSpl>) -> Result<()> {
+pub fn execute_governance_transfer_spl_handler(
+    ctx: Context<ExecuteGovernanceTransferSpl>,
+) -> Result<()> {
     verify_governance_caller(
         &nave_governance_program::ID,
         &ctx.accounts.instructions_sysvar.to_account_info(),
@@ -162,11 +175,11 @@ pub fn execute_governance_transfer_spl_handler(ctx: Context<ExecuteGovernanceTra
         &ctx.accounts.dao_registry.key(),
     )?;
     let (recipient, mint_pk, amount) = parse_transfer_payload(&prop)?;
-    require!(mint_pk != Pubkey::default(), NaveError::TransferProposalPayloadInvalid);
     require!(
-        mint_pk == ctx.accounts.mint.key(),
-        NaveError::MintMismatch
+        mint_pk != Pubkey::default(),
+        NaveError::TransferProposalPayloadInvalid
     );
+    require!(mint_pk == ctx.accounts.mint.key(), NaveError::MintMismatch);
     // SOL-C1: bind the payload-decoded recipient to the actual `recipient`
     // account, not just the derived `recipient_token` ATA's owner (see native
     // SOL handler above for the full rationale).
@@ -175,7 +188,10 @@ pub fn execute_governance_transfer_spl_handler(ctx: Context<ExecuteGovernanceTra
         NaveError::RecipientMismatch
     );
 
-    require!(ctx.accounts.asset_config.enabled, NaveError::AssetNotEnabled);
+    require!(
+        ctx.accounts.asset_config.enabled,
+        NaveError::AssetNotEnabled
+    );
     require!(
         ctx.accounts.recipient_token.mint == ctx.accounts.mint.key(),
         NaveError::MintMismatch
@@ -365,7 +381,10 @@ pub fn execute_governance_transfer_nft_handler(
         &ctx.accounts.dao_registry.key(),
     )?;
     let (recipient, mint_pk, amount) = parse_transfer_payload(&prop)?;
-    require!(mint_pk != Pubkey::default(), NaveError::TransferProposalPayloadInvalid);
+    require!(
+        mint_pk != Pubkey::default(),
+        NaveError::TransferProposalPayloadInvalid
+    );
     require!(mint_pk == ctx.accounts.mint.key(), NaveError::MintMismatch);
     // NFTs move exactly one unit; any other amount is a malformed NFT payload.
     require!(amount == 1, NaveError::TransferProposalPayloadInvalid);
@@ -375,7 +394,10 @@ pub fn execute_governance_transfer_nft_handler(
         recipient == ctx.accounts.recipient.key(),
         NaveError::RecipientMismatch
     );
-    require!(!ctx.accounts.nft_record.transferred, NaveError::TransferProposalPayloadInvalid);
+    require!(
+        !ctx.accounts.nft_record.transferred,
+        NaveError::TransferProposalPayloadInvalid
+    );
     require!(
         ctx.accounts.recipient_token.mint == ctx.accounts.mint.key(),
         NaveError::MintMismatch
@@ -384,7 +406,10 @@ pub fn execute_governance_transfer_nft_handler(
         ctx.accounts.recipient_token.owner == ctx.accounts.recipient.key(),
         NaveError::Unauthorized
     );
-    require!(ctx.accounts.nft_vault.amount >= 1, NaveError::InsufficientVaultBalance);
+    require!(
+        ctx.accounts.nft_vault.amount >= 1,
+        NaveError::InsufficientVaultBalance
+    );
 
     let dao_key = ctx.accounts.dao_registry.key();
     transfer_escrow_to_account(

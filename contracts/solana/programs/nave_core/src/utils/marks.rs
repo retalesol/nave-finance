@@ -81,7 +81,8 @@ pub fn kamino_collateral_value(
     }
     let supply = read_u64(reserve, KAMINO_COLLATERAL_SUPPLY)? as u128;
     require!(supply > 0, NaveError::PositionMarkSourceMismatch);
-    let available_sf = (read_u64(reserve, KAMINO_AVAILABLE_AMOUNT)? as u128) << KAMINO_FRACTION_BITS;
+    let available_sf =
+        (read_u64(reserve, KAMINO_AVAILABLE_AMOUNT)? as u128) << KAMINO_FRACTION_BITS;
     let fees_sf = read_u128(reserve, KAMINO_PROTOCOL_FEES_SF)?
         .saturating_add(read_u128(reserve, KAMINO_REFERRER_FEES_SF)?)
         .saturating_add(read_u128(reserve, KAMINO_PENDING_REFERRER_FEES_SF)?);
@@ -126,7 +127,12 @@ pub fn stake_pool_token_value(pool: &[u8], pool_mint: &Pubkey, pool_tokens: u64)
     let supply = read_u64(pool, STAKE_POOL_TOKEN_SUPPLY)? as u128;
     require!(supply > 0, NaveError::PositionMarkSourceMismatch);
     let lamports = read_u64(pool, STAKE_POOL_TOTAL_LAMPORTS)? as u128;
-    to_u64((pool_tokens as u128).checked_mul(lamports).ok_or(NaveError::MathOverflow)? / supply)
+    to_u64(
+        (pool_tokens as u128)
+            .checked_mul(lamports)
+            .ok_or(NaveError::MathOverflow)?
+            / supply,
+    )
 }
 
 /// Apply the upward drift cap. Downward moves pass through unbounded; upward
@@ -169,10 +175,16 @@ mod tests {
         let mut r = vec![0u8; 8624];
         put_pk(&mut r, KAMINO_LIQUIDITY_MINT, &mint);
         put_pk(&mut r, KAMINO_COLLATERAL_MINT, &cmint);
-        r[KAMINO_AVAILABLE_AMOUNT..KAMINO_AVAILABLE_AMOUNT + 8].copy_from_slice(&900u64.to_le_bytes());
-        r[KAMINO_BORROWED_SF..KAMINO_BORROWED_SF + 16].copy_from_slice(&((200u128) << 60).to_le_bytes());
-        r[KAMINO_COLLATERAL_SUPPLY..KAMINO_COLLATERAL_SUPPLY + 8].copy_from_slice(&1000u64.to_le_bytes());
-        assert_eq!(kamino_collateral_value(&r, &mint, &cmint, 100).unwrap(), 110);
+        r[KAMINO_AVAILABLE_AMOUNT..KAMINO_AVAILABLE_AMOUNT + 8]
+            .copy_from_slice(&900u64.to_le_bytes());
+        r[KAMINO_BORROWED_SF..KAMINO_BORROWED_SF + 16]
+            .copy_from_slice(&((200u128) << 60).to_le_bytes());
+        r[KAMINO_COLLATERAL_SUPPLY..KAMINO_COLLATERAL_SUPPLY + 8]
+            .copy_from_slice(&1000u64.to_le_bytes());
+        assert_eq!(
+            kamino_collateral_value(&r, &mint, &cmint, 100).unwrap(),
+            110
+        );
         assert!(kamino_collateral_value(&r, &cmint, &mint, 100).is_err());
     }
 
@@ -194,8 +206,14 @@ mod tests {
     #[test]
     fn drift_cap_bounds_upward_only() {
         // 1 day at 100 bps on a 1_000_000 base allows +10_000.
-        assert_eq!(capped_mark(1_000_000, 1_000_000, 0, 86_400, 2_000_000).unwrap(), 1_010_000);
-        assert_eq!(capped_mark(1_000_000, 1_000_000, 0, 86_400, 400_000).unwrap(), 400_000);
+        assert_eq!(
+            capped_mark(1_000_000, 1_000_000, 0, 86_400, 2_000_000).unwrap(),
+            1_010_000
+        );
+        assert_eq!(
+            capped_mark(1_000_000, 1_000_000, 0, 86_400, 400_000).unwrap(),
+            400_000
+        );
         assert!(capped_mark(0, 0, 0, 86_400, 5).is_err());
     }
 }

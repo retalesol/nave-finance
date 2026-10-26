@@ -5,9 +5,7 @@ use crate::constants::{
     HOLDER_ANNOTATION_SEED, MAX_ANNOTATION_LEN,
 };
 use crate::errors::NaveError;
-use crate::events::{
-    HolderAnnotationApproved, HolderAnnotationDenied, HolderAnnotationSet,
-};
+use crate::events::{HolderAnnotationApproved, HolderAnnotationDenied, HolderAnnotationSet};
 use crate::state::{DaoRegistry, GuardianConfig, HolderAnnotation, NaveGlobalConfig};
 use crate::utils::{require_founder, require_guardian, require_not_paused, validate_dao_ownership};
 

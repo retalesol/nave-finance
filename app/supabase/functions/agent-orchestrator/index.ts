@@ -20,13 +20,23 @@ import { assertJupiterMainnetConfig } from "../_shared/cluster.ts";
 import {
   enumerateEvmExecutionIndices,
   evmErKey,
-  extractEvmIndexFromRaw,
   parseEvmErKey,
   readEvmAgentGate,
   readEvmExecutionRequest,
   readEvmPositionAccounting,
   type EvmOnChainRequest,
 } from "../_shared/evmExecution.ts";
+import {
+  INDEXED_REQUEST_EVENT_TYPES,
+  IN_ISOLATE_WAKE_MAX_MS,
+  hasActiveAgentKey,
+  planPollRpc,
+  reviewWakeDelayMs,
+  selectDispatchableWork,
+  shouldScheduleReviewWake,
+  type IndexedActionRow,
+  type IndexedActivityRow,
+} from "../_shared/pollDiscovery.ts";
 import { type AgentRole, postReviewAction } from "../_shared/agentContracts.ts";
 import { evmChainKindFor, SUPPORTED_EVM_CHAIN_IDS, type ChainKind } from "../_shared/chain.ts";
 import { assessSignerPayload } from "../_shared/constitutionVerdict.ts";
@@ -528,6 +538,14 @@ interface OrchestratorRequest {
   chain_id?: number;
   /** EVM-only: uint64 request index on NaveExecution (when ER key is synthetic). */
   index?: number;
+  /** sweep, review_end, or the index-events hook. Informational. */
+  reason?: string;
+  /**
+   * "caller" means the signer worker arms review-end timers from `review_wakes`.
+   * Any other caller (index-events) arms a short in-isolate wake so a 60s
+   * testnet window still executes on time.
+   */
+  wake_owner?: "caller" | "self";
 }
 
 // Safety cap on how many execution requests a single poll run will act on.
@@ -1043,6 +1061,117 @@ interface DispatchResult {
   guardrail_failures: string[];
 }
 
+type AgentKeyIndex = { solana: Set<string>; evm: Set<string> };
+
+/** Active Solana or EVM agent-key rows for the DAOs in this batch. Fail closed. */
+async function loadActiveKeys(
+  supabase: ReturnType<typeof createClient>,
+  items: WorkItem[],
+): Promise<AgentKeyIndex> {
+  const solana = new Set<string>();
+  const evm = new Set<string>();
+  const solDaos = [...new Set(
+    items
+      .filter((item) => item.chain_id == null && !item.dao_address.startsWith("0x"))
+      .map((item) => item.dao_address),
+  )];
+  const evmDaos = [...new Set(
+    items
+      .filter((item) => item.chain_id != null || item.dao_address.startsWith("0x"))
+      .map((item) => item.dao_address.toLowerCase()),
+  )];
+  if (solDaos.length > 0) {
+    const { data, error } = await supabase
+      .from("encrypted_agent_keys")
+      .select("dao_onchain_address, agent_role")
+      .in("dao_onchain_address", solDaos)
+      .eq("is_active", true);
+    if (error) {
+      console.error(`[orchestrator] encrypted_agent_keys lookup failed; parking Solana dispatcher work: ${error.message}`);
+    } else {
+      for (const row of data ?? []) {
+        const dao = String((row as { dao_onchain_address?: string }).dao_onchain_address ?? "");
+        const role = String((row as { agent_role?: string }).agent_role ?? "");
+        if (dao && role) solana.add(`${dao}:${role}`);
+      }
+    }
+  }
+  if (evmDaos.length > 0) {
+    const { data, error } = await supabase
+      .from("encrypted_evm_keys")
+      .select("dao_onchain_address, chain_id, signer_role")
+      .in("dao_onchain_address", evmDaos)
+      .eq("is_active", true)
+      .is("guardian_index", null);
+    if (error) {
+      console.error(`[orchestrator] encrypted_evm_keys lookup failed; parking EVM dispatcher work: ${error.message}`);
+    } else {
+      for (const row of data ?? []) {
+        const dao = String((row as { dao_onchain_address?: string }).dao_onchain_address ?? "").toLowerCase();
+        const chainId = Number((row as { chain_id?: number | string }).chain_id);
+        const role = String((row as { signer_role?: string }).signer_role ?? "");
+        if (dao && role && Number.isFinite(chainId)) evm.add(`${dao}:${chainId}:${role}`);
+      }
+    }
+  }
+  return { solana, evm };
+}
+
+/**
+ * Arm one follow-up poll at reviewEnd for windows short enough to outlive this
+ * isolate (testnet's 60s window). Longer windows are returned as review_wakes
+ * for the worker, which also runs the 15-minute safety sweep.
+ */
+function armReviewEndWake(args: {
+  dao: string;
+  reviewEnd: number;
+  wakeOwnerIsCaller: boolean;
+  agentSecret: string;
+  supabaseUrl: string;
+  serviceKey: string;
+}): void {
+  if (args.wakeOwnerIsCaller) return;
+  // EVM oversight events already carry reviewEnd. The worker arms those, including
+  // a 60s testnet window, so this isolate must not arm a second poll. Solana
+  // oversight events do not carry reviewEnd, so the poll that just read it on
+  // chain arms the short wake itself.
+  if (args.dao.startsWith("0x") || args.dao.startsWith("0X")) return;
+  const now = Date.now();
+  if (shouldScheduleReviewWake(args.reviewEnd, now, { horizonMs: IN_ISOLATE_WAKE_MAX_MS }) !== "schedule") {
+    return;
+  }
+  const delay = reviewWakeDelayMs(args.reviewEnd, now);
+  const task = (async () => {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const resp = await fetch(`${args.supabaseUrl}/functions/v1/agent-orchestrator`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${args.serviceKey}`,
+          "X-Agent-Secret": args.agentSecret,
+        },
+        body: JSON.stringify({
+          mode: "poll",
+          dao_address: args.dao,
+          reason: "review_end",
+        }),
+      });
+      if (!resp.ok) {
+        console.error(`[orchestrator] review-end wake for ${args.dao} -> HTTP ${resp.status}`);
+      }
+    } catch (err) {
+      console.error(
+        "[orchestrator] review-end wake failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  })();
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  if (runtime?.waitUntil) runtime.waitUntil(task);
+  else void task;
+}
+
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -1112,6 +1241,27 @@ Deno.serve(async (req: Request) => {
     // DAOs that resumed (gate now open) after recently being parked — surfaced so
     // operators can see the backlog was reconciled rather than silently dropped.
     const reconciled: Array<{ dao: string; requeued: number; note: string }> = [];
+    const parkedMissingKey: WorkItem[] = [];
+    const reviewWakes: Array<{ dao_address: string; execution_request_address: string; review_end: number }> = [];
+    const seenReviewWakes = new Set<string>();
+    let activeKeys: AgentKeyIndex | null = null;
+    const wakeOwnerIsCaller = body.wake_owner === "caller";
+
+    const noteReviewWake = (dao: string, er: string, reviewEnd: number) => {
+      if (!Number.isFinite(reviewEnd) || reviewEnd <= Math.floor(Date.now() / 1000)) return;
+      const key = `${dao}:${er}:${reviewEnd}`;
+      if (seenReviewWakes.has(key)) return;
+      seenReviewWakes.add(key);
+      reviewWakes.push({ dao_address: dao, execution_request_address: er, review_end: reviewEnd });
+      armReviewEndWake({
+        dao,
+        reviewEnd,
+        wakeOwnerIsCaller,
+        agentSecret,
+        supabaseUrl,
+        serviceKey: supabaseServiceKey,
+      });
+    };
 
     // ── Execute-then-place batching (Jito bundle) ─────────────────────────
     // Solana executions that become ready in the same poll cycle for the same
@@ -1397,307 +1547,220 @@ Deno.serve(async (req: Request) => {
       manualItem.status = status ?? "Pending";
       workItems.push(manualItem);
     } else {
-      // Poll mode: find eligible execution requests from recent activity.
-      // When a dao_address is supplied (e.g. founder-scoped via the proxy), the
-      // poll is restricted to that DAO so it can never trigger a fleet-wide run.
-      //
-      // The block immediately below decodes SOLANA accounts: readExecutionRequest()
-      // parses a base58/borsh ExecutionRequest PDA and the gate reads come from
-      // readAgentGate (Solana RPC). EVM DAOs ARE enumerated too — see the "EVM poll
-      // enumeration" block further down, which discovers EVM execution indices and
-      // reads them via readEvmExecutionRequest(), pushing work items shaped as
-      // { chain, chain_id, dao_address (treasury), execution_address (NaveExecution),
-      // index (uint64) } that the dispatch loop routes to callSigner → /relay-evm.
-      //
-      // KNOWN LIMITATION (M4): the EVM enumeration SKIPS `Executed` requests, so
-      // EVM has no post-execution parity with Solana — there is no EVM equivalent
-      // of the Solana post-exec oracle/compound/withdraw follow-ups. Achieving that
-      // parity (re-reading Executed EVM requests to drive position accounting /
-      // compounding) is tracked as future work; today an executed EVM request is
-      // terminal from the orchestrator's perspective.
-      // Helius → index-events stores Anchor **struct** event names (e.g.
-      // `ExecutiveApprovedEvent`, `ProposalFinalized`). Older rows may use
-      // mistaken short aliases — keep both. Constitution / policy events carry
-      // `dao` so newly ratified DAOs still enter poll discovery even when no ER
-      // hints appear in `raw_data` (hints come from `agent_action_logs` below).
-      const POLL_ACTIVITY_EVENT_TYPES = [
-        "ProposalFinalized",
-        "ExecutionRequestCreated",
-        "ExecutionRequestQueued",
-        "AgentApprovalEvent",
-        "ExecutiveApprovedEvent",
-        "FinancialApprovedEvent",
-        "OversightApprovedEvent",
-        "ConstitutionUpdated",
-        "PolicyParametersUpdated",
-        "ReviewWindowUpdated",
-        "AgentsToggled",
-        // Legacy aliases (historical mis-filters / manual inserts)
-        "ProposalPassed",
-        "AgentApproval",
-        "ExecutiveApproved",
-        "FinancialApproved",
-        "OversightApproved",
-      ];
+      // Indexed open requests only. Idle treasuries are not loaded from
+      // dao_registry and are not RPC-scanned. enumerateEvmExecutionIndices
+      // runs only when an indexed hint has no request index. A dao_address
+      // (founder proxy or review-end wake) never fans out to other DAOs.
+      console.log(`[orchestrator] poll reason=${body.reason ?? "event"}`);
+      const lookbackIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      const scopedDao = body.dao_address?.startsWith("0x")
+        ? body.dao_address.toLowerCase()
+        : body.dao_address;
 
-      const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-      let recentLogsQuery = supabase
+      let activityQuery = supabase
         .from("activity_logs")
-        .select("dao_onchain_address, event_type, raw_data")
-        .in("event_type", POLL_ACTIVITY_EVENT_TYPES)
-        .gte("created_at", sinceIso)
+        .select("dao_onchain_address, event_type, raw_data, chain, chain_id, created_at")
+        .in("event_type", INDEXED_REQUEST_EVENT_TYPES)
+        .gte("created_at", lookbackIso)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(500);
+      if (scopedDao) activityQuery = activityQuery.eq("dao_onchain_address", scopedDao);
+      const { data: activityRows } = await activityQuery;
 
-      if (body.dao_address) {
-        recentLogsQuery = recentLogsQuery.eq("dao_onchain_address", body.dao_address);
-      }
-
-      const { data: recentLogs } = await recentLogsQuery;
-      const recentLogsSafe = (recentLogs ?? []) as Record<string, unknown>[];
-
-      // Also consider DAOs that only appear in recent agent traces (e.g. ER
-      // created >24h ago but still non-terminal). Previously poll ignored these
-      // entirely when no matching `activity_logs` rows existed in the window.
-      let actionDaoQuery = supabase
+      let actionQuery = supabase
         .from("agent_action_logs")
-        .select("dao_onchain_address")
-        .gte("created_at", sinceIso)
+        .select("dao_onchain_address, execution_request_address, chain, chain_id, created_at")
+        .gte("created_at", lookbackIso)
         .not("execution_request_address", "is", null)
-        .not("dao_onchain_address", "is", null);
-      if (body.dao_address) {
-        actionDaoQuery = actionDaoQuery.eq("dao_onchain_address", body.dao_address);
-      }
-      const { data: actionDaoRows } = await actionDaoQuery.limit(200);
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (scopedDao) actionQuery = actionQuery.eq("dao_onchain_address", scopedDao);
+      const { data: actionRows } = await actionQuery;
 
-      const daoSet = new Set<string>();
-      for (const log of recentLogsSafe) {
-        const addr = log.dao_onchain_address as string;
-        if (addr && !addr.startsWith("0x")) daoSet.add(addr);
+      const executedActionable = POSITION_ORACLE_ENABLED || COMPOUND_ENABLED || AUTO_WITHDRAW_ENABLED;
+      const plan = planPollRpc({
+        activity: (activityRows ?? []) as IndexedActivityRow[],
+        actions: (actionRows ?? []) as IndexedActionRow[],
+        includeExecutedFollowUps: executedActionable,
+      });
+
+      const queued = new Set<string>();
+      const consider = (onchain: OnChainRequest | null, item: WorkItem) => {
+        if (!onchain) return;
+        if (onchain.status === "Expired") return;
+        if (onchain.status === "Executed" && !executedActionable) return;
+        if (!STATUS_TO_AGENT[onchain.status] && onchain.status !== "Executed") return;
+        const key = `${item.dao_address}:${item.execution_request_address}`;
+        if (queued.has(key)) return;
+        queued.add(key);
+        item.status = onchain.status;
+        workItems.push(item);
+        if (onchain.status === "InReview") {
+          noteReviewWake(item.dao_address, item.execution_request_address, onchain.reviewEnd);
+        }
+      };
+
+      const chainMeta = new Map<string, { chain: string; chainId: number }>();
+      const unresolved = [...new Set(
+        plan.evmTargets.filter((target) => target.chainId == null).map((target) => target.dao.toLowerCase()),
+      )];
+      if (unresolved.length > 0) {
+        const { data: metaRows } = await supabase
+          .from("dao_registry")
+          .select("dao_onchain_address, chain, chain_id")
+          .in("dao_onchain_address", unresolved);
+        for (const row of metaRows ?? []) {
+          const dao = String((row as { dao_onchain_address?: string }).dao_onchain_address ?? "").toLowerCase();
+          const chainId = Number((row as { chain_id?: number | null }).chain_id);
+          const chain = String((row as { chain?: string }).chain ?? "");
+          if (dao && chainId) chainMeta.set(dao, { chain, chainId });
+        }
       }
-      for (const row of actionDaoRows ?? []) {
-        const addr = (row as { dao_onchain_address?: string }).dao_onchain_address;
-        if (addr && !addr.startsWith("0x")) daoSet.add(addr);
-      }
-      let daoAddresses = [...daoSet];
-      if (daoAddresses.length > 0) {
-        const { data: registeredSolanaDaos } = await supabase
+
+      const registeredSolana = new Set<string>();
+      if (plan.solanaDaos.length > 0) {
+        const { data: registered } = await supabase
           .from("dao_registry")
           .select("dao_onchain_address")
           .eq("chain", "solana")
-          .in("dao_onchain_address", daoAddresses);
-        const registeredSet = new Set(
-          (registeredSolanaDaos ?? []).map((r: { dao_onchain_address: string }) => r.dao_onchain_address),
-        );
-        daoAddresses = daoAddresses.filter((addr) => registeredSet.has(addr));
-      }
-
-      if (daoAddresses.length > 0) {
-        for (const daoAddr of daoAddresses) {
-          // Per-DAO agent gate (read once, cached). We DELIBERATELY no longer skip
-          // the whole DAO when paused/frozen: a frozen or disabled DAO still needs
-          // Oversight monitoring (halt + expire_request, role key operational) and, when it resumes,
-          // its backlog must be picked up. Capital-movement / signing actions are
-          // parked later, per-item, by the gate matrix in the dispatch loop.
-          const gate = await getGate(daoAddr);
-
-          // Gather candidate ER addresses for this DAO from both event logs and
-          // prior agent actions; on-chain status is the authority for what to do.
-          const candidateERs = new Set<string>();
-
-          for (const log of recentLogsSafe) {
-            if ((log as Record<string, unknown>).dao_onchain_address !== daoAddr) continue;
-            const raw = (log as Record<string, unknown>).raw_data as Record<string, unknown> | null;
-            const er = raw && (raw.execution_request || raw.request || raw.execution_request_address);
-            if (typeof er === "string" && er.length > 0) candidateERs.add(er);
-          }
-
-          const { data: actionLogs } = await supabase
-            .from("agent_action_logs")
-            .select("execution_request_address")
-            .eq("dao_onchain_address", daoAddr)
-            .not("execution_request_address", "is", null)
-            .order("created_at", { ascending: false })
-            .limit(25);
-
-          for (const log of actionLogs ?? []) {
-            const er = (log as Record<string, unknown>).execution_request_address as string;
-            if (er) candidateERs.add(er);
-          }
-
-          // getProgramAccounts fallback: enumerate the DAO's ExecutionRequest
-          // accounts directly on-chain. This is what makes the BOOTSTRAP ER
-          // discoverable — `ExecutionRequestQueued` carries no ER address, so it
-          // never appears in the log-derived candidates above. Non-terminal
-          // requests found here are merged into the candidate set and re-read
-          // authoritatively below like any other candidate.
-          for (const er of await enumerateDaoExecutionRequests(daoAddr)) {
-            candidateERs.add(er);
-          }
-
-          // Read each candidate's authoritative on-chain status.
-          let nonTerminalForDao = 0;
-          for (const erAddr of candidateERs) {
-            const onchain = await readExecutionRequest(erAddr);
-            if (!onchain) continue;
-
-            // Expired is terminal. Executed remains actionable when the position
-            // oracle, compounding, or legacy auto-withdraw needs a post-execution
-            // tick.
-            if (onchain.status === "Expired") continue;
-            const executedActionable =
-              POSITION_ORACLE_ENABLED || COMPOUND_ENABLED || AUTO_WITHDRAW_ENABLED;
-            if (onchain.status === "Executed" && !executedActionable) continue;
-
-            // Anything with a responsible agent role, or InReview (for the
-            // post-review execution step), is actionable.
-            if (STATUS_TO_AGENT[onchain.status] || onchain.status === "Executed") {
-              nonTerminalForDao++;
-              workItems.push({
-                dao_address: daoAddr,
-                execution_request_address: erAddr,
-                status: onchain.status,
-              });
-            }
-          }
-
-          // ── Reconcile-on-resume ────────────────────────────────────────────
-          // When a DAO's gate is now OPEN but it was recently parked (we find a
-          // gate-skip entry in its action log), its backlog of non-terminal
-          // ExecutionRequests was just re-queued above at their correct role via
-          // STATUS_TO_AGENT — the operational branch will expire any whose review
-          // window lapsed while paused. Record an explicit "reconciled after
-          // resume" marker so the resume path is auditable rather than silent.
-          if (gate.state === "open" && nonTerminalForDao > 0) {
-            const { data: recentSkips } = await supabase
-              .from("agent_action_logs")
-              .select("id")
-              .eq("dao_onchain_address", daoAddr)
-              .in("status", ["skipped_frozen", "skipped_disabled", "skipped_gate_unreadable"])
-              .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-              .limit(1);
-            if ((recentSkips ?? []).length > 0) {
-              const note =
-                `Reconciled after resume: gate re-opened; re-queued ${nonTerminalForDao} non-terminal execution request(s) at their correct role for the pipeline to advance/expire.`;
-              reconciled.push({ dao: daoAddr, requeued: nonTerminalForDao, note });
-              await supabase.from("agent_action_logs").insert({
-                dao_onchain_address: daoAddr,
-                chain: "solana",
-                chain_id: null,
-                agent_role: "operational",
-                action_type: "reconcile_after_resume",
-                reasoning: `Orchestrator: ${note}`,
-                constitution_check: { agent_gate: "open" },
-                payload_hash: "",
-                tx_signature: "",
-                execution_request_address: "",
-                status: "completed",
-                error_message: "",
-                confidence_score: null,
-                risk_flags: [],
-                decision: "reconcile",
-                claude_model: null,
-                raw_claude_response: null,
-                retry_count: 0,
-              });
-            }
-          }
+          .in("dao_onchain_address", plan.solanaDaos);
+        for (const row of registered ?? []) {
+          const dao = (row as { dao_onchain_address?: string }).dao_onchain_address;
+          if (dao) registeredSolana.add(dao);
         }
       }
 
-      // ── EVM poll enumeration (Ethereum + Base + Robinhood + Arc) ──────────
-      // Mirror the Solana discovery path: recent activity → candidate indices →
-      // authoritative getRequest() reads. Work items use synthetic ER keys
-      // (`0xexecution#index`) so logging stays uniform; callSigner receives the
-      // parsed chain/index via evmSignerPayload().
-      let evmDaoQuery = supabase
-        .from("dao_registry")
-        .select("dao_onchain_address, chain, chain_id")
-        .in("chain", ["ethereum", "base", "robinhood", "arc"]);
-      if (body.dao_address) {
-        evmDaoQuery = evmDaoQuery.eq("dao_onchain_address", body.dao_address.toLowerCase());
+      for (const target of plan.solanaRead) {
+        if (!registeredSolana.has(target.dao)) continue;
+        const onchain = await readExecutionRequest(target.executionRequest);
+        consider(onchain, {
+          dao_address: target.dao,
+          execution_request_address: target.executionRequest,
+          status: onchain?.status ?? "Pending",
+        });
       }
-      const { data: evmDaos } = await evmDaoQuery.limit(50);
 
-      for (const row of evmDaos ?? []) {
-        const daoAddr = String((row as { dao_onchain_address: string }).dao_onchain_address).toLowerCase();
-        const chain = String((row as { chain: string }).chain);
-        const chainId = Number((row as { chain_id: number }).chain_id);
-        if (!chainId || !daoAddr.startsWith("0x")) continue;
-
-        await getGate(daoAddr, chainId);
-
-        const candidateIndices = new Set<number>();
-        for (const log of recentLogsSafe) {
-          if (String((log as Record<string, unknown>).dao_onchain_address).toLowerCase() !== daoAddr) continue;
-          const raw = (log as Record<string, unknown>).raw_data as Record<string, unknown> | null;
-          const idx = extractEvmIndexFromRaw(raw);
-          if (idx != null) candidateIndices.add(idx);
-        }
-        for (const idx of await enumerateEvmExecutionIndices(chainId, daoAddr)) {
-          candidateIndices.add(idx);
-        }
-        // agent_action_logs fallback (mirrors the Solana `actionLogs` query
-        // above): keeps an EXECUTED request discoverable for post-exec
-        // follow-up (oracle tick / compound / auto-withdraw) beyond the 24h
-        // activity_logs window and past enumerateEvmExecutionIndices' own
-        // terminal-status skip, as long as it's among the DAO's most recent
-        // agent actions — this is what makes EVM Executed parity durable.
-        const { data: evmActionLogs } = await supabase
-          .from("agent_action_logs")
-          .select("execution_request_address")
-          .eq("dao_onchain_address", daoAddr)
-          .not("execution_request_address", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(25);
-        for (const log of evmActionLogs ?? []) {
-          const er = (log as Record<string, unknown>).execution_request_address as string;
-          const parsed = er ? parseEvmErKey(er) : null;
-          if (parsed) candidateIndices.add(parsed.index);
-        }
-
-        // Executed requests stay actionable when any post-exec follow-up flag
-        // is enabled — parity with the Solana `executedActionable` gate above.
-        const evmExecutedActionable = POSITION_ORACLE_ENABLED || COMPOUND_ENABLED || AUTO_WITHDRAW_ENABLED;
-
-        for (const index of candidateIndices) {
-          const onchain = await readEvmExecutionRequest(chainId, daoAddr, index);
-          if (!onchain) continue;
-          if (onchain.status === "Expired") continue;
-          if (onchain.status === "Executed" && !evmExecutedActionable) continue;
-          if (!STATUS_TO_AGENT[onchain.status] && onchain.status !== "Executed") continue;
-          workItems.push({
+      for (const daoAddr of plan.solanaEnumerate) {
+        if (!registeredSolana.has(daoAddr)) continue;
+        for (const er of await enumerateDaoExecutionRequests(daoAddr)) {
+          const onchain = await readExecutionRequest(er);
+          consider(onchain, {
             dao_address: daoAddr,
+            execution_request_address: er,
+            status: onchain?.status ?? "Pending",
+          });
+        }
+      }
+
+      for (const target of plan.evmTargets) {
+        const meta = target.chainId != null
+          ? { chain: target.chain, chainId: target.chainId }
+          : chainMeta.get(target.dao.toLowerCase());
+        if (!meta?.chainId) continue;
+        const indices: number[] = [];
+        if (target.index != null) {
+          indices.push(target.index);
+        } else if (target.enumerate) {
+          for (const idx of await enumerateEvmExecutionIndices(meta.chainId, target.dao)) {
+            indices.push(idx);
+          }
+        }
+        for (const index of indices) {
+          const onchain = await readEvmExecutionRequest(meta.chainId, target.dao, index);
+          if (!onchain) continue;
+          consider(evmOnChainToRequest(onchain, meta.chainId), {
+            dao_address: target.dao,
             execution_request_address: evmErKey(onchain.executionAddress, index),
             status: onchain.status,
-            chain,
-            chain_id: chainId,
+            chain: meta.chain || evmChainLabel(meta.chainId),
+            chain_id: meta.chainId,
             execution_address: onchain.executionAddress,
             index,
           });
         }
       }
+
+      const solanaCounts = new Map<string, number>();
+      for (const item of workItems) {
+        if (item.chain_id == null && !item.dao_address.startsWith("0x")) {
+          solanaCounts.set(item.dao_address, (solanaCounts.get(item.dao_address) ?? 0) + 1);
+        }
+      }
+      for (const [daoAddr, nonTerminalForDao] of solanaCounts) {
+        const gate = await getGate(daoAddr);
+        if (gate.state !== "open" || nonTerminalForDao <= 0) continue;
+        const { data: recentSkips } = await supabase
+          .from("agent_action_logs")
+          .select("id")
+          .eq("dao_onchain_address", daoAddr)
+          .in("status", ["skipped_frozen", "skipped_disabled", "skipped_gate_unreadable"])
+          .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .limit(1);
+        if ((recentSkips ?? []).length === 0) continue;
+        const note =
+          `Reconciled after resume: gate re-opened; re-queued ${nonTerminalForDao} non-terminal execution request(s) at their correct role for the pipeline to advance/expire.`;
+        reconciled.push({ dao: daoAddr, requeued: nonTerminalForDao, note });
+        await supabase.from("agent_action_logs").insert({
+          dao_onchain_address: daoAddr,
+          chain: "solana",
+          chain_id: null,
+          agent_role: "operational",
+          action_type: "reconcile_after_resume",
+          reasoning: `Orchestrator: ${note}`,
+          constitution_check: { agent_gate: "open" },
+          payload_hash: "",
+          tx_signature: "",
+          execution_request_address: "",
+          status: "completed",
+          error_message: "",
+          confidence_score: null,
+          risk_flags: [],
+          decision: "reconcile",
+          claude_model: null,
+          raw_claude_response: null,
+          retry_count: 0,
+        });
+      }
     }
 
-    // Safety cap: bound how many distinct requests a poll run will pick up.
-    // (Confirmation-gated follow-ups for the SAME request are appended later and
-    // are not bounded by this, since they represent one request advancing.)
+    // Dispatcher cap applies after missing-key requests are parked, so a DAO
+    // with no active key does not consume one of the 25 slots. Follow-ups
+    // appended later for a request already in this list are not re-capped.
     let workCapped = 0;
-    if (mode === "poll" && workItems.length > MAX_WORK_ITEMS) {
-      workCapped = workItems.length - MAX_WORK_ITEMS;
-      workItems.length = MAX_WORK_ITEMS;
+    if (mode === "poll") {
+      activeKeys = await loadActiveKeys(supabase, workItems);
+      const selected = selectDispatchableWork(
+        workItems,
+        (item) => hasActiveAgentKey({
+          dao: item.dao_address,
+          chainId: item.chain_id ?? null,
+          status: item.status,
+        }, activeKeys!),
+        MAX_WORK_ITEMS,
+      );
+      parkedMissingKey.push(...selected.parkedMissingKey);
+      workCapped = selected.capped;
+      workItems.length = 0;
+      workItems.push(...selected.dispatch);
+      if (parkedMissingKey.length > 0) {
+        console.log(
+          `[orchestrator] parked ${parkedMissingKey.length} request(s) with no active agent key; not dispatched and not counted toward the cap`,
+        );
+      }
     }
 
-    if (workItems.length === 0) {
+    if (workItems.length === 0 && parkedMissingKey.length === 0) {
       return jsonResponse({
         success: true,
         message: "No eligible work found",
         dispatched: 0,
+        work_capped: workCapped,
         results: [],
         errors: [],
         gated,
         reconciled,
+        parked_missing_key: 0,
+        review_wakes: reviewWakes,
       });
     }
 
@@ -2440,6 +2503,19 @@ Deno.serve(async (req: Request) => {
         if (cachedDispatchData) {
           dispatchData = cachedDispatchData;
         } else {
+          if (!activeKeys) activeKeys = await loadActiveKeys(supabase, [item]);
+          if (!hasActiveAgentKey({
+            dao: item.dao_address,
+            chainId: item.chain_id ?? fresh.evm?.chain_id ?? null,
+            status: fresh.status,
+            role: agentRole,
+          }, activeKeys)) {
+            parkedMissingKey.push(item);
+            console.log(
+              `[orchestrator] parked ${item.dao_address} ${item.execution_request_address}: no active ${agentRole} key`,
+            );
+            continue;
+          }
           const dispatchResponse = await fetch(dispatcherUrl, {
             method: "POST",
             headers: {
@@ -3553,6 +3629,8 @@ Deno.serve(async (req: Request) => {
       errors,
       gated,
       reconciled,
+      parked_missing_key: parkedMissingKey.length,
+      review_wakes: reviewWakes,
     });
   } catch (error) {
     console.error("agent-orchestrator error:", error);

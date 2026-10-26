@@ -95,6 +95,7 @@ export async function generateAgentKeys(
   creatorWallet: string,
   signMessage: (message: Uint8Array) => Promise<Uint8Array>,
   daoId?: number,
+  options?: { replace?: boolean },
 ): Promise<{ data: GenerateAgentKeysResponse | null; error: string | null }> {
   const message = `nave-agent-keys|${daoAddress}|solana|${Date.now()}|${makeChallengeNonce()}`;
   let signature: string;
@@ -109,6 +110,7 @@ export async function generateAgentKeys(
     creator_message: message,
     creator_signature: signature,
     ...(daoId !== undefined ? { dao_id: daoId } : {}),
+    ...(options?.replace ? { replace: true } : {}),
   });
 }
 
@@ -173,6 +175,30 @@ export async function generateEvmAgentKeys(
  * (decoded from the DaoCreated event). The founder signs the
  * `nave-evm-keybind|<ref>|<treasury>|<chainId>|<ts>` challenge.
  */
+/**
+ * Replace the four custodied EVM agent keys on an existing treasury. The
+ * founder signs `nave-evm-keyreplace|<treasury>|<chainId>|<ts>`. The on-chain
+ * agent set does not change until updateAgentSet is mined and the delay elapses.
+ */
+export async function replaceEvmAgentKeys(
+  treasury: string,
+  founder: string,
+  chainId: number,
+  chain: EvmChainFamily,
+  message: string,
+  creatorSignature: string,
+): Promise<{ data: GenerateEvmAgentKeysResponse | null; error: string | null }> {
+  return callEdgeFunction<GenerateEvmAgentKeysResponse>('generate-evm-agent-keys', {
+    action: 'replace',
+    treasury,
+    founder,
+    chain,
+    chain_id: chainId,
+    message,
+    creator_signature: creatorSignature,
+  });
+}
+
 export async function bindEvmAgentKeys(
   daoRef: string,
   treasury: string,
