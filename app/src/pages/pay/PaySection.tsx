@@ -25,7 +25,6 @@ import InvoicesPage from './InvoicesPage';
 import JournalPage from './JournalPage';
 import { PayPage, PayWork } from './PayDesk';
 import PayHome from './PayHome';
-import PayNetworkBar from './PayNetworkBar';
 import PayNotBuilt from './PayNotBuilt';
 import SubscribePage from './SubscribePage';
 import PayrollPage from './PayrollPage';
@@ -308,12 +307,7 @@ export default function PaySection() {
   return <PayHome snapshot={booksQuery.data} treasuryGroupId={treasuryGroupId as string} />;
   })();
 
-  return (
-    <>
-      <PayNetworkBar addresses={booksQuery.data.addresses} />
-      {page}
-    </>
-  );
+  return page;
 }
 
 function PayFrame({

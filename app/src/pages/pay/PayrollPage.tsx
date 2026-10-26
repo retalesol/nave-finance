@@ -78,6 +78,9 @@ export default function PayrollPage({ treasuryGroupId }: { treasuryGroupId: stri
         { label: 'Open runs', value: bundle.data ? String(openRuns) : '…', detail: 'Not yet approved' },
         { label: 'Runs on file', value: bundle.data ? String(bundle.data.runs.length) : '…', detail: 'Including void' },
       ]}
+      actions={path === '/pay/payroll' ? (
+        <button type="button" style={payPrimary} onClick={() => navigate('/pay/payroll/runs/new')}>New pay run</button>
+      ) : null}
     >
       <PayChips
         value={tab}
@@ -155,9 +158,6 @@ function Runs({
   }
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <button type="button" style={payPrimary} onClick={() => onOpen('new')}>New pay run</button>
-      </div>
       {data.runs.length === 0 ? (
         <NaveEmptyState
           icon="users"

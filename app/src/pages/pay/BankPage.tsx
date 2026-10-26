@@ -34,6 +34,7 @@ import {
   unmatchMercury,
   type MercuryTxnRow,
 } from '../../lib/pay/mercuryApi';
+import NaveModal from '../../components/NaveModal';
 import { PayPage } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
@@ -92,16 +93,8 @@ export default function BankPage({ treasuryGroupId }: { treasuryGroupId: string 
     );
   }
 
-  const connected = status.data?.connected ?? false;
   return (
-    <PayPage
-      kicker="Match"
-      title="Bank feed"
-      purpose="Mercury is read-only. Match bank lines to invoices, bills, and cash entries. Nave Pay does not send payments from the bank."
-      metrics={[
-        { label: 'Connection', value: status.isLoading ? '…' : connected ? 'On' : 'Off', detail: connected ? 'Balances and transactions' : 'Paste a read token to start', tone: connected ? 'good' : 'default' },
-      ]}
-    >
+    <>
       {status.isLoading ? <p style={payBody}>Loading the bank feed.</p> : null}
       {status.isError ? <p style={{ ...payBody, color: '#B42318' }}>{mercuryMessage(status.error)}</p> : null}
       {status.data ? (
@@ -112,7 +105,7 @@ export default function BankPage({ treasuryGroupId }: { treasuryGroupId: string 
           onOpen={(id) => setParams({ recon: id })}
         />
       ) : null}
-    </PayPage>
+    </>
   );
 }
 
@@ -136,6 +129,7 @@ function BankFeed({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [matching, setMatching] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
   const txns = useQuery({
     queryKey: ['payMercuryTx', treasuryGroupId, wallet],
     queryFn: () => fetchMercuryTransactions(treasuryGroupId, wallet),
@@ -206,151 +200,33 @@ function BankFeed({
   });
 
   return (
+    <>
+    <PayPage
+      kicker="Match"
+      title="Bank feed"
+      purpose="Mercury is read-only. Match bank lines to invoices, bills, and cash entries. Nave Pay does not send payments from the bank."
+      actions={(
+        <button
+          type="button"
+          onClick={() => setConnectOpen(true)}
+          style={{
+            background: '#fff',
+            border: '1px solid #E7E2D6',
+            borderRadius: '12px',
+            padding: '8px 14px',
+            cursor: 'pointer',
+            textAlign: 'left',
+            minWidth: '132px',
+          }}
+        >
+          <div className="nave-label">Connection</div>
+          <div style={{ marginTop: '2px', fontSize: '14px', fontWeight: 600, color: status.connected ? '#17663A' : '#111827' }}>
+            {status.connected ? 'Connected' : 'Not Connected'}
+          </div>
+        </button>
+      )}
+    >
     <div style={{ display: 'grid', gap: '16px' }}>
-      <section style={payCard}>
-        <div className="nave-label" style={{ marginBottom: '8px' }}>Connection</div>
-        <p style={{ ...payBody, marginBottom: '12px' }}>
-          {status.connected
-            ? `Connected to Mercury ${status.environment ?? ''} · token ${status.token_hint}`
-            : 'Not connected. Paste a read-only token from Mercury → Settings → API Tokens.'}
-        </p>
-        {status.last_error ? <p style={{ ...payBody, color: '#B42318', marginBottom: '12px' }}>{status.last_error}</p> : null}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="secret-token:mercury_production_…"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            style={{ ...payInput, minWidth: '280px', flex: '1 1 280px' }}
-          />
-          <button
-            type="button"
-            style={payPrimary}
-            disabled={busy != null || !wallet}
-            onClick={() => {
-              const value = token;
-              setToken('');
-              void run('connect', async () => {
-                await connectMercury(treasuryGroupId, wallet as string, value);
-                setNotice('Connected. Sync when you want the latest transactions.');
-              });
-            }}
-          >
-            {busy === 'connect' ? 'Checking…' : status.connected ? 'Replace token' : 'Connect'}
-          </button>
-          {status.connected ? (
-            <button
-              type="button"
-              style={payPrimary}
-              disabled={busy != null || !wallet}
-              onClick={() => void run('sync', async () => {
-                const result = await syncMercury(treasuryGroupId, wallet as string);
-                let matched = 0;
-                if (autoMatch) matched = await autoMatchMercury(treasuryGroupId, wallet);
-                setNotice(`Synced ${result.accounts} accounts: ${result.new} new, ${result.updated} updated${matched ? `, ${matched} auto-matched` : ''}.`);
-              })}
-            >
-              {busy === 'sync' ? 'Syncing…' : 'Sync now'}
-            </button>
-          ) : null}
-        </div>
-        <p style={{ ...payBody, marginTop: '10px' }}>
-          The token is checked with a GET, then stored encrypted for this treasury. It is not shown again and it is not kept in the browser.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '14px' }}>
-          <label style={payField}>
-            Import from
-            <input type="date" value={syncStart} onChange={(event) => setSyncStart(event.target.value)} style={payInput} />
-          </label>
-          <label style={{ ...payField, justifyContent: 'flex-end' }}>
-            <span>
-              <input type="checkbox" checked={autoMatch} onChange={(event) => setAutoMatch(event.target.checked)} /> Auto-match on sync
-            </span>
-          </label>
-        </div>
-        <p style={{ ...payBody, marginTop: '8px' }}>
-          Auto-match runs only when the invoice number is in the memo and the amount equals the open balance. A blank start date uses the last 90 days, then a 14-day overlap.
-        </p>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            style={paySecondary}
-            disabled={busy != null}
-            onClick={() => void run('settings', async () => {
-              await saveMercurySettings(treasuryGroupId, wallet, syncStart, autoMatch);
-              setNotice('Sync settings saved.');
-            })}
-          >
-            Save sync settings
-          </button>
-          <button
-            type="button"
-            style={paySecondary}
-            disabled={busy != null}
-            onClick={() => void run('auto', async () => {
-              const matched = await autoMatchMercury(treasuryGroupId, wallet);
-              setNotice(matched ? `Matched ${matched} transaction${matched === 1 ? '' : 's'}.` : 'No high-confidence matches.');
-            })}
-          >
-            Auto-match
-          </button>
-          {status.connected ? (
-            <button
-              type="button"
-              style={payDanger}
-              disabled={busy != null}
-              onClick={() => {
-                if (!window.confirm('Disconnect Mercury? Matched payments stay in the books.')) return;
-                void run('disconnect', async () => {
-                  await disconnectMercury(treasuryGroupId, wallet, forget);
-                  setNotice('Mercury disconnected.');
-                });
-              }}
-            >
-              Disconnect
-            </button>
-          ) : null}
-          {status.connected ? (
-            <label style={{ ...payBody, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input type="checkbox" checked={forget} onChange={(event) => setForget(event.target.checked)} />
-              Also forget unmatched feed rows
-            </label>
-          ) : null}
-        </div>
-        {notice ? <p style={{ ...payBody, marginTop: '12px' }}>{notice}</p> : null}
-      </section>
-
-      {status.accounts.length > 0 ? (
-        <section style={payCard}>
-          <div className="nave-label" style={{ marginBottom: '8px' }}>Account mapping</div>
-          <p style={{ ...payBody, marginBottom: '12px' }}>
-            Checking maps to 1000 Mercury Checking. Savings or treasury maps to 1010 when that account is on the chart.
-          </p>
-          {status.accounts.map((account) => (
-            <label key={account.id} style={{ ...payField, marginBottom: '10px' }}>
-              {(account.nickname || account.name || 'Mercury')}{account.last4 ? ` ··${account.last4}` : ''} · {formatCents(account.current_cents)}
-              <select
-                value={account.gl_account_id ?? ''}
-                style={payInput}
-                onChange={(event) => void run('map', () => linkMercuryAccount(
-                  treasuryGroupId,
-                  wallet,
-                  account.mercury_id,
-                  event.target.value || null,
-                ))}
-              >
-                <option value="">Default cash account</option>
-                {cashAccounts.map((gl) => (
-                  <option key={gl.id} value={gl.id}>{gl.code} {gl.name}</option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </section>
-      ) : null}
-
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
         <Metric label="Mercury available" value={formatCents(status.total_available_cents)} detail={`Current ${formatCents(status.total_current_cents)}`} />
         <Metric label="Needs review" value={String(status.unmatched)} detail={`${status.pending} pending at the bank`} />
@@ -479,6 +355,137 @@ function BankFeed({
         />
       </section>
     </div>
+    </PayPage>
+    <NaveModal
+      open={connectOpen}
+      onClose={() => setConnectOpen(false)}
+      title="Mercury connection"
+      subtitle={status.connected
+        ? `Connected${status.environment ? ` · ${status.environment}` : ''}${status.token_hint ? ` · ${status.token_hint}` : ''}`
+        : 'Paste a read-only token from Mercury → Settings → API Tokens.'}
+      maxWidth={560}
+    >
+      <div style={{ display: 'grid', gap: '12px', padding: '4px 22px 22px' }}>
+        {status.last_error ? <p style={{ ...payBody, color: '#B42318' }}>{status.last_error}</p> : null}
+        <label style={payField}>
+          Read token
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="secret-token:mercury_production_…"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            style={payInput}
+          />
+        </label>
+        <p style={payBody}>
+          The token is checked with a GET, then stored encrypted for this treasury. It is not shown again and it is not kept in the browser.
+        </p>
+        <label style={payField}>
+          Import from
+          <input type="date" value={syncStart} onChange={(event) => setSyncStart(event.target.value)} style={payInput} />
+        </label>
+        <label style={{ ...payBody, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input type="checkbox" checked={autoMatch} onChange={(event) => setAutoMatch(event.target.checked)} />
+          Auto-match on sync
+        </label>
+        <p style={payBody}>
+          Auto-match runs only when the invoice number is in the memo and the amount equals the open balance. A blank start date uses the last 90 days, then a 14-day overlap.
+        </p>
+        {status.accounts.length > 0 ? (
+          <div style={{ display: 'grid', gap: '10px' }}>
+            <div className="nave-label">Account mapping</div>
+            {status.accounts.map((account) => (
+              <label key={account.id} style={payField}>
+                {(account.nickname || account.name || 'Mercury')}{account.last4 ? ` ··${account.last4}` : ''} · {formatCents(account.current_cents)}
+                <select
+                  value={account.gl_account_id ?? ''}
+                  style={payInput}
+                  onChange={(event) => void run('map', () => linkMercuryAccount(
+                    treasuryGroupId,
+                    wallet,
+                    account.mercury_id,
+                    event.target.value || null,
+                  ))}
+                >
+                  <option value="">Default cash account</option>
+                  {cashAccounts.map((gl) => (
+                    <option key={gl.id} value={gl.id}>{gl.code} {gl.name}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        ) : null}
+        {notice ? <p style={payBody}>{notice}</p> : null}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            style={payPrimary}
+            disabled={busy != null || !wallet || !token.trim()}
+            onClick={() => {
+              const value = token;
+              setToken('');
+              void run('connect', async () => {
+                await connectMercury(treasuryGroupId, wallet as string, value);
+                setNotice('Connected. Save the import date, then resync when you want the latest transactions.');
+              });
+            }}
+          >
+            {busy === 'connect' ? 'Checking…' : status.connected ? 'Replace token' : 'Connect'}
+          </button>
+          <button
+            type="button"
+            style={paySecondary}
+            disabled={busy != null}
+            onClick={() => void run('settings', async () => {
+              await saveMercurySettings(treasuryGroupId, wallet, syncStart, autoMatch);
+              setNotice('Sync settings saved.');
+            })}
+          >
+            Save sync settings
+          </button>
+          <button
+            type="button"
+            style={payPrimary}
+            disabled={busy != null || !wallet || !status.connected}
+            onClick={() => void run('sync', async () => {
+              const result = await syncMercury(treasuryGroupId, wallet as string);
+              let matched = 0;
+              if (autoMatch) matched = await autoMatchMercury(treasuryGroupId, wallet);
+              setNotice(`Synced ${result.accounts} accounts: ${result.new} new, ${result.updated} updated${matched ? `, ${matched} auto-matched` : ''}.`);
+            })}
+          >
+            {busy === 'sync' ? 'Syncing…' : 'Resync'}
+          </button>
+          <button type="button" style={paySecondary} onClick={() => setConnectOpen(false)}>Close</button>
+        </div>
+        {status.connected ? (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <label style={{ ...payBody, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input type="checkbox" checked={forget} onChange={(event) => setForget(event.target.checked)} />
+              Also forget unmatched feed rows
+            </label>
+            <button
+              type="button"
+              style={payDanger}
+              disabled={busy != null}
+              onClick={() => {
+                if (!window.confirm('Disconnect Mercury? Matched payments stay in the books.')) return;
+                void run('disconnect', async () => {
+                  await disconnectMercury(treasuryGroupId, wallet, forget);
+                  setNotice('Mercury disconnected.');
+                });
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </NaveModal>
+    </>
   );
 }
 
