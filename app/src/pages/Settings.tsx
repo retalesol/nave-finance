@@ -1,4 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useAccount } from 'wagmi';
+import { signMessage as signEvmMessage } from '@wagmi/core';
 import { PageSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import Toggle from '../components/Toggle';
@@ -9,6 +13,13 @@ import { useDaoRegistry } from '../hooks/useDaoRegistry';
 import { useTokenRegistry } from '../hooks/useTokenRegistry';
 import { toast } from '../hooks/use-toast';
 import { chainKindFromAddress } from '../lib/chain/types';
+import { useChain } from '../hooks/useChain';
+import { useDaoMembership } from '../hooks/useDaoMembership';
+import { solanaAccessSigner } from '../lib/edgeFunctionClient';
+import { wagmiConfig } from '../lib/evm/wagmi';
+import { uploadDaoLogo } from '../lib/uploadLogo';
+import { setPayLogo } from '../lib/pay/api';
+import LogoUpload from '../components/LogoUpload';
 import { isMockDaoAddress } from '../lib/mockData';
 import { normalizeDaoSlug } from '../lib/daoSlug';
 import MultisigSection, { type Signer, INITIAL_SIGNERS } from '../components/settings/MultisigSection';
@@ -45,11 +56,17 @@ function ProfileSection({
   initialName,
   initialSlug,
   initialDescription,
+  initialLogoUrl,
+  treasuryGroupId,
+  onLogoSaved,
 }: {
   daoAddress: string;
   initialName: string;
   initialSlug: string;
   initialDescription: string;
+  initialLogoUrl: string;
+  treasuryGroupId: string | null;
+  onLogoSaved: () => void;
 }) {
   const storageKey = `nave_profile_override::${daoAddress.toLowerCase()}`;
   const [name, setName] = useState(initialName);
@@ -57,6 +74,14 @@ function ProfileSection({
   const [description, setDescription] = useState(initialDescription);
   const [saved, setSaved] = useState(false);
   const [copiedHome, setCopiedHome] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoStatus, setLogoStatus] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const queryClient = useQueryClient();
+  const { target } = useChain();
+  const membership = useDaoMembership();
+  const { publicKey, signMessage } = useWallet();
+  const { address } = useAccount();
 
   useEffect(() => {
     try {
@@ -99,9 +124,72 @@ function ProfileSection({
     window.setTimeout(() => setCopiedHome(false), 1600);
   }
 
+  async function handleLogo(blob: Blob, dataUrl: string) {
+    const wallet = membership.walletStr;
+    if (!wallet) {
+      setLogoStatus('Connect the founder wallet to set the logo.');
+      return;
+    }
+    const signer = chainKindFromAddress(daoAddress) === 'evm'
+      ? (messageText: string) => signEvmMessage(wagmiConfig, { message: messageText })
+      : signMessage
+        ? solanaAccessSigner(signMessage)
+        : null;
+    if (!signer) {
+      setLogoStatus('Connect the founder wallet to set the logo.');
+      return;
+    }
+    setLogoBusy(true);
+    setLogoStatus(null);
+    setLogoPreview(dataUrl);
+    try {
+      const founder = chainKindFromAddress(daoAddress) === 'evm' ? (address ?? wallet) : (publicKey?.toBase58() ?? wallet);
+      const url = await uploadDaoLogo(blob, daoAddress, founder, daoAddress, signer, {
+        chain: target.family,
+        chainId: target.evmChainId ?? null,
+      });
+      if (treasuryGroupId) {
+        try {
+          await setPayLogo(treasuryGroupId, wallet, url);
+          await queryClient.invalidateQueries({ queryKey: ['payBooks', treasuryGroupId] });
+        } catch {
+          /* The treasury logo is saved. Books pick it up the next time Pay opens. */
+        }
+      }
+      setLogoPreview(url);
+      onLogoSaved();
+      setLogoStatus('Logo saved. It shows on this treasury and on its invoices.');
+    } catch (err) {
+      setLogoPreview(null);
+      setLogoStatus(err instanceof Error ? err.message : 'Logo was not saved.');
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  const shownLogo = logoPreview || initialLogoUrl || null;
+
   return (
     <Section first title="Profile">
       <form onSubmit={handleSave} className="space-y-4">
+        <div className="flex items-center gap-4">
+          <LogoUpload
+            previewUrl={shownLogo}
+            onCropped={(blob, dataUrl) => { void handleLogo(blob, dataUrl); }}
+            onClear={() => setLogoPreview(null)}
+          />
+          <div>
+            <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+              Treasury logo
+            </div>
+            <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', margin: '3px 0 0', lineHeight: 1.45 }}>
+              {logoBusy ? 'Saving…' : 'Shown beside the treasury name, in your treasury list, and on invoices.'}
+            </p>
+            {logoStatus ? (
+              <p style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))', margin: '4px 0 0' }}>{logoStatus}</p>
+            ) : null}
+          </div>
+        </div>
         <div>
           <label className="block mb-1.5" style={{ fontSize: '12.5px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
             Treasury name
@@ -354,13 +442,16 @@ export default function Settings() {
           </span>
         </Notice>
 
-        <div className="max-w-[620px] mt-8">
+        <div className="max-w-[620px] mt-8" data-onboarding-id="settings-profile">
           {/* 1. Profile */}
           <ProfileSection
             daoAddress={daoAddress}
             initialName={dao?.name || 'Atlas Community Treasury'}
             initialSlug={dao?.slug || normalizeDaoSlug(dao?.name || 'atlas')}
             initialDescription={dao?.description || 'A community treasury funding open-source grants and local projects.'}
+            initialLogoUrl={dao?.logoUrl || ''}
+            treasuryGroupId={dao?.treasuryGroupId ?? null}
+            onLogoSaved={() => refetchDao()}
           />
 
           {/* 2. Members & guardians */}

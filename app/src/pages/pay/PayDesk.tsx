@@ -35,6 +35,7 @@ export function PayPage({
       </header>
       {metrics && metrics.length > 0 ? (
         <section
+          data-onboarding-id="pay-metrics"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))',

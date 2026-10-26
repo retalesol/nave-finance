@@ -463,6 +463,7 @@ export default function Dashboard() {
           >
             ${displayCurrentValue.toLocaleString()}
           </div>
+          {(latestMonthYield > 0 || totalYield > 0 || treasuryTrend || displayAssetsValue <= 0) && (
           <div style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))' }}>
             {latestMonthYield > 0 ? (
               <>
@@ -483,11 +484,10 @@ export default function Dashboard() {
                 <b style={{ color: 'hsl(var(--success))', fontWeight: 600 }}>{treasuryTrend}</b> over the last 7 days
               </>
             ) : (
-              <span>{displayAssetsValue > 0 ? 'Live holdings' : 'No history yet'}</span>
+              <span>No history yet</span>
             )}
-            {' · '}
-            <span>Reserve healthy at {reserveActualPct}%</span>
           </div>
+          )}
         </div>
 
         {/* Balance chart + 3 Plain-English Stats */}
@@ -620,7 +620,6 @@ export default function Dashboard() {
             <MetricCard
               label="Available"
               value={`$${availableUsd.toLocaleString()}`}
-              sub="Free to spend without touching reserve."
             />
             <MetricCard
               label="Earning"
@@ -628,7 +627,7 @@ export default function Dashboard() {
               sub={
                 liveStrategies.length > 0
                   ? `In ${liveStrategies.length} approved ${liveStrategies.length === 1 ? 'place' : 'places'}${yieldOutlook ? `. ≈ $${Math.round(yieldOutlook.annual / 12).toLocaleString()} a month.` : '.'}`
-                  : 'Across approved yield places.'
+                  : undefined
               }
               tooltip={
                 yieldOutlook ? (
@@ -673,7 +672,6 @@ export default function Dashboard() {
             <MetricCard
               label="In reserve"
               value={`$${reserveUsd.toLocaleString()} · ${reserveActualPct}%`}
-              sub={`Stable and untouched. Your floor is ${reserveFloorPct}%.`}
             />
           </motion.div>
         </section>

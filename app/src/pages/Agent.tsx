@@ -1308,9 +1308,11 @@ export default function Agent() {
 
       {/* 4 Specialist Rows */}
       <Section>
+        <div data-onboarding-id="agent-roster">
         {displayAgents.map((agent) => (
           <AgentRow key={agent.id} agent={agent} frozen={isFrozen} />
         ))}
+        </div>
       </Section>
 
       {/* In-Progress Execution Pipeline (only when executions exist) */}

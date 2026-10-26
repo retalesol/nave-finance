@@ -325,6 +325,7 @@ export default function PolicyEngine() {
       </div>
 
       {!amending ? (
+        <div data-onboarding-id="policy-rules">
         <ConstitutionReadout
           constitution={constitution}
           chainKind={chainKind === 'evm' ? 'evm' : 'solana'}
@@ -333,6 +334,7 @@ export default function PolicyEngine() {
           outboundBridgeEnabled={outboundBridgeEnabled}
           onAmend={() => setAmending(true)}
         />
+        </div>
       ) : (
         <div className="max-w-[620px]" style={{ marginTop: '24px' }}>
           <p style={{ fontSize: '13.5px', color: 'hsl(var(--muted-foreground))', lineHeight: 1.55, marginBottom: '8px' }}>

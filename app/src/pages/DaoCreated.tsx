@@ -11,6 +11,7 @@ import { getNavePrograms } from '../lib/naveProgram';
 import { SOLANA_NETWORK } from '../lib/programConfig';
 import { daoNetworkLabel, evmExplorerUrl, isEvmChainId, solanaExplorerUrl } from '../lib/chain/types';
 import ActivateTreasuryChains from '../components/ActivateTreasuryChains';
+import { hasSeenWalkthrough } from '../lib/walkthroughSeen';
 
 interface SuccessState {
   daoAddress: string;
@@ -119,8 +120,15 @@ export default function DaoCreated() {
   }
 
   function openDashboard() {
-    setDaoAddress(state!.daoAddress);
-    navigate('/overview', { state: { treasuryAddress: state!.daoAddress, startOnboarding: true } });
+    const treasury = state!.daoAddress;
+    setDaoAddress(treasury);
+    if (!hasSeenWalkthrough(treasury)) {
+      navigate('/walkthrough', {
+        state: { treasuryAddress: treasury, live: true },
+      });
+      return;
+    }
+    navigate('/overview', { state: { treasuryAddress: treasury, startOnboarding: true } });
   }
 
   const govLabel = state.governanceType === 'token' ? 'Token-Based' : 'Authorized Wallets';

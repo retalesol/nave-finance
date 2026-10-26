@@ -497,8 +497,7 @@ export default function BridgePage({ mode = 'bridge' }: { mode?: 'bridge' | 'sta
           >
             {isStake ? (
               <>
-                Put your tokens{' '}
-                <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>to work.</em>
+                Put your tokens <em style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>to work.</em>
               </>
             ) : (
               <>
@@ -523,9 +522,11 @@ export default function BridgePage({ mode = 'bridge' }: { mode?: 'bridge' | 'sta
         </div>
 
         {/* Main hairline section */}
+        <div data-onboarding-id={isStake ? 'stake-form' : 'bridge-form'}>
         <Section className="max-w-[620px]">
           {isStake ? <StakeBox pool={pool} apy={apy} /> : <Bridge />}
         </Section>
+        </div>
 
         {/* Recent transfers / Staking activity */}
         <TransactionsFeed

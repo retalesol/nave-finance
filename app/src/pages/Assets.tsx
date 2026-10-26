@@ -1,3 +1,4 @@
+import { NaveSelect } from '../components/NaveMenu';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PublicKey } from '@solana/web3.js';
@@ -131,7 +132,7 @@ function describeVenue(strategy: StrategyInfo): VenueMeta {
     place: cleanName,
     what: 'Earns yield inside your rules',
     exit: 'Instantly',
-    risk: 'Approved in your Rules. Protected by your reserve floor and single-place cap.',
+    risk: 'Protected by your reserve floor and single-place cap.',
   };
 }
 
@@ -373,7 +374,7 @@ function EarningPlaceModal({
                     >
                       Direction
                     </label>
-                    <select
+                    <NaveSelect
                       value={direction}
                       onChange={(e) => setDirection(e.target.value as 'withdraw' | 'deposit')}
                       style={{
@@ -388,7 +389,7 @@ function EarningPlaceModal({
                     >
                       <option value="withdraw">Withdraw to Available</option>
                       <option value="deposit">Move in (from Available)</option>
-                    </select>
+                    </NaveSelect>
                   </div>
                   <div>
                     <label
@@ -893,7 +894,7 @@ export default function Assets() {
   const earningCaption =
     strategies.length > 0
       ? `${strategies.length} approved ${strategies.length === 1 ? 'place' : 'places'}${blendedRate != null ? `, ${blendedRate.toFixed(1)}% blended.` : '.'}`
-      : 'Across approved yield places.';
+      : undefined;
 
   return (
     <div className="animate-fade-in" data-onboarding-id="assets-root">
@@ -994,19 +995,6 @@ export default function Assets() {
               what it&apos;s doing.
             </em>
           </h1>
-          <p
-            style={{
-              fontSize: '14.5px',
-              color: 'hsl(var(--muted-foreground))',
-              margin: 0,
-              maxWidth: '520px',
-              lineHeight: 1.55,
-            }}
-          >
-            {totalValueUsd > 0
-              ? `${USD(totalValueUsd)} total. Nothing sits anywhere your rules haven't approved.`
-              : "Nothing sits anywhere your rules haven't approved."}
-          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -1048,11 +1036,10 @@ export default function Assets() {
 
       {/* 3 Calm Stats Strip */}
       <Section>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" data-onboarding-id="assets-stats">
           <MetricCard
             label="Safe & available"
             value={USD(safeAvailableUsd)}
-            sub="Withdrawable any time."
           />
           <MetricCard
             label="Earning"
@@ -1062,13 +1049,12 @@ export default function Assets() {
           <MetricCard
             label="Free to spend"
             value={USD(freeToSpendUsd)}
-            sub="Without touching reserve or investments."
           />
         </div>
       </Section>
 
       {/* Earning places section */}
-      <Section title="Earning places" hint="Approved in your Rules">
+        <Section title="Earning places">
         <div className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -1104,7 +1090,7 @@ export default function Assets() {
                       color: 'hsl(var(--muted-foreground))',
                     }}
                   >
-                    No funds placed yet. Your agents place capital above your {reserveFloorPct}% reserve floor automatically.
+                    No Automations
                   </td>
                 </tr>
               ) : (

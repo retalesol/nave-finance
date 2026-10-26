@@ -118,9 +118,9 @@ export default function Governance() {
       className="animate-fade-in"
       data-onboarding-id="governance-root"
     >
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+      {/* Header — action and counts sit on the right */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+        <div style={{ minWidth: 0 }}>
           <div className="nave-label" style={{ marginBottom: '10px' }}>Decisions</div>
           <h1
             style={{
@@ -140,22 +140,14 @@ export default function Governance() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 pt-1 flex-wrap">
-          <span
-            className="nave-mono"
-            style={{ fontSize: '12.5px', color: 'hsl(var(--muted-foreground))' }}
-          >
-            <b style={{ color: '#9A7414', fontWeight: 600 }}>{active}</b> active ·{' '}
-            <b style={{ color: '#2F7D4F', fontWeight: 600 }}>{passed}</b> passed ·{' '}
-            <b style={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}>{rejected}</b> rejected
-          </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => {
               setProposeInitial(null);
               setCreating(true);
             }}
-            className="px-4 py-2 rounded-[9px] font-semibold transition-colors"
+            className="px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
             style={{
               fontSize: '13px',
               backgroundColor: 'hsl(var(--foreground))',
@@ -164,6 +156,28 @@ export default function Governance() {
           >
             Start a decision
           </button>
+          <div className="flex flex-wrap justify-end" style={{ gap: '8px' }}>
+            {([
+              ['Active', active, '#9A7414'],
+              ['Passed', passed, '#2F7D4F'],
+              ['Rejected', rejected, '#111827'],
+            ] as const).map(([label, count, color]) => (
+              <div
+                key={label}
+                style={{
+                  minWidth: '76px',
+                  padding: '8px 12px 9px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #E7E2D6',
+                  borderRadius: '12px',
+                  textAlign: 'right',
+                }}
+              >
+                <div className="nave-figure" style={{ fontSize: '22px', color }}>{count}</div>
+                <div className="nave-label" style={{ marginTop: '4px' }}>{label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -199,7 +213,7 @@ export default function Governance() {
       </div>
 
       {/* Filter tabs + Proposal list */}
-      <div style={{ marginTop: '30px' }}>
+      <div style={{ marginTop: '30px' }} data-onboarding-id="governance-list">
         <UnderlineTabs
           tabs={FILTER_TABS}
           activeTab={filter}

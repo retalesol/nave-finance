@@ -59,6 +59,7 @@ const Simulation = lazy(() => import('./pages/Simulation'));
 const PaySection = lazy(() => import('./pages/pay/PaySection'));
 const PublicInvoice = lazy(() => import('./pages/pay/PublicInvoice'));
 const CompassPage = lazy(() => import('./pages/compass/CompassPage'));
+const WalkthroughPage = lazy(() => import('./components/walkthrough/WalkthroughPage'));
 
 /* ── Loading fallback ──────────────────────────────────── */
 function PageLoader({ contained = false }: { contained?: boolean }) {
@@ -183,6 +184,7 @@ function AppRoutes() {
           <Route path="/simulation" element={<Simulation />} />
           <Route path="/pay/i/:token" element={<PublicInvoice />} />
           <Route path="/compass" element={<CompassPage />} />
+          <Route path="/walkthrough" element={<WalkthroughPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>

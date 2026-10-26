@@ -1,22 +1,22 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useAccount } from 'wagmi';
-import { signMessage as signEvmMessage } from '@wagmi/core';
-import { chainFamilyLabel, chainKindFromAddress, type ChainFamily } from '../../lib/chain/types';
-import { useChain } from '../../hooks/useChain';
+import { chainFamilyLabel, type ChainFamily } from '../../lib/chain/types';
 import { useDaoContext } from '../../hooks/useDaoContext';
 import { useDaoMembership } from '../../hooks/useDaoMembership';
-import { solanaAccessSigner } from '../../lib/edgeFunctionClient';
-import { wagmiConfig } from '../../lib/evm/wagmi';
-import { uploadDaoLogo } from '../../lib/uploadLogo';
+import { useDaoRegistry } from '../../hooks/useDaoRegistry';
 import type { PayBooksSnapshot, PayWalletAddressRow } from '../../lib/pay/api';
-import { setPayLogo } from '../../lib/pay/api';
-import { fetchPayActivity, fetchPayInvoices, payBooksMessage, updatePayRails } from '../../lib/pay/booksApi';
+import {
+  fetchPayActivity,
+  fetchPayInvoices,
+  payBooksMessage,
+  updatePayRails,
+  type PayActivity,
+  type PayInvoice,
+} from '../../lib/pay/booksApi';
 import { formatCents, invoiceState, localToday } from '../../lib/pay/invoiceMath';
 import { billState } from '../../lib/pay/payables';
-import { fetchPayBills } from '../../lib/pay/payablesApi';
+import { fetchPayBills, type PayBill } from '../../lib/pay/payablesApi';
 import { PayLedger, PayPage, PayStage, PayStatus, PayWork, payTd, payTh } from './PayDesk';
 
 function chainLabel(chain: string): string {
@@ -38,9 +38,16 @@ function addressCaption(row: PayWalletAddressRow): string {
 export default function PayHome({
   snapshot,
   treasuryGroupId,
+  preview,
 }: {
   snapshot: PayBooksSnapshot;
   treasuryGroupId: string;
+  /** Static books for the walkthrough. Skips the books API. */
+  preview?: {
+    invoices: PayInvoice[];
+    bills: PayBill[];
+    activity: PayActivity[];
+  };
 }) {
   const navigate = useNavigate();
   const membership = useDaoMembership();
@@ -49,15 +56,23 @@ export default function PayHome({
   const activity = useQuery({
     queryKey: ['payActivity', treasuryGroupId],
     queryFn: () => fetchPayActivity(treasuryGroupId, wallet),
+    enabled: !preview,
   });
   const invoices = useQuery({
     queryKey: ['payInvoices', treasuryGroupId],
     queryFn: () => fetchPayInvoices(treasuryGroupId, wallet),
+    enabled: !preview,
   });
   const bills = useQuery({
     queryKey: ['payBills', treasuryGroupId],
     queryFn: () => fetchPayBills(treasuryGroupId, wallet),
+    enabled: !preview,
   });
+  const invoiceRows = preview?.invoices ?? invoices.data ?? [];
+  const billRows = preview?.bills ?? bills.data ?? [];
+  const activityRows = preview?.activity ?? activity.data ?? [];
+  const booksLoading = !preview && (invoices.isLoading || bills.isLoading);
+  const activityLoading = !preview && activity.isLoading;
   const legalName = snapshot.company?.legal_name || 'This treasury';
   const address = snapshot.company?.address?.trim() ?? '';
   const ein = snapshot.company?.ein?.trim() ?? '';
@@ -69,7 +84,7 @@ export default function PayHome({
     let overdueInvoices = 0;
     let overdueInvoiceCount = 0;
     const attention: Array<{ id: string; href: string; who: string; what: string; amount: number; status: string; rank: number }> = [];
-    for (const invoice of invoices.data ?? []) {
+    for (const invoice of invoiceRows) {
       const paid = (invoice.payments ?? []).reduce((sum, row) => sum + Number(row.amount_cents || 0), 0);
       const state = invoiceState(
         { status: invoice.status, totalCents: invoice.total_cents, paidCents: paid, dueDate: invoice.due_date },
@@ -98,7 +113,7 @@ export default function PayHome({
     let owe = 0;
     let oweCount = 0;
     let overdueBills = 0;
-    for (const bill of bills.data ?? []) {
+    for (const bill of billRows) {
       const paid = (bill.payments ?? []).reduce((sum, row) => sum + row.amount_cents, 0);
       const state = billState(
         { status: bill.status, amountCents: bill.amount_cents, paidCents: paid, dueDate: bill.due_date },
@@ -123,7 +138,7 @@ export default function PayHome({
     }
     attention.sort((a, b) => a.rank - b.rank || b.amount - a.amount);
     return { collect, collectCount, overdueInvoices, overdueInvoiceCount, owe, oweCount, overdueBills, attention: attention.slice(0, 6) };
-  }, [bills.data, invoices.data, today]);
+  }, [billRows, invoiceRows, today]);
 
   return (
     <PayPage
@@ -145,8 +160,8 @@ export default function PayHome({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', alignItems: 'start' }}>
         <PayStage title="Needs a decision" detail="Open invoices and bills, late ones first.">
-          {invoices.isLoading || bills.isLoading ? <p style={{ margin: 0, padding: '16px', fontSize: '13.5px', color: '#6B7280' }}>Loading the books.</p> : null}
-          {!invoices.isLoading && !bills.isLoading && desk.attention.length === 0 ? (
+          {booksLoading ? <p style={{ margin: 0, padding: '16px', fontSize: '13.5px', color: '#6B7280' }}>Loading the books.</p> : null}
+          {!booksLoading && desk.attention.length === 0 ? (
             <p style={{ margin: 0, padding: '18px 16px', fontSize: '14px', color: '#6B7280', lineHeight: 1.5 }}>
               Nothing is waiting. Send an invoice when you are owed, or record a bill when the treasury owes someone.
             </p>
@@ -175,11 +190,11 @@ export default function PayHome({
         </PayStage>
 
         <PayStage title="Recent activity" detail="Payments recorded in these books.">
-          {activity.isLoading ? <p style={{ margin: 0, padding: '16px', fontSize: '13.5px', color: '#6B7280' }}>Loading activity.</p> : null}
-          {!activity.isLoading && (activity.data ?? []).length === 0 ? (
+          {activityLoading ? <p style={{ margin: 0, padding: '16px', fontSize: '13.5px', color: '#6B7280' }}>Loading activity.</p> : null}
+          {!activityLoading && activityRows.length === 0 ? (
             <p style={{ margin: 0, padding: '16px', fontSize: '13.5px', color: '#6B7280', lineHeight: 1.5 }}>No payment activity yet.</p>
           ) : (
-            (activity.data ?? []).slice(0, 6).map((row) => (
+            activityRows.slice(0, 6).map((row) => (
               <div key={row.id} style={{ padding: '12px 16px', borderTop: '1px solid #EFEAE0', fontSize: '13.5px', color: '#111827', lineHeight: 1.45 }}>
                 {row.summary}
               </div>
@@ -212,11 +227,7 @@ export default function PayHome({
             </p>
           </div>
           <div style={{ padding: '14px 16px 16px', borderLeft: '1px solid #EFEAE0' }}>
-            <LogoEditor
-              treasuryGroupId={treasuryGroupId}
-              wallet={wallet}
-              logoUrl={snapshot.company?.logo_url ?? ''}
-            />
+            <CarriedLogo fallback={snapshot.company?.logo_url ?? ''} />
           </div>
         </div>
         <details style={{ borderTop: '1px solid #EFEAE0', padding: '12px 16px 14px' }}>
@@ -233,25 +244,13 @@ export default function PayHome({
   );
 }
 
-function LogoEditor({
-  treasuryGroupId,
-  wallet,
-  logoUrl,
-}: {
-  treasuryGroupId: string;
-  wallet: string | null;
-  logoUrl: string;
-}) {
-  const queryClient = useQueryClient();
+function CarriedLogo({ fallback }: { fallback: string }) {
   const { daoAddress } = useDaoContext();
-  const { target } = useChain();
-  const { publicKey, signMessage } = useWallet();
-  const { address } = useAccount();
-  const [message, setMessage] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { dao } = useDaoRegistry(daoAddress);
+  const logoUrl = dao?.logoUrl || fallback;
 
   return (
-    <section style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '22px' }}>
+    <section style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
       {logoUrl ? (
         <img src={logoUrl} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 10 }} />
       ) : (
@@ -259,44 +258,10 @@ function LogoEditor({
       )}
       <div>
         <div style={{ fontSize: '14px', color: '#111827' }}>Treasury logo</div>
-        <p style={{ fontSize: '13px', color: '#6B7280', margin: '2px 0 8px' }}>
-          Shown on invoices this treasury sends.
+        <p style={{ fontSize: '13px', color: '#6B7280', margin: '2px 0 0', lineHeight: 1.45 }}>
+          Taken from treasury settings and printed on invoices.{' '}
+          <Link to="/settings" style={{ color: '#111827' }}>Change it in settings</Link>
         </p>
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          disabled={saving || !wallet || !daoAddress}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (!file || !wallet || !daoAddress) return;
-            setSaving(true);
-            setMessage(null);
-            const signer = chainKindFromAddress(daoAddress) === 'evm'
-              ? (messageText: string) => signEvmMessage(wagmiConfig, { message: messageText })
-              : signMessage
-                ? solanaAccessSigner(signMessage)
-                : null;
-            if (!signer) {
-              setSaving(false);
-              setMessage('Connect the founder wallet to set the logo.');
-              return;
-            }
-            const founder = chainKindFromAddress(daoAddress) === 'evm' ? (address ?? wallet) : (publicKey?.toBase58() ?? wallet);
-            void uploadDaoLogo(file, daoAddress, founder, daoAddress, signer, {
-              chain: target.family,
-              chainId: target.evmChainId ?? null,
-            })
-              .then((url) => setPayLogo(treasuryGroupId, wallet, url))
-              .then(async () => {
-                await queryClient.invalidateQueries({ queryKey: ['payBooks', treasuryGroupId] });
-                setMessage('Logo saved. New invoices will use it.');
-              })
-              .catch((err: unknown) => setMessage(err instanceof Error ? err.message : 'Logo was not saved.'))
-              .finally(() => setSaving(false));
-          }}
-        />
-        {message ? <p style={{ fontSize: '13px', color: '#6B7280', margin: '6px 0 0' }}>{message}</p> : null}
       </div>
     </section>
   );

@@ -1,12 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import { useAccount, useDisconnect } from 'wagmi';
-import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { useAccount } from 'wagmi';
 import NaveModal from './NaveModal';
+import { NaveMenu, NaveMenuItem } from './NaveMenu';
 import Fi from './Fi';
 import NotificationFeed from './NotificationFeed';
+import WalletNetworkMenu from './WalletNetworkMenu';
 import { DepositFundsModal } from './DepositFlow';
 
 import { useDaoContext } from '../hooks/useDaoContext';
@@ -31,7 +31,11 @@ import {
 import { activeEvmChainId, SOLANA_NETWORK } from '../lib/programConfig';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { getDaoPublicUrl } from '../lib/daoSlug';
-import { PAY_NAV, PAY_NAV_ADVANCED, PAY_NAV_PRIMARY, payNavLabel } from '../lib/pay/nav';
+import { PAY_NAV, PAY_NAV_ADVANCED, PAY_NAV_PRIMARY } from '../lib/pay/nav';
+import { appBreadcrumbs } from '../lib/breadcrumbs';
+import AppBreadcrumb from './AppBreadcrumb';
+import NaveMark from './NaveMark';
+import TreasuryLogo from './TreasuryLogo';
 import { isPayAppPath } from '../lib/pay/paths';
 import { prefetchAppRoute } from '../lib/routePrefetch';
 
@@ -96,38 +100,19 @@ function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-function shortDaoName(fullName: string): string {
-  if (!fullName || fullName === 'Loading...' || fullName === 'No DAO Selected') return '';
-  const cleaned = fullName
-    .replace(/\b(Community\s+Treasury|Treasury|Protocol|Creators\s+Fund|DAO)\b/gi, '')
-    .trim();
-  if (cleaned) return cleaned.split(/\s+/)[0];
-  return fullName.split(/\s+/)[0];
-}
-
-function walletInitials(address: string | null): string {
-  if (!address) return 'YO';
-  const stripped = address.replace(/^0x/i, '');
-  return (stripped.slice(0, 2) || 'YO').toUpperCase();
-}
-
 export default function NaveLayout({ children, wide = false }: NaveLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { target, chainFamily, setChainFamily, rememberDaoChain } = useChain();
-  const { publicKey, disconnect: disconnectSolana } = useWallet();
-  const { setVisible: setSolanaModalVisible } = useWalletModal();
+  const { publicKey } = useWallet();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedChainId } = useAccount();
-  const { disconnect: disconnectEvm } = useDisconnect();
-  const { openConnectModal } = useConnectModal();
   const isMobile = useIsMobile();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [productModalOpen, setProductModalOpen] = useState(false);
+  const productMenuRef = useRef<HTMLDivElement>(null);
   const [pendingChainFamily, setPendingChainFamily] = useState<ChainFamily | null>(null);
   const [treasuryModalOpen, setTreasuryModalOpen] = useState(false);
-  const [accountModalOpen, setAccountModalOpen] = useState(false);
-  const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [depositModalOpen, setDepositModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,11 +140,9 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
 
   const isEvm = target.kind === 'evm';
   const activeWalletAddress = isEvm ? (evmAddress ?? null) : (publicKey?.toBase58() ?? null);
-  const isWalletConnected = isEvm ? evmConnected : !!publicKey;
   const { daos: watchedDaos } = useWatchedDaos(activeWalletAddress);
 
   const daoName = dao?.name || (daoLoading ? 'Loading...' : 'Select a treasury');
-  const daoShortName = dao?.name ? shortDaoName(dao.name) : '';
   const isTokenGov = dao?.governanceType === 'token';
   const inPay = isPayAppPath(location.pathname);
   const payAdvancedOpen = payMoreOpen || PAY_NAV_ADVANCED.some((item) => (
@@ -171,9 +154,6 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const activeNavPath = inPay
     ? (location.pathname.length > 1 ? location.pathname.replace(/\/+$/, '') : location.pathname)
     : navPathForActiveState(location.pathname);
-  const activeNavLabel = inPay
-    ? payNavLabel(location.pathname)
-    : NAV.find((item) => !item.state && item.path === activeNavPath)?.label ?? 'Overview';
 
   const agentsActive = dao ? !dao.frozen && (dao.agentsEnabled ?? true) : true;
   const agentsFrozen = dao?.frozen ?? false;
@@ -252,7 +232,6 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   }
 
   function handleChainSwitch(family: ChainFamily) {
-    setNetworkModalOpen(false);
     if (family === chainFamily) return;
     if (daoAddress) {
       setPendingChainFamily(family);
@@ -270,28 +249,6 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
     await applyChainFamily(nextFamily);
     navigate('/treasuries');
     setSidebarOpen(false);
-  }
-
-  function handleConnectWallet(family: ChainFamily = chainFamily) {
-    setAccountModalOpen(false);
-    setChainFamily(family);
-    setSolanaModalVisible(false);
-    window.setTimeout(() => {
-      if (family === 'solana') {
-        setSolanaModalVisible(true);
-      } else {
-        openConnectModal?.();
-      }
-    }, 50);
-  }
-
-  function handleDisconnectWallet() {
-    if (isEvm) {
-      disconnectEvm();
-    } else {
-      disconnectSolana();
-    }
-    setAccountModalOpen(false);
   }
 
   function chooseProduct(next: 'nave' | 'pay') {
@@ -344,6 +301,17 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
         keywords: 'reports monthly statement export',
         run: () => navigate('/overview', { state: { openReports: true } }),
       },
+      {
+        label: 'See Walkthrough',
+        keywords: 'walkthrough tour guide intro onboarding help see again',
+        run: () => {
+          navigate('/walkthrough', {
+            state: daoAddress
+              ? { treasuryAddress: daoAddress, live: true, replay: true }
+              : { replay: true },
+          });
+        },
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isTokenGov, daoAddress],
@@ -390,33 +358,17 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
       >
         {/* Brand — product menu. Tile stays; the word is the active product. */}
         <div className="flex items-center justify-between" style={{ marginBottom: '28px' }}>
+          <div ref={productMenuRef} className="min-w-0">
           <button
             type="button"
-            onClick={() => setProductModalOpen(true)}
-            aria-haspopup="dialog"
+            onClick={() => setProductModalOpen((open) => !open)}
+            aria-haspopup="menu"
             aria-expanded={productModalOpen}
             title="Switch product"
             className="flex items-center bg-transparent border-0 p-0 cursor-pointer min-w-0"
             style={{ gap: '8px' }}
           >
-            <i
-              style={{
-                width: '20px',
-                height: '20px',
-                borderRadius: '6px',
-                backgroundColor: '#111827',
-                color: '#ffffff',
-                display: 'grid',
-                placeItems: 'center',
-                fontFamily: 'var(--font-display)',
-                fontStyle: 'normal',
-                fontSize: '13px',
-                lineHeight: 1,
-                flexShrink: 0,
-              }}
-            >
-              N
-            </i>
+            <NaveMark />
             <b
               style={{
                 fontFamily: 'var(--font-display)',
@@ -433,6 +385,20 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               ⌄
             </span>
           </button>
+          <NaveMenu
+            open={productModalOpen}
+            onClose={() => setProductModalOpen(false)}
+            anchorRef={productMenuRef}
+            minWidth={220}
+          >
+            <NaveMenuItem selected={!inPay} onClick={() => chooseProduct('nave')}>
+              Nave
+            </NaveMenuItem>
+            <NaveMenuItem selected={inPay} onClick={() => chooseProduct('pay')}>
+              Nave Pay
+            </NaveMenuItem>
+          </NaveMenu>
+          </div>
           <button
             type="button"
             className="lg:hidden p-1 rounded"
@@ -451,28 +417,39 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           title="Switch treasury"
           data-onboarding-id="dao-selector"
           className="w-full text-left bg-transparent border-0 p-0 cursor-pointer group"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginBottom: '22px',
+          }}
         >
-          <div
-            className="truncate group-hover:text-brass transition-colors"
-            style={{
-              fontSize: '13.5px',
-              fontWeight: 600,
-              lineHeight: 1.3,
-              color: '#111827',
-            }}
-          >
-            {daoName}
-          </div>
-          <div
-            className="truncate"
-            style={{
-              fontSize: '11.5px',
-              color: '#9CA3AF',
-              margin: '2px 0 26px',
-            }}
-          >
-            {networkLabel} · {slugOrShortAddr} ⌄
-          </div>
+          <TreasuryLogo url={dao?.logoUrl} name={daoName} size={34} />
+          <span className="min-w-0">
+            <span
+              className="truncate group-hover:text-brass transition-colors"
+              style={{
+                display: 'block',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                lineHeight: 1.3,
+                color: '#111827',
+              }}
+            >
+              {daoName}
+            </span>
+            <span
+              className="truncate"
+              style={{
+                display: 'block',
+                fontSize: '11.5px',
+                color: '#9CA3AF',
+                marginTop: '2px',
+              }}
+            >
+              {networkLabel} · {slugOrShortAddr} ⌄
+            </span>
+          </span>
         </button>
 
         {/* Nav list (nav.main) */}
@@ -627,67 +604,34 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           )}
         </nav>
 
-        {/* Sidebar Footer (.side-foot) */}
-        <button
-          type="button"
-          onClick={() => setAccountModalOpen(true)}
-          className="side-foot bg-transparent border-0 cursor-pointer w-full text-left"
+        <div
+          className="side-foot"
           style={{
             marginTop: 'auto',
-            paddingTop: '18px',
+            paddingTop: '16px',
             borderTop: '1px solid #EFEAE0',
-            fontSize: '12px',
-            color: '#6B7280',
-            display: 'flex',
-            gap: '8px',
-            alignItems: 'center',
           }}
         >
-          <span
-            className="av"
+          <button
+            type="button"
+            onClick={handleAddFundsClick}
+            className="w-full"
             style={{
-              width: '24px',
-              height: '24px',
-              borderRadius: '50%',
-              backgroundColor: '#B9974F',
-              color: '#ffffff',
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: '9px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '13px',
               fontWeight: 600,
-              flexShrink: 0,
+              borderRadius: '9px',
+              padding: '9px 14px',
+              border: '1px solid #E7E2D6',
+              backgroundColor: '#ffffff',
+              color: '#111827',
             }}
           >
-            {walletInitials(activeWalletAddress)}
-          </span>
-          <span className="min-w-0 truncate" style={{ lineHeight: 1.35 }}>
-            {isWalletConnected && activeWalletAddress ? (
-              <>
-                <span style={{ color: '#6B7280', fontSize: '12px' }}>
-                  {shortenAddress(activeWalletAddress)}
-                </span>
-                <br />
-                <span style={{ color: '#9CA3AF', fontSize: '11px' }}>
-                  {roleLabel} · connected
-                </span>
-              </>
-            ) : isMockMode ? (
-              <>
-                <span style={{ color: '#6B7280', fontSize: '12px' }}>you.eth</span>
-                <br />
-                <span style={{ color: '#9CA3AF', fontSize: '11px' }}>
-                  {roleLabel} · connected
-                </span>
-              </>
-            ) : (
-              <>
-                <span style={{ color: '#6B7280', fontSize: '12px' }}>Not connected</span>
-                <br />
-                <span style={{ color: '#B9974F', fontSize: '11px' }}>Connect wallet</span>
-              </>
-            )}
-          </span>
-        </button>
+            Add funds
+          </button>
+        </div>
       </aside>
 
       {/* Main area */}
@@ -714,24 +658,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
             >
               <Fi icon="bars" style={{ fontSize: '16px' }} />
             </button>
-            {inPay ? (
-              <span className="crumb truncate" style={{ fontSize: '13px', color: '#9CA3AF' }}>
-                <Link to="/overview" style={{ color: '#9CA3AF', textDecoration: 'none' }}>Home</Link>
-                <span> &gt; </span>
-                <Link to="/pay" style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}>Nave Pay</Link>
-                {activeNavLabel !== 'Home' ? (
-                  <>
-                    <span> &gt; </span>
-                    <b style={{ color: '#111827', fontWeight: 600 }}>{activeNavLabel}</b>
-                  </>
-                ) : null}
-              </span>
-            ) : (
-              <span className="crumb truncate" style={{ fontSize: '13px', color: '#9CA3AF' }}>
-                <b style={{ color: '#111827', fontWeight: 600 }}>{activeNavLabel}</b>
-                {daoShortName ? ` · ${daoShortName}` : ''}
-              </span>
-            )}
+            <AppBreadcrumb crumbs={appBreadcrumbs(location.pathname, location.search)} />
           </div>
 
           <div
@@ -744,94 +671,22 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               flexShrink: 0,
             }}
           >
-            {/* 1. Search button (.iconbtn2) */}
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setSearchModalOpen(true);
-              }}
-              aria-label="Search"
-              title="Search (⌘K)"
-              className="iconbtn2 transition-colors"
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: '1px solid #E7E2D6',
-                backgroundColor: '#ffffff',
-                color: '#111827',
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: '15px',
-                position: 'relative',
-                flexShrink: 0,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#CFC8B8')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E7E2D6')}
-            >
-              ⌕
-            </button>
-
-            {/* 2. Notification bell (.iconbtn2) */}
             <NotificationFeed />
-
-            {/* 3. Network pill (.pill) */}
-            {!isMobile && (
-              <button
-                type="button"
-                onClick={() => setNetworkModalOpen(true)}
-                title="Switch network"
-                className="pill transition-colors"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '12.5px',
-                  color: '#6B7280',
-                  border: '1px solid #E7E2D6',
-                  backgroundColor: '#ffffff',
-                  borderRadius: '99px',
-                  padding: '6px 11px',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#CFC8B8')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E7E2D6')}
-              >
-                <i
-                  style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    backgroundColor: '#2F7D4F',
-                    display: 'inline-block',
-                  }}
-                />
-                <span>{chainFamilyLabel(chainFamily)}</span> ⌄
-              </button>
-            )}
-
-            {/* 4. Add funds button (.btn) */}
-            <button
-              type="button"
-              onClick={handleAddFundsClick}
-              className="btn transition-colors"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '7px',
-                fontSize: '13px',
-                fontWeight: 600,
-                borderRadius: '9px',
-                padding: '8px 14px',
-                border: '1px solid #E7E2D6',
-                backgroundColor: '#ffffff',
-                color: '#111827',
+            <WalletNetworkMenu
+              chains={APP_WALLET_CHAINS}
+              onNetworkSelect={handleChainSwitch}
+              account={{
+                role: roleLabel,
+                rights:
+                  membership.isFounder || membership.isGuardian
+                    ? 'Propose, vote, freeze'
+                    : 'Propose and vote',
+                onSettings: () => {
+                  setSidebarOpen(false);
+                  navigate('/settings');
+                },
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#CFC8B8')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#E7E2D6')}
-            >
-              Add funds
-            </button>
+            />
           </div>
         </header>
 
@@ -913,71 +768,10 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
         </nav>
       )}
 
-      {/* ── Product menu (logo) ───────────────────────────────── */}
-      <NaveModal
-        open={productModalOpen}
-        title="Switch product"
-        subtitle="Nave is the treasury. Nave Pay is invoices and books for this treasury."
-        onClose={() => setProductModalOpen(false)}
-        maxWidth={520}
-      >
-        <div style={{ padding: '18px 22px 22px' }}>
-          {([
-            {
-              id: 'nave' as const,
-              label: 'Nave',
-              description: 'Treasury',
-              current: !inPay,
-            },
-            {
-              id: 'pay' as const,
-              label: 'Nave Pay',
-              description: 'Invoices and books',
-              current: inPay,
-            },
-          ]).map((product) => (
-            <button
-              key={product.id}
-              type="button"
-              onClick={() => chooseProduct(product.id)}
-              className="w-full text-left flex items-center gap-3 group"
-              style={{
-                padding: '12px 4px',
-                borderBottom: '1px solid #EFEAE0',
-              }}
-            >
-              <div className="flex-1 min-w-0">
-                <div
-                  className="group-hover:text-brass transition-colors"
-                  style={{ fontSize: '14px', fontWeight: 500, color: '#111827' }}
-                >
-                  {product.label}
-                </div>
-                <div style={{ fontSize: '12.5px', color: '#6B7280', marginTop: '2px' }}>
-                  {product.description}
-                </div>
-              </div>
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: '12px',
-                  fontWeight: product.current ? 600 : 400,
-                  color: product.current ? '#2F7D4F' : '#6B7280',
-                  flexShrink: 0,
-                }}
-              >
-                {product.current ? 'Current' : 'Open →'}
-              </span>
-            </button>
-          ))}
-        </div>
-      </NaveModal>
-
       {/* ── Treasury Switcher Modal ───────────────────────────── */}
       <NaveModal
         open={treasuryModalOpen}
         title="Your treasuries"
-        subtitle="Switch context, or start a new one."
         onClose={() => setTreasuryModalOpen(false)}
         maxWidth={520}
       >
@@ -1059,6 +853,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
                       borderBottom: '1px solid #EFEAE0',
                     }}
                   >
+                    <TreasuryLogo url={item.logoUrl} name={item.name} size={32} />
                     <div className="flex-1 min-w-0">
                       <div
                         className="truncate group-hover:text-brass transition-colors"
@@ -1141,271 +936,6 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
               + New treasury
             </button>
           </div>
-        </div>
-      </NaveModal>
-
-      {/* ── Account Modal (.side-foot click) ──────────────────── */}
-      <NaveModal
-        open={accountModalOpen}
-        title={
-          isWalletConnected && activeWalletAddress
-            ? shortenAddress(activeWalletAddress)
-            : isMockMode
-              ? 'you.eth'
-              : 'Connect wallet'
-        }
-        subtitle={
-          isWalletConnected || isMockMode
-            ? `${roleLabel} wallet · connected on ${chainFamilyLabel(chainFamily)}`
-            : 'Choose a network to connect your wallet.'
-        }
-        onClose={() => setAccountModalOpen(false)}
-        maxWidth={520}
-      >
-        <div style={{ padding: '18px 22px 22px' }}>
-          {isWalletConnected || isMockMode ? (
-            <>
-              <div
-                className="flex items-center gap-2"
-                style={{
-                  backgroundColor: '#FAF8F3',
-                  border: '1px solid #E7E2D6',
-                  borderRadius: '10px',
-                  padding: '11px 12px',
-                }}
-              >
-                <code
-                  className="nave-mono flex-1 break-all"
-                  style={{ fontSize: '11.5px', color: '#111827' }}
-                >
-                  {activeWalletAddress || '0x7a3F…F42c9D'}
-                </code>
-                <button
-                  type="button"
-                  onClick={() =>
-                    copyWithFeedback(activeWalletAddress || '0x7a3FF42c9D', 'account-addr')
-                  }
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderRadius: '9px',
-                    padding: '6px 12px',
-                    border: '1px solid #E7E2D6',
-                    backgroundColor: '#ffffff',
-                    color: copiedKey === 'account-addr' ? '#2F7D4F' : '#111827',
-                    flexShrink: 0,
-                  }}
-                >
-                  {copiedKey === 'account-addr' ? 'Copied ✓' : 'Copy'}
-                </button>
-              </div>
-
-              <div style={{ marginTop: '10px' }}>
-                <div
-                  className="flex justify-between gap-4"
-                  style={{
-                    padding: '12px 0',
-                    borderBottom: '1px solid #EFEAE0',
-                    fontSize: '13.5px',
-                  }}
-                >
-                  <span style={{ color: '#6B7280' }}>
-                    Role in {daoShortName || 'treasury'}
-                  </span>
-                  <b style={{ fontWeight: 500, color: '#111827' }}>{roleLabel}</b>
-                </div>
-                <div
-                  className="flex justify-between gap-4"
-                  style={{
-                    padding: '12px 0',
-                    borderBottom: '1px solid #EFEAE0',
-                    fontSize: '13.5px',
-                  }}
-                >
-                  <span style={{ color: '#6B7280' }}>Can do</span>
-                  <b style={{ fontWeight: 500, color: '#111827' }}>
-                    {membership.isFounder || membership.isGuardian
-                      ? 'Propose, vote, freeze instantly'
-                      : 'Propose and vote'}
-                  </b>
-                </div>
-                <div
-                  className="flex justify-between gap-4"
-                  style={{
-                    padding: '12px 0',
-                    borderBottom: '1px solid #EFEAE0',
-                    fontSize: '13.5px',
-                  }}
-                >
-                  <span style={{ color: '#6B7280' }}>Network</span>
-                  <b style={{ fontWeight: 500, color: '#111827' }}>
-                    {chainFamilyLabel(chainFamily)}
-                  </b>
-                </div>
-              </div>
-
-              <div
-                className="flex items-center justify-end gap-2 flex-wrap"
-                style={{
-                  marginTop: '20px',
-                  paddingTop: '16px',
-                  borderTop: '1px solid #EFEAE0',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccountModalOpen(false);
-                    setSidebarOpen(false);
-                    navigate('/settings');
-                  }}
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderRadius: '9px',
-                    padding: '8px 14px',
-                    border: '1px solid transparent',
-                    backgroundColor: 'transparent',
-                    color: '#6B7280',
-                  }}
-                >
-                  Settings
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    copyWithFeedback(activeWalletAddress || '0x7a3FF42c9D', 'account-addr-btn')
-                  }
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderRadius: '9px',
-                    padding: '8px 14px',
-                    border: '1px solid #E7E2D6',
-                    backgroundColor: '#ffffff',
-                    color: '#111827',
-                  }}
-                >
-                  {copiedKey === 'account-addr-btn' ? 'Copied ✓' : 'Copy address'}
-                </button>
-                {isWalletConnected && (
-                  <button
-                    type="button"
-                    onClick={handleDisconnectWallet}
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      borderRadius: '9px',
-                      padding: '8px 14px',
-                      border: '1px solid #E5A49E',
-                      backgroundColor: '#ffffff',
-                      color: '#B42318',
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <div>
-              {NETWORK_OPTIONS.map((net) => (
-                <button
-                  key={net.family}
-                  type="button"
-                  onClick={() => handleConnectWallet(net.family)}
-                  className="w-full text-left flex items-center gap-3 group"
-                  style={{
-                    padding: '12px 4px',
-                    borderBottom: '1px solid #EFEAE0',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: net.family === chainFamily ? '#2F7D4F' : '#D6CFBE',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div>
-                    <div
-                      className="group-hover:text-brass transition-colors"
-                      style={{ fontSize: '14px', fontWeight: 500, color: '#111827' }}
-                    >
-                      Connect on {net.label}
-                    </div>
-                    <div style={{ fontSize: '12.5px', color: '#6B7280', marginTop: '2px' }}>
-                      {net.description}
-                    </div>
-                  </div>
-                  <span style={{ marginLeft: 'auto', color: '#6B7280', fontSize: '13px' }}>→</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </NaveModal>
-
-      {/* ── Network Switcher Modal (.pill click) ──────────────── */}
-      <NaveModal
-        open={networkModalOpen}
-        title="Switch network"
-        subtitle="Treasuries live on one network. Switching shows treasuries on that network."
-        onClose={() => setNetworkModalOpen(false)}
-        maxWidth={520}
-      >
-        <div style={{ padding: '18px 22px 22px' }}>
-          {NETWORK_OPTIONS.map((net) => {
-            const isCurrent = net.family === chainFamily;
-            return (
-              <button
-                key={net.family}
-                type="button"
-                onClick={() => handleChainSwitch(net.family)}
-                className="w-full text-left flex items-center gap-3 group"
-                style={{
-                  padding: '12px 4px',
-                  borderBottom: '1px solid #EFEAE0',
-                }}
-              >
-                <span
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: isCurrent ? '#2F7D4F' : '#D6CFBE',
-                    flexShrink: 0,
-                  }}
-                />
-                <div>
-                  <div
-                    className="group-hover:text-brass transition-colors"
-                    style={{ fontSize: '14px', fontWeight: 500, color: '#111827' }}
-                  >
-                    {net.label}
-                  </div>
-                  <div style={{ fontSize: '12.5px', color: '#6B7280', marginTop: '2px' }}>
-                    {net.description}
-                  </div>
-                </div>
-                {isCurrent && (
-                  <span
-                    style={{
-                      marginLeft: 'auto',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: '#2F7D4F',
-                      flexShrink: 0,
-                    }}
-                  >
-                    Current
-                  </span>
-                )}
-              </button>
-            );
-          })}
         </div>
       </NaveModal>
 
@@ -1503,6 +1033,35 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           onCancel={() => setPendingChainFamily(null)}
         />
       )}
+
+      <button
+        type="button"
+        aria-label="Search"
+        title="Search (⌘K)"
+        onClick={() => {
+          setSearchQuery('');
+          setSearchModalOpen(true);
+        }}
+        style={{
+          position: 'fixed',
+          right: 20,
+          bottom: isMobile ? 'calc(88px + env(safe-area-inset-bottom, 0px))' : 20,
+          zIndex: 45,
+          width: 46,
+          height: 46,
+          borderRadius: '50%',
+          border: '1px solid #111827',
+          backgroundColor: '#111827',
+          color: '#ffffff',
+          boxShadow: '0 12px 28px -14px rgba(17, 24, 39, 0.55)',
+          display: 'grid',
+          placeItems: 'center',
+          fontSize: 18,
+          cursor: 'pointer',
+        }}
+      >
+        ⌕
+      </button>
     </div>
   );
 }
