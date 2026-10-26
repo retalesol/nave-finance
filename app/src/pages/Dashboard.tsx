@@ -11,6 +11,17 @@ import { useDaoContext } from '../hooks/useDaoContext';
 import { useTreasuryData, type AssetInfo } from '../hooks/useTreasuryData';
 import { useConstitution } from '../hooks/useConstitution';
 import { blendedApy } from '../lib/positionYield';
+import {
+  axisWidth,
+  buildBalanceSeries,
+  formatAxisUsd,
+  pickCategoryTicks,
+  tickLabels,
+  xTickCount,
+  yDomain,
+  type BalanceRange,
+} from '../lib/balanceChart';
+import { useIsMobile } from '../hooks/use-mobile';
 import { useTreasuryAssets } from '../hooks/useTreasuryAssets';
 import { useTreasuryNfts } from '../hooks/useTreasuryNfts';
 import { useAgentStatus } from '../hooks/useAgentStatus';
@@ -55,7 +66,7 @@ export {
 };
 
 type OverviewTab = 'activity' | 'assets' | 'agents';
-type ChartRange = '30D' | '90D' | '1Y';
+type ChartRange = BalanceRange;
 
 const OVERVIEW_TABS: readonly { id: OverviewTab; label: string }[] = [
   { id: 'activity', label: 'Recent activity' },
@@ -63,10 +74,10 @@ const OVERVIEW_TABS: readonly { id: OverviewTab; label: string }[] = [
   { id: 'agents', label: 'Agents' },
 ];
 
-const RANGE_META: Record<ChartRange, { slice: number; hint: string }> = {
-  '30D': { slice: 30, hint: '— last 30 days' },
-  '90D': { slice: 90, hint: '— last 90 days' },
-  '1Y':  { slice: 365, hint: '— last 1 year' },
+const RANGE_META: Record<ChartRange, { hint: string }> = {
+  '30D': { hint: '— last 30 days' },
+  '90D': { hint: '— last 90 days' },
+  '1Y': { hint: '— last 1 year' },
 };
 
 /* ── Page ───────────────────────────────────────────────── */
@@ -81,6 +92,7 @@ export default function Dashboard() {
   const [initialNftMint, setInitialNftMint] = useState<string | null>(null);
   const [overviewTab, setOverviewTab] = useState<OverviewTab>('activity');
   const [chartRange, setChartRange] = useState<ChartRange>('90D');
+  const isMobile = useIsMobile();
   const isMock = isMockDaoAddress(daoAddress);
 
   useEffect(() => {
@@ -182,16 +194,25 @@ export default function Dashboard() {
   }, [treasury.history]);
 
   // Treasury value chart sliced by selected range (30D / 90D / 1Y).
-  const treasuryChartData = useMemo(() => {
-    if (treasury.history.length > 0) {
-      const sliceCount = RANGE_META[chartRange].slice;
-      return treasury.history.slice(-sliceCount).map((s) => ({
-        date: new Date(s.snapshotAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: s.totalValueUsd,
-      }));
-    }
-    return [];
-  }, [treasury.history, chartRange]);
+  const treasuryChartData = useMemo(
+    () => buildBalanceSeries(treasury.history, chartRange),
+    [treasury.history, chartRange],
+  );
+  const chartScale = useMemo(() => {
+    const domain = yDomain(treasuryChartData.map((point) => point.value));
+    const scale = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
+    const ticks = pickCategoryTicks(
+      treasuryChartData,
+      xTickCount(treasuryChartData.length, chartRange, isMobile),
+    );
+    return {
+      domain,
+      scale,
+      ticks,
+      labels: tickLabels(treasuryChartData, ticks),
+      yWidth: axisWidth(domain),
+    };
+  }, [treasuryChartData, chartRange, isMobile]);
 
   const totalYield = liveStrategies.reduce((s, r) => s + r.earned, 0);
   const totalDeployed =
@@ -543,7 +564,7 @@ export default function Dashboard() {
             ) : (
               <div>
                 <ResponsiveContainer width="100%" height={175}>
-                  <AreaChart data={treasuryChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <AreaChart data={treasuryChartData} margin={{ top: 8, right: 28, left: 0, bottom: 4 }}>
                     <defs>
                       <linearGradient id="tvGrad90" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#111827" stopOpacity={0.06} />
@@ -552,18 +573,24 @@ export default function Dashboard() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#EFEAE0" vertical={false} />
                     <XAxis
-                      dataKey="date"
+                      dataKey="key"
+                      ticks={chartScale.ticks}
+                      tickFormatter={(key) => chartScale.labels.get(String(key)) ?? ''}
                       tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'var(--font-mono)' }}
                       axisLine={false}
                       tickLine={false}
-                      interval={1}
+                      interval={0}
+                      minTickGap={28}
+                      padding={{ left: 18, right: 18 }}
                     />
                     <YAxis
+                      domain={chartScale.domain}
+                      tickCount={4}
                       tick={{ fontSize: 10, fill: '#9CA3AF', fontFamily: 'var(--font-mono)' }}
                       axisLine={false}
                       tickLine={false}
-                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                      width={44}
+                      tickFormatter={(value) => formatAxisUsd(Number(value), chartScale.scale)}
+                      width={chartScale.yWidth}
                     />
                     <Tooltip content={<TreasuryTooltip />} />
                     <Area

@@ -1,9 +1,11 @@
-export function TreasuryTooltip({ active, payload, label }: {
+import { formatBalanceUsd } from '../../lib/balanceChart';
+
+export function TreasuryTooltip({ active, payload }: {
   active?: boolean;
-  payload?: { value: number; name: string }[];
-  label?: string;
+  payload?: { value: number; name: string; payload?: { tipLabel?: string } }[];
 }) {
   if (!active || !payload?.length) return null;
+  const label = payload[0]?.payload?.tipLabel;
   return (
     <div
       className="rounded-[10px] border px-3 py-2.5"
@@ -36,7 +38,7 @@ export function TreasuryTooltip({ active, payload, label }: {
           }}
         >
           <span style={{ fontWeight: 600 }}>
-            {p.name === 'value' ? '$' + p.value.toLocaleString() : '+$' + p.value}
+            {p.name === 'value' ? formatBalanceUsd(p.value) : '+$' + p.value.toLocaleString()}
           </span>
           <span style={{ color: 'hsl(var(--muted-foreground))', fontSize: '11px' }}>
             {p.name === 'value' ? 'balance' : 'yield'}
