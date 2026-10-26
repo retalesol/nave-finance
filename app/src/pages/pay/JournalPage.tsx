@@ -13,7 +13,8 @@ import {
   glMessage,
   postManualJournal,
 } from '../../lib/pay/glApi';
-import { payBody, payCard, payDanger, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
+import { PayPage } from './PayDesk';
+import { payBody, payCard, payDanger, payInput, payPrimary, paySecondary } from './payStyles';
 
 interface DraftLine {
   accountId: string;
@@ -55,24 +56,27 @@ export default function JournalPage({ treasuryGroupId }: { treasuryGroupId: stri
   const loading = accounts.isLoading || entries.isLoading;
   const error = accounts.error || entries.error;
 
+  const posted = entries.data ?? [];
+  const manualCount = posted.filter((entry) => entry.sourceType === 'manual').length;
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={payTitle}>Journal</h1>
-          <p style={{ ...payBody, marginBottom: '14px' }}>
-            Manual entries post as source type manual. Invoice, bill, cash, and payroll journals stay on their own documents.
-            {lock.data?.lockedThrough ? ` Closed through ${lock.data.lockedThrough}.` : ''}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+    <PayPage
+      kicker="Books"
+      title="Journal"
+      purpose={`Manual entries post as source type manual. Invoice, bill, cash, and payroll journals stay on their own documents.${lock.data?.lockedThrough ? ` Closed through ${lock.data.lockedThrough}.` : ''}`}
+      actions={(
+        <>
           <button type="button" style={paySecondary} onClick={() => navigate('/pay/reports')}>Reports</button>
           {path !== '/pay/journal/new' ? (
             <button type="button" style={payPrimary} onClick={() => navigate('/pay/journal/new')}>New entry</button>
           ) : null}
-        </div>
-      </div>
+        </>
+      )}
+      metrics={[
+        { label: 'Entries', value: entries.data ? String(posted.length) : '…', detail: 'Newest 200 are listed' },
+        { label: 'Manual', value: entries.data ? String(manualCount) : '…', detail: 'Written on this page' },
+        { label: 'Closed through', value: lock.data?.lockedThrough || 'Open', detail: lock.data?.lockedThrough ? 'Earlier dates are rejected' : 'No period is locked' },
+      ]}
+    >
       {loading ? <p style={payBody}>Loading the journal.</p> : null}
       {error ? <p style={{ ...payBody, color: '#B42318' }}>{glMessage(error)}</p> : null}
       {!loading && !error && (creating || selected) ? (
@@ -88,7 +92,7 @@ export default function JournalPage({ treasuryGroupId }: { treasuryGroupId: stri
       {!loading && !error && !creating ? (
         <JournalList entries={entries.data ?? []} onOpen={(id) => navigate(`/pay/journal/${id}`)} />
       ) : null}
-    </div>
+    </PayPage>
   );
 }
 

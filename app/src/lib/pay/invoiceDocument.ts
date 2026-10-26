@@ -88,10 +88,27 @@ export function invoiceDocumentHtml(invoice: PayInvoice, payable: { chain: strin
 }
 
 export function printInvoiceDocument(html: string): void {
-  const frame = window.open('', '_blank', 'noopener,noreferrer');
-  if (!frame) return;
-  frame.document.write(html);
-  frame.document.close();
-  frame.focus();
-  frame.print();
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+  const win = frame.contentWindow;
+  const doc = win?.document;
+  if (!win || !doc) {
+    frame.remove();
+    throw new Error('The print view could not be opened.');
+  }
+  doc.open();
+  doc.write(html);
+  doc.close();
+  const remove = () => frame.remove();
+  win.addEventListener('afterprint', remove, { once: true });
+  win.focus();
+  win.print();
+  window.setTimeout(remove, 60_000);
 }

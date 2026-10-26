@@ -34,6 +34,7 @@ import {
   unmatchMercury,
   type MercuryTxnRow,
 } from '../../lib/pay/mercuryApi';
+import { PayPage } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
 const KIND_LABEL: Record<string, string> = {
@@ -91,13 +92,16 @@ export default function BankPage({ treasuryGroupId }: { treasuryGroupId: string 
     );
   }
 
+  const connected = status.data?.connected ?? false;
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <h1 style={payTitle}>Bank feed</h1>
-      <p style={{ ...payBody, marginBottom: '22px' }}>
-        Mercury is a read-only feed. Nave Pay requests balances and transactions. It does not send payments from the bank.
-      </p>
+    <PayPage
+      kicker="Match"
+      title="Bank feed"
+      purpose="Mercury is read-only. Match bank lines to invoices, bills, and cash entries. Nave Pay does not send payments from the bank."
+      metrics={[
+        { label: 'Connection', value: status.isLoading ? '…' : connected ? 'On' : 'Off', detail: connected ? 'Balances and transactions' : 'Paste a read token to start', tone: connected ? 'good' : 'default' },
+      ]}
+    >
       {status.isLoading ? <p style={payBody}>Loading the bank feed.</p> : null}
       {status.isError ? <p style={{ ...payBody, color: '#B42318' }}>{mercuryMessage(status.error)}</p> : null}
       {status.data ? (
@@ -108,7 +112,7 @@ export default function BankPage({ treasuryGroupId }: { treasuryGroupId: string 
           onOpen={(id) => setParams({ recon: id })}
         />
       ) : null}
-    </div>
+    </PayPage>
   );
 }
 

@@ -17,7 +17,8 @@ import {
   type PayCryptoAsset,
   type PayCryptoEvent,
 } from '../../lib/pay/treasuryActivity';
-import { payBody, payCard, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
+import { PayPage } from './PayDesk';
+import { payBody, payCard, payField, payInput, payPrimary, paySecondary } from './payStyles';
 
 function centsFromDollars(raw: string): number | null {
   const value = raw.trim();
@@ -109,11 +110,13 @@ export default function TreasuryActivityPage({ treasuryGroupId }: { treasuryGrou
     return <p style={{ ...payBody, color: '#B42318' }}>{treasuryActivityMessage(activity.error)}</p>;
   }
 
+  const classified = (data.events ?? []).filter((event) => event.kind !== 'unclassified' && event.status === 'confirmed').length;
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <h1 style={payTitle}>Treasury activity</h1>
+    <PayPage
+      kicker="Record"
+      title="Treasury activity"
+      purpose="Chain activity that is not an invoice payment. Classify it so the journal knows what the transfer was. Nothing here is signed or broadcast."
+      actions={(
         <label style={{ ...payField, minWidth: '140px' }}>
           Lot method
           <select
@@ -129,11 +132,13 @@ export default function TreasuryActivityPage({ treasuryGroupId }: { treasuryGrou
             <option value="HIFO">HIFO</option>
           </select>
         </label>
-      </div>
-      <p style={{ ...payBody, margin: '8px 0 18px' }}>
-        Other activity on the Nave treasury. Invoice payments stay on the invoice and are not listed here.
-        Nothing on this page is signed or broadcast.
-      </p>
+      )}
+      metrics={[
+        { label: 'Unclassified', value: String(unclassified.length), detail: 'Still need a category', tone: unclassified.length > 0 ? 'attention' : 'good' },
+        { label: 'Classified', value: String(classified), detail: 'Confirmed and labeled' },
+        { label: 'Lot method', value: data.lotMethod, detail: 'Used when a sale needs a cost basis' },
+      ]}
+    >
       {error ? <p style={{ ...payBody, color: '#B42318', marginBottom: '14px' }}>{error}</p> : null}
 
       <h2 style={sectionTitle}>Unclassified</h2>
@@ -222,7 +227,7 @@ export default function TreasuryActivityPage({ treasuryGroupId }: { treasuryGrou
         disabled={busy}
         onSubmit={(body) => run(() => recordTreasuryEvent(treasuryGroupId, wallet, body))}
       />
-    </div>
+    </PayPage>
   );
 }
 

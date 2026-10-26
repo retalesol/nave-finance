@@ -836,12 +836,13 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           }}
         >
           <div
-            className={wide ? 'w-full' : 'max-w-[860px] mx-auto w-full'}
+            className={wide ? 'w-full' : 'mx-auto w-full'}
             style={
               wide
                 ? undefined
                 : {
-                    padding: isMobile ? '28px 20px 100px' : '44px 32px 90px',
+                    maxWidth: inPay ? 1120 : 860,
+                    padding: isMobile ? '28px 20px 100px' : inPay ? '28px 32px 90px' : '44px 32px 90px',
                   }
             }
           >

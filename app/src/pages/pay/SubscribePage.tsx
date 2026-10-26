@@ -17,7 +17,8 @@ import { activatePaySubscription, type PaySubscription } from '../../lib/pay/api
 import { payBillingDestination, payUsdc } from '../../lib/pay/payConfig';
 import { formatCents } from '../../lib/pay/invoiceMath';
 import UsdcPayButton from './UsdcPayButton';
-import { payBody, payCard, paySecondary, payTitle } from './payStyles';
+import { PayPage, PayWork } from './PayDesk';
+import { payBody, payCard, paySecondary } from './payStyles';
 
 export default function SubscribePage({
   treasuryGroupId,
@@ -44,17 +45,27 @@ export default function SubscribePage({
   const grace = status?.state === 'grace';
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <h1 style={payTitle}>{locked ? 'Nave Pay is locked.' : 'Activate Nave Pay.'}</h1>
-      <p style={payBody}>
-        {locked
-          ? 'The paid period ended more than 7 days ago. The books stay stored until 30 days after the period ended, then they are deleted.'
-          : grace
-            ? 'The paid period has ended. Pay stays open for 7 days, then it locks.'
-            : '$49 a month. Three months are 10% off. Twelve months are 25% off. After the period, Pay stays open for 7 days, then locks. The books are deleted 30 days after the period ends.'}
-      </p>
-      <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
+    <PayPage
+      kicker="Nave Pay"
+      title={locked ? 'Nave Pay is locked.' : grace ? 'The paid period has ended.' : 'Activate Nave Pay.'}
+      purpose={locked
+        ? 'The paid period ended more than 7 days ago. The books stay stored until 30 days after the period ended, then they are deleted.'
+        : grace
+          ? 'Pay stays open for 7 days after the period, then it locks. Pay again to keep the same books.'
+          : 'One subscription covers invoices, bills, payroll, and the ledger for every chain on this treasury.'}
+      metrics={PAY_TERMS.map((months) => ({
+        label: months === 1 ? '1 month' : `${months} months`,
+        value: formatCents(subscriptionPriceCents(months)),
+        detail: months === 1 ? '$49 a month' : months === 3 ? '10% off' : '25% off',
+        tone: term === months ? 'good' as const : 'default' as const,
+      }))}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+        <PayWork title="Collect" detail="Invoice a customer and share a USDC payment link." action="Included" />
+        <PayWork title="Pay" detail="Track vendor bills, then propose the treasury payment." action="Included" />
+        <PayWork title="Close" detail="Cash ledger, journal, and reports stay with the treasury." action="Included" />
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {PAY_TERMS.map((months) => (
           <button
             key={months}
@@ -71,7 +82,7 @@ export default function SubscribePage({
           </button>
         ))}
       </div>
-      <section style={{ ...payCard, maxWidth: '560px' }}>
+      <section style={payCard}>
         <p style={payBody}>
           Paying on <strong style={{ color: '#111827' }}>{chainFamilyLabel(chainFamily as ChainFamily)}</strong> in USDC.
           {usdc ? '' : ' USDC is not listed on this network. Switch the network pill to a deployed network that has USDC.'}
@@ -136,7 +147,7 @@ export default function SubscribePage({
           }}
         />
       ) : null}
-    </div>
+    </PayPage>
   );
 }
 

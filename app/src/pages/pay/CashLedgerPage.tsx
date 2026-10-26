@@ -10,7 +10,8 @@ import {
   fetchPayCashEntries,
   payablesMessage,
 } from '../../lib/pay/payablesApi';
-import { payBody, payCard, payInput, payTitle } from './payStyles';
+import { PayLedger, PayPage, PayStage, payTd as deskTd, payTh as deskTh } from './PayDesk';
+import { payBody, payInput } from './payStyles';
 
 export default function CashLedgerPage({ treasuryGroupId }: { treasuryGroupId: string }) {
   const navigate = useNavigate();
@@ -88,73 +89,80 @@ export default function CashLedgerPage({ treasuryGroupId }: { treasuryGroupId: s
   const error = bills.error || cash.error || invoices.error;
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <h1 style={payTitle}>Cash ledger</h1>
-      <p style={{ ...payBody, margin: '0 0 16px' }}>
-        Every dollar in and out: invoice payments, bill payments, deposits, and expenses.
-      </p>
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '13px', color: '#374151' }}>From
-          <input style={{ ...payInput, marginLeft: '8px' }} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </label>
-        <label style={{ fontSize: '13px', color: '#374151' }}>To
-          <input style={{ ...payInput, marginLeft: '8px' }} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        </label>
-      </div>
-      {loading ? <p style={payBody}>Loading the ledger.</p> : null}
-      {error ? <p style={{ ...payBody, color: '#B42318' }}>{payablesMessage(error)}</p> : null}
-      <div style={{ ...payCard, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+    <PayPage
+      kicker="Record"
+      title="Cash ledger"
+      purpose="Every dollar in and out: invoice payments, bill payments, deposits, and expenses."
+      metrics={[
+        { label: 'Opening', value: formatCents(ledger.openingCents), detail: from ? `Before ${from}` : 'From the first entry' },
+        { label: 'In', value: formatCents(moneyIn), detail: 'In this range', tone: 'good' },
+        { label: 'Out', value: formatCents(moneyOut), detail: 'In this range', tone: moneyOut > 0 ? 'attention' : 'default' },
+        { label: 'Closing', value: formatCents(closing), detail: `${ledger.rows.length} entries` },
+      ]}
+    >
+      <PayStage
+        title="Running balance"
+        detail="Click a row to open the invoice, bill, or cash entry."
+        toolbar={(
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '13px', color: '#374151' }}>From
+              <input style={{ ...payInput, marginLeft: '8px' }} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+            </label>
+            <label style={{ fontSize: '13px', color: '#374151' }}>To
+              <input style={{ ...payInput, marginLeft: '8px' }} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+            </label>
+          </div>
+        )}
+      >
+        {loading ? <p style={{ ...payBody, padding: '16px' }}>Loading the ledger.</p> : null}
+        {error ? <p style={{ ...payBody, color: '#B42318', padding: '16px' }}>{payablesMessage(error)}</p> : null}
+        <PayLedger>
           <thead>
-            <tr style={{ color: '#6B7280', textAlign: 'left' }}>
-              <th style={th}>Date</th>
-              <th style={th}>Type</th>
-              <th style={th}>Party</th>
-              <th style={th}>Category</th>
-              <th style={{ ...th, textAlign: 'right' }}>In</th>
-              <th style={{ ...th, textAlign: 'right' }}>Out</th>
-              <th style={{ ...th, textAlign: 'right' }}>Balance</th>
+            <tr>
+              <th style={deskTh}>Date</th>
+              <th style={deskTh}>Type</th>
+              <th style={deskTh}>Party</th>
+              <th style={deskTh}>Category</th>
+              <th style={{ ...deskTh, textAlign: 'right' }}>In</th>
+              <th style={{ ...deskTh, textAlign: 'right' }}>Out</th>
+              <th style={{ ...deskTh, textAlign: 'right' }}>Balance</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td colSpan={6} style={{ ...td, color: '#6B7280' }}>Opening balance</td>
-              <td style={{ ...td, textAlign: 'right' }}>{formatCents(ledger.openingCents)}</td>
+              <td colSpan={6} style={{ ...deskTd, color: '#6B7280' }}>Opening balance</td>
+              <td style={{ ...deskTd, textAlign: 'right' }}>{formatCents(ledger.openingCents)}</td>
             </tr>
             {ledger.rows.map((row) => (
               <tr
                 key={`${row.src}:${row.srcId}`}
-                style={{ cursor: 'pointer', borderTop: '1px solid #EFEAE0' }}
+                style={{ cursor: 'pointer' }}
                 onClick={() => {
                   if (row.linkType === 'invoice' && row.linkId) navigate(`/pay/invoices/${row.linkId}`);
                   else if (row.linkType === 'bill') navigate(`/pay/bills/${row.linkId}`);
                   else navigate(`/pay/transactions/${row.linkId}`);
                 }}
               >
-                <td style={td}>{row.date}</td>
-                <td style={td}>{row.type}</td>
-                <td style={td}>{row.party || '—'}</td>
-                <td style={td}>{row.category}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#166534' }}>{row.inCents ? formatCents(row.inCents) : ''}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#B42318' }}>{row.outCents ? formatCents(row.outCents) : ''}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{formatCents(row.balanceCents)}</td>
+                <td style={deskTd}>{row.date}</td>
+                <td style={deskTd}>{row.type}</td>
+                <td style={deskTd}>{row.party || '—'}</td>
+                <td style={deskTd}>{row.category}</td>
+                <td style={{ ...deskTd, textAlign: 'right', color: '#166534' }}>{row.inCents ? formatCents(row.inCents) : ''}</td>
+                <td style={{ ...deskTd, textAlign: 'right', color: '#B42318' }}>{row.outCents ? formatCents(row.outCents) : ''}</td>
+                <td style={{ ...deskTd, textAlign: 'right', fontWeight: 600 }}>{formatCents(row.balanceCents)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr style={{ borderTop: '1px solid #E7E2D6' }}>
-              <td colSpan={4} style={td}>{ledger.rows.length} entries</td>
-              <td style={{ ...td, textAlign: 'right' }}>{formatCents(moneyIn)}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{formatCents(moneyOut)}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{formatCents(closing)}</td>
+            <tr>
+              <td colSpan={4} style={{ ...deskTd, color: '#6B7280' }}>{ledger.rows.length} entries</td>
+              <td style={{ ...deskTd, textAlign: 'right' }}>{formatCents(moneyIn)}</td>
+              <td style={{ ...deskTd, textAlign: 'right' }}>{formatCents(moneyOut)}</td>
+              <td style={{ ...deskTd, textAlign: 'right', fontWeight: 600 }}>{formatCents(closing)}</td>
             </tr>
           </tfoot>
-        </table>
-      </div>
-    </div>
+        </PayLedger>
+      </PayStage>
+    </PayPage>
   );
 }
-
-const th = { padding: '8px 8px 8px 0', fontWeight: 600 };
-const td = { padding: '10px 8px 10px 0', color: '#111827' };

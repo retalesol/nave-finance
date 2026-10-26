@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import NaveEmptyState from '../../components/NaveEmptyState';
 import { CreateTransactionModal, type PayProposalDraft } from '../../components/TreasuryActions';
 import { useChain } from '../../hooks/useChain';
 import { useDaoContext } from '../../hooks/useDaoContext';
@@ -36,6 +35,7 @@ import {
   type PayBill,
   type PayChartAccount,
 } from '../../lib/pay/payablesApi';
+import { PayChips, PayLedger, PayPage, PayStage, PayStart, PayStatus, payTd as deskTd, payTh as deskTh } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle, statusColor } from './payStyles';
 
 const FILTERS = ['all', 'open', 'partial', 'overdue', 'paid', 'void'] as const;
@@ -87,7 +87,8 @@ export default function BillsPage({ treasuryGroupId }: { treasuryGroupId: string
 
   if (editingId) {
     const bill = bills.data?.find((row) => row.id === editingId) ?? null;
-    if (!bills.isSuccess) return <p style={payBody}>Loading bill.</p>;
+    if (bills.isLoading) return <p style={payBody}>Loading bill.</p>;
+    if (bills.isError) return <p style={{ ...payBody, color: '#B42318' }}>{payablesMessage(bills.error)}</p>;
     if (!bill) return <p style={payBody}>That bill is not in this treasury’s books.</p>;
     return (
       <BillDetail
@@ -128,60 +129,78 @@ function BillList({
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('all');
   const today = localToday();
-  const rows = bills.filter((bill) => {
-    if (filter === 'all') return true;
-    return billState(viewOf(bill), today).displayStatus === filter;
-  });
+  const prepared = bills.map((bill) => ({ bill, state: billState(viewOf(bill), today) }));
+  const open = prepared.filter((row) => row.state.balanceCents > 0);
+  const overdue = prepared.filter((row) => row.state.displayStatus === 'overdue');
+  const rows = prepared.filter((row) => filter === 'all' || row.state.displayStatus === filter);
+  const openCents = open.reduce((sum, row) => sum + row.state.balanceCents, 0);
+  const overdueCents = overdue.reduce((sum, row) => sum + row.state.balanceCents, 0);
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end' }}>
-        <h1 style={payTitle}>Bills</h1>
-        <button type="button" style={payPrimary} onClick={onNew}>New bill</button>
-      </div>
-      <p style={{ ...payBody, margin: '0 0 16px' }}>Money this treasury owes. Status follows the payments, not a stored paid flag.</p>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        {FILTERS.map((item) => (
-          <button key={item} type="button" onClick={() => setFilter(item)} style={filter === item ? payPrimary : paySecondary}>
-            {item[0].toUpperCase() + item.slice(1)}
-          </button>
-        ))}
-      </div>
+    <PayPage
+      kicker="Pay"
+      title="Bills"
+      purpose="What this treasury owes. Record the bill first, then propose the payment from the treasury."
+      actions={<button type="button" style={payPrimary} onClick={onNew}>New bill</button>}
+      metrics={[
+        { label: 'To pay', value: formatCents(openCents), detail: open.length === 1 ? '1 open bill' : `${open.length} open bills` },
+        { label: 'Overdue', value: formatCents(overdueCents), detail: overdue.length === 1 ? '1 late' : `${overdue.length} late`, tone: overdue.length > 0 ? 'attention' : 'default' },
+        { label: 'On file', value: String(bills.length), detail: 'Including paid and void' },
+      ]}
+    >
       {loading ? <p style={payBody}>Loading bills.</p> : null}
       {error ? <p style={{ ...payBody, color: '#B42318' }}>{payablesMessage(error)}</p> : null}
-      {!loading && rows.length === 0 ? (
-        <NaveEmptyState icon="receipt" title="No bills here" description="Record a vendor bill to track what the treasury owes." action={{ label: 'New bill', onClick: onNew }} />
-      ) : (
-        <div style={{ ...payCard, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-            <thead>
-              <tr style={{ color: '#6B7280', textAlign: 'left' }}>
-                <th style={th}>Vendor</th>
-                <th style={th}>Ref</th>
-                <th style={th}>Due</th>
-                <th style={th}>Status</th>
-                <th style={{ ...th, textAlign: 'right' }}>Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((bill) => {
-                const state = billState(viewOf(bill), today);
-                return (
-                  <tr key={bill.id} onClick={() => onOpen(bill.id)} style={{ cursor: 'pointer', borderTop: '1px solid #EFEAE0' }}>
-                    <td style={td}>{bill.vendor?.name || 'Vendor'}</td>
-                    <td style={td}>{bill.ref || '—'}</td>
-                    <td style={td}>{bill.due_date}{state.daysOverdue > 0 ? ` · ${state.daysOverdue}d late` : ''}</td>
-                    <td style={{ ...td, color: statusColor(state.displayStatus), textTransform: 'capitalize' }}>{state.displayStatus}</td>
-                    <td style={{ ...td, textAlign: 'right' }}>{formatCents(state.balanceCents)}</td>
+      {!loading && !error && bills.length === 0 ? (
+        <PayStage>
+          <PayStart
+            title="No bills yet"
+            detail="A bill is a vendor invoice the treasury has not paid. It stays open until the payments cover it."
+            steps={['Add the vendor if they are not already here.', 'Enter the amount, due date, and category.', 'Pay it from the bill, or propose the transfer from the treasury.']}
+            actionLabel="New bill"
+            onAction={onNew}
+          />
+        </PayStage>
+      ) : !loading && !error ? (
+        <PayStage
+          title="Payables"
+          detail="Status follows the payments recorded on the bill."
+          toolbar={(
+            <PayChips
+              value={filter}
+              onChange={setFilter}
+              options={FILTERS.map((item) => ({ id: item, label: item[0].toUpperCase() + item.slice(1) }))}
+            />
+          )}
+        >
+          {rows.length === 0 ? (
+            <p style={{ margin: 0, padding: '18px 16px', fontSize: '14px', color: '#6B7280' }}>Nothing in this view.</p>
+          ) : (
+            <PayLedger>
+              <thead>
+                <tr>
+                  <th style={deskTh}>Vendor</th>
+                  <th style={deskTh}>Ref</th>
+                  <th style={deskTh}>Due</th>
+                  <th style={deskTh}>Status</th>
+                  <th style={{ ...deskTh, textAlign: 'right' }}>Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ bill, state }) => (
+                  <tr key={bill.id} onClick={() => onOpen(bill.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ ...deskTd, fontWeight: 600 }}>{bill.vendor?.name || 'Vendor'}</td>
+                    <td style={deskTd}>{bill.ref || '—'}</td>
+                    <td style={deskTd}>{bill.due_date}{state.daysOverdue > 0 ? ` · ${state.daysOverdue}d late` : ''}</td>
+                    <td style={deskTd}><PayStatus status={state.displayStatus} /></td>
+                    <td style={{ ...deskTd, textAlign: 'right' }}>{formatCents(state.balanceCents)}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+                ))}
+              </tbody>
+            </PayLedger>
+          )}
+        </PayStage>
+      ) : null}
+    </PayPage>
   );
 }
 
@@ -449,6 +468,7 @@ function BillEditor({
   const [payAccount, setPayAccount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
   const categories = useMemo(() => [...new Set([...EXPENSE_CATEGORIES, category].filter(Boolean))], [category]);
 
   return (
@@ -456,6 +476,20 @@ function BillEditor({
       style={{ ...payCard, display: 'grid', gap: '12px', maxWidth: bill ? '100%' : '720px' }}
       onSubmit={(event) => {
         event.preventDefault();
+        if (!vendorId) {
+          setError(choices.length === 0 ? 'Add a vendor before recording a bill.' : 'Choose a vendor.');
+          return;
+        }
+        const cents = parseUsdCents(amount);
+        if (cents == null || cents <= 0) {
+          setError('Enter an amount greater than zero, with at most two decimals.');
+          return;
+        }
+        const due = dueDate || billDate;
+        if (due < billDate) {
+          setError('The due date cannot be before the bill date.');
+          return;
+        }
         setSaving(true);
         setError(null);
         void savePayBill(treasuryGroupId, wallet, {
@@ -464,7 +498,7 @@ function BillEditor({
           ref,
           amount,
           bill_date: billDate,
-          due_date: dueDate || billDate,
+          due_date: due,
           category,
           account_id: accountId,
           description,
@@ -472,7 +506,10 @@ function BillEditor({
           pay_now: !bill && payNow,
           pay_method: payMethod,
           pay_account_id: payAccount,
-        }).then(onDone).catch((err: unknown) => setError(payablesMessage(err))).finally(() => setSaving(false));
+        }).then(async (id) => {
+          await queryClient.invalidateQueries({ queryKey: ['payBills', treasuryGroupId] });
+          await onDone(id);
+        }).catch((err: unknown) => setError(payablesMessage(err))).finally(() => setSaving(false));
       }}
     >
       {!bill ? <h1 style={payTitle}>New bill</h1> : <h2 style={sectionTitle}>Bill details</h2>}
@@ -482,6 +519,7 @@ function BillEditor({
             <option value="">Select vendor…</option>
             {choices.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
           </select>
+          {choices.length === 0 ? <span style={{ color: '#6B7280' }}>Add a vendor before this bill can be saved.</span> : null}
         </label>
         <label style={payField}>Vendor invoice / ref
           <input style={payInput} value={ref} onChange={(event) => setRef(event.target.value)} />
@@ -551,6 +589,4 @@ function viewOf(bill: PayBill) {
   return { status: bill.status, amountCents: bill.amount_cents, paidCents: paid, dueDate: bill.due_date };
 }
 
-const th = { padding: '8px 8px 8px 0', fontWeight: 600 };
-const td = { padding: '10px 8px 10px 0', color: '#111827' };
 const sectionTitle = { fontSize: '16px', margin: '0 0 8px', color: '#111827' };

@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import NaveEmptyState from '../../components/NaveEmptyState';
 import { useDaoMembership } from '../../hooks/useDaoMembership';
 import {
   fetchPayCustomers,
+  fetchPayInvoices,
   payBooksMessage,
   savePayCustomer,
   type PayCustomer,
 } from '../../lib/pay/booksApi';
+import { formatCents, invoiceState, localToday } from '../../lib/pay/invoiceMath';
+import { PayLedger, PayPage, PayStage, PayStart, payTd, payTh } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
 function pathId(pathname: string): string | null {
@@ -29,6 +31,24 @@ export default function CustomersPage({ treasuryGroupId }: { treasuryGroupId: st
     queryKey: ['payCustomers', treasuryGroupId],
     queryFn: () => fetchPayCustomers(treasuryGroupId, membership.walletStr),
   });
+  const invoices = useQuery({
+    queryKey: ['payInvoices', treasuryGroupId],
+    queryFn: () => fetchPayInvoices(treasuryGroupId, membership.walletStr),
+  });
+  const today = localToday();
+  const openByCustomer = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const invoice of invoices.data ?? []) {
+      const paid = (invoice.payments ?? []).reduce((sum, row) => sum + Number(row.amount_cents || 0), 0);
+      const state = invoiceState(
+        { status: invoice.status, totalCents: invoice.total_cents, paidCents: paid, dueDate: invoice.due_date },
+        today,
+      );
+      if (state.balanceCents <= 0) continue;
+      totals.set(invoice.customer_id, (totals.get(invoice.customer_id) ?? 0) + state.balanceCents);
+    }
+    return totals;
+  }, [invoices.data, today]);
 
   if (creating || editingId) {
     const existing = customers.data?.find((row) => row.id === editingId) ?? null;
@@ -50,51 +70,59 @@ export default function CustomersPage({ treasuryGroupId }: { treasuryGroupId: st
   }
 
   const rows = (customers.data ?? []).filter((row) => !row.archived);
+  const withBalance = rows.filter((row) => (openByCustomer.get(row.id) ?? 0) > 0).length;
+  const missingEmail = rows.filter((row) => !row.email.trim()).length;
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end' }}>
-        <h1 style={payTitle}>Customers</h1>
-        <button type="button" style={payPrimary} onClick={() => navigate('/pay/customers/new')}>New customer</button>
-      </div>
-      <p style={{ ...payBody, margin: '0 0 20px' }}>People and companies this treasury invoices.</p>
+    <PayPage
+      kicker="Collect"
+      title="Customers"
+      purpose="The people and companies this treasury invoices. Open balance is what they still owe."
+      actions={<button type="button" style={payPrimary} onClick={() => navigate('/pay/customers/new')}>New customer</button>}
+      metrics={[
+        { label: 'Customers', value: String(rows.length), detail: 'Active' },
+        { label: 'With a balance', value: String(withBalance), detail: 'Still owe this treasury' },
+        { label: 'Missing email', value: String(missingEmail), detail: 'A link needs an address', tone: missingEmail > 0 ? 'attention' : 'default' },
+      ]}
+    >
       {customers.isLoading ? <p style={payBody}>Loading customers.</p> : null}
       {customers.isError ? <p style={{ ...payBody, color: '#B42318' }}>{payBooksMessage(customers.error)}</p> : null}
       {!customers.isLoading && rows.length === 0 ? (
-        <NaveEmptyState
-          icon="users"
-          title="No customers yet"
-          description="Add a customer before you create an invoice."
-          action={{ label: 'New customer', onClick: () => navigate('/pay/customers/new') }}
-        />
-      ) : (
-        <div style={payCard}>
-          {rows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => navigate(`/pay/customers/${row.id}`)}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                width: '100%',
-                textAlign: 'left',
-                gap: '12px',
-                padding: '12px 0',
-                border: 0,
-                borderTop: '1px solid #EFEAE0',
-                background: 'transparent',
-                cursor: 'pointer',
-              }}
-            >
-              <span style={{ color: '#111827', fontWeight: 600 }}>{row.name}</span>
-              <span style={{ color: '#6B7280', fontSize: '13px' }}>{row.email || 'No email'}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+        <PayStage>
+          <PayStart
+            title="No customers yet"
+            detail="A customer is who the invoice is addressed to. Add them once, then reuse them on every invoice."
+            steps={['Name and email are enough to start.', 'The email is where you send the payment link.', 'Open an invoice for them when you are ready to be paid.']}
+            actionLabel="New customer"
+            onAction={() => navigate('/pay/customers/new')}
+          />
+        </PayStage>
+      ) : !customers.isLoading ? (
+        <PayStage title="Directory" detail="Click a customer to edit their details.">
+          <PayLedger>
+            <thead>
+              <tr>
+                <th style={payTh}>Name</th>
+                <th style={payTh}>Email</th>
+                <th style={{ ...payTh, textAlign: 'right' }}>Open balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const open = openByCustomer.get(row.id) ?? 0;
+                return (
+                  <tr key={row.id} onClick={() => navigate(`/pay/customers/${row.id}`)} style={{ cursor: 'pointer' }}>
+                    <td style={{ ...payTd, fontWeight: 600 }}>{row.name}</td>
+                    <td style={payTd}>{row.email || 'No email'}</td>
+                    <td style={{ ...payTd, textAlign: 'right' }}>{open > 0 ? formatCents(open) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </PayLedger>
+        </PayStage>
+      ) : null}
+    </PayPage>
   );
 }
 

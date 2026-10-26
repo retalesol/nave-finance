@@ -34,7 +34,8 @@ import {
   quickBooksJournalCsv,
   trialBalanceCsv,
 } from '../../lib/pay/glExports';
-import { payBody, payCard, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
+import { PayChips, PayPage } from './PayDesk';
+import { payBody, payCard, payInput, payPrimary, paySecondary } from './payStyles';
 
 type Tab = 'tb' | 'bs' | 'pnl' | 'accounts';
 
@@ -148,32 +149,23 @@ export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: stri
     }
   }
 
-  return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={payTitle}>Reports</h1>
-          <p style={{ ...payBody, marginBottom: '14px' }}>
-            Accrual books from the journal already posted by invoices, bills, cash, and payroll.
-            {lockedThrough ? ` Closed through ${lockedThrough}.` : ' No period is closed.'}
-          </p>
-        </div>
-        <button type="button" style={paySecondary} onClick={() => navigate('/pay/journal/new')}>Journal entry</button>
-      </div>
+  const sheet = loading || error ? null : balanceSheet(accountRows, entryRows, asOf);
+  const pnl = loading || error ? null : profitAndLoss(accountRows, entryRows, from, to);
+  const trial = loading || error ? null : trialBalance(accountRows, entryRows, asOf);
 
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
-            style={{ ...paySecondary, backgroundColor: tab === item.id ? '#111827' : '#fff', color: tab === item.id ? '#fff' : '#111827' }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+  return (
+    <PayPage
+      kicker="Books"
+      title="Reports"
+      purpose={`Accrual statements from the journal already posted by invoices, bills, cash, and payroll. ${lockedThrough ? `Closed through ${lockedThrough}.` : 'No period is closed.'}`}
+      actions={<button type="button" style={paySecondary} onClick={() => navigate('/pay/journal/new')}>Journal entry</button>}
+      metrics={[
+        { label: 'Assets', value: sheet ? formatCents(sheet.totals.asset) : '…', detail: `As of ${asOf}` },
+        { label: 'Net income', value: pnl ? formatCents(pnl.netIncome) : '…', detail: `${from} to ${to}`, tone: pnl && pnl.netIncome < 0 ? 'attention' : 'default' },
+        { label: 'Trial balance', value: trial ? (trial.balanced ? 'Balanced' : 'Out') : '…', detail: trial ? `${formatCents(trial.totalDebit)} debits` : 'Loading', tone: trial && !trial.balanced ? 'attention' : 'good' },
+      ]}
+    >
+      <PayChips value={tab} onChange={setTab} options={TABS} />
 
       {tab === 'pnl' ? (
         <div style={{ display: 'flex', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
@@ -293,7 +285,7 @@ export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: stri
           </tbody>
         </table>
       </section>
-    </div>
+    </PayPage>
   );
 }
 

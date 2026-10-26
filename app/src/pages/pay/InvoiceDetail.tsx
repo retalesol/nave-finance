@@ -16,7 +16,7 @@ import {
   setPayInvoiceStatus,
   type PayInvoice,
 } from '../../lib/pay/booksApi';
-import { invoiceEmailAvailability } from '../../lib/pay/email';
+import { openInvoiceMailto } from '../../lib/pay/email';
 import { invoiceDocumentHtml, printInvoiceDocument } from '../../lib/pay/invoiceDocument';
 import {
   formatCents,
@@ -67,6 +67,7 @@ export default function InvoiceDetail({
     { status: invoice.status, totalCents: invoice.total_cents, paidCents: paid, dueDate: invoice.due_date },
     localToday(),
   );
+  const amountDue = state.displayStatus === 'void' ? 0 : Math.max(0, invoice.total_cents - paid);
   const stored = invoice.addresses ?? [];
   const canonical = snapshot.addresses.find((row) => row.chain === chainFamily)?.address ?? null;
   const payable = choosePayable(chainFamily, stored, canonical);
@@ -110,9 +111,130 @@ export default function InvoiceDetail({
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px' }}>
+        {invoice.status !== 'void' ? (
+          <button type="button" style={paySecondary} onClick={() => navigate(`/pay/invoices/${invoice.id}/edit`)}>Edit</button>
+        ) : null}
+        {invoice.status === 'draft' ? (
+          <button
+            type="button"
+            style={payPrimary}
+            disabled={busy}
+            onClick={() => void run(() => setPayInvoiceStatus(
+              invoice.id,
+              wallet,
+              'sent',
+              invoiceAddressesFor(invoice.invoice_id_hex, snapshot.addresses),
+            ))}
+          >
+            Mark sent
+          </button>
+        ) : null}
+        <button
+          type="button"
+          style={paySecondary}
+          disabled={busy}
+          onClick={() => void run(async () => {
+            const id = await duplicatePayInvoice(invoice.id, wallet, randomInvoiceIdHex());
+            navigate(`/pay/invoices/${id}/edit`);
+          })}
+        >
+          Duplicate
+        </button>
+        <button
+          type="button"
+          style={paySecondary}
+          onClick={() => {
+            try {
+              printInvoiceDocument(invoiceDocumentHtml(invoice, rails));
+              setEmailNote('Print dialog opened. Choose Save as PDF to download it.');
+              setError(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'The invoice could not be printed.');
+            }
+          }}
+        >
+          PDF
+        </button>
+        <button
+          type="button"
+          style={paySecondary}
+          onClick={() => {
+            const opened = openInvoiceMailto({
+              to: invoice.customer?.email || invoice.customer_snapshot?.email || '',
+              number: invoice.number,
+              amount: formatCents(amountDue),
+              dueDate: invoice.due_date,
+              link: `${window.location.origin}${publicPath}`,
+            });
+            setError(null);
+            setEmailNote(opened
+              ? 'Your mail app should open with this invoice.'
+              : 'Add an email on the customer before sending this invoice.');
+          }}
+        >
+          Email
+        </button>
+        <button
+          type="button"
+          style={paySecondary}
+          onClick={() => {
+            const url = `${window.location.origin}${publicPath}`;
+            void navigator.clipboard.writeText(url).then(
+              () => setEmailNote('Payment link copied.'),
+              () => setEmailNote(url),
+            );
+            setError(null);
+          }}
+        >
+          Copy link
+        </button>
+        {invoice.status !== 'void' ? (
+          <button
+            type="button"
+            style={payDanger}
+            disabled={busy || voidReason !== null}
+            title={voidReason ?? ''}
+            onClick={() => {
+              if (voidReason) {
+                setError(voidReason);
+                return;
+              }
+              if (!window.confirm(`Void invoice ${invoice.number}? It stays on record with a zero balance.`)) return;
+              void run(() => setPayInvoiceStatus(invoice.id, wallet, 'void'));
+            }}
+          >
+            Void
+          </button>
+        ) : (
+          <button type="button" style={paySecondary} disabled={busy} onClick={() => void run(() => setPayInvoiceStatus(invoice.id, wallet, 'reopen'))}>
+            Reopen
+          </button>
+        )}
+        {invoice.status === 'draft' ? (
+          <button
+            type="button"
+            style={payDanger}
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(`Delete draft ${invoice.number}?`)) return;
+              void run(async () => {
+                await deletePayInvoice(invoice.id, wallet);
+                navigate('/pay/invoices');
+              });
+            }}
+          >
+            Delete draft
+          </button>
+        ) : null}
+        <button type="button" style={paySecondary} onClick={() => navigate('/pay/invoices')}>All invoices</button>
+      </div>
+      {error ? <p style={{ ...payBody, color: '#B42318', marginTop: '12px' }}>{error}</p> : null}
+      {emailNote ? <p style={{ ...payBody, marginTop: '12px' }}>{emailNote}</p> : null}
+
       <section style={{ ...payCard, marginTop: '18px', maxWidth: '720px' }}>
         <div className="nave-label" style={{ marginBottom: '8px' }}>Amount due</div>
-        <div style={{ fontSize: '28px', color: '#111827' }}>{formatCents(state.balanceCents)}</div>
+        <div style={{ fontSize: '28px', color: '#111827' }}>{formatCents(amountDue)}</div>
         <p style={{ ...payBody, marginTop: '6px' }}>
           Total {formatCents(invoice.total_cents)} · Paid {formatCents(paid)}
           {invoice.discount_cents ? ` · Discount ${formatCents(invoice.discount_cents)}` : ''}
@@ -257,94 +379,6 @@ export default function InvoiceDetail({
           </button>
         </section>
       ) : null}
-
-      {error ? <p style={{ ...payBody, color: '#B42318', marginTop: '12px' }}>{error}</p> : null}
-      {emailNote ? <p style={{ ...payBody, marginTop: '12px' }}>{emailNote}</p> : null}
-
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px' }}>
-        {invoice.status !== 'void' ? (
-          <button type="button" style={paySecondary} onClick={() => navigate(`/pay/invoices/${invoice.id}/edit`)}>Edit</button>
-        ) : null}
-        {invoice.status === 'draft' ? (
-          <button
-            type="button"
-            style={payPrimary}
-            disabled={busy}
-            onClick={() => void run(() => setPayInvoiceStatus(
-              invoice.id,
-              wallet,
-              'sent',
-              invoiceAddressesFor(invoice.invoice_id_hex, snapshot.addresses),
-            ))}
-          >
-            Mark sent
-          </button>
-        ) : null}
-        <button
-          type="button"
-          style={paySecondary}
-          disabled={busy}
-          onClick={() => void run(async () => {
-            const id = await duplicatePayInvoice(invoice.id, wallet, randomInvoiceIdHex());
-            navigate(`/pay/invoices/${id}/edit`);
-          })}
-        >
-          Duplicate
-        </button>
-        <button
-          type="button"
-          style={paySecondary}
-          onClick={() => printInvoiceDocument(invoiceDocumentHtml(invoice, rails))}
-        >
-          PDF
-        </button>
-        <button
-          type="button"
-          style={paySecondary}
-          onClick={() => setEmailNote(invoiceEmailAvailability().reason)}
-        >
-          Email
-        </button>
-        {invoice.status !== 'void' ? (
-          <button
-            type="button"
-            style={payDanger}
-            disabled={busy || voidReason !== null}
-            title={voidReason ?? ''}
-            onClick={() => {
-              if (voidReason) {
-                setError(voidReason);
-                return;
-              }
-              if (!window.confirm(`Void invoice ${invoice.number}? It stays on record with a zero balance.`)) return;
-              void run(() => setPayInvoiceStatus(invoice.id, wallet, 'void'));
-            }}
-          >
-            Void
-          </button>
-        ) : (
-          <button type="button" style={paySecondary} disabled={busy} onClick={() => void run(() => setPayInvoiceStatus(invoice.id, wallet, 'reopen'))}>
-            Reopen
-          </button>
-        )}
-        {invoice.status === 'draft' ? (
-          <button
-            type="button"
-            style={payDanger}
-            disabled={busy}
-            onClick={() => {
-              if (!window.confirm(`Delete draft ${invoice.number}?`)) return;
-              void run(async () => {
-                await deletePayInvoice(invoice.id, wallet);
-                navigate('/pay/invoices');
-              });
-            }}
-          >
-            Delete draft
-          </button>
-        ) : null}
-        <button type="button" style={paySecondary} onClick={() => navigate('/pay/invoices')}>All invoices</button>
-      </div>
     </div>
   );
 }

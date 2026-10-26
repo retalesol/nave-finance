@@ -145,4 +145,6 @@ test('activity text and proposal matching leave tax ids out', () => {
   assert.equal(/pay_activity_add\([\s\S]{0,240}tax_id/.test(sql), false);
   const sync = sql.split('FUNCTION public.pay_sync_payable_journals')[1]?.split('CREATE OR REPLACE FUNCTION')[0] ?? '';
   assert.equal(sync.includes('tax_id'), false);
+  const api = readFileSync(new URL('../../src/lib/pay/payablesApi.ts', import.meta.url), 'utf8');
+  assert.equal(api.includes('pay_bill_payments!pay_bill_payments_bill_id_fkey'), true);
 });

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import NaveEmptyState from '../../components/NaveEmptyState';
 import { useDaoMembership } from '../../hooks/useDaoMembership';
 import {
   deletePayVendor,
@@ -15,6 +14,7 @@ import {
 } from '../../lib/pay/payablesApi';
 import { vendorYearCashCents, type VendorCashPayment } from '../../lib/pay/payables';
 import { formatCents, localToday } from '../../lib/pay/invoiceMath';
+import { PayLedger, PayPage, PayStage, PayStart, payTd, payTh } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
 function pathId(pathname: string): string | null {
@@ -73,50 +73,59 @@ export default function VendorsPage({ treasuryGroupId }: { treasuryGroupId: stri
     })),
   ];
   const rows = (vendors.data ?? []).filter((row) => !row.archived);
+  const paidByVendor = rows.map((row) => ({ row, paid: vendorYearCashCents(payments, row.id, year) }));
+  const yearPaid = paidByVendor.reduce((sum, item) => sum + item.paid, 0);
+  const form1099 = rows.filter((row) => row.is_1099).length;
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end' }}>
-        <h1 style={payTitle}>Vendors</h1>
-        <button type="button" style={payPrimary} onClick={() => navigate('/pay/vendors/new')}>New vendor</button>
-      </div>
-      <p style={{ ...payBody, margin: '0 0 20px' }}>
-        People and companies this treasury pays. {year} totals are cash paid, excluding card and payment-app methods.
-      </p>
+    <PayPage
+      kicker="Pay"
+      title="Vendors"
+      purpose={`People and companies this treasury pays. ${year} totals are cash paid, excluding card and payment-app methods.`}
+      actions={<button type="button" style={payPrimary} onClick={() => navigate('/pay/vendors/new')}>New vendor</button>}
+      metrics={[
+        { label: 'Vendors', value: String(rows.length), detail: 'Active' },
+        { label: `${year} paid`, value: formatCents(yearPaid), detail: 'Cash methods only' },
+        { label: '1099', value: String(form1099), detail: 'Marked for a form' },
+      ]}
+    >
       {vendors.isLoading ? <p style={payBody}>Loading vendors.</p> : null}
       {vendors.isError ? <p style={{ ...payBody, color: '#B42318' }}>{payablesMessage(vendors.error)}</p> : null}
       {!vendors.isLoading && rows.length === 0 ? (
-        <NaveEmptyState
-          icon="store"
-          title="No vendors yet"
-          description="Add a vendor before you record a bill."
-          action={{ label: 'New vendor', onClick: () => navigate('/pay/vendors/new') }}
-        />
-      ) : (
-        <div style={payCard}>
-          {rows.map((row) => {
-            const paid = vendorYearCashCents(payments, row.id, year);
-            return (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => navigate(`/pay/vendors/${row.id}`)}
-                style={rowButton}
-              >
-                <span>
-                  <span style={{ color: '#111827', fontWeight: 600 }}>{row.name}</span>
-                  {row.is_1099 ? <span style={badge}>1099-{row.form_1099 || 'NEC'}</span> : null}
-                </span>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>
-                  {paid > 0 ? `${formatCents(paid)} in ${year}` : row.email || 'No email'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+        <PayStage>
+          <PayStart
+            title="No vendors yet"
+            detail="A vendor is who a bill is paid to. Add them before you record what the treasury owes."
+            steps={['Name and payment address are the useful parts.', 'Mark 1099 vendors so year-end cash totals stay with the right form.', 'Open a bill when an invoice arrives.']}
+            actionLabel="New vendor"
+            onAction={() => navigate('/pay/vendors/new')}
+          />
+        </PayStage>
+      ) : !vendors.isLoading ? (
+        <PayStage title="Directory" detail="Click a vendor to edit how they are paid.">
+          <PayLedger>
+            <thead>
+              <tr>
+                <th style={payTh}>Name</th>
+                <th style={payTh}>Email</th>
+                <th style={payTh}>Form</th>
+                <th style={{ ...payTh, textAlign: 'right' }}>{year} cash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paidByVendor.map(({ row, paid }) => (
+                <tr key={row.id} onClick={() => navigate(`/pay/vendors/${row.id}`)} style={{ cursor: 'pointer' }}>
+                  <td style={{ ...payTd, fontWeight: 600 }}>{row.name}</td>
+                  <td style={payTd}>{row.email || '—'}</td>
+                  <td style={payTd}>{row.is_1099 ? `1099-${row.form_1099 || 'NEC'}` : '—'}</td>
+                  <td style={{ ...payTd, textAlign: 'right' }}>{paid > 0 ? formatCents(paid) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PayLedger>
+        </PayStage>
+      ) : null}
+    </PayPage>
   );
 }
 
@@ -328,25 +337,3 @@ function VendorFields({
     </div>
   );
 }
-
-const rowButton = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  width: '100%',
-  textAlign: 'left' as const,
-  gap: '12px',
-  padding: '12px 0',
-  border: 0,
-  borderTop: '1px solid #EFEAE0',
-  background: 'transparent',
-  cursor: 'pointer',
-  alignItems: 'center',
-};
-
-const badge = {
-  marginLeft: '8px',
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.04em',
-  color: '#92400E',
-};

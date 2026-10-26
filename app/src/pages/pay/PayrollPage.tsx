@@ -36,6 +36,7 @@ import {
 } from '../../lib/pay/payrollCalc';
 import { payrollFilings } from '../../lib/pay/payrollFilings';
 import { offerCanonical, onboardingChecklist, renderOffer, type OfferTerms } from '../../lib/pay/payrollOffer';
+import { PayChips, PayPage } from './PayDesk';
 import { payBody, payCard, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
 const TABS = [
@@ -63,28 +64,26 @@ export default function PayrollPage({ treasuryGroupId }: { treasuryGroupId: stri
     queryFn: () => fetchPayrollBundle(treasuryGroupId, membership.walletStr),
   });
 
+  const activePeople = (bundle.data?.employees ?? []).filter((person) => person.status === 'active').length;
+  const openRuns = (bundle.data?.runs ?? []).filter((run) => run.status !== 'void' && run.status !== 'approved').length;
+  const tab = TABS.find((item) => (item.path === '/pay/payroll' ? area === 'runs' : path.startsWith(item.path)))?.path ?? '/pay/payroll';
+
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <h1 style={payTitle}>Payroll</h1>
-      <p style={{ ...payBody, marginBottom: '16px' }}>
-        Wages, withholding, and net pay are recorded in the books. Nave Pay does not send ACH or move money.
-      </p>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', flexWrap: 'wrap' }}>
-        {TABS.map((tab) => {
-          const selected = tab.path === '/pay/payroll' ? area === 'runs' : path.startsWith(tab.path);
-          return (
-            <button
-              key={tab.path}
-              type="button"
-              onClick={() => navigate(tab.path)}
-              style={selected ? payPrimary : paySecondary}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+    <PayPage
+      kicker="Pay"
+      title="Payroll"
+      purpose="Record wages, withholding, and net pay. Approving a run posts a journal entry. Nave Pay does not send ACH or move money."
+      metrics={[
+        { label: 'Active people', value: bundle.data ? String(activePeople) : '…', detail: 'W-2 and 1099' },
+        { label: 'Open runs', value: bundle.data ? String(openRuns) : '…', detail: 'Not yet approved' },
+        { label: 'Runs on file', value: bundle.data ? String(bundle.data.runs.length) : '…', detail: 'Including void' },
+      ]}
+    >
+      <PayChips
+        value={tab}
+        onChange={(next) => navigate(next)}
+        options={TABS.map((item) => ({ id: item.path, label: item.label }))}
+      />
       {bundle.isLoading ? <p style={payBody}>Loading payroll.</p> : null}
       {bundle.isError ? <p style={{ ...payBody, color: '#B42318' }}>{payrollMessage(bundle.error)}</p> : null}
       {bundle.data && area === 'runs' ? (
@@ -115,7 +114,7 @@ export default function PayrollPage({ treasuryGroupId }: { treasuryGroupId: stri
         />
       ) : null}
       {bundle.data && area === 'filings' ? <Filings data={bundle.data} /> : null}
-    </div>
+    </PayPage>
   );
 }
 

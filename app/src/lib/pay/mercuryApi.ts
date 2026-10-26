@@ -254,7 +254,7 @@ export async function fetchMatchBooks(treasuryGroupId: string, wallet: string | 
     ? { data: [], error: billsQuery.error }
     : await supabase
       .from('pay_bill_payments')
-      .select('id, bill_id, amount_cents, paid_on, bill:pay_bills(vendor:pay_vendors(name))')
+      .select('id, bill_id, amount_cents, paid_on, bill:pay_bills!pay_bill_payments_bill_id_fkey(vendor:pay_vendors(name))')
       .eq('treasury_group_id', treasuryGroupId);
   const cashQuery = await supabase
     .from('pay_cash_entries')

@@ -128,6 +128,7 @@ export function payablesMessage(error: unknown): string {
   if (message.includes('amount_required') || message.includes('invalid_amount') || message.includes('amount_negative')) {
     return 'Enter an amount greater than zero, with at most two decimals.';
   }
+  if (message.includes('chart_missing')) return 'The chart of accounts is missing for this treasury. Turn Pay on again before saving a bill.';
   if (message.includes('invalid_date')) return 'Enter a valid date.';
   if (message.includes('not_authorized')) return 'This wallet cannot change the books for this treasury.';
   if (!message) return 'The books could not be saved.';
@@ -204,7 +205,7 @@ function normalizeBill(row: Record<string, unknown>): PayBill {
   };
 }
 
-const BILL_SELECT = `id, treasury_group_id, vendor_id, ref, bill_date, due_date, category, description, amount_cents, status, notes, account_id, proposal_dao, proposal_index, proposal_chain, proposal_amount_cents, proposal_recipient, proposal_payment_id, vendor:pay_vendors(name, payment_address), payments:pay_bill_payments(id, paid_on, amount_cents, method, reference, notes, cash_account_id)`;
+const BILL_SELECT = `id, treasury_group_id, vendor_id, ref, bill_date, due_date, category, description, amount_cents, status, notes, account_id, proposal_dao, proposal_index, proposal_chain, proposal_amount_cents, proposal_recipient, proposal_payment_id, vendor:pay_vendors(name, payment_address), payments:pay_bill_payments!pay_bill_payments_bill_id_fkey(id, paid_on, amount_cents, method, reference, notes, cash_account_id)`;
 
 export async function fetchPayBills(treasuryGroupId: string, wallet: string | null): Promise<PayBill[]> {
   setSupabaseWalletAddress(wallet);

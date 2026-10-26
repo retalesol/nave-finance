@@ -23,6 +23,7 @@ import CashLedgerPage from './CashLedgerPage';
 import CustomersPage from './CustomersPage';
 import InvoicesPage from './InvoicesPage';
 import JournalPage from './JournalPage';
+import { PayPage, PayWork } from './PayDesk';
 import PayHome from './PayHome';
 import PayNetworkBar from './PayNetworkBar';
 import PayNotBuilt from './PayNotBuilt';
@@ -143,22 +144,25 @@ export default function PaySection() {
   if (!enabled) {
     const daoName = dao?.name && dao.name !== 'Unknown DAO' ? dao.name : 'this treasury';
     return (
-      <PayFrame label="Nave Pay" title="Turn on books for this treasury.">
-        <p style={bodyStyle}>
-          Turning Pay on creates books for {daoName}. The company legal name starts as {daoName}. Address and EIN stay blank until they are filled in later.
-        </p>
-        <p style={{ ...bodyStyle, marginTop: '12px' }}>
-          The treasury wallet becomes the primary account, on Digital assets (1200). Nave Pay is $49 a month after the books are created. Mercury can be connected later.
-        </p>
+      <PayPage
+        kicker="Nave Pay"
+        title="Turn on books for this treasury."
+        purpose={`This creates one set of books for ${daoName}. The legal name starts as ${daoName}. Address and EIN stay blank until you fill them in. $49 a month after the books exist.`}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          <PayWork title="Collect" detail="Invoice customers and get paid in USDC to the treasury." action="Invoices" />
+          <PayWork title="Pay" detail="Record vendor bills, then propose the payment." action="Bills" />
+          <PayWork title="Close" detail="Cash, journal, payroll, and reports stay with the treasury." action="Books" />
+        </div>
         {isMock && (
-          <p style={{ ...bodyStyle, marginTop: '12px' }}>
+          <p style={bodyStyle}>
             This demo treasury is not in the registry, so Pay cannot be turned on here.
           </p>
         )}
         {turnOnError && (
-          <p style={{ ...bodyStyle, marginTop: '12px', color: '#B42318' }}>{turnOnError}</p>
+          <p style={{ ...bodyStyle, color: '#B42318' }}>{turnOnError}</p>
         )}
-        <div style={{ marginTop: '22px' }}>
+        <div>
           {canTurnOn && !isMock ? (
             <button
               type="button"
@@ -199,7 +203,7 @@ export default function PaySection() {
             </p>
           )}
         </div>
-      </PayFrame>
+      </PayPage>
     );
   }
 

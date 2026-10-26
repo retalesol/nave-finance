@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import NaveEmptyState from '../../components/NaveEmptyState';
 import { useDaoMembership } from '../../hooks/useDaoMembership';
 import { formatCents, localToday } from '../../lib/pay/invoiceMath';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_METHODS, centsToInput } from '../../lib/pay/payables';
@@ -15,6 +14,7 @@ import {
   type PayCashEntry,
   type PayChartAccount,
 } from '../../lib/pay/payablesApi';
+import { PayLedger, PayPage, PayStage, PayStart, payTd, payTh } from './PayDesk';
 import { payBody, payCard, payDanger, payField, payInput, payPrimary, paySecondary, payTitle } from './payStyles';
 
 const CASH_SUBTYPES = new Set(['bank', 'cash', 'credit_card', 'digital_asset']);
@@ -71,45 +71,63 @@ export default function TransactionsPage({ treasuryGroupId }: { treasuryGroupId:
   const moneyOut = rows.filter((row) => row.direction === 'out').reduce((sum, row) => sum + row.amount_cents, 0);
 
   return (
-    <div className="animate-fade-in">
-      <div className="nave-label" style={{ marginBottom: '10px' }}>Nave Pay</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <h1 style={payTitle}>Deposits & expenses</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+    <PayPage
+      kicker="Record"
+      title="Deposits & expenses"
+      purpose="Money in or out that is not an invoice payment or a bill payment."
+      actions={(
+        <>
           <button type="button" style={paySecondary} onClick={() => navigate('/pay/transactions/new?direction=out')}>Expense</button>
           <button type="button" style={payPrimary} onClick={() => navigate('/pay/transactions/new?direction=in')}>Deposit</button>
-        </div>
-      </div>
-      <p style={{ ...payBody, margin: '0 0 16px' }}>
-        Money in or out that is not an invoice payment or a bill payment.
-        {rows.length > 0 ? ` In ${formatCents(moneyIn)} · out ${formatCents(moneyOut)}.` : ''}
-      </p>
+        </>
+      )}
+      metrics={[
+        { label: 'In', value: formatCents(moneyIn), detail: 'Deposits', tone: moneyIn > 0 ? 'good' : 'default' },
+        { label: 'Out', value: formatCents(moneyOut), detail: 'Expenses', tone: moneyOut > 0 ? 'attention' : 'default' },
+        { label: 'Net', value: formatCents(moneyIn - moneyOut), detail: `${rows.length} entries` },
+      ]}
+    >
       {entries.isLoading ? <p style={payBody}>Loading entries.</p> : null}
       {entries.isError ? <p style={{ ...payBody, color: '#B42318' }}>{payablesMessage(entries.error)}</p> : null}
       {!entries.isLoading && rows.length === 0 ? (
-        <NaveEmptyState
-          icon="right-left"
-          title="No deposits or expenses"
-          description="Use a deposit for grants or other income, and an expense for a cost paid without a bill."
-          action={{ label: 'New deposit', onClick: () => navigate('/pay/transactions/new?direction=in') }}
-        />
-      ) : (
-        <div style={payCard}>
-          {rows.map((row) => (
-            <button key={row.id} type="button" onClick={() => navigate(`/pay/transactions/${row.id}`)} style={rowButton}>
-              <span>
-                <strong style={{ color: '#111827' }}>{row.direction === 'in' ? 'Deposit' : 'Expense'}</strong>
-                <span style={{ color: '#6B7280' }}> · {row.entry_date} · {row.category || 'Uncategorized'}</span>
-                <div style={{ color: '#6B7280', fontSize: '13px' }}>{row.vendor?.name || row.counterparty || row.memo || '—'}</div>
-              </span>
-              <span style={{ color: row.direction === 'in' ? '#166534' : '#B42318', fontWeight: 600 }}>
-                {row.direction === 'out' ? '−' : ''}{formatCents(row.amount_cents)}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+        <PayStage>
+          <PayStart
+            title="No deposits or expenses"
+            detail="Use this when money moves and there is no invoice or bill to hang it on."
+            steps={['A deposit is a grant, refund, or other income.', 'An expense is a cost paid without a vendor bill.', 'Both post to the cash ledger and the journal.']}
+            actionLabel="New deposit"
+            onAction={() => navigate('/pay/transactions/new?direction=in')}
+          />
+        </PayStage>
+      ) : !entries.isLoading ? (
+        <PayStage title="Entries" detail="Newest stay in the order they were loaded.">
+          <PayLedger>
+            <thead>
+              <tr>
+                <th style={payTh}>Date</th>
+                <th style={payTh}>Type</th>
+                <th style={payTh}>Who</th>
+                <th style={payTh}>Category</th>
+                <th style={{ ...payTh, textAlign: 'right' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} onClick={() => navigate(`/pay/transactions/${row.id}`)} style={{ cursor: 'pointer' }}>
+                  <td style={payTd}>{row.entry_date}</td>
+                  <td style={{ ...payTd, fontWeight: 600 }}>{row.direction === 'in' ? 'Deposit' : 'Expense'}</td>
+                  <td style={payTd}>{row.vendor?.name || row.counterparty || row.memo || '—'}</td>
+                  <td style={payTd}>{row.category || 'Uncategorized'}</td>
+                  <td style={{ ...payTd, textAlign: 'right', color: row.direction === 'in' ? '#166534' : '#B42318', fontWeight: 600 }}>
+                    {row.direction === 'out' ? '−' : ''}{formatCents(row.amount_cents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </PayLedger>
+        </PayStage>
+      ) : null}
+    </PayPage>
   );
 }
 
@@ -249,17 +267,3 @@ function CashForm({
     </div>
   );
 }
-
-const rowButton = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  width: '100%',
-  textAlign: 'left' as const,
-  gap: '12px',
-  padding: '12px 0',
-  border: 0,
-  borderTop: '1px solid #EFEAE0',
-  background: 'transparent',
-  cursor: 'pointer',
-  alignItems: 'center',
-};
