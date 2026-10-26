@@ -88,6 +88,28 @@ async function recordAttempt(
   return !error;
 }
 
+async function refreshSolPrice(supabase: SupabaseClient): Promise<void> {
+  const { data } = await supabase
+    .from("price_cache")
+    .select("updated_at")
+    .eq("symbol", "solana")
+    .maybeSingle();
+  const updated = data?.updated_at ? Date.parse(data.updated_at) : 0;
+  if (Number.isFinite(updated) && Date.now() - updated < 10 * 60 * 1000) return;
+  try {
+    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd");
+    const json = await response.json();
+    const price = Number(json?.solana?.usd);
+    if (!Number.isFinite(price) || price <= 0) return;
+    await supabase.from("price_cache").upsert(
+      { symbol: "solana", price_usd: price, updated_at: new Date().toISOString() },
+      { onConflict: "symbol" },
+    );
+  } catch (error) {
+    console.error("[compass] sol price", error instanceof Error ? error.message : "fetch failed");
+  }
+}
+
 async function requireSession(
   req: Request,
   supabase: SupabaseClient,
@@ -211,6 +233,10 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
+  if (action === "overview" || action === "treasuries" || action === "treasury") {
+    await refreshSolPrice(supabase);
+  }
+
   if (action === "overview") {
     const { data, error } = await supabase.rpc("compass_overview");
     if (error) {
@@ -278,7 +304,7 @@ Deno.serve(async (req) => {
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!UUID.test(groupId)) return json({ error: "unknown_treasury" }, 404);
     if (term !== 1 && term !== 3 && term !== 12) return json({ error: "invalid_term" }, 400);
-    if (reason.length < 12 || reason.length > 500) return json({ error: "invalid_reason" }, 400);
+    if (reason.length < 1 || reason.length > 500) return json({ error: "invalid_reason" }, 400);
     const { data, error } = await supabase.rpc("compass_grant_pay_subscription", {
       p_treasury_group_id: groupId,
       p_term: term,

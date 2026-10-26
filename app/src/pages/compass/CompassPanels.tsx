@@ -82,7 +82,7 @@ export function OverviewPanel({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
         <Stat label="Treasury groups" value={formatCount(data.treasuries.groups)} detail={`${formatCount(data.treasuries.deployments)} chain deployments`} />
         <Stat label="Private groups" value={formatCount(data.treasuries.private_groups)} detail={`${formatCount(data.treasuries.created_7d)} new in 7 days`} />
-        <Stat label="Snapshotted value" value={formatUsd(data.snapshotted_value_usd)} detail="Latest snapshot per deployment" />
+        <Stat label="Snapshotted value" value={formatUsd(data.snapshotted_value_usd)} detail="Devnet SOL is marked at the mainnet price" />
         <Stat label="Chain events" value={formatCount(data.activity_24h)} detail={`${formatCount(data.activity_7d)} in 7 days`} />
         <Stat label="Nave Pay enabled" value={formatCount(data.pay.enabled)} detail={`${formatCount(subs.active)} active subscriptions`} />
         <Stat label="Paid catalog" value={formatCents(data.pay.collected_cents)} detail="Active wallet and treasury terms" />
@@ -258,6 +258,9 @@ export function TreasuriesPanel({
               ))}
             </tbody>
           </table>
+          <p style={{ margin: '8px 0 0', color: 'hsl(var(--muted-foreground))', fontSize: '12px' }}>
+            A Solana balance with no stored dollar total is marked at the mainnet SOL price, including devnet SOL. USDC stays at one dollar.
+          </p>
         </div>
       ) : null}
       {selectedId ? (
@@ -399,7 +402,6 @@ function GrantForm({
   const queryClient = useQueryClient();
   const [term, setTerm] = useState<PayTermMonths | null>(null);
   const [reason, setReason] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<CompassGrant | null>(null);
   const mutation = useMutation({
     mutationFn: () => compassRequest<CompassGrant>(session, 'grant_subscription', {
@@ -410,7 +412,6 @@ function GrantForm({
     onSuccess: async (grant) => {
       setResult(grant);
       setReason('');
-      setConfirmed(false);
       await queryClient.invalidateQueries({ queryKey: ['compass'] });
     },
     onError: (error) => {
@@ -420,12 +421,12 @@ function GrantForm({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!term || reason.trim().length < 12 || !confirmed) return;
+    if (!term || reason.trim().length < 1) return;
     setResult(null);
     mutation.mutate();
   }
 
-  const ready = term !== null && reason.trim().length >= 12 && confirmed && !mutation.isPending;
+  const ready = term !== null && reason.trim().length >= 1 && !mutation.isPending;
 
   return (
     <form onSubmit={submit} style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '16px', display: 'grid', gap: '12px' }}>
@@ -460,20 +461,20 @@ function GrantForm({
           maxLength={500}
           rows={3}
           required
-          minLength={12}
           placeholder="Why this treasury is being granted a term"
           style={{ ...inputStyle, marginTop: '6px', resize: 'vertical' }}
           className="compass-input"
         />
       </label>
-      <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '14px' }}>
-        <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-        <span>Record this as an operator grant, not a customer payment.</span>
-      </label>
       <div>
         <button type="submit" disabled={!ready} className="compass-button" style={{ ...buttonStyle, opacity: ready ? 1 : 0.45, cursor: ready ? 'pointer' : 'not-allowed' }}>
           {mutation.isPending ? 'Recording grant' : 'Add subscription'}
         </button>
+        {ready ? null : (
+          <p style={{ margin: '8px 0 0', color: 'hsl(var(--muted-foreground))', fontSize: '12px' }}>
+            Choose a term and write a reason. The button turns on after both.
+          </p>
+        )}
       </div>
       {mutation.isError ? <Notice>{explainCompassError(mutation.error)}</Notice> : null}
       {result ? (

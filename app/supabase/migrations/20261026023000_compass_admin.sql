@@ -127,6 +127,29 @@ AS $$
   SELECT left(regexp_replace(coalesce(p_text, ''), '[[:cntrl:]]', '', 'g'), greatest(coalesce(p_len, 0), 0));
 $$;
 
+-- Devnet SOL is still SOL. When a snapshot stored no dollar total, mark the
+-- native balance at the cached mainnet SOL/USD price and keep USDC at $1.
+CREATE OR REPLACE FUNCTION public.compass_marked_usd(
+  p_chain text,
+  p_total numeric,
+  p_sol numeric,
+  p_usdc numeric
+)
+RETURNS numeric
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT CASE
+    WHEN coalesce(p_chain, 'solana') = 'solana' THEN greatest(
+      coalesce(p_total, 0),
+      coalesce(p_sol, 0) * coalesce((SELECT price_usd FROM public.price_cache WHERE symbol = 'solana'), 0)
+        + coalesce(p_usdc, 0)
+    )
+    ELSE coalesce(p_total, 0)
+  END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.compass_subscription_state(
   p_end timestamptz,
   p_purged timestamptz
@@ -197,9 +220,10 @@ BEGIN
     GROUP BY status
   ),
   aum AS (
-    SELECT coalesce(sum(total_value_usd), 0) AS value
+    SELECT coalesce(sum(public.compass_marked_usd(chain, total_value_usd, sol_balance, usdc_balance)), 0) AS value
     FROM (
-      SELECT DISTINCT ON (dao_onchain_address, chain_id) total_value_usd
+      SELECT DISTINCT ON (dao_onchain_address, chain_id)
+        chain, total_value_usd, sol_balance, usdc_balance
       FROM public.treasury_snapshots
       ORDER BY dao_onchain_address, chain_id, snapshot_at DESC
     ) latest
@@ -364,11 +388,14 @@ BEGIN
     LEFT JOIN public.pay_subscriptions s ON s.treasury_group_id = p.treasury_group_id
     LEFT JOIN LATERAL (
       SELECT
-        CASE WHEN count(*) = 0 THEN NULL ELSE coalesce(sum(v.total_value_usd), 0)::text END AS latest_value_usd,
+        CASE WHEN count(*) = 0 THEN NULL ELSE coalesce(sum(public.compass_marked_usd(v.chain, v.total_value_usd, v.sol_balance, v.usdc_balance)), 0)::text END AS latest_value_usd,
         max(v.snapshot_at) AS snapshot_at
       FROM (
         SELECT DISTINCT ON (t.dao_onchain_address, t.chain_id)
+          t.chain,
           t.total_value_usd,
+          t.sol_balance,
+          t.usdc_balance,
           t.snapshot_at
         FROM public.treasury_snapshots t
         JOIN public.dao_registry d
@@ -483,7 +510,7 @@ BEGIN
         'chain', v.chain,
         'chain_id', v.chain_id,
         'dao_onchain_address', v.dao_onchain_address,
-        'total_value_usd', v.total_value_usd::text,
+        'total_value_usd', public.compass_marked_usd(v.chain, v.total_value_usd, v.sol_balance, v.usdc_balance)::text,
         'sol_balance', v.sol_balance::text,
         'usdc_balance', v.usdc_balance::text,
         'snapshot_at', v.snapshot_at,
@@ -778,7 +805,7 @@ BEGIN
   IF price IS NULL THEN
     RAISE EXCEPTION 'invalid_term' USING ERRCODE = '22023';
   END IF;
-  IF reason IS NULL OR char_length(reason) < 12 THEN
+  IF reason IS NULL OR char_length(reason) < 1 THEN
     RAISE EXCEPTION 'invalid_reason' USING ERRCODE = '22023';
   END IF;
 
@@ -869,6 +896,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public.compass_require_service() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.compass_clip(text, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.compass_marked_usd(text, numeric, numeric, numeric) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.compass_subscription_state(timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.compass_overview() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.compass_treasuries(text, integer) FROM PUBLIC, anon, authenticated;
@@ -879,6 +907,7 @@ REVOKE ALL ON FUNCTION public.compass_grant_pay_subscription(uuid, integer, text
 
 GRANT EXECUTE ON FUNCTION public.compass_require_service() TO service_role;
 GRANT EXECUTE ON FUNCTION public.compass_clip(text, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.compass_marked_usd(text, numeric, numeric, numeric) TO service_role;
 GRANT EXECUTE ON FUNCTION public.compass_subscription_state(timestamptz, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.compass_overview() TO service_role;
 GRANT EXECUTE ON FUNCTION public.compass_treasuries(text, integer) TO service_role;

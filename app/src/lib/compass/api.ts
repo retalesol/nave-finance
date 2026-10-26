@@ -252,7 +252,7 @@ export function explainCompassError(error: unknown): string {
   }
   if (error.code === 'compass_not_configured') return 'Compass is not configured on the server yet.';
   if (error.code === 'invalid_credentials' || error.code === 'unauthorized') return 'Those credentials were not accepted.';
-  if (error.code === 'invalid_reason') return 'Write a reason of at least 12 characters.';
+  if (error.code === 'invalid_reason') return 'Write a short reason for the grant.';
   if (error.code === 'invalid_term') return 'Choose a 1, 3, or 12 month term.';
   if (error.code === 'unknown_treasury') return 'That treasury is not in the registry.';
   if (error.code === 'network') return 'Compass could not be reached.';
