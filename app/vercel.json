@@ -1,5 +1,15 @@
 {
   "framework": "vite",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!demo\\.html$).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!demo\\.html$).*)", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "/compass",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
+  ]
 }

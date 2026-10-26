@@ -33,7 +33,7 @@ const DEV_ALLOW_ALL_ORIGINS =
 const BASE_CORS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, X-Client-Info, Apikey, X-Agent-Secret, X-Indexer-Secret, X-Policy-Secret, X-Proposer-Secret, X-Wallet-Address, X-Break-Glass-Secret",
+    "Content-Type, Authorization, X-Client-Info, Apikey, X-Agent-Secret, X-Indexer-Secret, X-Policy-Secret, X-Proposer-Secret, X-Wallet-Address, X-Break-Glass-Secret, X-Compass-Session",
   Vary: "Origin",
 };
 

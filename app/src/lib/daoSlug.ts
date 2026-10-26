@@ -24,6 +24,7 @@ export const RESERVED_DAO_SLUGS = new Set([
   'docs',
   'static',
   'assets',
+  'compass',
 ]);
 
 const SLUG_PATTERN = /^[a-z][a-z0-9-]{2,31}$/;

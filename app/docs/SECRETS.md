@@ -24,6 +24,7 @@ server-side secret provisioned in the relevant runtime's secret store.
 | `BRIDGE_EVM_MINTER_PRIVATE_KEY` | EVM EOA private key | Signer env (Railway) only | Mints/burns WrappedNAVE on `/bridge-relay` |
 | `FAUCET_WALLET_SECRET` | Solana keypair | Signer env (Railway) only | Sends devnet NAVE on `/faucet-claim` and devnet SOL on `/faucet-claim-sol`; dedicated wallet, separate from bridge custody and any deploy/ops wallet |
 | `NAVE_GENLAYER_SIGNER_KEY` | GenLayer EOA private key | Supabase edge secrets only | Submits `open_case`, `review_venue`, and `open_appeal`. Holds no Nave treasury authority |
+| `COMPASS_ADMIN_PASSWORD` | Operator password | Supabase edge secret only | `compass` function. Username is `captain`. Not a Supabase Auth user, and not present in the frontend bundle |
 
 > The bridge and faucet wallets are intentionally **separate keys with separate roles** — a compromised faucet key cannot touch bridge custody, and vice versa. Neither is ever sent to the browser; `/bridge-relay` and `/faucet-claim` are public-but-verifying endpoints that independently re-check on-chain state rather than trusting the caller (see `docs/portal/tokenomics.md` for the trust model).
 
@@ -178,6 +179,24 @@ order of preference:
 3. Investigate; rotate the relayer key if it was the vector.
 4. Unpause once safe. When the bridge is fully decentralized, call
    `WrappedNave.renounceControl()` to permanently give up the freeze lever.
+
+### Compass operator password (`COMPASS_ADMIN_PASSWORD`)
+
+`/compass` is the operator console. It has one username, `captain`. The password
+is only `COMPASS_ADMIN_PASSWORD` on the Supabase edge function. The browser
+stores a signed session for eight hours and never receives the password, the
+service role key, payroll rows, bank tokens, customer documents, or signing keys.
+
+1. Choose a password of 12 to 200 characters.
+2. From `app/`: `supabase secrets set COMPASS_ADMIN_PASSWORD='...' --project-ref <project>`.
+3. New login attempts pick up the new value. Existing sessions remain valid
+   until sign-out or the eight-hour expiry. Rotating `SUPABASE_SERVICE_ROLE_KEY`
+   invalidates every Compass session, because the session token is signed with it.
+4. Eight failed attempts from one address within 15 minutes are rejected.
+   Thirty subscription grants per hour is the ceiling.
+
+A Compass grant records a Nave Pay term with source `compass`. It does not
+collect USDC and it does not call the book-deletion path.
 
 ## CORS allow-list
 

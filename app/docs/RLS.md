@@ -38,3 +38,7 @@ personal data (watchlists) is wallet-scoped; agent keys are service-role only.
 - The `x-wallet-address` header is not cryptographically verified. For
   high-value isolation, migrate to Supabase Auth or signed-wallet sessions and
   replace the header checks with `auth.jwt()`-based predicates.
+- Compass (`/compass`) is not a Supabase Auth login. `compass_sessions`,
+  `compass_login_attempts`, and `compass_audit` have RLS enabled and no anon
+  policies. Their functions execute for `service_role` only, after the
+  `compass` edge function checks `COMPASS_ADMIN_PASSWORD`. See `docs/SECRETS.md`.

@@ -109,3 +109,8 @@ verify_jwt = false
 [functions.pay-claim]
 # Public invoice and subscription checkout. Verifies the USDC transfer, then books it.
 verify_jwt = false
+
+[functions.compass]
+# Operator console. Password and session are checked inside the function.
+# The anon key is not authorization. No user JWT.
+verify_jwt = false
