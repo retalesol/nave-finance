@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import {
   type ChainKind,
   type ChainFamily,
   type ChainTarget,
   type EvmChainId,
+  isEvmChainId,
   solanaTarget,
   evmTarget,
   chainKindFromAddress,
@@ -11,6 +12,20 @@ import {
 import { rememberDaoChainId, recallDaoChainId } from '../lib/chain/daoChainMemory';
 import { daoOnchainAddressEquals } from '../lib/chain/daoOnchainAddress';
 import { activeTargetForFamily } from '../lib/programConfig';
+import { readNaveSession, readPersistedDaoAddress, writeNaveSession } from '../lib/sessionPersistence';
+
+function initialChainTarget(): ChainTarget {
+  const dao = readPersistedDaoAddress();
+  if (dao && chainKindFromAddress(dao) === 'solana') return solanaTarget();
+  if (dao && chainKindFromAddress(dao) === 'evm') {
+    const remembered = recallDaoChainId(dao);
+    if (remembered) return evmTarget(remembered);
+  }
+  const session = readNaveSession();
+  if (session.evmChainId && isEvmChainId(session.evmChainId)) return evmTarget(session.evmChainId);
+  if (session.chainFamily) return activeTargetForFamily(session.chainFamily);
+  return solanaTarget();
+}
 
 interface ChainContextValue {
   /** The currently active chain target (drives wallet gating + tx dispatch). */
@@ -51,16 +66,41 @@ const ChainContext = createContext<ChainContextValue>({
 });
 
 export function ChainProvider({ children }: { children: ReactNode }) {
-  const [target, setTarget] = useState<ChainTarget>(() => solanaTarget());
+  const [target, setTarget] = useState<ChainTarget>(initialChainTarget);
   /** Address last passed to syncFromAddress — drives rememberDaoChain activation. */
-  const syncedAddressRef = useRef<string | null>(null);
+  const syncedAddressRef = useRef<string | null>(readPersistedDaoAddress());
+
+  useEffect(() => {
+    writeNaveSession({
+      chainFamily: target.family,
+      evmChainId: target.evmChainId ?? null,
+    });
+  }, [target]);
 
   const setChainFamily = useCallback((family: ChainFamily) => {
-    setTarget(activeTargetForFamily(family));
+    setTarget((prev) => {
+      const synced = syncedAddressRef.current;
+      // A product switch must not retarget a Solana treasury onto Base, or an
+      // EVM treasury onto Solana. Explicit switches clear the synced treasury first.
+      if (synced && chainKindFromAddress(synced) === 'solana' && family !== 'solana') {
+        return prev.kind === 'solana' ? prev : solanaTarget();
+      }
+      if (synced && chainKindFromAddress(synced) === 'evm' && family === 'solana') {
+        const remembered = recallDaoChainId(synced);
+        return remembered ? evmTarget(remembered) : prev;
+      }
+      return activeTargetForFamily(family);
+    });
   }, []);
 
   const setEvmChainId = useCallback((chainId: EvmChainId) => {
-    setTarget(evmTarget(chainId));
+    setTarget((prev) => {
+      const synced = syncedAddressRef.current;
+      if (synced && chainKindFromAddress(synced) === 'solana') {
+        return prev.kind === 'solana' ? prev : solanaTarget();
+      }
+      return evmTarget(chainId);
+    });
   }, []);
 
   const syncFromAddress = useCallback((address: string | null) => {

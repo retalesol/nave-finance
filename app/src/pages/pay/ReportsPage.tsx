@@ -6,6 +6,8 @@ import { formatCents, localToday } from '../../lib/pay/invoiceMath';
 import {
   balanceSheet,
   chartBalances,
+  generalLedger,
+  journalInRange,
   profitAndLoss,
   trialBalance,
   type PnlGroup,
@@ -22,18 +24,12 @@ import {
   verifyAuditChain,
 } from '../../lib/pay/glApi';
 import {
-  balanceSheetCsv,
-  chartCsv,
-  csvString,
   downloadText,
-  generalLedgerCsv,
-  journalCsv,
-  profitAndLossCsv,
   quickBooksAccountsCsv,
   quickBooksIif,
   quickBooksJournalCsv,
-  trialBalanceCsv,
 } from '../../lib/pay/glExports';
+import { downloadBrandedPdf, loadLogoBytes, type ReportTable } from '../../lib/reports/brandedPdf';
 import { PayChips, PayPage } from './PayDesk';
 import { payBody, payCard, payInput, payPrimary, paySecondary } from './payStyles';
 
@@ -54,7 +50,15 @@ const PNL_LABELS: Record<PnlGroup, string> = {
   other_expense: 'Other expense',
 };
 
-export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: string }) {
+export default function ReportsPage({
+  treasuryGroupId,
+  treasuryName = 'Treasury',
+  logoUrl = null,
+}: {
+  treasuryGroupId: string;
+  treasuryName?: string;
+  logoUrl?: string | null;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const membership = useDaoMembership();
@@ -102,27 +106,125 @@ export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: stri
     await queryClient.invalidateQueries({ queryKey: ['payAudit', treasuryGroupId] });
   }
 
+  async function exportPdf(filename: string, title: string, subtitle: string, tables: ReportTable[]) {
+    const logoBytes = await loadLogoBytes(logoUrl);
+    await downloadBrandedPdf(filename, {
+      product: 'pay',
+      treasuryName,
+      logoBytes,
+      kicker: 'Books',
+      title,
+      subtitle,
+      tables,
+    });
+  }
+
   async function exportFile(kind: string) {
     setExportError(null);
     try {
-      if (kind === 'tb') downloadText(`trial-balance-${asOf}.csv`, 'text/csv;charset=utf-8', trialBalanceCsv(accountRows, entryRows, asOf));
-      else if (kind === 'bs') downloadText(`balance-sheet-${asOf}.csv`, 'text/csv;charset=utf-8', balanceSheetCsv(accountRows, entryRows, asOf));
-      else if (kind === 'pnl') downloadText(`profit-and-loss-${from}-to-${to}.csv`, 'text/csv;charset=utf-8', profitAndLossCsv(accountRows, entryRows, from, to));
-      else if (kind === 'gl') downloadText(`general-ledger-${from}-to-${to}.csv`, 'text/csv;charset=utf-8', generalLedgerCsv(accountRows, entryRows, from, to));
-      else if (kind === 'journal') downloadText(`journal-${from}-to-${to}.csv`, 'text/csv;charset=utf-8', journalCsv(entryRows, from, to));
-      else if (kind === 'coa') downloadText('chart-of-accounts.csv', 'text/csv;charset=utf-8', chartCsv(accountRows, entryRows));
-      else if (kind === 'qbo-accounts') downloadText('quickbooks-accounts.csv', 'text/csv;charset=utf-8', quickBooksAccountsCsv(accountRows));
+      if (kind === 'tb') {
+        const report = trialBalance(accountRows, entryRows, asOf);
+        await exportPdf(`trial-balance-${asOf}.pdf`, 'Trial balance', `As of ${asOf}`, [{
+          columns: ['Account', 'Debit', 'Credit'],
+          weights: [3, 1, 1],
+          rows: [
+            ...report.rows.filter((row) => row.debitCents || row.creditCents).map((row) => [
+              `${row.code}  ${row.name}`,
+              row.debitCents ? formatCents(row.debitCents) : '',
+              row.creditCents ? formatCents(row.creditCents) : '',
+            ]),
+            ['Total', formatCents(report.totalDebit), formatCents(report.totalCredit)],
+          ],
+        }]);
+      } else if (kind === 'bs') {
+        const report = balanceSheet(accountRows, entryRows, asOf);
+        const section = (title: string, rows: typeof report.sections.asset, total: number): string[][] => [
+          [title, ''],
+          ...rows.map((row) => [`${row.code}  ${row.name}`, formatCents(row.balanceCents)]),
+          [`Total ${title.toLowerCase()}`, formatCents(total)],
+        ];
+        await exportPdf(`balance-sheet-${asOf}.pdf`, 'Balance sheet', `As of ${asOf}`, [{
+          columns: ['Account', 'Balance'],
+          weights: [3, 1],
+          rows: [
+            ...section('Assets', report.sections.asset, report.totals.asset),
+            ...section('Liabilities', report.sections.liability, report.totals.liability),
+            ...section('Equity', report.sections.equity, report.totals.equity),
+            ['Liabilities and equity', formatCents(report.liabilitiesAndEquity)],
+          ],
+        }]);
+      } else if (kind === 'pnl') {
+        const report = profitAndLoss(accountRows, entryRows, from, to);
+        const rows: string[][] = [];
+        for (const group of Object.keys(PNL_LABELS) as PnlGroup[]) {
+          rows.push([PNL_LABELS[group], '']);
+          for (const row of report.groups[group]) rows.push([`${row.code}  ${row.name}`, formatCents(row.amountCents)]);
+        }
+        rows.push(['Net income', formatCents(report.netIncome)]);
+        await exportPdf(`profit-and-loss-${from}-to-${to}.pdf`, 'Profit and loss', `${from} to ${to}`, [{
+          columns: ['Account', 'Amount'],
+          weights: [3, 1],
+          rows,
+        }]);
+      } else if (kind === 'gl') {
+        const ledgers = generalLedger(accountRows, entryRows, from, to);
+        await exportPdf(`general-ledger-${from}-to-${to}.pdf`, 'General ledger', `${from} to ${to}`, [{
+          columns: ['Account', 'Date', 'Memo', 'Debit', 'Credit', 'Balance'],
+          weights: [2, 1.2, 2, 1, 1, 1],
+          rows: ledgers.flatMap((ledger) => [
+            [`${ledger.code}  ${ledger.name}`, '', 'Opening', '', '', formatCents(ledger.openingCents)],
+            ...ledger.rows.map((row) => [
+              '',
+              row.date,
+              row.memo || row.lineMemo || row.ref || row.party,
+              row.debitCents ? formatCents(row.debitCents) : '',
+              row.creditCents ? formatCents(row.creditCents) : '',
+              formatCents(row.balanceCents),
+            ]),
+            ['', '', 'Closing', '', '', formatCents(ledger.closingCents)],
+          ]),
+        }]);
+      } else if (kind === 'journal') {
+        const entriesInRange = journalInRange(entryRows, from, to);
+        await exportPdf(`journal-${from}-to-${to}.pdf`, 'Journal', `${from} to ${to}`, [{
+          columns: ['Date', 'Memo', 'Account', 'Debit', 'Credit'],
+          weights: [1.2, 2, 2, 1, 1],
+          rows: entriesInRange.flatMap((entry) => entry.lines.map((line, index) => {
+            const account = accountRows.find((row) => row.id === line.accountId);
+            return [
+              index === 0 ? entry.date : '',
+              index === 0 ? entry.memo : '',
+              account ? `${account.code}  ${account.name}` : line.accountId,
+              line.debitCents ? formatCents(line.debitCents) : '',
+              line.creditCents ? formatCents(line.creditCents) : '',
+            ];
+          })),
+        }]);
+      } else if (kind === 'coa') {
+        const chart = chartBalances(accountRows, entryRows);
+        await exportPdf('chart-of-accounts.pdf', 'Chart of accounts', 'Current balances', [{
+          columns: ['Code', 'Account', 'Type', 'Balance'],
+          weights: [1, 2.4, 1.2, 1.2],
+          rows: chart.map((row) => [row.code, row.name, row.accountType, formatCents(row.balanceCents)]),
+        }]);
+      } else if (kind === 'qbo-accounts') downloadText('quickbooks-accounts.csv', 'text/csv;charset=utf-8', quickBooksAccountsCsv(accountRows));
       else if (kind === 'qbo-journal') downloadText(`quickbooks-journal-${from}-to-${to}.csv`, 'text/csv;charset=utf-8', quickBooksJournalCsv(accountRows, entryRows, from, to));
       else if (kind === 'iif') {
         const parties = await fetchExportParties(treasuryGroupId, wallet);
         downloadText(`nave-pay-${from}-to-${to}.iif`, 'application/qbooks', quickBooksIif(accountRows, entryRows, from, to, parties.customers, parties.vendors));
       } else if (kind === 'audit') {
         const rows = audit.data ?? await fetchAuditRows(treasuryGroupId, wallet);
-        const body = csvString(
-          ['seq', 'at', 'document', 'op', 'document_id', 'prev_hash', 'hash', 'payload'],
-          [...rows].sort((a, b) => a.seq - b.seq).map((row) => [row.seq, row.at, row.documentType, row.op, row.documentId, row.prevHash, row.hash, row.payload]),
-        );
-        downloadText(`audit-log-${today}.csv`, 'text/csv;charset=utf-8', body);
+        await exportPdf(`audit-log-${today}.pdf`, 'Audit log', `Created from ${rows.length} recorded changes`, [{
+          columns: ['Seq', 'When', 'Document', 'Op', 'Hash'],
+          weights: [0.7, 1.6, 1.4, 1, 2],
+          rows: [...rows].sort((a, b) => a.seq - b.seq).map((row) => [
+            String(row.seq),
+            row.at,
+            row.documentType,
+            row.op,
+            row.hash,
+          ]),
+        }]);
       }
     } catch (err) {
       setExportError(glMessage(err));
@@ -176,6 +278,7 @@ export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: stri
         <label style={{ ...dateLabel, marginBottom: '14px' }}>As of <input style={payInput} type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
       ) : null}
 
+      <p style={{ ...payBody, marginBottom: '10px' }}>Statements download as a branded PDF. QuickBooks buttons stay import files.</p>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <button type="button" style={paySecondary} onClick={() => void exportFile('tb')}>Trial balance</button>
         <button type="button" style={paySecondary} onClick={() => void exportFile('bs')}>Balance sheet</button>
@@ -252,7 +355,7 @@ export default function ReportsPage({ treasuryGroupId }: { treasuryGroupId: stri
             >
               Verify
             </button>
-            <button type="button" style={paySecondary} onClick={() => void exportFile('audit')}>Export CSV</button>
+            <button type="button" style={paySecondary} onClick={() => void exportFile('audit')}>Export PDF</button>
           </div>
         </div>
         <p style={{ ...payBody, margin: '8px 0 12px' }}>

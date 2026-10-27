@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
 import { isMockDaoAddress } from '../lib/mockData';
+import { chainKindFromAddress } from '../lib/chain/types';
 import { useChain } from '../hooks/useChain';
 import { useDaoContext } from '../hooks/useDaoContext';
 
@@ -19,11 +20,12 @@ export default function WalletGate({ children }: { children: React.ReactNode }) 
   const { connected: solanaConnected } = useWallet();
   const { isConnected: evmConnected } = useAccount();
   const { chainKind } = useChain();
-  const { isMockMode } = useDaoContext();
+  const { daoAddress, isMockMode } = useDaoContext();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const connected = chainKind === 'evm' ? evmConnected : solanaConnected;
+  const treasuryKind = daoAddress ? chainKindFromAddress(daoAddress) : chainKind;
+  const connected = treasuryKind === 'evm' ? evmConnected : solanaConnected;
 
   // Allow demo mode through without a wallet connection (includes legacy mock sentinel)
   const demoTreasury = (location.state as { treasuryAddress?: string } | null)?.treasuryAddress;

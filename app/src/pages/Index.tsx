@@ -16,6 +16,7 @@ import { usePrefersReducedMotion } from '../components/homepage/useHomeMotion';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { useChain } from '../hooks/useChain';
 import { APP_WALLET_CHAINS } from '../lib/chain/types';
+import { readPersistedDaoAddress } from '../lib/sessionPersistence';
 import { EVM_DEPLOYMENT_MODE } from '../lib/programConfig';
 import { usePlatformTreasuryStats, formatHeroProtocolUsd } from '../hooks/usePlatformTreasuryStats';
 import { useNaveTokenStats, formatNavePrice, formatNaveMarketCap, formatNaveHolders } from '../hooks/useNaveTokenStats';
@@ -96,6 +97,7 @@ function NavBar() {
   const deep = useNavOnDeep();
   const { chainFamily, setChainFamily } = useChain();
   useEffect(() => {
+    if (readPersistedDaoAddress()) return;
     if (!APP_WALLET_CHAINS.includes(chainFamily)) {
       setChainFamily('base');
     }

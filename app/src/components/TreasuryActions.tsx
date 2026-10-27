@@ -1,3 +1,4 @@
+import { NaveSelect } from './NaveMenu';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PublicKey } from '@solana/web3.js';
@@ -25,6 +26,7 @@ import { fetchTreasuryVault } from '../lib/onChainFetcher';
 import { getNavePrograms } from '../lib/naveProgram';
 import { ProposalType, type GovernanceType } from '../lib/onChainTypes';
 import type { TreasuryAssetRow } from '../hooks/useTreasuryAssets';
+import { formatBaseUnits, parseUiAmount } from '../lib/parseUiAmount';
 import { isSendableTreasuryAsset } from '../lib/treasuryAssetEligibility';
 import type { TreasuryNft } from '../hooks/useTreasuryNfts';
 import { EVM_DEPLOYMENT_MODE, SOLANA_NETWORK } from '../lib/programConfig';
@@ -225,6 +227,9 @@ export function CreateTransactionModal({
   initialReason,
   billId,
   preferredSymbol,
+  quotedUsd = null,
+  lockQuote = false,
+  subtitle,
   onClose,
   onCreated,
 }: {
@@ -241,6 +246,11 @@ export function CreateTransactionModal({
   /** Kept on the proposal description so the bill id stays in the memo. */
   billId?: string;
   preferredSymbol?: string;
+  /** Dollar value of this payment. Used instead of the treasury's oracle price. */
+  quotedUsd?: number | null;
+  /** Keep the asset and amount on the quoted charge. */
+  lockQuote?: boolean;
+  subtitle?: string;
   onClose: () => void;
   onCreated?: (draft?: PayProposalDraft) => void;
 }) {
@@ -285,8 +295,12 @@ export function CreateTransactionModal({
     }
   }, [recipient, chainKind]);
 
-  const amountValid = Number(amount) > 0;
-  const amountWithinBalance = selectedAsset ? Number(amount) <= selectedAsset.uiBalance : false;
+  const parsedAmount = selectedAsset ? parseUiAmount(amount, selectedAsset.decimals) : null;
+  const balanceUnits = selectedAsset && Number.isFinite(selectedAsset.vaultBalanceBaseUnits)
+    ? BigInt(Math.trunc(selectedAsset.vaultBalanceBaseUnits))
+    : 0n;
+  const amountValid = parsedAmount != null && parsedAmount > 0n;
+  const amountWithinBalance = parsedAmount != null && parsedAmount <= balanceUnits;
   const walletReady = chainKind === 'evm' || !!publicKey;
   const canSubmitToken =
     mode === 'token' &&
@@ -315,13 +329,15 @@ export function CreateTransactionModal({
     }
   }, [registeredNfts, nftMint]);
 
-  function parseUiAmount(value: string, decimals: number): bigint | null {
-    const trimmed = value.trim();
-    if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-    const [whole, fraction = ''] = trimmed.split('.');
-    if (fraction.length > decimals) return null;
-    const raw = `${whole}${fraction.padEnd(decimals, '0')}`.replace(/^0+/, '') || '0';
-    return BigInt(raw);
+  function amountError(asset: TreasuryAssetRow): string | null {
+    const units = parseUiAmount(amount, asset.decimals);
+    if (units == null) return 'Enter a valid amount.';
+    if (units <= 0n) return 'Enter an amount greater than zero.';
+    const balance = Number.isFinite(asset.vaultBalanceBaseUnits)
+      ? BigInt(Math.trunc(asset.vaultBalanceBaseUnits))
+      : 0n;
+    if (units > balance) return `Amount exceeds the ${asset.symbol} balance.`;
+    return null;
   }
 
   async function handleSubmit() {
@@ -526,9 +542,14 @@ export function CreateTransactionModal({
         setError('Enter a valid recipient address.');
         return;
       }
+      const amountProblem = amountError(selectedAsset);
+      if (amountProblem) {
+        setError(amountProblem);
+        return;
+      }
       const baseUnits = parseUiAmount(amount, selectedAsset.decimals);
-      if (baseUnits === null || baseUnits <= 0n) {
-        setError(`Enter an amount with up to ${selectedAsset.decimals} decimals.`);
+      if (baseUnits == null) {
+        setError('Enter a valid amount.');
         return;
       }
       const trio = await fetchDaoContracts(evmChainId, daoAddress);
@@ -626,14 +647,14 @@ export function CreateTransactionModal({
         setError('No deposited assets are available to send.');
         return;
       }
-      if (!amountWithinBalance) {
-        setError(`Amount exceeds the ${selectedAsset.symbol} balance.`);
+      const amountProblem = amountError(selectedAsset);
+      if (amountProblem) {
+        setError(amountProblem);
         return;
       }
-
       const baseUnits = parseUiAmount(amount, selectedAsset.decimals);
-      if (baseUnits === null || baseUnits <= 0n) {
-        setError(`Enter an amount with up to ${selectedAsset.decimals} decimals.`);
+      if (baseUnits == null) {
+        setError('Enter a valid amount.');
         return;
       }
       const mintPk = selectedAsset.mint === 'SOL' ? null : new PublicKey(selectedAsset.mint);
@@ -686,8 +707,9 @@ export function CreateTransactionModal({
     display: 'block',
   };
 
-  const estimatedUsd =
-    selectedAsset?.priceUsd != null && amountValid
+  const estimatedUsd = quotedUsd != null
+    ? quotedUsd
+    : selectedAsset?.priceUsd != null && amountValid
       ? Number(amount) * selectedAsset.priceUsd
       : null;
 
@@ -696,9 +718,9 @@ export function CreateTransactionModal({
       <div style={panel} role="dialog" aria-modal="true" aria-label="Propose a payment">
         <ModalHeader
           title="Propose a payment"
-          subtitle={billId
+          subtitle={subtitle ?? (billId
             ? 'This proposes a treasury payment for a Nave Pay bill. It does not send the funds.'
-            : 'Your agents check it against the rules before anyone votes.'}
+            : 'Your agents check it against the rules before anyone votes.')}
           onClose={onClose}
         />
         <div className="space-y-4" style={{ padding: '18px 22px 22px' }}>
@@ -744,11 +766,11 @@ export function CreateTransactionModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label style={labelStyle}>Asset</label>
-                <select
+                <NaveSelect
                   value={selectedAsset?.mint ?? ''}
                   onChange={(e) => setAssetMint(e.target.value)}
                   style={inputStyle}
-                  disabled={transferableAssets.length === 0}
+                  disabled={lockQuote || transferableAssets.length === 0}
                 >
                   {transferableAssets.length === 0 ? (
                     <option value="">No deposited assets</option>
@@ -759,7 +781,7 @@ export function CreateTransactionModal({
                       </option>
                     ))
                   )}
-                </select>
+                </NaveSelect>
               </div>
 
               <div>
@@ -768,7 +790,12 @@ export function CreateTransactionModal({
                   {selectedAsset && (
                     <button
                       type="button"
-                      onClick={() => setAmount(String(selectedAsset.uiBalance))}
+                      onClick={() => setAmount(formatBaseUnits(
+                        Number.isFinite(selectedAsset.vaultBalanceBaseUnits)
+                          ? BigInt(Math.trunc(selectedAsset.vaultBalanceBaseUnits))
+                          : 0n,
+                        selectedAsset.decimals,
+                      ))}
                       className="hover:underline underline-offset-2 bg-transparent border-0 cursor-pointer"
                       style={{
                         fontSize: '11.5px',
@@ -782,12 +809,13 @@ export function CreateTransactionModal({
                   )}
                 </div>
                 <input
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
+                  readOnly={lockQuote}
                   style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
                 />
               </div>
@@ -795,7 +823,7 @@ export function CreateTransactionModal({
           ) : (
             <div>
               <label style={labelStyle}>NFT</label>
-              <select
+              <NaveSelect
                 value={selectedNft?.mint ?? ''}
                 onChange={(e) => setNftMint(e.target.value)}
                 style={inputStyle}
@@ -805,7 +833,7 @@ export function CreateTransactionModal({
                     {n.name}
                   </option>
                 ))}
-              </select>
+              </NaveSelect>
             </div>
           )}
 
@@ -835,7 +863,7 @@ export function CreateTransactionModal({
               <>
                 <b style={{ color: 'hsl(var(--foreground))' }}>Needs a community vote</b>
                 {estimatedUsd != null
-                  ? ` (~$${estimatedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}). `
+                  ? ` (~$${estimatedUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). `
                   : '. '}
                 Your agents verify the reserve rule before any funds move.
               </>

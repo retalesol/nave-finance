@@ -105,6 +105,74 @@ export interface MoonPaySignRules {
   PublicKey: SolanaPublicKeyCtor;
 }
 
+/** Invoice checkout. The widget must pay this address, not the treasury vault. */
+export interface MoonPayInvoiceLock {
+  token: string;
+  walletAddress: string;
+  currency: "usdc_sol" | "usdc" | "usdc_base";
+}
+
+export interface InvoicePayAddress {
+  chain: string;
+  chain_id?: number | null;
+  asset: string;
+  address: string;
+  kind?: string;
+}
+
+const EVM_NATIVE = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Destination MoonPay must use for an invoice.
+ * Solana pays the invoice vault (MoonPay creates the USDC account).
+ * Ethereum and Base pay the invoice USDC forwarder when one exists,
+ * otherwise the treasury address stored for that chain.
+ */
+export function selectInvoiceMoonPayWallet(
+  rows: InvoicePayAddress[],
+  chainId: number | null,
+): { walletAddress: string; currency: MoonPayInvoiceLock["currency"] } | null {
+  if (chainId === null) {
+    const vault = rows.find((row) => row.chain === "solana" && (row.kind === "solana_vault" || row.asset === "native"));
+    const canonical = rows.find((row) => row.chain === "solana" && row.asset === "treasury");
+    const picked = vault ?? canonical;
+    if (!picked?.address) return null;
+    return { walletAddress: picked.address, currency: "usdc_sol" };
+  }
+  if (chainId !== 1 && chainId !== 8453) return null;
+  const chain = chainId === 1 ? "ethereum" : "base";
+  const forwarder = rows.find((row) => (
+    row.chain === chain
+    && row.asset
+    && row.asset !== "native"
+    && row.asset !== "treasury"
+    && row.asset.toLowerCase() !== EVM_NATIVE
+  ));
+  const canonical = rows.find((row) => row.chain === chain && row.asset === "treasury");
+  const picked = forwarder ?? canonical;
+  if (!picked?.address) return null;
+  return { walletAddress: picked.address, currency: chainId === 1 ? "usdc" : "usdc_base" };
+}
+
+/** USDC base units from a MoonPay completed payload. Null when the amount is missing. */
+export function moonPayRawUnits(data: Record<string, unknown> | null | undefined): string | null {
+  if (!data) return null;
+  const quote = finiteNumber(data.quoteCurrencyAmount);
+  const base = finiteNumber(data.baseCurrencyAmount);
+  const amount = quote ?? base;
+  if (amount == null || !(amount > 0)) return null;
+  return BigInt(Math.round(amount * 1_000_000)).toString();
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export type MoonPaySignDecision =
   | { ok: true; query: string }
   | { ok: false; error: string };
@@ -119,13 +187,34 @@ function singleParam(url: URL, name: string): string | null {
   return values[0];
 }
 
+function validateInvoiceLock(parsed: URL, invoice: MoonPayInvoiceLock): MoonPaySignDecision {
+  const token = invoice.token.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(token)) return fail("Invoice token is not valid");
+  const currencyCode = singleParam(parsed, "currencyCode");
+  if (currencyCode !== invoice.currency) return fail("Currency does not match this invoice");
+  const walletAddress = singleParam(parsed, "walletAddress");
+  if (!walletAddress) return fail("walletAddress is required");
+  const walletMatches = invoice.currency === "usdc_sol"
+    ? walletAddress === invoice.walletAddress
+    : canonicalDaoAddress(walletAddress) === canonicalDaoAddress(invoice.walletAddress);
+  if (!walletMatches) return fail("Wallet does not match this invoice");
+  const externalTransactionId = singleParam(parsed, "externalTransactionId");
+  if (!externalTransactionId || externalTransactionId.toLowerCase() !== token) {
+    return fail("externalTransactionId must be the invoice");
+  }
+  if (!parsed.search.startsWith("?")) return fail("MoonPay URL is missing a query string");
+  return { ok: true, query: parsed.search };
+}
+
 /**
  * Refuse every URL that is not a MoonPay buy widget locked to this treasury's
- * USDC address. Returns the exact query string (leading "?") to sign.
+ * USDC address, or to an invoice payment address when an invoice lock is set.
+ * Returns the exact query string (leading "?") to sign.
  */
 export function validateMoonPaySignUrl(
   input: MoonPaySignInput,
   rules: MoonPaySignRules,
+  invoice?: MoonPayInvoiceLock | null,
 ): MoonPaySignDecision {
   const publishableKey = rules.publishableKey.trim();
   if (!publishableKey) return fail("MoonPay publishable key is not configured");
@@ -149,6 +238,8 @@ export function validateMoonPaySignUrl(
 
   const apiKey = singleParam(parsed, "apiKey");
   if (!apiKey || apiKey !== publishableKey) return fail("apiKey does not match");
+
+  if (invoice) return validateInvoiceLock(parsed, invoice);
 
   const daoAddress = input.daoAddress?.trim() ?? "";
   if (!daoAddress) return fail("daoAddress is required");

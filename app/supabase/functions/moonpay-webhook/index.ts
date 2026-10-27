@@ -4,6 +4,7 @@ import {
   canonicalDaoAddress,
   chainForMoonPayCurrency,
   currencyCodeFromMoonPayData,
+  moonPayRawUnits,
   moonpayWebhookSignatureValid,
   readMoonPayEnv,
 } from "../_shared/moonpay.ts";
@@ -83,11 +84,17 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, ignored: true });
   }
   const data = asRecord(payload.data);
-  if (!data || data.status !== "completed") {
+  if (!data) return json({ ok: true, ignored: true });
+
+  const externalTransactionId = asString(data.externalTransactionId);
+  if (/^[0-9a-fA-F]{64}$/.test(externalTransactionId)) {
+    const settled = await settleInvoicePayment(externalTransactionId.toLowerCase(), data);
+    return json(settled, settled.error ? 500 : 200);
+  }
+  if (data.status !== "completed") {
     return json({ ok: true, ignored: true });
   }
 
-  const externalTransactionId = asString(data.externalTransactionId);
   const cryptoTransactionId = asString(data.cryptoTransactionId);
   const currencyCode = currencyCodeFromMoonPayData(data);
   const chain = chainForMoonPayCurrency(currencyCode);
@@ -138,3 +145,43 @@ Deno.serve(async (req: Request) => {
 
   return json({ ok: true });
 });
+
+async function settleInvoicePayment(token: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim();
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (!supabaseUrl || !serviceKey) return { error: "Supabase is not configured" };
+  const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  if (data.status === "failed" || data.status === "refunded") return { ok: true, held: false };
+  const { error: holdError } = await supabase.rpc("pay_extend_invoice_for_moonpay", { p_token: token });
+  if (holdError) console.error("moonpay-webhook hold failed:", holdError.message);
+
+  if (data.status !== "completed") return { ok: true, held: true };
+  const cryptoTransactionId = asString(data.cryptoTransactionId);
+  const raw = moonPayRawUnits(data);
+  const currencyCode = currencyCodeFromMoonPayData(data);
+  const chain = chainForMoonPayCurrency(currencyCode);
+  if (!cryptoTransactionId || !raw || !chain) return { ok: true, held: true };
+
+  const { data: invoice, error } = await supabase
+    .from("pay_invoices")
+    .select("id")
+    .eq("public_token", token)
+    .maybeSingle();
+  if (error || !invoice?.id) return { ok: true, held: true };
+
+  const { error: bookError } = await supabase.rpc("pay_book_settlement", {
+    p_chain: chain.chain,
+    p_tx_hash: cryptoTransactionId,
+    p_invoice_id: invoice.id,
+    p_asset: currencyCode,
+    p_raw_amount: raw,
+    p_decimals: 6,
+    p_stable: true,
+    p_symbol: "USDC",
+  });
+  if (bookError) {
+    console.error("moonpay-webhook book failed:", bookError.message);
+    return { error: "Failed to record invoice payment" };
+  }
+  return { ok: true, booked: true };
+}

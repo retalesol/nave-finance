@@ -5,12 +5,15 @@ import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useAccount } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import Fi from '../components/Fi';
+import NaveMark from '../components/NaveMark';
 import { CardSkeleton } from '../components/NaveSkeletons';
 import NaveEmptyState from '../components/NaveEmptyState';
 import WalletNetworkMenu from '../components/WalletNetworkMenu';
+import TreasuryLogo from '../components/TreasuryLogo';
 import { Section, Notice } from '../components/calm';
 import { useChain } from '../hooks/useChain';
-import { APP_WALLET_CHAINS, chainFamilyLabel, evmTarget, isEvmAddress, isEvmChainId } from '../lib/chain/types';
+import { APP_WALLET_CHAINS, chainFamilyLabel, evmTarget, isEvmAddress, isEvmChainId, type ChainFamily } from '../lib/chain/types';
+import { preferredTreasuryChain } from '../lib/chain/preferredTreasuryChain';
 import { useWatchedDaos, type TreasuryChainChip, type WatchedDao } from '../hooks/useWatchedDaos';
 import { MOCK_DAO_ADDRESS, DEMO_TREASURY_NAV_ENABLED } from '../lib/mockData';
 import { signMessage as signEvmMessage } from '@wagmi/core';
@@ -303,7 +306,7 @@ export default function TreasuryLobby() {
           <div className="mb-8" style={{ borderTop: '1px solid hsl(var(--surface-2))' }}>
             {networkDaos.map(t => {
               const groupKey = t.treasuryGroupId || t.slug || t.daoOnchainAddress;
-              const primary = preferredChain(t, target.family, target.kind);
+              const primary = preferredChain(t, target.family);
               const isRemoving = removingDao === groupKey;
               const isPendingConfirm = confirmRemove === groupKey;
               const shareUrl = t.slug ? getDaoPublicUrl(t.slug) : null;
@@ -318,6 +321,7 @@ export default function TreasuryLobby() {
                 <DaoCard
                   key={t.treasuryGroupId || t.slug || primary.daoOnchainAddress}
                   name={t.name}
+                  logoUrl={t.logoUrl}
                   governanceType={t.governanceType}
                   chains={t.chains}
                   shareUrl={shareUrl}
@@ -408,23 +412,18 @@ export default function TreasuryLobby() {
   );
 }
 
-function preferredChain(dao: WatchedDao, family: string, kind: string): TreasuryChainChip {
-  if (kind === 'evm') {
-    const match = dao.chains.find(
-      (c) => typeof c.chainId === 'number' && isEvmChainId(c.chainId) && evmTarget(c.chainId).family === family,
-    );
-    if (match) return match;
-  }
-  return dao.chains[0] ?? {
+function preferredChain(dao: WatchedDao, family: string): TreasuryChainChip {
+  return preferredTreasuryChain(dao.chains, family as ChainFamily, {
     chainId: dao.chainId,
     daoOnchainAddress: dao.daoOnchainAddress,
     label: chainBadgeLabel(dao.chainId, dao.daoOnchainAddress),
-  };
+  });
 }
 
 /* ── DAO row ────────────────────────────────────────────── */
 function DaoCard({
   name,
+  logoUrl,
   governanceType,
   chains,
   shareUrl,
@@ -437,6 +436,7 @@ function DaoCard({
   onMouseLeave,
 }: {
   name: string;
+  logoUrl: string;
   governanceType: string;
   chains: TreasuryChainChip[];
   shareUrl: string | null;
@@ -466,13 +466,14 @@ function DaoCard({
 
   return (
     <div
-      className="flex items-start gap-3 py-4 transition-opacity"
+      className="flex items-center gap-3 py-4 transition-opacity"
       style={{
         borderBottom: '1px solid hsl(var(--surface-2))',
         opacity: isRemoving ? 0.5 : 1,
       }}
       onMouseLeave={onMouseLeave}
     >
+      <TreasuryLogo url={logoUrl} name={name} size={36} />
       <div className="flex-1 min-w-0 text-left group">
         <button
           type="button"
@@ -567,19 +568,7 @@ function Header() {
         className="flex items-center gap-2 no-underline"
         style={{ color: 'hsl(var(--foreground))' }}
       >
-        <span
-          className="grid place-items-center rounded-[6px]"
-          style={{
-            width: '20px',
-            height: '20px',
-            backgroundColor: 'hsl(var(--foreground))',
-            color: '#ffffff',
-            fontFamily: 'var(--font-display)',
-            fontSize: '13px',
-          }}
-        >
-          N
-        </span>
+        <NaveMark />
         <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px' }}>Nave</span>
       </button>
 

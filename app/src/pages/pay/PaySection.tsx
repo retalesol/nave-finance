@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import NaveEmptyState from '../../components/NaveEmptyState';
@@ -11,6 +11,7 @@ import {
   fetchPayAccess,
   fetchPayBooks,
   fetchPaySubscription,
+  setPayLogo,
   PAY_GUARDIAN_GAP,
   payErrorCode,
   payErrorMessage,
@@ -87,6 +88,18 @@ export default function PaySection() {
     enabled: booksReady,
     queryFn: () => fetchPayBooks(treasuryGroupId as string),
   });
+  const syncedLogo = useRef<string | null>(null);
+  useEffect(() => {
+    const url = dao?.logoUrl;
+    if (!url || !booksReady || !treasuryGroupId) return;
+    if (booksQuery.data?.company?.logo_url === url || syncedLogo.current === url) return;
+    syncedLogo.current = url;
+    void setPayLogo(treasuryGroupId, membership.walletStr, url)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['payBooks', treasuryGroupId] }))
+      .catch(() => {
+        syncedLogo.current = null;
+      });
+  }, [booksQuery.data?.company?.logo_url, booksReady, dao?.logoUrl, membership.walletStr, queryClient, treasuryGroupId]);
 
   if (!daoAddress) {
     return (
@@ -297,7 +310,13 @@ export default function PaySection() {
   }
 
   if (area === 'reports') {
-    return <ReportsPage treasuryGroupId={treasuryGroupId as string} />;
+    return (
+      <ReportsPage
+        treasuryGroupId={treasuryGroupId as string}
+        treasuryName={booksQuery.data?.company?.legal_name || dao?.name || 'Treasury'}
+        logoUrl={booksQuery.data?.company?.logo_url || dao?.logoUrl || null}
+      />
+    );
   }
 
   if (area === 'journal') {

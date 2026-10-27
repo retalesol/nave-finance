@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MOCK_DAO_ADDRESS, isMockDaoAddress, normalizeMockDaoAddress } from '../lib/mockData';
 import { useChain } from './useChain';
 import { chainKindFromAddress, type ChainKind } from '../lib/chain/types';
 import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
+import { writeNaveSession } from '../lib/sessionPersistence';
 
 interface DaoContextValue {
   daoAddress: string | null;
@@ -63,8 +64,10 @@ function writeStoredAddress(address: string | null) {
       address == null ? null : canonicalActiveDaoAddress(normalizeMockDaoAddress(address));
     if (next && !isMockDaoAddress(next)) {
       window.localStorage.setItem(STORAGE_KEY, next);
+      writeNaveSession({ daoAddress: next });
     } else {
       window.localStorage.removeItem(STORAGE_KEY);
+      writeNaveSession({ daoAddress: null });
     }
   } catch {
     /* ignore storage errors */
@@ -102,7 +105,7 @@ export function DaoProvider({ children }: { children: ReactNode }) {
   // Keep the active chain (wallet gating + tx dispatch) reconciled with the
   // selected DAO. An EVM (0x…) address activates the EVM path; a base58 Solana
   // address (or the mock sentinel) activates the Solana path.
-  useEffect(() => {
+  useLayoutEffect(() => {
     syncFromAddress(daoAddress);
   }, [daoAddress, syncFromAddress]);
 
@@ -110,7 +113,9 @@ export function DaoProvider({ children }: { children: ReactNode }) {
     const next = canonicalActiveDaoAddress(normalizeMockDaoAddress(address));
     setDaoAddressState(next);
     writeStoredAddress(next);
-  }, []);
+    // Clear or retarget the chain guard before any following setChainFamily.
+    syncFromAddress(next);
+  }, [syncFromAddress]);
 
   const enableMockMode = useCallback(() => {
     setDaoAddressState(MOCK_DAO_ADDRESS);

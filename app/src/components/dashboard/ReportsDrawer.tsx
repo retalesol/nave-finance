@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Fi from '../Fi';
 import { type YearlyReportGroup, type MonthlyReport } from '../../hooks/useMonthlyReports';
+import { downloadBrandedPdf, loadLogoBytes } from '../../lib/reports/brandedPdf';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -47,34 +48,48 @@ function KvRow({
 }
 
 /* ── Report Modal (calm statement style matching demo.html) ── */
-export function ReportModal({ report, onClose }: { report: MonthlyReport; onClose: () => void }) {
+export function ReportModal({
+  report,
+  onClose,
+  treasuryName = 'Treasury',
+  logoUrl = null,
+}: {
+  report: MonthlyReport;
+  onClose: () => void;
+  treasuryName?: string;
+  logoUrl?: string | null;
+}) {
   const year = report.year;
   const monthName = MONTH_NAMES[report.month - 1] ?? `Month ${report.month}`;
   const netGain = report.capitalEnd - report.capitalStart;
   const totalActions =
     report.agentActionsCount + report.walletActionsCount + report.proposalsCount;
 
-  function handleDownload() {
-    const lines = [
-      `NAVE — TREASURY STATEMENT`,
-      `${monthName} ${year}`,
-      ``,
-      `Opening balance: $${report.capitalStart.toLocaleString()}`,
-      `Yield earned: +$${report.yieldEarned.toLocaleString()}`,
-      `Closing balance: $${report.capitalEnd.toLocaleString()}`,
-      `Net treasury gain: +$${netGain.toLocaleString()}`,
-      `Period return: ${report.returnPct >= 0 ? '+' : ''}${report.returnPct.toFixed(2)}%`,
-      `Agent actions: ${report.agentActionsCount}`,
-      `Wallet actions: ${report.walletActionsCount}`,
-      `Proposals: ${report.proposalsCount}`,
-      `Protocol fees: $${report.feesCollected.toLocaleString()}`,
-    ];
-    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `nave-statement-${monthName.toLowerCase()}-${year}.txt`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  async function handleDownload() {
+    const money = (value: number) => `$${value.toLocaleString()}`;
+    const logoBytes = await loadLogoBytes(logoUrl);
+    await downloadBrandedPdf(`nave-statement-${monthName.toLowerCase()}-${year}.pdf`, {
+      product: 'nave',
+      treasuryName,
+      logoBytes,
+      kicker: 'Treasury statement',
+      title: `${monthName} ${year}`,
+      tables: [{
+        columns: ['Line', 'Amount'],
+        weights: [2, 1],
+        rows: [
+          ['Opening balance', money(report.capitalStart)],
+          ['Yield earned', money(report.yieldEarned)],
+          ['Closing balance', money(report.capitalEnd)],
+          ['Net treasury gain', money(netGain)],
+          ['Period return', `${report.returnPct >= 0 ? '+' : ''}${report.returnPct.toFixed(2)}%`],
+          ['Agent actions', String(report.agentActionsCount)],
+          ['Wallet actions', String(report.walletActionsCount)],
+          ['Proposals', String(report.proposalsCount)],
+          ['Protocol fees', money(report.feesCollected)],
+        ],
+      }],
+    });
   }
 
   return createPortal(
@@ -212,14 +227,13 @@ export function ReportModal({ report, onClose }: { report: MonthlyReport; onClos
             <button
               type="button"
               onClick={handleDownload}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
+              className="inline-flex items-center px-3.5 py-2 rounded-[9px] font-semibold transition-colors"
               style={{
                 fontSize: '13px',
                 backgroundColor: 'hsl(var(--foreground))',
                 color: '#ffffff',
               }}
             >
-              <Fi icon="download" style={{ fontSize: '11px' }} />
               Export
             </button>
           </div>
@@ -235,10 +249,14 @@ export default function ReportsDrawer({
   open,
   onClose,
   reports,
+  treasuryName = 'Treasury',
+  logoUrl = null,
 }: {
   open: boolean;
   onClose: () => void;
   reports: YearlyReportGroup[];
+  treasuryName?: string;
+  logoUrl?: string | null;
 }) {
   const [openYears, setOpenYears] = useState<number[]>([]);
   const [activeReport, setActiveReport] = useState<MonthlyReport | null>(null);
@@ -293,16 +311,6 @@ export default function ReportsDrawer({
                 ready to share.
               </em>
             </h2>
-            <p
-              style={{
-                fontSize: '13px',
-                color: 'hsl(var(--muted-foreground))',
-                marginTop: '6px',
-                lineHeight: 1.5,
-              }}
-            >
-              One page per month — what came in, what was earned, what your agents did.
-            </p>
           </div>
           <button
             type="button"
@@ -426,6 +434,8 @@ export default function ReportsDrawer({
       {activeReport && (
         <ReportModal
           report={activeReport}
+          treasuryName={treasuryName}
+          logoUrl={logoUrl}
           onClose={() => setActiveReport(null)}
         />
       )}

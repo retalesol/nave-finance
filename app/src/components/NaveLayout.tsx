@@ -22,12 +22,15 @@ import {
   APP_WALLET_CHAINS,
   WALLET_CHAINS,
   chainFamilyLabel,
+  chainKindFromAddress,
   daoNetworkLabel,
   evmTarget,
   isEvmAddress,
   isEvmChainId,
   type ChainFamily,
 } from '../lib/chain/types';
+import { daoOnchainAddressEquals } from '../lib/chain/daoOnchainAddress';
+import { preferredTreasuryChain } from '../lib/chain/preferredTreasuryChain';
 import { activeEvmChainId, SOLANA_NETWORK } from '../lib/programConfig';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 import { getDaoPublicUrl } from '../lib/daoSlug';
@@ -103,7 +106,7 @@ function shortenAddress(addr: string): string {
 export default function NaveLayout({ children, wide = false }: NaveLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { target, chainFamily, setChainFamily, rememberDaoChain } = useChain();
+  const { target, chainFamily, setChainFamily, syncFromAddress, rememberDaoChain } = useChain();
   const { publicKey } = useWallet();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedChainId } = useAccount();
   const isMobile = useIsMobile();
@@ -138,7 +141,8 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const tokenRegistry = useTokenRegistry(daoAddress);
   const votingMint = tokenRegistry.tokens[0]?.mint ?? null;
 
-  const isEvm = target.kind === 'evm';
+  const treasuryKind = daoAddress ? chainKindFromAddress(daoAddress) : target.kind;
+  const isEvm = treasuryKind === 'evm';
   const activeWalletAddress = isEvm ? (evmAddress ?? null) : (publicKey?.toBase58() ?? null);
   const { daos: watchedDaos } = useWatchedDaos(activeWalletAddress);
 
@@ -159,13 +163,12 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   const agentsFrozen = dao?.frozen ?? false;
 
   const networkLabel = useMemo(() => {
+    if (daoAddress && chainKindFromAddress(daoAddress) === 'solana') return chainFamilyLabel('solana');
     if (dao?.chainId != null && isEvmChainId(dao.chainId)) {
-      return evmTarget(dao.chainId).family === 'robinhood'
-        ? 'Robinhood'
-        : chainFamilyLabel(evmTarget(dao.chainId).family);
+      return chainFamilyLabel(evmTarget(dao.chainId).family);
     }
     return chainFamilyLabel(chainFamily);
-  }, [dao?.chainId, chainFamily]);
+  }, [daoAddress, dao?.chainId, chainFamily]);
 
   const slugOrShortAddr = useMemo(() => {
     if (dao?.slug) return `nave.finance/${dao.slug}`;
@@ -241,10 +244,41 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
     setSidebarOpen(false);
   }
 
+  function sisterOnFamily(family: ChainFamily) {
+    const group = watchedDaos.find((item) => (
+      item.chains.some((chip) => daoOnchainAddressEquals(chip.daoOnchainAddress, daoAddress))
+      || daoOnchainAddressEquals(item.daoOnchainAddress, daoAddress)
+    ));
+    if (!group) return null;
+    const picked = preferredTreasuryChain(group.chains, family, {
+      chainId: group.chainId,
+      daoOnchainAddress: group.daoOnchainAddress,
+      label: '',
+    });
+    if (family === 'solana') {
+      return chainKindFromAddress(picked.daoOnchainAddress) === 'solana' ? picked : null;
+    }
+    if (chainKindFromAddress(picked.daoOnchainAddress) !== 'evm') return null;
+    if (picked.chainId != null && isEvmChainId(picked.chainId) && evmTarget(picked.chainId).family !== family) {
+      return null;
+    }
+    return picked;
+  }
+
   async function confirmChainSwitch() {
     if (!pendingChainFamily) return;
     const nextFamily = pendingChainFamily;
     setPendingChainFamily(null);
+    const sister = sisterOnFamily(nextFamily);
+    if (sister) {
+      if (sister.chainId != null && isEvmChainId(sister.chainId)) {
+        rememberDaoChain(sister.daoOnchainAddress, sister.chainId);
+      }
+      setDaoAddress(sister.daoOnchainAddress);
+      await applyChainFamily(nextFamily);
+      setSidebarOpen(false);
+      return;
+    }
     setDaoAddress(null);
     await applyChainFamily(nextFamily);
     navigate('/treasuries');
@@ -254,6 +288,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
   function chooseProduct(next: 'nave' | 'pay') {
     setProductModalOpen(false);
     setSidebarOpen(false);
+    if (daoAddress) syncFromAddress(daoAddress);
     if (next === 'pay') {
       if (!inPay) navigate('/pay');
       return;
@@ -673,7 +708,7 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           >
             <NotificationFeed />
             <WalletNetworkMenu
-              chains={APP_WALLET_CHAINS}
+              chains={WALLET_CHAINS.filter((family) => family === chainFamily || APP_WALLET_CHAINS.includes(family))}
               onNetworkSelect={handleChainSwitch}
               account={{
                 role: roleLabel,
@@ -821,36 +856,44 @@ export default function NaveLayout({ children, wide = false }: NaveLayoutProps) 
           <div>
             {watchedDaos.length > 0 ? (
               watchedDaos.map((item) => {
-                const isCurrent =
-                  !!daoAddress &&
-                  item.daoOnchainAddress.toLowerCase() === daoAddress.toLowerCase();
+                const shown = preferredTreasuryChain(item.chains, chainFamily, {
+                  chainId: item.chainId,
+                  daoOnchainAddress: item.daoOnchainAddress,
+                  label: '',
+                });
+                const isCurrent = !!daoAddress && item.chains.some((chip) => (
+                  daoOnchainAddressEquals(chip.daoOnchainAddress, daoAddress)
+                ));
                 const itemChainLabel =
-                  item.chainId != null && isEvmChainId(item.chainId)
-                    ? daoNetworkLabel(item.chainId, SOLANA_NETWORK)
-                    : isEvmAddress(item.daoOnchainAddress)
-                      ? 'Base'
-                      : 'Solana';
+                  chainKindFromAddress(shown.daoOnchainAddress) === 'solana'
+                    ? 'Solana'
+                    : shown.chainId != null && isEvmChainId(shown.chainId)
+                      ? daoNetworkLabel(shown.chainId, SOLANA_NETWORK)
+                      : isEvmAddress(shown.daoOnchainAddress)
+                        ? 'EVM'
+                        : 'Solana';
                 const itemSub = item.slug
                   ? `${itemChainLabel} · nave.finance/${item.slug}`
-                  : `${itemChainLabel} · ${shortenAddress(item.daoOnchainAddress)}`;
+                  : `${itemChainLabel} · ${shortenAddress(shown.daoOnchainAddress)}`;
 
                 return (
                   <button
-                    key={item.daoOnchainAddress}
+                    key={item.treasuryGroupId || shown.daoOnchainAddress}
                     type="button"
                     onClick={() => {
-                      if (item.chainId != null && isEvmChainId(item.chainId)) {
-                        rememberDaoChain(item.daoOnchainAddress, item.chainId);
+                      if (shown.chainId != null && isEvmChainId(shown.chainId)) {
+                        rememberDaoChain(shown.daoOnchainAddress, shown.chainId);
                       }
-                      setDaoAddress(item.daoOnchainAddress);
+                      setDaoAddress(shown.daoOnchainAddress);
                       setTreasuryModalOpen(false);
                       setSidebarOpen(false);
-                      navigate(inPay ? '/pay' : '/overview', { state: { treasuryAddress: item.daoOnchainAddress } });
+                      navigate(inPay ? '/pay' : '/overview', { state: { treasuryAddress: shown.daoOnchainAddress } });
                     }}
                     className="w-full text-left flex items-center gap-3 transition-colors group"
                     style={{
                       padding: '12px 4px',
                       borderBottom: '1px solid #EFEAE0',
+                      backgroundColor: isCurrent ? '#FAF8F3' : 'transparent',
                     }}
                   >
                     <TreasuryLogo url={item.logoUrl} name={item.name} size={32} />

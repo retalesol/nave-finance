@@ -1296,10 +1296,12 @@ export async function signMoonPayUrl(
   url: string,
   daoAddress: string,
   chainId: number | null,
+  invoiceToken?: string,
 ): Promise<{ data: MoonPaySignResponse | null; error: string | null }> {
   return callEdgeFunction<MoonPaySignResponse>('moonpay-sign', {
     url,
     daoAddress,
     chainId,
+    ...(invoiceToken ? { invoiceToken } : {}),
   });
 }

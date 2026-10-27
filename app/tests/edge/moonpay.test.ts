@@ -5,11 +5,14 @@ import {
   MOONPAY_CURRENCY,
   chainForMoonPayCurrency,
   deriveVaultAuthorityAddress,
+  moonPayRawUnits,
   moonpayWebhookSignatureValid,
+  selectInvoiceMoonPayWallet,
   signMoonPayQuery,
   validateMoonPaySignUrl,
   type SolanaPublicKeyCtor,
 } from "../../supabase/functions/_shared/moonpay.ts";
+import { invoiceCardTarget } from "../../src/lib/pay/invoiceMoonPay.ts";
 
 const DOCS_SECRET = "sk_test_DocsVector00";
 const DOCS_URL =
@@ -256,6 +259,55 @@ test("solana mainnet signs only usdc_sol sent to the vault authority PDA", () =>
     rules,
   );
   assert.deepEqual(daoAsWallet, { ok: false, error: "Wallet does not match this treasury" });
+});
+
+test("invoice MoonPay lock accepts the invoice wallet and rejects the treasury vault", () => {
+  const token = "a".repeat(64);
+  const vault = "InvoiceVault1111111111111111111111111111111";
+  const forwarder = "0x1111111111111111111111111111111111111111";
+  const rows = [
+    { chain: "solana", asset: "native", kind: "solana_vault", address: vault },
+    { chain: "solana", asset: "treasury", address: SOL_DAO },
+    { chain: "base", chain_id: 8453, asset: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", address: forwarder },
+    { chain: "base", chain_id: 8453, asset: "treasury", address: EVM_DAO },
+  ];
+  assert.deepEqual(selectInvoiceMoonPayWallet(rows, null), { walletAddress: vault, currency: "usdc_sol" });
+  assert.deepEqual(selectInvoiceMoonPayWallet(rows, 8453), { walletAddress: forwarder, currency: "usdc_base" });
+  assert.deepEqual(invoiceCardTarget(rows, "solana")?.walletAddress, vault);
+  assert.deepEqual(invoiceCardTarget(rows, "base")?.walletAddress, forwarder);
+  assert.equal(moonPayRawUnits({ quoteCurrencyAmount: 12.5 }), "12500000");
+
+  const accepted = validateMoonPaySignUrl(
+    {
+      url: buyUrl("buy-sandbox.moonpay.com", {
+        apiKey: TEST_KEY,
+        currencyCode: "usdc_sol",
+        walletAddress: vault,
+        externalTransactionId: token,
+      }),
+      daoAddress: "",
+      chainId: null,
+    },
+    rules,
+    { token, walletAddress: vault, currency: "usdc_sol" },
+  );
+  assert.equal(accepted.ok, true);
+
+  const rejected = validateMoonPaySignUrl(
+    {
+      url: buyUrl("buy-sandbox.moonpay.com", {
+        apiKey: TEST_KEY,
+        currencyCode: "usdc_sol",
+        walletAddress: SOL_DAO,
+        externalTransactionId: token,
+      }),
+      daoAddress: SOL_DAO,
+      chainId: null,
+    },
+    rules,
+    { token, walletAddress: vault, currency: "usdc_sol" },
+  );
+  assert.deepEqual(rejected, { ok: false, error: "Wallet does not match this invoice" });
 });
 
 test("webhook signature covers timestamp plus the raw body", async () => {

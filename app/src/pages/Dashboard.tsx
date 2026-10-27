@@ -747,7 +747,13 @@ export default function Dashboard() {
       </section>
 
       {/* Reports Drawer */}
-      <ReportsDrawer open={reportsOpen} onClose={() => setReportsOpen(false)} reports={monthlyReports.reports} />
+      <ReportsDrawer
+        open={reportsOpen}
+        onClose={() => setReportsOpen(false)}
+        reports={monthlyReports.reports}
+        treasuryName={daoRegistry.dao?.name || 'Treasury'}
+        logoUrl={daoRegistry.dao?.logoUrl}
+      />
 
       {/* Treasury actions */}
       {depositFundsOpen && daoAddress && (
