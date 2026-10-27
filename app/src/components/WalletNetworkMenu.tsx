@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount, useDisconnect } from 'wagmi';
 import Fi from './Fi';
+import { NaveMenu, NaveMenuItem } from './NaveMenu';
 import ChainIcon from './ChainIcon';
 import ConnectNetworkButton from './ConnectNetworkButton';
 import { useChain } from '../hooks/useChain';
-import { WALLET_CHAINS, isEvmChainId, type ChainFamily } from '../lib/chain/types';
+import { WALLET_CHAINS, type ChainFamily } from '../lib/chain/types';
 import { activeEvmChainId, chainDisplayLabel } from '../lib/programConfig';
 import { ensureWalletOnChain } from '../lib/evm/ensureWalletChain';
 
@@ -28,6 +29,15 @@ interface WalletNetworkMenuProps {
    * Bridge & Stake keep the full WALLET_CHAINS default.
    */
   chains?: readonly ChainFamily[];
+  /**
+   * Dashboard account menu. Homepage omits this and keeps the chain list.
+   * Network opens a side menu; settings, copy, and disconnect stay in the menu.
+   */
+  account?: {
+    role: string;
+    rights: string;
+    onSettings: () => void;
+  };
 }
 
 /**
@@ -39,6 +49,7 @@ interface WalletNetworkMenuProps {
 export default function WalletNetworkMenu({
   onNetworkSelect,
   chains = WALLET_CHAINS,
+  account,
 }: WalletNetworkMenuProps = {}) {
   const { publicKey, disconnect: disconnectSolana } = useWallet();
   const { address: evmAddress, isConnected: evmConnected, chainId: connectedChainId } = useAccount();
@@ -51,18 +62,9 @@ export default function WalletNetworkMenu({
   const isConnected = isEvm ? evmConnected : !!publicKey;
 
   const [open, setOpen] = useState(false);
+  const [networksOpen, setNetworksOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [open]);
 
   function handleCopy() {
     if (!activeAddress) return;
@@ -120,10 +122,6 @@ export default function WalletNetworkMenu({
     );
   }
 
-  const networkLabel = isEvm && connectedChainId && isEvmChainId(connectedChainId)
-    ? chainDisplayLabel(target.family)
-    : chainDisplayLabel(chainFamily);
-
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -150,71 +148,114 @@ export default function WalletNetworkMenu({
         <span style={{ fontSize: '10px', color: 'hsl(var(--faint))' }}>⌄</span>
       </button>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1.5 w-56 rounded-[14px] border z-50 overflow-hidden"
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: 'hsl(var(--border))',
-            boxShadow: 'var(--shadow-lg)',
-          }}
-        >
-          <div
-            className="px-3.5 py-2.5 border-b"
-            style={{ borderColor: 'hsl(var(--surface-2))' }}
-          >
-            <div className="nave-label">
-              Network
+      <NaveMenu
+        open={open}
+        onClose={() => {
+          setNetworksOpen(false);
+          setOpen(false);
+        }}
+        anchorRef={menuRef}
+        align="right"
+        minWidth={account ? 260 : 220}
+        overflowVisible={!!account}
+      >
+        {account ? (
+          <>
+            <div style={{ padding: '8px 10px 6px', display: 'grid', gap: 6 }}>
+              <div className="flex items-center justify-between gap-3" style={{ fontSize: 13 }}>
+                <span style={{ color: '#6B7280' }}>Role</span>
+                <span style={{ fontWeight: 600, color: '#111827' }}>{account.role}</span>
+              </div>
+              <div className="flex items-start justify-between gap-3" style={{ fontSize: 13 }}>
+                <span style={{ color: '#6B7280', flexShrink: 0 }}>Rights</span>
+                <span style={{ fontWeight: 500, color: '#111827', textAlign: 'right' }}>{account.rights}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              {offeredChains.map((family) => {
-                const active = family === chainFamily;
-                return (
-                  <button
-                    key={family}
-                    type="button"
-                    title={chainDisplayLabel(family)}
-                    onClick={() => void handleNetworkSelect(family)}
-                    className="flex items-center justify-center rounded-[8px] border transition-colors"
+            <div
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setNetworksOpen(true)}
+              onMouseLeave={() => setNetworksOpen(false)}
+            >
+              <button
+                type="button"
+                className="nave-menu-item"
+                aria-expanded={networksOpen}
+                onFocus={() => setNetworksOpen(true)}
+              >
+                <span>Network</span>
+                <span className="inline-flex items-center gap-1.5" style={{ color: '#111827', fontWeight: 500 }}>
+                  <ChainIcon family={chainFamily} size={14} />
+                  {chainDisplayLabel(chainFamily)}
+                  <span aria-hidden style={{ color: '#9CA3AF' }}>‹</span>
+                </span>
+              </button>
+              {networksOpen && (
+                <div style={{ position: 'absolute', top: -4, right: '100%', paddingRight: 8 }}>
+                  <div
+                    role="menu"
                     style={{
-                      width: 32,
-                      height: 32,
-                      borderColor: active ? '#111827' : 'hsl(var(--border))',
-                      backgroundColor: active ? 'hsl(var(--background))' : '#ffffff',
+                      minWidth: 200,
+                      padding: 4,
+                      background: '#ffffff',
+                      border: '1px solid #E7E2D6',
+                      borderRadius: 12,
+                      boxShadow: '0 10px 28px -12px rgba(17, 24, 39, 0.28)',
                     }}
                   >
-                    <ChainIcon family={family} size={16} />
-                  </button>
-                );
-              })}
+                    {offeredChains.map((family) => (
+                      <button
+                        key={family}
+                        type="button"
+                        role="menuitem"
+                        className="nave-menu-item"
+                        data-selected={family === chainFamily ? 'true' : 'false'}
+                        onClick={() => void handleNetworkSelect(family)}
+                      >
+                        <span className="nave-menu-item-label inline-flex items-center gap-2">
+                          <ChainIcon family={family} size={14} />
+                          {chainDisplayLabel(family)}
+                        </span>
+                        {family === chainFamily ? <span className="nave-menu-check" aria-hidden>✓</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: 6 }}>
-              {networkLabel}
-            </div>
-          </div>
-
-          <button
-            onClick={handleCopy}
-            className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left transition-colors border-b"
-            style={{ fontSize: '12.5px', color: 'hsl(var(--foreground))', borderColor: 'hsl(var(--surface-2))' }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
-          >
-            <Fi icon={copied ? 'check' : 'copy'} style={{ fontSize: '12px', color: copied ? 'hsl(var(--success))' : 'hsl(var(--muted-foreground))' }} />
-            {copied ? 'Copied' : 'Copy Address'}
-          </button>
-          <button
-            onClick={handleDisconnect}
-            className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left transition-colors"
-            style={{ fontSize: '12.5px', color: 'hsl(var(--destructive))' }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'hsl(var(--background))')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
-          >
-            <Fi icon="right-from-bracket" style={{ fontSize: '12px' }} />
-            Disconnect
-          </button>
-        </div>
-      )}
+            <div style={{ height: 1, margin: '4px 8px', background: '#EFEAE0' }} />
+            <NaveMenuItem onClick={() => { setOpen(false); account.onSettings(); }}>
+              Settings
+            </NaveMenuItem>
+            <NaveMenuItem onClick={handleCopy}>
+              {copied ? 'Copied' : 'Copy address'}
+            </NaveMenuItem>
+            <NaveMenuItem onClick={handleDisconnect}>
+              <span style={{ color: '#B42318' }}>Disconnect</span>
+            </NaveMenuItem>
+          </>
+        ) : (
+          <>
+            {offeredChains.map((family) => (
+              <NaveMenuItem
+                key={family}
+                selected={family === chainFamily}
+                onClick={() => void handleNetworkSelect(family)}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <ChainIcon family={family} size={14} />
+                  {chainDisplayLabel(family)}
+                </span>
+              </NaveMenuItem>
+            ))}
+            <NaveMenuItem onClick={handleCopy}>
+              {copied ? 'Copied' : 'Copy address'}
+            </NaveMenuItem>
+            <NaveMenuItem onClick={handleDisconnect}>
+              Disconnect
+            </NaveMenuItem>
+          </>
+        )}
+      </NaveMenu>
     </div>
   );
 }
