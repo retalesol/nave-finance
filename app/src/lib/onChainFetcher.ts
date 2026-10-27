@@ -276,6 +276,61 @@ export async function fetchAgentSet(
   }
 }
 
+/** One queued Solana agent authority rotation (role 0..3). */
+export interface PendingAgentRotationSolana {
+  role: number;
+  pendingAuthority: string;
+  effectiveAt: number;
+}
+
+/**
+ * Read `AgentSet.pending_rotations` for slots 0..3. Returns only roles with a
+ * non-default pending authority. Null when the account is missing.
+ */
+export async function fetchPendingAgentRotations(
+  daoPubkey: PublicKey,
+  _connection?: Connection,
+): Promise<PendingAgentRotationSolana[] | null> {
+  try {
+    const { core } = getNavePrograms(_connection);
+    const [pda] = getAgentSetPDA(daoPubkey);
+    const acc = await core.account.agentSet.fetchNullable(pda);
+    if (!acc) return null;
+
+    const pending: PendingAgentRotationSolana[] = [];
+    const rotations = acc.pendingRotations ?? [];
+    for (let role = 0; role < rotations.length && role < 4; role++) {
+      const slot = rotations[role] as {
+        pendingAuthority?: { equals?: (k: PublicKey) => boolean; toBase58?: () => string; toString?: () => string };
+        effectiveAt?: { toNumber?: () => number } | number | bigint;
+      };
+      const authorityPk = slot?.pendingAuthority;
+      if (!authorityPk || (typeof authorityPk.equals === 'function' && authorityPk.equals(PublicKey.default))) {
+        continue;
+      }
+      const authority =
+        typeof authorityPk.toBase58 === 'function'
+          ? authorityPk.toBase58()
+          : String(authorityPk.toString?.() ?? '');
+      if (!authority || authority === PublicKey.default.toBase58()) continue;
+      const rawAt = slot.effectiveAt;
+      const effectiveAt =
+        typeof rawAt === 'number'
+          ? rawAt
+          : typeof rawAt === 'bigint'
+            ? Number(rawAt)
+            : typeof rawAt?.toNumber === 'function'
+              ? rawAt.toNumber()
+              : Number(rawAt ?? 0);
+      pending.push({ role, pendingAuthority: authority, effectiveAt });
+    }
+    return pending;
+  } catch (err) {
+    console.warn('fetchPendingAgentRotations failed:', err);
+    return null;
+  }
+}
+
 export async function fetchGuardianConfig(
   daoPubkey: PublicKey,
   _connection?: Connection,

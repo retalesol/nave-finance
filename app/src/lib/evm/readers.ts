@@ -966,7 +966,55 @@ export interface EvmAgentSet {
   agents: AgentStatusInfo[];
 }
 
+/** One queued agent authority rotation (role 0..3). Empty slots have zero authority. */
+export interface PendingAgentRotationEvm {
+  role: number;
+  pendingAuthority: string;
+  effectiveAt: number;
+}
+
 const EVM_AGENT_ROLES: AgentStatusInfo['role'][] = ['executive', 'financial', 'oversight', 'operational'];
+
+/**
+ * Read `pendingAgentRotation(role)` for slots 0..3. Returns only roles with a
+ * non-zero pending authority. Null when the chain/treasury can't be resolved.
+ */
+export async function fetchPendingAgentRotationsEvm(
+  chainId: EvmChainId,
+  daoAddress: string,
+): Promise<PendingAgentRotationEvm[] | null> {
+  assertSupportedChain(chainId);
+  const treasury = treasuryAddress(daoAddress);
+  if (!treasury || !isEvmChainConfigured(chainId)) return null;
+  const t = { address: treasury, abi: NaveTreasuryAbi, chainId } as const;
+
+  const reads = await Promise.all(
+    [0, 1, 2, 3].map((role) =>
+      safeRead(() =>
+        readContract(wagmiConfig, { ...t, functionName: 'pendingAgentRotation', args: [role] }),
+      ),
+    ),
+  );
+
+  const pending: PendingAgentRotationEvm[] = [];
+  for (let role = 0; role < reads.length; role++) {
+    const raw = reads[role];
+    if (!raw) continue;
+    let authority = '';
+    let effectiveAt = 0;
+    if (Array.isArray(raw)) {
+      authority = String(raw[0] ?? '').toLowerCase();
+      effectiveAt = Number(raw[1] ?? 0);
+    } else {
+      const obj = raw as { pendingAuthority?: Address; 0?: Address; effectiveAt?: bigint; 1?: bigint };
+      authority = String(obj.pendingAuthority ?? obj[0] ?? '').toLowerCase();
+      effectiveAt = Number(obj.effectiveAt ?? obj[1] ?? 0);
+    }
+    if (!authority || authority === ZERO_ADDRESS) continue;
+    pending.push({ role, pendingAuthority: authority, effectiveAt });
+  }
+  return pending;
+}
 
 /**
  * Read the agents-enabled flag, review window and the four agent slot

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import Fi from '../components/Fi';
@@ -27,6 +27,17 @@ import { clearHaltViaProxy, generateAgentKeys, replaceEvmAgentKeys, setAgentsEna
 import { buildEmergencyPauseAgents } from '../lib/transactionBuilders';
 import { buildApplyAgentRotation, buildUpdateAgentSet } from '../lib/serverTransactionBuilders';
 import { buildApplyAgentRotationEvm, buildUpdateAgentSetEvm } from '../lib/evm/writers';
+import { fetchPendingAgentRotationsEvm } from '../lib/evm/readers';
+import { fetchPendingAgentRotations } from '../lib/onChainFetcher';
+import {
+  formatSecondsRemaining,
+  isNoPendingRotationError,
+  isRotationNotReadyError,
+  maxPendingEffectiveAt,
+  shouldFinishPendingOnly,
+  sleepUntilEffectiveAt,
+  type PendingRotationSlot,
+} from '../lib/agentRotation';
 import type { EvmChainFamily } from '../lib/chain/types';
 import { getExecutionRequestPDA } from '../lib/pdaDerivation';
 
@@ -746,6 +757,11 @@ export default function Agent() {
   const [clearingProposal, setClearingProposal] = useState<string | null>(null);
   const [clearHaltErrors, setClearHaltErrors] = useState<Record<string, string>>({});
   const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
+  const [reassigning, setReassigning] = useState(false);
+  const [reassignNote, setReassignNote] = useState('');
+  const [reassignError, setReassignError] = useState('');
+  const [pendingRotations, setPendingRotations] = useState<PendingRotationSlot[]>([]);
+  const [pendingCountdownSecs, setPendingCountdownSecs] = useState(0);
 
   async function handleClearHalt(exec: ExecutionInfo) {
     if (!daoAddress || clearingProposal) return;
@@ -813,12 +829,205 @@ export default function Agent() {
     }
   }
 
+  const refreshPendingRotations = useCallback(async () => {
+    if (!daoAddress || isMockDaoAddress(daoAddress)) {
+      setPendingRotations([]);
+      return;
+    }
+    try {
+      if (chainKind === 'evm') {
+        if (!evmChainId) {
+          setPendingRotations([]);
+          return;
+        }
+        const pending = await fetchPendingAgentRotationsEvm(evmChainId, daoAddress);
+        setPendingRotations(pending ?? []);
+        return;
+      }
+      const pending = await fetchPendingAgentRotations(new PublicKey(daoAddress));
+      setPendingRotations(pending ?? []);
+    } catch {
+      // Keep last known pending set; UI still allows finish/retry.
+    }
+  }, [daoAddress, chainKind, evmChainId]);
+
+  useEffect(() => {
+    void refreshPendingRotations();
+    if (!daoAddress || isMockDaoAddress(daoAddress)) return;
+    const id = window.setInterval(() => {
+      void refreshPendingRotations();
+    }, 15_000);
+    return () => window.clearInterval(id);
+  }, [daoAddress, refreshPendingRotations]);
+
+  useEffect(() => {
+    if (pendingRotations.length === 0) {
+      setPendingCountdownSecs(0);
+      return;
+    }
+    const tick = () => {
+      const readyAt = maxPendingEffectiveAt(pendingRotations);
+      setPendingCountdownSecs(Math.max(0, readyAt - Math.floor(Date.now() / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(id);
+  }, [pendingRotations]);
+
+  async function applyPendingRotationsEvm(
+    treasury: string,
+    chainId: NonNullable<typeof evmChainId>,
+    roles: PendingRotationSlot[],
+  ): Promise<{ applied: number[]; failed: string | null }> {
+    const applied: number[] = [];
+    const failures: string[] = [];
+    for (const slot of roles) {
+      const result = await tx.sendEvm(
+        buildApplyAgentRotationEvm(chainId, treasury, slot.role),
+        { successLabel: 'Agent rotation applied', quietToast: true },
+      );
+      if (result.status === 'success' || result.status === 'mock') {
+        applied.push(slot.role);
+        continue;
+      }
+      const err = result.error || '';
+      if (isNoPendingRotationError(err)) continue;
+      if (isRotationNotReadyError(err)) {
+        failures.push(`Role ${slot.role} is not ready yet.`);
+        continue;
+      }
+      failures.push(err || `Role ${slot.role} failed to apply.`);
+    }
+    return { applied, failed: failures[0] ?? null };
+  }
+
+  async function applyPendingRotationsSolana(
+    dao: PublicKey,
+    founder: PublicKey,
+    roles: PendingRotationSlot[],
+  ): Promise<{ applied: number[]; failed: string | null }> {
+    const applied: number[] = [];
+    const failures: string[] = [];
+    for (const slot of roles) {
+      const result = await tx.send(
+        await buildApplyAgentRotation(dao, founder, slot.role),
+        { successLabel: 'Agent rotation applied', quietMock: true },
+      );
+      if (result.status === 'success' || result.status === 'mock') {
+        applied.push(slot.role);
+        continue;
+      }
+      const err = result.error || '';
+      if (isNoPendingRotationError(err)) continue;
+      if (isRotationNotReadyError(err)) {
+        failures.push(`Role ${slot.role} is not ready yet.`);
+        continue;
+      }
+      failures.push(err || `Role ${slot.role} failed to apply.`);
+    }
+    return { applied, failed: failures[0] ?? null };
+  }
+
+  async function finishPendingRotations(existing: PendingRotationSlot[]): Promise<boolean> {
+    if (existing.length === 0) return true;
+    const readyAt = maxPendingEffectiveAt(existing);
+    const secsLeft = Math.max(0, readyAt - Math.floor(Date.now() / 1000));
+    if (secsLeft > 0) {
+      setReassignNote(
+        `Rotation scheduled — applies in ~${formatSecondsRemaining(secsLeft)}. Waiting to apply.`,
+      );
+      await sleepUntilEffectiveAt(readyAt);
+    }
+    setReassignNote('Applying pending agent rotations…');
+
+    if (chainKind === 'evm') {
+      if (!evmChainId || !daoAddress) {
+        setReassignError('Connect the founder wallet on this treasury’s chain.');
+        return false;
+      }
+      const treasury = daoAddress.toLowerCase();
+      let pending = existing;
+      // Re-read after the wait so we only submit roles that are still queued.
+      const refreshed = await fetchPendingAgentRotationsEvm(evmChainId, treasury);
+      if (refreshed) {
+        pending = refreshed;
+        setPendingRotations(refreshed);
+      }
+      if (pending.length === 0) {
+        setReassignNote('New agent keys are active on this chain.');
+        return true;
+      }
+      const { applied, failed } = await applyPendingRotationsEvm(treasury, evmChainId, pending);
+      const stillPending = await fetchPendingAgentRotationsEvm(evmChainId, treasury);
+      setPendingRotations(stillPending ?? []);
+      if (failed || (stillPending && stillPending.length > 0)) {
+        const left = stillPending?.length ?? pending.length - applied.length;
+        setReassignError(
+          failed
+            || `${left} role${left === 1 ? '' : 's'} still pending. Use Finish pending rotation to retry.`,
+        );
+        return false;
+      }
+      setReassignNote('New agent keys are active on this chain.');
+      return true;
+    }
+
+    if (!publicKey || !daoAddress) {
+      setReassignError('Connect the Solana founder wallet.');
+      return false;
+    }
+    const dao = new PublicKey(daoAddress);
+    let pending = existing;
+    const refreshed = await fetchPendingAgentRotations(dao);
+    if (refreshed) {
+      pending = refreshed;
+      setPendingRotations(refreshed);
+    }
+    if (pending.length === 0) {
+      setReassignNote('New agent keys are active for this treasury.');
+      return true;
+    }
+    const { applied, failed } = await applyPendingRotationsSolana(dao, publicKey, pending);
+    const stillPending = await fetchPendingAgentRotations(dao);
+    setPendingRotations(stillPending ?? []);
+    if (failed || (stillPending && stillPending.length > 0)) {
+      const left = stillPending?.length ?? pending.length - applied.length;
+      setReassignError(
+        failed
+          || `${left} role${left === 1 ? '' : 's'} still pending. Use Finish pending rotation to retry.`,
+      );
+      return false;
+    }
+    setReassignNote('New agent keys are active for this treasury.');
+    return true;
+  }
+
   async function handleReassignKeys() {
     if (!daoAddress || !isFounder || reassigning) return;
     setReassignError('');
     setReassignNote('');
     setReassigning(true);
     try {
+      // Always re-check chain pending first. A second click must not mint new
+      // custody keys while a rotation is already queued.
+      let existing: PendingRotationSlot[] = [];
+      if (chainKind === 'evm') {
+        if (!evmAddress || !evmChainId || !isTreasuryOpsFamily(chainFamily)) {
+          setReassignError('Connect the founder wallet on this treasury’s chain.');
+          return;
+        }
+        existing = (await fetchPendingAgentRotationsEvm(evmChainId, daoAddress)) ?? [];
+      } else {
+        existing = (await fetchPendingAgentRotations(new PublicKey(daoAddress))) ?? [];
+      }
+      setPendingRotations(existing);
+
+      if (shouldFinishPendingOnly(existing)) {
+        const ok = await finishPendingRotations(existing);
+        if (ok) agentStatus.refetch();
+        return;
+      }
+
       if (chainKind === 'evm') {
         if (!evmAddress || !evmChainId || !isTreasuryOpsFamily(chainFamily)) {
           setReassignError('Connect the founder wallet on this treasury’s chain.');
@@ -848,24 +1057,20 @@ export default function Agent() {
           ]),
           { successLabel: 'Agent rotation scheduled', quietToast: true },
         );
-        if (scheduled.status !== 'success') {
+        if (scheduled.status !== 'success' && scheduled.status !== 'mock') {
           setReassignError(scheduled.error || 'The new keys are stored, but the chain rotation was not scheduled.');
           return;
         }
-        setReassignNote('Rotation is scheduled. Applying it after the testnet delay.');
-        await new Promise((resolve) => setTimeout(resolve, 75_000));
-        for (const role of [0, 1, 2, 3]) {
-          const applied = await tx.sendEvm(
-            buildApplyAgentRotationEvm(evmChainId, treasury, role),
-            { successLabel: 'Agent rotation applied', quietToast: true },
-          );
-          if (applied.status !== 'success') {
-            setReassignError(applied.error || 'The rotation is stored. Apply it again once the delay has passed.');
-            return;
-          }
+        const afterSchedule = (await fetchPendingAgentRotationsEvm(evmChainId, treasury)) ?? [];
+        setPendingRotations(afterSchedule);
+        if (afterSchedule.length === 0) {
+          // Authorities already matched on-chain — nothing to apply.
+          setReassignNote('New agent keys are active on this chain.');
+          agentStatus.refetch();
+          return;
         }
-        setReassignNote('New agent keys are active on this chain.');
-        agentStatus.refetch();
+        const ok = await finishPendingRotations(afterSchedule);
+        if (ok) agentStatus.refetch();
         return;
       }
 
@@ -889,30 +1094,27 @@ export default function Agent() {
       );
       const scheduled = await tx.send(
         await buildUpdateAgentSet(new PublicKey(daoAddress), publicKey, authorities),
-        { successLabel: 'Agent rotation scheduled' },
+        { successLabel: 'Agent rotation scheduled', quietMock: true },
       );
-      if (scheduled.status !== 'success') {
+      if (scheduled.status !== 'success' && scheduled.status !== 'mock') {
         setReassignError(scheduled.error || 'The new keys are stored, but the chain rotation was not scheduled.');
         return;
       }
-      setReassignNote('Rotation is scheduled. Applying it after the devnet delay.');
-      await new Promise((resolve) => setTimeout(resolve, 75_000));
-      for (const role of [0, 1, 2, 3]) {
-        const applied = await tx.send(
-          await buildApplyAgentRotation(new PublicKey(daoAddress), publicKey, role),
-          { successLabel: 'Agent rotation applied' },
-        );
-        if (applied.status !== 'success') {
-          setReassignError(applied.error || 'The rotation is stored. Apply it again once the delay has passed.');
-          return;
-        }
+      const dao = new PublicKey(daoAddress);
+      const afterSchedule = (await fetchPendingAgentRotations(dao)) ?? [];
+      setPendingRotations(afterSchedule);
+      if (afterSchedule.length === 0) {
+        setReassignNote('New agent keys are active for this treasury.');
+        agentStatus.refetch();
+        return;
       }
-      setReassignNote('New agent keys are active for this treasury.');
-      agentStatus.refetch();
+      const ok = await finishPendingRotations(afterSchedule);
+      if (ok) agentStatus.refetch();
     } catch (err) {
       setReassignError(err instanceof Error ? err.message : 'Could not reassign the agent keys.');
     } finally {
       setReassigning(false);
+      void refreshPendingRotations();
     }
   }
 
@@ -927,9 +1129,34 @@ export default function Agent() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
-  const [reassigning, setReassigning] = useState(false);
-  const [reassignNote, setReassignNote] = useState('');
-  const [reassignError, setReassignError] = useState('');
+
+  const hasPendingRotation = pendingRotations.length > 0;
+  const pendingReady = hasPendingRotation && pendingCountdownSecs <= 0;
+  const reassignActionLabel = reassigning
+    ? hasPendingRotation || reassignNote.toLowerCase().includes('appl')
+      ? 'Applying…'
+      : 'Reassigning…'
+    : hasPendingRotation
+      ? pendingReady
+        ? 'Finish pending rotation'
+        : 'Apply when ready'
+      : 'Reassign agent keys';
+  const reassignNoticeBody = (() => {
+    if (reassignError) return reassignError;
+    if (reassignNote) return reassignNote;
+    if (hasPendingRotation) {
+      if (pendingReady) {
+        return 'A rotation is queued and ready. Finish it before assigning a new agent set.';
+      }
+      return `Rotation scheduled — applies in ~${formatSecondsRemaining(pendingCountdownSecs)}. Finish pending rotation when ready; do not reassign again yet.`;
+    }
+    return 'Assign a new agent set the current signer can open, then rotate it on-chain.';
+  })();
+  const reassignNoticeTone: 'brass' | 'green' | 'red' = reassignError
+    ? 'red'
+    : reassignNote.toLowerCase().includes('active')
+      ? 'green'
+      : 'brass';
 
   // Clear any optimistic value once fresh on-chain state arrives.
   useEffect(() => {
@@ -1243,12 +1470,12 @@ export default function Agent() {
       <div className="mt-6 space-y-2">
         {isFounder && !isMock && (
           <Notice
-            tone="brass"
-            actionLabel={reassigning ? 'Reassigning…' : 'Reassign agent keys'}
+            tone={reassignNoticeTone}
+            actionLabel={reassignActionLabel}
             onAction={reassigning ? undefined : handleReassignKeys}
           >
             <b style={{ fontWeight: 600 }}>Signer keys.</b>{' '}
-            {reassignError || reassignNote || 'Assign a new agent set the current signer can open, then rotate it on-chain.'}
+            {reassignNoticeBody}
           </Notice>
         )}
 
