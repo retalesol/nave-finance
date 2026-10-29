@@ -15,8 +15,9 @@
 // landed but the wallet rejected setPolicyParameters) must skip the step(s)
 // that already landed on-chain, or it will double-submit them.
 
-import { getBalance, readContract, sendTransaction } from '@wagmi/core';
+import { getAccount, getBalance, getConnectorClient, readContract } from '@wagmi/core';
 import { getAddress, parseEther, type Address } from 'viem';
+import { sendTransaction } from 'viem/actions';
 import { constitutionCapsBps, findVenue, strategyChainForEvmId } from '../../supabase/functions/_shared/strategyCatalog.ts';
 import { rebalanceFreqToSecs, type PolicyState } from '../components/ConstitutionStep';
 import {
@@ -29,7 +30,9 @@ import {
 import { fetchConstitutionEvm, waitForEvmReceipt } from './evm/readers';
 import { NaveProtocolAbi, NaveTreasuryAbi } from './evm/contracts';
 import { getProtocolAddress, toAddress } from './evm/addresses';
-import { wagmiConfig } from './evm/wagmi';
+import { wagmiConfig, WAGMI_CHAIN_BY_ID } from './evm/wagmi';
+import { ensureWalletOnChain } from './evm/ensureWalletChain';
+import { sendWithPendingNonceRetry } from './evm/pendingNonceRetry';
 import { evmNativeGasSymbol, isEvmTestnet, type EvmChainId } from './chain/types';
 import { getEvmAdapterAddress, SYSTEM_CONFIDENCE_THRESHOLD } from './programConfig';
 import { setAgentsEnabledViaProxyEvm } from './edgeFunctionClient';
@@ -320,10 +323,24 @@ export async function fundExecutiveGas(chainId: EvmChainId, executive: Address):
   const balance = await getBalance(wagmiConfig, { address: executive, chainId });
   if (balance.value >= floor) return;
   const symbol = evmNativeGasSymbol(chainId);
-  const hash = await sendTransaction(wagmiConfig, {
-    to: executive,
-    value: floor - balance.value,
+  await ensureWalletOnChain(chainId);
+  const from = getAccount(wagmiConfig).address;
+  if (!from) throw new Error('EVM wallet not connected');
+  // wagmi's sendTransaction replaces `chain` with `{ id }`, which viem reports
+  // as "chain: undefined (id: 11155111)". Send with the full chain object.
+  const chain = WAGMI_CHAIN_BY_ID[chainId];
+  const client = await getConnectorClient(wagmiConfig, { chainId, assertChainId: false });
+  const value = floor - balance.value;
+  const hash = await sendWithPendingNonceRetry({
     chainId,
+    address: from,
+    send: (nonce) => sendTransaction(client, {
+      account: from,
+      to: executive,
+      value,
+      chain,
+      ...(nonce === undefined ? {} : { nonce }),
+    }),
   });
   const receipt = await waitForEvmReceipt(chainId, hash);
   if (receipt.status !== 'success') {

@@ -19,6 +19,7 @@ import { decodeEventLog, parseEther, parseUnits, type Address } from 'viem';
 import { wagmiConfig } from '../lib/evm/wagmi';
 import { publicClientForChain } from '../lib/evm/readers';
 import Fi from '../components/Fi';
+import NaveMark from '../components/NaveMark';
 import TreasuryDeployModal, { type DeployStep, type DeployStepStatus } from '../components/TreasuryDeployModal';
 import ConstitutionStep, {
   type PolicyState,
@@ -84,6 +85,8 @@ import {
   savePendingDaoCreation,
   clearPendingDaoCreation,
   findPendingDaoCreationForWallet,
+  daoCreationFailureMessage,
+  PENDING_DAO_CREATION_EVENT,
   type PendingDaoCreation,
 } from '../lib/daoCreationRecovery';
 
@@ -233,7 +236,15 @@ export default function CreateDAO() {
   const [pendingResume, setPendingResume] = useState<PendingDaoCreation | null>(null);
   const [resuming, setResuming] = useState(false);
   useEffect(() => {
-    setPendingResume(findPendingDaoCreationForWallet(connectedWallet));
+    const sync = () => {
+      const pending = findPendingDaoCreationForWallet(connectedWallet);
+      // In-progress checkpoints (no error yet) stay in storage so a rejected
+      // signature can resume, but they must not raise the failure banner.
+      setPendingResume(daoCreationFailureMessage(pending) ? pending : null);
+    };
+    sync();
+    window.addEventListener(PENDING_DAO_CREATION_EVENT, sync);
+    return () => window.removeEventListener(PENDING_DAO_CREATION_EVENT, sync);
   }, [connectedWallet]);
 
   function openCreateWallet() {
@@ -696,7 +707,7 @@ export default function CreateDAO() {
     // since `daoCount` has already incremented and a second `initialize_dao`
     // would create a genuine second, half-abandoned DAO. Surface the existing
     // "Resume setup" banner instead (or let the user explicitly dismiss it).
-    if (pendingResume && !resuming) {
+    if (pendingResume && daoCreationFailureMessage(pendingResume) && !resuming) {
       setTxError(
         `You have an unfinished DAO setup ("${pendingResume.name || pendingResume.daoAddress}"). ` +
           'Use "Resume setup" above to finish it (or dismiss it first if you intend to create a new DAO).',
@@ -979,10 +990,10 @@ export default function CreateDAO() {
       }
 
       // The DaoRegistry + TreasuryVault + VaultAuthority now exist on-chain.
-      // Persist a resumable checkpoint IMMEDIATELY — before attempting the
-      // governance group — so a crash, a rejected governance signature, or
-      // any other failure from this point on can be resumed instead of
-      // silently orphaning this DAO and creating a second one.
+      // Persist a resumable checkpoint before the governance signature so a
+      // rejection can resume this DAO. Leave failedError empty until
+      // sendGrouped actually returns an error — writing it now flashes the
+      // Resume setup banner while Phantom is still waiting for a signature.
       currentSubStep = 'governance';
       completeDeployStep('foundation');
       beginDeployStep('governance');
@@ -1011,10 +1022,9 @@ export default function CreateDAO() {
       savePendingDaoCreation({
         ...checkpoint,
         failedStep: SOLANA_SUB_STEP_LABELS.governance,
-        failedError: 'Foundation transaction confirmed; DAO governance setup has not completed yet.',
+        failedError: '',
         failedAt: new Date().toISOString(),
       });
-      setPendingResume(findPendingDaoCreationForWallet(checkpoint.founder));
 
       const outcome = await tx.sendGrouped([governanceGroup], {
         successLabel: 'Treasury deployed',
@@ -1646,19 +1656,7 @@ export default function CreateDAO() {
           className="flex items-center gap-2 no-underline"
           style={{ color: 'hsl(var(--foreground))' }}
         >
-          <span
-            className="grid place-items-center rounded-[6px]"
-            style={{
-              width: '20px',
-              height: '20px',
-              backgroundColor: 'hsl(var(--foreground))',
-              color: '#ffffff',
-              fontFamily: 'var(--font-display)',
-              fontSize: '13px',
-            }}
-          >
-            N
-          </span>
+          <NaveMark />
           <span style={{ fontFamily: 'var(--font-display)', fontSize: '19px' }}>Nave</span>
         </button>
         <div className="flex items-center gap-3">
@@ -1717,7 +1715,7 @@ export default function CreateDAO() {
           />
         </div>
 
-        {pendingResume && !deploying && (
+        {pendingResume && daoCreationFailureMessage(pendingResume) && !deploying && (
           <div
             className="flex flex-col gap-2.5 px-4 py-3.5 rounded-[12px] border mb-6 animate-fade-in"
             style={{ backgroundColor: 'hsl(var(--warning-muted))', borderColor: 'hsl(var(--border))' }}
@@ -1727,7 +1725,7 @@ export default function CreateDAO() {
               <div style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
                 <strong>Resume setup</strong> — "{pendingResume.name || pendingResume.daoAddress}" was created
                 on-chain ({chainDisplayLabel(pendingResume.chain)}), but setup didn't finish:{' '}
-                {pendingResume.failedStep} failed ({pendingResume.failedError}). Your treasury is safe — finish
+                {pendingResume.failedStep} failed ({daoCreationFailureMessage(pendingResume)}). Your treasury is safe — finish
                 setup instead of creating a new one.
               </div>
             </div>

@@ -19,6 +19,7 @@ import { isMockDaoAddress } from '../lib/mockData';
 import { getVaultAuthorityPDA } from '../lib/pdaDerivation';
 import { discoverErc20ContractAddressesFromTreasuryActivity } from '../lib/evmTreasuryTokenDiscovery';
 import { treasuryAssetLabel, WSOL_MINT } from '../lib/treasuryAssetLabels';
+import { fetchSpotUsd } from '../lib/pricing/spotUsd';
 
 const ASSET_KIND_LABEL: Record<number, string> = { 0: 'Stablecoin', 1: 'SOL-like', 2: 'Other' };
 
@@ -198,6 +199,31 @@ function toUiAmount(amount: bigint, decimals: number): number {
   return Number(formatUnits(amount, decimals));
 }
 
+/** Native ETH and WETH share one ETH spot. Stablecoins and other tokens do not. */
+function isEtherSpotRow(
+  row: { mint: string; symbol: string; isStablecoin: boolean },
+  wrappedAddress: string | null,
+): boolean {
+  if (row.isStablecoin) return false;
+  if (row.mint === 'ETH') return true;
+  if (row.symbol.toUpperCase() === 'WETH') return true;
+  return wrappedAddress != null && row.mint.toLowerCase() === wrappedAddress;
+}
+
+function applyEthSpot(row: TreasuryAssetRow, ethUsd: number | null): void {
+  if (ethUsd == null) {
+    row.priceUsd = null;
+    row.priceSource = 'Unpriced';
+    row.valueUsd = 0;
+    row.lastValuedUsd = 0;
+    return;
+  }
+  row.priceUsd = ethUsd;
+  row.priceSource = 'ETH spot';
+  row.valueUsd = row.uiBalance * ethUsd;
+  row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
+}
+
 /** Allowlist fallback row. Stablecoins are priced at $1. */
 function allowlistedBalanceRow(
   asset: EvmAllowedAsset,
@@ -260,7 +286,7 @@ async function fetchTreasuryAssetsData(
         const dexChain =
           chainId === 8453 || chainId === 84532
             ? 'base'
-            : 'ethereum'; // Robinhood WETH priced via Ethereum DexScreener (same asset)
+            : 'ethereum';
         const [navMicro, deployedMicro, nativeBalance, registeredAssets] = await Promise.all([
           fetchNavEvm(chainId, daoAddress),
           fetchDeployedCapitalEvm(chainId, daoAddress),
@@ -268,7 +294,6 @@ async function fetchTreasuryAssetsData(
           fetchRegisteredAssetsEvm(chainId, daoAddress),
         ]);
         const allowedByAddress = new Map(allowed.map((asset) => [asset.address.toLowerCase(), asset]));
-        const registeredByAddress = new Map(registeredAssets.map((r) => [r.address.toLowerCase(), r]));
         let rows: TreasuryAssetRow[] = registeredAssets.map((registered) => {
           const asset = allowedByAddress.get(registered.address.toLowerCase());
           const balance = registered.idleBalance;
@@ -484,8 +509,16 @@ async function fetchTreasuryAssetsData(
           }
         }
 
+        const wrappedAddress = wrappedNative?.address.toLowerCase() ?? null;
         const dexMintSet = new Set<string>();
+        let needsEthSpot = false;
         for (const r of rows) {
+          // ETH and WETH take the ETH spot. Do not ask DexScreener for that
+          // chain's WETH contract (testnet WETH is not indexed).
+          if (isEtherSpotRow(r, wrappedAddress)) {
+            needsEthSpot = true;
+            continue;
+          }
           if (/^0x[0-9a-fA-F]{40}$/i.test(r.mint)) {
             try {
               dexMintSet.add(getAddress(r.mint).toLowerCase());
@@ -494,34 +527,14 @@ async function fetchTreasuryAssetsData(
             }
           }
         }
-        if (wrappedNative) dexMintSet.add(wrappedNative.address.toLowerCase());
 
-        const prices = await fetchDexScreenerPricesForChain(dexChain, [...dexMintSet]);
+        const [prices, spots] = await Promise.all([
+          fetchDexScreenerPricesForChain(dexChain, [...dexMintSet]),
+          needsEthSpot ? fetchSpotUsd(['ethereum']) : Promise.resolve(null),
+        ]);
+        const ethUsd = spots?.ethereum ?? null;
 
         for (const row of rows) {
-          if (row.mint === 'ETH' && wrappedNative) {
-            const p = prices.get(wrappedNative.address.toLowerCase());
-            const wethReg = registeredByAddress.get(wrappedNative.address.toLowerCase());
-            const wethOnchainPrice =
-              wethReg?.unitPriceUsdMicro != null && wethReg.unitPriceUsdMicro > 0
-                ? wethReg.unitPriceUsdMicro / 1_000_000
-                : null;
-            if (p && Number.isFinite(p.priceUsd) && p.priceUsd > 0) {
-              row.priceUsd = p.priceUsd;
-              row.priceSource = 'DexScreener (WETH proxy)';
-              row.valueUsd = row.uiBalance * p.priceUsd;
-              row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
-            } else if (wethOnchainPrice != null && wethOnchainPrice > 0) {
-              row.priceUsd = wethOnchainPrice;
-              row.priceSource = 'On-chain valuation';
-              row.valueUsd = row.uiBalance * wethOnchainPrice;
-              row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
-            }
-            continue;
-          }
-          if (!/^0x[0-9a-fA-F]{40}$/i.test(row.mint)) continue;
-          const lo = row.mint.toLowerCase();
-          const p = prices.get(lo);
           if (row.isStablecoin) {
             row.priceUsd = 1;
             row.priceSource = 'Stablecoin parity';
@@ -529,6 +542,13 @@ async function fetchTreasuryAssetsData(
             row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
             continue;
           }
+          if (isEtherSpotRow(row, wrappedAddress)) {
+            applyEthSpot(row, ethUsd);
+            continue;
+          }
+          if (!/^0x[0-9a-fA-F]{40}$/i.test(row.mint)) continue;
+          const lo = row.mint.toLowerCase();
+          const p = prices.get(lo);
           if (p && Number.isFinite(p.priceUsd) && p.priceUsd > 0) {
             row.priceUsd = p.priceUsd;
             row.priceSource = 'DexScreener';
@@ -541,8 +561,8 @@ async function fetchTreasuryAssetsData(
             row.lastValuedUsd = Math.round(row.valueUsd * 1_000_000);
             continue;
           }
-          // Fallback to on-chain treasury valuation (valueAssetUsd / lastValuedUsd)
-          // when DexScreener does not index the token (e.g. Robinhood Testnet WETH).
+          // Fallback to on-chain treasury valuation when DexScreener does not
+          // index the token. ETH and WETH never reach this path.
           if (row.priceUsd == null && row.uiBalance > 0) {
             try {
               const rawUnits = BigInt(Math.round(row.uiBalance * Math.pow(10, row.decimals)));

@@ -7,6 +7,7 @@ import { USE_MOCKS, SOLANA_NETWORK, SOLANA_RPC_URL } from '../lib/programConfig'
 import type { TransactionBuildResult } from '../lib/transactionBuilders';
 import { wagmiConfig } from '../lib/evm/wagmi';
 import { ensureWalletOnChain, offerWalletChain } from '../lib/evm/ensureWalletChain';
+import { sendWithPendingNonceRetry } from '../lib/evm/pendingNonceRetry';
 import { publicClientForChain, waitForEvmReceipt } from '../lib/evm/readers';
 import { explainEvmSendError } from '../lib/evm/walletRpcError';
 import { type EvmBuildResult } from '../lib/evm/writers';
@@ -734,6 +735,7 @@ export function useSendTransaction() {
         toast({ variant: 'destructive', title: 'Wallet required', description: 'Connect an Ethereum/Base wallet to submit transactions.' });
         return noWallet;
       }
+      const from = account.address;
 
       if (inFlightRef.current) return rejectConcurrent();
       inFlightRef.current = true;
@@ -793,7 +795,7 @@ export function useSendTransaction() {
             gas = undefined;
           }
 
-          const submit = () => writeContract(wagmiConfig, {
+          const submit = (nonce?: number) => writeContract(wagmiConfig, {
             address: req.address,
             abi: req.abi,
             functionName: req.functionName,
@@ -803,10 +805,16 @@ export function useSendTransaction() {
             gas,
             maxFeePerGas,
             maxPriorityFeePerGas,
+            ...(nonce === undefined ? {} : { nonce }),
+          });
+          const submitWithFreshNonce = () => sendWithPendingNonceRetry({
+            chainId: req.chainId,
+            address: from,
+            send: submit,
           });
           let hash: `0x${string}`;
           try {
-            hash = await submit();
+            hash = await submitWithFreshNonce();
           } catch (submitErr) {
             const submitText = submitErr instanceof Error ? submitErr.message : String(submitErr);
             const unreachable = /requested resource not available|resource unavailable/i.test(submitText)
@@ -815,7 +823,7 @@ export function useSendTransaction() {
             // The wallet's saved RPC for this chain is down (Arc's retired host
             // is the common case). Offer the current URL once, then retry.
             await offerWalletChain(req.chainId);
-            hash = await submit();
+            hash = await submitWithFreshNonce();
           }
           lastHash = hash;
 

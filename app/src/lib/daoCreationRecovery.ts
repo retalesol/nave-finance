@@ -54,13 +54,25 @@ export interface PendingDaoCreation {
   logoUrl: string;
   /** Human-readable label of the step that failed (for the resume banner). */
   failedStep: string;
-  /** Raw error message from the failed step, for display. */
+  /** Error from the failed step. Empty while a signature is still in flight —
+   *  that checkpoint can be resumed, but it is not a failure yet. */
   failedError: string;
   /** ISO timestamp of the failure. */
   failedAt: string;
 }
 
 const STORAGE_KEY = 'nave.pendingDaoCreation.v1';
+/** Same-tab signal so a remounted wizard can show the banner after a real error. */
+export const PENDING_DAO_CREATION_EVENT = 'nave:pending-dao-creation';
+
+/** The Resume setup banner is a failure notice. An in-progress checkpoint
+ *  (saved before the wallet returns) has no error and must not show that copy. */
+export function daoCreationFailureMessage(
+  record: Pick<PendingDaoCreation, 'failedError'> | null | undefined,
+): string | null {
+  const message = record?.failedError?.trim() ?? '';
+  return message ? message : null;
+}
 /** Stale checkpoints older than this are ignored (avoids resurrecting a very old, likely-abandoned flow). */
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
@@ -96,6 +108,11 @@ function writeStore(store: Store): void {
   }
 }
 
+function notifyPendingDaoCreation(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent(PENDING_DAO_CREATION_EVENT));
+}
+
 function keyFor(chain: string, founder: string): string {
   return `${chain}:${founder.toLowerCase()}`;
 }
@@ -110,6 +127,7 @@ export function savePendingDaoCreation(record: PendingDaoCreation): void {
   const store = readStore();
   store[keyFor(record.chain, record.founder)] = record;
   writeStore(store);
+  notifyPendingDaoCreation();
 }
 
 /** Load the checkpoint for a specific (chain, founder), or null if none/stale. */
@@ -126,6 +144,7 @@ export function clearPendingDaoCreation(chain: string, founder: string | null | 
   const store = readStore();
   delete store[keyFor(chain, founder)];
   writeStore(store);
+  notifyPendingDaoCreation();
 }
 
 /**

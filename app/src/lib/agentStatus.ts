@@ -132,6 +132,11 @@ export function computeAgentStatus(input: AgentStatusInputs): AgentStatusDisplay
 /**
  * Roll a set of per-agent statuses up into a single system-level summary used
  * for the headline badges/lines on the Dashboard and Settings pages.
+ *
+ * "Elevated error rate" is only a real high error rate (`degraded`). An agent
+ * that is simply offline — it has never acted, or its last action is stale —
+ * is not an error-rate problem. Idle-but-enabled agents are already Active,
+ * and disabled agents are already Paused, before they reach this function.
  */
 export function summarizeAgentStatuses(statuses: AgentStatusDisplay[]): {
   level: AgentStatusLevel;
@@ -147,7 +152,7 @@ export function summarizeAgentStatuses(statuses: AgentStatusDisplay[]): {
   if (statuses.some(s => s.level === 'revoked')) {
     return { level: 'revoked', label: 'An agent key has been revoked', color: TONES.destructive.color };
   }
-  if (statuses.some(s => s.level === 'degraded' || s.level === 'offline')) {
+  if (statuses.some(s => s.level === 'degraded')) {
     return { level: 'degraded', label: 'Elevated error rate on some agents', color: TONES.warning.color };
   }
   if (statuses.some(s => s.level === 'paused')) {
@@ -155,6 +160,14 @@ export function summarizeAgentStatuses(statuses: AgentStatusDisplay[]): {
   }
   if (statuses.some(s => s.level === 'rotating')) {
     return { level: 'rotating', label: 'Agent key rotation in progress', color: TONES.warning.color };
+  }
+  if (statuses.some(s => s.level === 'offline')) {
+    const allOffline = statuses.every(s => s.level === 'offline');
+    return {
+      level: 'offline',
+      label: allOffline ? 'Agents are offline' : 'Some agents are offline',
+      color: TONES.warning.color,
+    };
   }
   if (statuses.every(s => s.level === 'active')) {
     return { level: 'active', label: '3-key multisig: all agents operational', color: TONES.success.color };

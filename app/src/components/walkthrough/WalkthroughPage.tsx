@@ -97,6 +97,7 @@ export default function WalkthroughPage() {
           onSkip={finish}
           onReveal={setBrandReveal}
           onClosed={leaveTour}
+          skipPrelude={live}
         />
       )}
     </div>

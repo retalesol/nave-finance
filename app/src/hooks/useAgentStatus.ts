@@ -2,16 +2,55 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { supabase, AGENT_ACTION_LOG_PUBLIC_COLUMNS, type AgentActionLogPublicRow } from '../lib/supabaseClient';
 import { fetchAgentSet } from '../lib/onChainFetcher';
-import { fetchAgentSetEvm } from '../lib/evm/readers';
+import { fetchAgentSetEvm, type EvmAgentSet } from '../lib/evm/readers';
 import { isProgramConfigured } from '../lib/programConfig';
 import { chainKindFromAddress } from '../lib/chain/types';
 import { normalizeDaoOnchainAddressForQuery } from '../lib/chain/daoOnchainAddress';
 import { useChain } from './useChain';
-import { AgentStatus, type AgentSet } from '../lib/onChainTypes';
+import { AgentRole, AgentStatus, type AgentSet, type AgentSlot } from '../lib/onChainTypes';
 import { isMockDaoAddress, MOCK_AGENTS, MOCK_AGENT_SET, MOCK_ACTION_LOGS } from '../lib/mockData';
 
 const ROLE_NAMES = ['executive', 'financial', 'oversight', 'operational'] as const;
 type RoleName = typeof ROLE_NAMES[number];
+
+const ROLE_TO_ENUM: Record<RoleName, AgentRole> = {
+  executive: AgentRole.Executive,
+  financial: AgentRole.Financial,
+  oversight: AgentRole.Oversight,
+  operational: AgentRole.Operational,
+};
+
+/**
+ * Dashboard and Settings treat `onChainData !== null` as "the chain was read".
+ * EVM slot reads are a different shape than the Solana AgentSet, so map them
+ * into that shape. Presence is what `agentsPaused` and `hasOnChain` key off.
+ */
+function agentSetFromEvm(dao: string, evm: EvmAgentSet): AgentSet {
+  const byRole = new Map(evm.agents.map((agent) => [agent.role, agent]));
+  const slot = (role: RoleName): AgentSlot => {
+    const agent = byRole.get(role);
+    return {
+      pubkey: agent?.pubkey ?? '',
+      role: ROLE_TO_ENUM[role],
+      canSign: agent?.canSign ?? false,
+      nullified: agent?.nullified ?? false,
+      nullifiedAt: 0,
+      actionsCount: agent?.actionsCount ?? 0,
+      lastActionAt: agent?.lastActionAt ?? 0,
+      status: agent?.status ?? AgentStatus.Paused,
+    };
+  };
+  return {
+    dao,
+    executive: slot('executive'),
+    financial: slot('financial'),
+    oversight: slot('oversight'),
+    operational: slot('operational'),
+    agentsEnabled: evm.agentsEnabled,
+    reviewWindowSeconds: evm.reviewWindowSeconds,
+    bump: 0,
+  };
+}
 
 export interface AgentStatusInfo {
   role: 'executive' | 'financial' | 'oversight' | 'operational';
@@ -106,10 +145,12 @@ export function useAgentStatus(daoAddress: string | null): UseAgentStatusResult 
         const evmAgents = await fetchAgentSetEvm(evmChainId, daoAddress);
         if (startedFor !== latestDaoRef.current) return;
         if (evmAgents) {
+          setOnChainData(agentSetFromEvm(daoAddress, evmAgents));
           setAgentsEnabled(evmAgents.agentsEnabled);
           setReviewWindowSeconds(evmAgents.reviewWindowSeconds);
           setAgents(evmAgents.agents);
         } else {
+          setOnChainData(null);
           setAgents([]);
           setAgentsEnabled(true);
           setReviewWindowSeconds(0);

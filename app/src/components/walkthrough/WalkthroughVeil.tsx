@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import Dither from '../Dither';
 import NaveMark from '../NaveMark';
+import { CAPTION_HEIGHT, placeCaption, type CaptionBox } from './placeCaption';
 import type { WalkthroughStep } from './steps';
 
 const PAPER: [number, number, number] = [0xfa / 255, 0xf8 / 255, 0xf3 / 255];
@@ -9,10 +10,8 @@ const INK: [number, number, number] = [0x11 / 255, 0x18 / 255, 0x27 / 255];
 type Rect = { x: number; y: number; w: number; h: number };
 type Dock = { x: number; y: number; flip: boolean };
 type Pose = Dock & { bob: boolean };
-type CaptionBox = { left: number; top: number; width: number };
 
 const VEIL_ALPHA = 0.62;
-const CAPTION_HEIGHT = 248;
 const NARROW_QUERY = '(max-width: 899px)';
 const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -95,48 +94,6 @@ function measureTarget(root: HTMLElement, step: Pick<WalkthroughStep, 'target' |
   if (x + w > rootBox.width - 8) w = rootBox.width - 8 - x;
   if (w < 48 || h < 48) return null;
   return { x, y, w, h };
-}
-
-function placeCaption(hole: Rect, vw: number, vh: number, narrow: boolean, roomy = false): CaptionBox {
-  if (roomy && !narrow && hole.x > 200) {
-    const width = Math.min(250, hole.x - 28);
-    return {
-      left: 14,
-      top: clamp(Math.round(vh * 0.28), 16, vh - CAPTION_HEIGHT - 16),
-      width,
-    };
-  }
-  const width = Math.min(420, Math.max(220, vw - 24));
-  if (narrow) {
-    const left = clamp(hole.x + hole.w / 2 - width / 2, 12, Math.max(12, vw - width - 12));
-    const gap = 86;
-    let top = hole.y + hole.h + gap;
-    if (top + CAPTION_HEIGHT > vh - 8) top = hole.y - CAPTION_HEIGHT - gap;
-    if (top < 8) top = Math.max(8, vh - CAPTION_HEIGHT - 8);
-    return { left, top, width };
-  }
-
-  const bottom: CaptionBox = { left: (vw - width) / 2, top: vh - CAPTION_HEIGHT - 24, width };
-  if (!overlaps(bottom, hole, 18)) return bottom;
-
-  const rightLeft = hole.x + hole.w + 20;
-  if (rightLeft + width <= vw - 12) {
-    return { left: rightLeft, top: clamp(hole.y, 16, vh - CAPTION_HEIGHT - 16), width };
-  }
-  const leftLeft = hole.x - width - 20;
-  if (leftLeft >= 12) {
-    return { left: leftLeft, top: clamp(hole.y, 16, vh - CAPTION_HEIGHT - 16), width };
-  }
-  return { left: clamp(bottom.left, 12, vw - width - 12), top: Math.max(12, bottom.top), width };
-}
-
-function overlaps(box: CaptionBox, hole: Rect, gap: number): boolean {
-  return !(
-    box.left + box.width + gap < hole.x
-    || hole.x + hole.w + gap < box.left
-    || box.top + CAPTION_HEIGHT + gap < hole.y
-    || hole.y + hole.h + gap < box.top
-  );
 }
 
 function shipHitsCaption(dock: Dock, caption: CaptionBox): boolean {
@@ -417,6 +374,8 @@ type VeilProps = {
   onSkip: () => void;
   onReveal: (reveal: BrandReveal) => void;
   onClosed: () => void;
+  /** Live treasury tour. Skip the boat prelude so the first step is immediate. */
+  skipPrelude?: boolean;
 };
 
 function measureSpot(root: HTMLElement, id: string): Spot | null {
@@ -444,6 +403,7 @@ export default function WalkthroughVeil({
   onSkip,
   onReveal,
   onClosed,
+  skipPrelude = false,
 }: VeilProps) {
   const narrow = useMediaQuery(NARROW_QUERY);
   const reduce = useMediaQuery(REDUCE_QUERY);
@@ -453,7 +413,9 @@ export default function WalkthroughVeil({
   const [caption, setCaption] = useState<CaptionBox | null>(null);
   const [veilOpacity, setVeilOpacity] = useState(1);
   const [fadeVeil, setFadeVeil] = useState(false);
-  const [prelude, setPrelude] = useState<'blank' | 'setting' | 'fill' | 'fade' | 'gap' | 'boat' | 'hold' | 'travel' | 'done'>(reduce ? 'done' : 'blank');
+  const [prelude, setPrelude] = useState<'blank' | 'setting' | 'fill' | 'fade' | 'gap' | 'boat' | 'hold' | 'travel' | 'done'>(
+    reduce || skipPrelude ? 'done' : 'blank',
+  );
   const [arrival, setArrival] = useState<Dock | null>(null);
   const [outro, setOutro] = useState<OutroPhase>('idle');
   const [brand, setBrand] = useState<Spot | null>(null);
@@ -486,7 +448,7 @@ export default function WalkthroughVeil({
   }, [prelude]);
 
   useEffect(() => {
-    if (reduce) {
+    if (reduce || skipPrelude) {
       setPrelude('done');
       return;
     }
@@ -502,7 +464,7 @@ export default function WalkthroughVeil({
     return () => {
       timers.forEach((id) => window.clearTimeout(id));
     };
-  }, [reduce]);
+  }, [reduce, skipPrelude]);
 
   useEffect(() => {
     if (prelude !== 'travel' || arrival) return;
